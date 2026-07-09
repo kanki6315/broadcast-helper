@@ -51,8 +51,8 @@ export default function StandingsPage() {
           <thead>
             <tr>
               <th>Pos</th>
-              <th>#</th>
-              <th>Team</th>
+              <th>{detail.championship.kind === 'DRIVERS' ? 'Driver' : '#'}</th>
+              {detail.championship.kind !== 'DRIVERS' && <th>Team</th>}
               <th>Points</th>
             </tr>
           </thead>
@@ -61,7 +61,7 @@ export default function StandingsPage() {
               <tr key={r.competitorKey}>
                 <td>{r.position}</td>
                 <td>{r.competitorKey}</td>
-                <td>{r.competitorName}</td>
+                {detail.championship.kind !== 'DRIVERS' && <td>{r.competitorName}</td>}
                 <td>{r.totalPoints}</td>
               </tr>
             ))}

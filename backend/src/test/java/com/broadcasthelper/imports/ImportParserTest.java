@@ -124,6 +124,26 @@ class ImportParserTest {
     }
 
     @Test
+    void parsesDriversStandingsKeyedByName() throws IOException {
+        StandingsImport imp = ImportParser.parseStandings(fixture("standings-gtp-drivers-2026.json"));
+        assertEquals("IMSA WeatherTech SportsCar Championship GTP Drivers", imp.mainTitle());
+        assertEquals(39, imp.rows().size());
+
+        // Drivers championships key competitors by full name, with no team field.
+        StandingsImport.Row leader = imp.rows().get(0);
+        assertEquals("Jack Aitken", leader.key());
+        assertNull(leader.team());
+
+        // Full-season co-drivers share a position: the file has two P3s, two P4s, etc.
+        List<String> p3 = imp.rows().stream()
+                .filter(r -> r.position() == 3)
+                .map(StandingsImport.Row::key)
+                .toList();
+        assertEquals(2, p3.size());
+        assertTrue(p3.contains("Nick Yelloly") && p3.contains("Renger van der Zande"));
+    }
+
+    @Test
     void parsesMichelinEnduranceCupCheckpointStandings() throws IOException {
         StandingsImport imp = ImportParser.parseStandings(fixture("standings-imec-gtp-teams-2026.json"));
         assertEquals("IMSA Michelin Endurance Cup GTP Teams", imp.mainTitle());
