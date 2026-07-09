@@ -46,6 +46,23 @@
   padding: 2px 6px;
   background: #1a1a1a;
   color: #fff;
+  /* Force the header fill to appear in the printed/exported PDF. */
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* Per-class header colors for at-a-glance scanning. Unlisted classes
+   (e.g. GTP) keep the dark default above. */
+.sheet-class[data-class='LMP2'] h2 {
+  background: #17468f;
+}
+
+.sheet-class[data-class='GTDPRO'] h2 {
+  background: #b3261e;
+}
+
+.sheet-class[data-class='GTD'] h2 {
+  background: #1f7a34;
 }
 
 .sheet table {

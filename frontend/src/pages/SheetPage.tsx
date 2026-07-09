@@ -85,7 +85,7 @@ export default function SheetPage({ eventId }: { eventId: number }) {
       </header>
 
       {sheet.classes.map((cls) => (
-        <section key={cls.className} className="sheet-class">
+        <section key={cls.className} className="sheet-class" data-class={cls.className}>
           <h2>{cls.className}</h2>
           <table>
             <thead>
