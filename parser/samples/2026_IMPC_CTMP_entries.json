@@ -1,0 +1,1400 @@
+{
+  "event": {
+    "name": "Canadian Tire Motorsport Park 120",
+    "circuit": "Canadian Tire Motorsport Park",
+    "location": "Bowmanville, Ontario",
+    "total_entries": 42,
+    "start_date": "2026-07-10",
+    "end_date": "2026-07-12",
+    "series": "IMPC",
+    "source_file": "2026_IMPC_CTMP_PreEvent_EntryList.pdf"
+  },
+  "entries": [
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "2",
+      "team": "CSM",
+      "sponsor": "Scully Capital Management / Reis Nichols / Stahlwille",
+      "bronze_cup": false,
+      "car_type": "Porsche 718 GT4 RS CS",
+      "tire": "Michelin",
+      "engine": "Porsche",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Morgan Burkhard",
+          "nationality": null,
+          "hometown": "Charles Town, WV",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Gordon Scully",
+          "nationality": null,
+          "hometown": "Chicago, IL",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "3",
+      "team": "CSM",
+      "sponsor": "Reis Nichols / Stahlwille",
+      "bronze_cup": false,
+      "car_type": "Porsche 718 GT4 RS CS",
+      "tire": "Michelin",
+      "engine": "Porsche",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Madeline Stewart",
+          "nationality": null,
+          "hometown": "Wellington, New Zealand",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Jonathan Browne",
+          "nationality": null,
+          "hometown": "Ratoath, Ireland",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "12",
+      "team": "RAFA Racing",
+      "sponsor": "RAFA Racing Club / 812 Apparel / Toyota Gazoo Racing / PHOOZY",
+      "bronze_cup": false,
+      "car_type": "Toyota GR Supra GT4 EVO2",
+      "tire": "Michelin",
+      "engine": "Toyota",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Kiko Porto",
+          "nationality": null,
+          "hometown": "Recife, Brazil",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Varun Choksey",
+          "nationality": null,
+          "hometown": "Atlanta, GA",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "13",
+      "team": "McCumbee McAleer Racing",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Ford Mustang GT4",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Nate Cicero",
+          "nationality": null,
+          "hometown": "Pound Ridge, NY",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Robert Noaker",
+          "nationality": null,
+          "hometown": "Duncannon, PA",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "14",
+      "team": "Circle H Racing",
+      "sponsor": "Hampton Lumber",
+      "bronze_cup": false,
+      "car_type": "Aston Martin Vantage AMR GT4 Evo",
+      "tire": "Michelin",
+      "engine": "Aston Martin",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "David Hampton",
+          "nationality": null,
+          "hometown": "Bend, OR",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Thomas Merrill",
+          "nationality": null,
+          "hometown": "Salinas, CA",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "17",
+      "team": "Unitronic JDC-Miller MotorSports",
+      "sponsor": "Liqui Moly",
+      "bronze_cup": false,
+      "car_type": "Porsche 718 GT4 RS CS",
+      "tire": "Michelin",
+      "engine": "Porsche",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Chris Miller",
+          "nationality": null,
+          "hometown": "Minneapolis, MN",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Mikey Taylor",
+          "nationality": null,
+          "hometown": "Pretoria, South Africa",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "19",
+      "team": "Stephen Cameron Racing",
+      "sponsor": "Racing to End Alzheimer's",
+      "bronze_cup": false,
+      "car_type": "Ford Mustang GT4",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Sean Quinlan",
+          "nationality": null,
+          "hometown": "Palo Alto, CA",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Gregory Liefooghe",
+          "nationality": null,
+          "hometown": "San Francisco, CA",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "22",
+      "team": "Shopify Racing",
+      "sponsor": "Shopify / Shop / Tomlinson Motorsports / Crater Labs",
+      "bronze_cup": true,
+      "car_type": "Porsche 718 GT4 RS CS",
+      "tire": "Michelin",
+      "engine": "Porsche",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Trevor Hill",
+          "nationality": null,
+          "hometown": "Arnprior, Canada",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Travis Hill",
+          "nationality": null,
+          "hometown": "Ottawa, Canada",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "23",
+      "team": "KOCH-COPELAND MOTORSPORTS",
+      "sponsor": "KOCH PROTECT INC / KOCH 33 TOYOTA",
+      "bronze_cup": false,
+      "car_type": "Toyota GR Supra GT4 EVO2",
+      "tire": "Michelin",
+      "engine": "Toyota",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Ford Koch",
+          "nationality": null,
+          "hometown": "Charleston, SC",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Jaxon Bell",
+          "nationality": null,
+          "hometown": "Pacific Palisades, CA",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "24",
+      "team": "Murillo Racing",
+      "sponsor": "P1 Motor Club / Richard Mille",
+      "bronze_cup": false,
+      "car_type": "Mercedes-AMG GT GT4",
+      "tire": "Michelin",
+      "engine": "Mercedes-AMG",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Aurora Straus",
+          "nationality": null,
+          "hometown": "Cold Spring, NY",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Kenny Murillo",
+          "nationality": null,
+          "hometown": "Santa Rosa, CA",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "26",
+      "team": "Heart of Racing Team",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Aston Martin Vantage AMR GT4 Evo",
+      "tire": "Michelin",
+      "engine": "Aston Martin",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Hannah Grisham",
+          "nationality": null,
+          "hometown": "Glendora, CA",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Hannah Greenemeier",
+          "nationality": null,
+          "hometown": "Parker, CO",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "27",
+      "team": "AutoTechnic Racing",
+      "sponsor": "JAG NY / BMW of Ridgefield / AutoTechnic Racing",
+      "bronze_cup": false,
+      "car_type": "BMW M4 GT4 EVO",
+      "tire": "Michelin",
+      "engine": "BMW",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Austin Krainz",
+          "nationality": null,
+          "hometown": "Brookfield, CT",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Stevan McAleer",
+          "nationality": null,
+          "hometown": "Glasgow, Scotland",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "30",
+      "team": "LAP Motorsports",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Ford Mustang GT4",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Clayton Williams",
+          "nationality": null,
+          "hometown": "Oakley, CA",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Scott Thomson",
+          "nationality": null,
+          "hometown": "Sun Valley, ID",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "37",
+      "team": "CarBahn with Peregrine racing",
+      "sponsor": "TPC Capital Solutions / BLCK LBL / CRYO Restorations",
+      "bronze_cup": false,
+      "car_type": "BMW M4 GT4 EVO",
+      "tire": "Michelin",
+      "engine": "BMW",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Steve Wetterau",
+          "nationality": null,
+          "hometown": "Newport Beach, CA",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Cameron Shields",
+          "nationality": null,
+          "hometown": "Toowoomba, Australia",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "38",
+      "team": "ST Racing by Random Vandals",
+      "sponsor": "SK8 Biotechnologies / Olay / Rowe / 7-Eleven",
+      "bronze_cup": false,
+      "car_type": "BMW M4 GT4 EVO",
+      "tire": "Michelin",
+      "engine": "BMW",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Samantha Tan",
+          "nationality": null,
+          "hometown": "Stouffville, Canada",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Bill Auberlen",
+          "nationality": null,
+          "hometown": "Lake Havasu City, AZ",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "39",
+      "team": "CarBahn with Peregrine racing",
+      "sponsor": "CarBahn / Accel / Menlo",
+      "bronze_cup": false,
+      "car_type": "BMW M4 GT4 EVO",
+      "tire": "Michelin",
+      "engine": "BMW",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Sean McAlister",
+          "nationality": null,
+          "hometown": "Beverly Hills, CA",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Jeff Westphal",
+          "nationality": null,
+          "hometown": "Littleton, CO",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "44",
+      "team": "Ibiza Farm Motorsport",
+      "sponsor": "Ibiza Farm Motorsport",
+      "bronze_cup": false,
+      "car_type": "McLaren Artura GT4",
+      "tire": "Michelin",
+      "engine": "McLaren",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Moisey Uretsky",
+          "nationality": null,
+          "hometown": "Miami, FL",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Michael Cooper",
+          "nationality": null,
+          "hometown": "Huntington, NY",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "46",
+      "team": "TeamTGM",
+      "sponsor": "JKTGFoundation.org / #DrivingResearch",
+      "bronze_cup": false,
+      "car_type": "Ford Mustang GT4",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Paul Holton",
+          "nationality": null,
+          "hometown": "Orlando, FL",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Matt Plumb",
+          "nationality": null,
+          "hometown": "Chadds Ford, PA",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "54",
+      "team": "PANAM MOTORSPORT",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Toyota GR Supra GT4 EVO2",
+      "tire": "Michelin",
+      "engine": "Toyota",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Caio Chaves",
+          "nationality": null,
+          "hometown": "Sao Paulo, Brazil",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Thiago Camilo",
+          "nationality": null,
+          "hometown": "Sao Paulo, Brazil",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "57",
+      "team": "WINWARD RACING",
+      "sponsor": "TECHEMET / First Horizon Bank / Ravenol / Crain Group / Hexis",
+      "bronze_cup": false,
+      "car_type": "Mercedes-AMG GT GT4",
+      "tire": "Michelin",
+      "engine": "Mercedes-AMG",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Bryce Ward",
+          "nationality": null,
+          "hometown": "Seabrook, TX",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Daan Arrow",
+          "nationality": null,
+          "hometown": "Amsterdam, Netherlands",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "59",
+      "team": "KOHR MOTORSPORTS",
+      "sponsor": "FREEDOM FINANCE",
+      "bronze_cup": false,
+      "car_type": "Ford Mustang GT4",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Bob Michaelian",
+          "nationality": null,
+          "hometown": "Seal Beach, CA",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Billy Johnson",
+          "nationality": null,
+          "hometown": "Loxahatchee, FL",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "60",
+      "team": "KOHR MOTORSPORTS",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Ford Mustang GT4",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Evan Slater",
+          "nationality": null,
+          "hometown": "Portsmouth, NH",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Mike Skeen",
+          "nationality": null,
+          "hometown": "Charlotte, NC",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "64",
+      "team": "TeamTGM",
+      "sponsor": "JKTGFoundation.org / #DrivingResearch",
+      "bronze_cup": true,
+      "car_type": "Ford Mustang GT4",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Ted Giovanis",
+          "nationality": null,
+          "hometown": "Highland, MD",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Hugh Plumb",
+          "nationality": null,
+          "hometown": "Unionville, PA",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "66",
+      "team": "Car Blanche",
+      "sponsor": "Oore Jewelry",
+      "bronze_cup": false,
+      "car_type": "Aston Martin Vantage AMR GT4 Evo",
+      "tire": "Michelin",
+      "engine": "Aston Martin",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Allen Patten",
+          "nationality": null,
+          "hometown": "San Jose, CA",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Trenton Estep",
+          "nationality": null,
+          "hometown": "San Antonio, TX",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "67",
+      "team": "BSI Racing",
+      "sponsor": "TRUEGRID / OTU",
+      "bronze_cup": false,
+      "car_type": "Toyota GR Supra GT4 EVO2",
+      "tire": "Michelin",
+      "engine": "Toyota",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Lucas Weisenberg",
+          "nationality": null,
+          "hometown": "Orange, CA",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Harrison Goodman",
+          "nationality": null,
+          "hometown": "Gold Coast, Australia",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "91",
+      "team": "VRC Motorsports Group LLC.",
+      "sponsor": null,
+      "bronze_cup": true,
+      "car_type": "Porsche 718 GT4 RS CS",
+      "tire": "Michelin",
+      "engine": "Porsche",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Dan Ammann",
+          "nationality": null,
+          "hometown": "Wellington, FL",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Owen Trinkler",
+          "nationality": null,
+          "hometown": "Ashland City, TN",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "92",
+      "team": "Random Vandals Racing",
+      "sponsor": "Vbrick",
+      "bronze_cup": false,
+      "car_type": "BMW M4 GT4 EVO",
+      "tire": "Michelin",
+      "engine": "BMW",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Robert Megennis",
+          "nationality": null,
+          "hometown": "New York City, NY",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Nicky Hays",
+          "nationality": null,
+          "hometown": "Huntington Beach, CA",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "95",
+      "team": "Turner Motorsport",
+      "sponsor": "Liqui Moly / H&R Springs",
+      "bronze_cup": false,
+      "car_type": "BMW M4 GT4 EVO",
+      "tire": "Michelin",
+      "engine": "BMW",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Dillon Machavern",
+          "nationality": null,
+          "hometown": "Charlotte, VT",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Luca Mars",
+          "nationality": null,
+          "hometown": "Sewickley, PA",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT (GS)",
+      "class_code": "GS",
+      "class_order": 1,
+      "car_number": "96",
+      "team": "Turner Motorsport",
+      "sponsor": "Liqui Moly / H&R Springs",
+      "bronze_cup": false,
+      "car_type": "BMW M4 GT4 EVO",
+      "tire": "Michelin",
+      "engine": "BMW",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Vincent Barletta",
+          "nationality": null,
+          "hometown": "Canton, MA",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Robby Foley",
+          "nationality": null,
+          "hometown": "Randolph, NJ",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "TOURING CAR (TCR)",
+      "class_code": "TCR",
+      "class_order": 2,
+      "car_number": "5",
+      "team": "KMW Motorsports With TMR Engineering",
+      "sponsor": "Coral Springs HONDA / Honda Racing Corporation / Tyler Stewart Motorsports / CBI JCR",
+      "bronze_cup": false,
+      "car_type": "Honda Civic FL5 TCR",
+      "tire": "Michelin",
+      "engine": "Honda",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Tim Lewis",
+          "nationality": null,
+          "hometown": "Boca Raton, FL",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Rocco Pasquarella",
+          "nationality": null,
+          "hometown": "Boca Raton, FL",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "TOURING CAR (TCR)",
+      "class_code": "TCR",
+      "class_order": 2,
+      "car_number": "18",
+      "team": "Bryan Herta Autosport with Curb Agajanian",
+      "sponsor": "Lincoln Equities Group / Hyundai N",
+      "bronze_cup": false,
+      "car_type": "Hyundai Elantra N TCR",
+      "tire": "Michelin",
+      "engine": "Hyundai",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Harry Gottsacker",
+          "nationality": null,
+          "hometown": "San Antonio, TX",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Lance Bergstein",
+          "nationality": null,
+          "hometown": "New York, NY",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "TOURING CAR (TCR)",
+      "class_code": "TCR",
+      "class_order": 2,
+      "car_number": "21",
+      "team": "Victor Gonzalez Racing",
+      "sponsor": "Resolve Dynamics & Design / Resilience Code / Cupra",
+      "bronze_cup": false,
+      "car_type": "Cupra Leon VZ TCR",
+      "tire": "Michelin",
+      "engine": "Cupra",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "William Tally",
+          "nationality": null,
+          "hometown": "Athens, GA",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Caleb Bacon",
+          "nationality": null,
+          "hometown": "Kingsport, TN",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "TOURING CAR (TCR)",
+      "class_code": "TCR",
+      "class_order": 2,
+      "car_number": "33",
+      "team": "Bryan Herta Autosport with Curb Agajanian",
+      "sponsor": "Hyundai N",
+      "bronze_cup": false,
+      "car_type": "Hyundai Elantra N TCR",
+      "tire": "Michelin",
+      "engine": "Hyundai",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Mason Filippi",
+          "nationality": null,
+          "hometown": "Nashville, TN",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Bryson Morris",
+          "nationality": null,
+          "hometown": "Mount Juliet, TN",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "TOURING CAR (TCR)",
+      "class_code": "TCR",
+      "class_order": 2,
+      "car_number": "52",
+      "team": "Baker Racing",
+      "sponsor": "Liqui Moly / Team LTD / A2Z Automobiles",
+      "bronze_cup": false,
+      "car_type": "Audi RS3 LMS TCR",
+      "tire": "Michelin",
+      "engine": "Audi",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Sam Baker",
+          "nationality": null,
+          "hometown": "Bowmanville, Canada",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "James Vance",
+          "nationality": null,
+          "hometown": "Toronto, Canada",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "TOURING CAR (TCR)",
+      "class_code": "TCR",
+      "class_order": 2,
+      "car_number": "55",
+      "team": "Gou Racing w/ Stallion",
+      "sponsor": "GOU / Gou Logistics / Gou Moving",
+      "bronze_cup": false,
+      "car_type": "Audi RS3 LMS TCR",
+      "tire": "Michelin",
+      "engine": "Audi",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Eddie Gou",
+          "nationality": null,
+          "hometown": "Southlake, TX",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Eduardo Gou",
+          "nationality": null,
+          "hometown": "Southlake, TX",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "TOURING CAR (TCR)",
+      "class_code": "TCR",
+      "class_order": 2,
+      "car_number": "56",
+      "team": "Baker Racing",
+      "sponsor": "Liqui Moly / Team LTD / A2Z Automobiles",
+      "bronze_cup": false,
+      "car_type": "Audi RS3 LMS TCR",
+      "tire": "Michelin",
+      "engine": "Audi",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Dean Baker",
+          "nationality": null,
+          "hometown": "Bowmanville, Canada",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Kenny Riedmann",
+          "nationality": null,
+          "hometown": "Meaford, Canada",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "TOURING CAR (TCR)",
+      "class_code": "TCR",
+      "class_order": 2,
+      "car_number": "72",
+      "team": "Pegram Racing",
+      "sponsor": "Pegram Racing / Honda Racing Corp / Lindsay Honda / Wasco / Arai / Motul / Dry Lane",
+      "bronze_cup": false,
+      "car_type": "Honda Civic FL5 TCR",
+      "tire": "Michelin",
+      "engine": "Honda",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Riley Pegram",
+          "nationality": null,
+          "hometown": "Hebron, OH",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Larry Pegram",
+          "nationality": null,
+          "hometown": "Hebron, OH",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "TOURING CAR (TCR)",
+      "class_code": "TCR",
+      "class_order": 2,
+      "car_number": "76",
+      "team": "Bryan Herta Autosport with Curb Agajanian",
+      "sponsor": "Hyundai N",
+      "bronze_cup": false,
+      "car_type": "Hyundai Elantra N TCR",
+      "tire": "Michelin",
+      "engine": "Hyundai",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Denis Dupont",
+          "nationality": null,
+          "hometown": "Montreal, Canada",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Preston Brown",
+          "nationality": null,
+          "hometown": "Chapel Hill, NC",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "TOURING CAR (TCR)",
+      "class_code": "TCR",
+      "class_order": 2,
+      "car_number": "77",
+      "team": "Stallion Motorsports w/ GOU",
+      "sponsor": "Stallion Motorsports / Banco BRB / AMED / CSM Performance / GOU Logistics",
+      "bronze_cup": false,
+      "car_type": "Cupra Leon VZ TCR",
+      "tire": "Michelin",
+      "engine": "Cupra",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Celso Neto",
+          "nationality": null,
+          "hometown": "Salvador, Brazil",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Raphael Reis",
+          "nationality": null,
+          "hometown": "Brasilia, Brazil",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "TOURING CAR (TCR)",
+      "class_code": "TCR",
+      "class_order": 2,
+      "car_number": "93",
+      "team": "MMG",
+      "sponsor": "HRC / Montour / Kamloop / HRC Formula R Honda Genuine Motor Oil / Lombardi Honda / Exedy Racing Clutch",
+      "bronze_cup": false,
+      "car_type": "Honda Civic FL5 TCR",
+      "tire": "Michelin",
+      "engine": "Honda",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Karl Wittmer",
+          "nationality": null,
+          "hometown": "Saint-Lazare, Canada",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "LP Montour",
+          "nationality": null,
+          "hometown": "Blainville, Canada",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "TOURING CAR (TCR)",
+      "class_code": "TCR",
+      "class_order": 2,
+      "car_number": "98",
+      "team": "Bryan Herta Autosport with Curb Agajanian",
+      "sponsor": "Hyundai N",
+      "bronze_cup": false,
+      "car_type": "Hyundai Elantra N TCR",
+      "tire": "Michelin",
+      "engine": "Hyundai",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Mark Wilkins",
+          "nationality": null,
+          "hometown": "Mulmur, Canada",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Madison Aust",
+          "nationality": null,
+          "hometown": "Fort Worth, TX",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "TOURING CAR (TCR)",
+      "class_code": "TCR",
+      "class_order": 2,
+      "car_number": "99",
+      "team": "Victor Gonzalez Racing",
+      "sponsor": "SleepNetPR / Sector5 / Rowe Oil / Wilson Stuff / CASITA MAX / Cupra",
+      "bronze_cup": false,
+      "car_type": "Cupra Leon VZ TCR",
+      "tire": "Michelin",
+      "engine": "Cupra",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Tyler Gonzalez",
+          "nationality": null,
+          "hometown": "St. Cloud, FL",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "Steven Clemons",
+          "nationality": null,
+          "hometown": "Greenville, SC",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    }
+  ]
+}

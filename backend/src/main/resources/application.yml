@@ -4,6 +4,13 @@ server:
   error:
     include-message: always
 
+# The Python sidecar that turns entry-list PDFs into entries.json
+# (see parser/SCHEMA.md). Paths are relative to the backend working directory.
+broadcast-helper:
+  entry-list-parser:
+    python: python3
+    script: ../parser/parse_entry_list.py
+
 spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/broadcast_helper

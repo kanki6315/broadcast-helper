@@ -11,10 +11,13 @@ See [PLAN.md](PLAN.md) for the full build plan, domain model, and phase roadmap.
 - **Backend** — Java 21, Spring Boot 3, Flyway, PostgreSQL (`backend/`)
 - **Frontend** — React + TypeScript, Vite (`frontend/`)
 - **Database** — PostgreSQL 16 via Docker Compose
+- **Entry-list parser** — Python sidecar (`parser/`), invoked by the backend
+  to turn entry-list PDFs into JSON (see `parser/SCHEMA.md`)
 
 ## Running locally
 
-Prerequisites: JDK 21, Node 20+, Docker.
+Prerequisites: JDK 21, Node 20+, Docker, Python 3.10+ with
+`pip install pdfplumber` (for entry-list PDF imports).
 
 ```bash
 # 1. Database

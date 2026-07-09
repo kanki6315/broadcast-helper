@@ -1,0 +1,814 @@
+{
+  "event": {
+    "name": "Chevrolet Grand Prix",
+    "circuit": "Canadian Tire Motorsport Park",
+    "location": "Bowmanville, Ontario",
+    "total_entries": 32,
+    "start_date": "2026-07-10",
+    "end_date": "2026-07-12",
+    "series": "MX5",
+    "source_file": "2026_MX5_CTMP_PreEvent_EntryList.pdf"
+  },
+  "entries": [
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "3",
+      "team": "Wheels America Racing",
+      "sponsor": "Mazda Motorsports / PT Autosport / Hope Farm",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Max Stallone",
+          "nationality": null,
+          "hometown": "Austin, TX",
+          "is_tbd": false,
+          "markers": [
+            "rookie"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "5",
+      "team": "JTR Motorsports Engineering",
+      "sponsor": "JTR Motorsports Engineering",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Gresham Wagner",
+          "nationality": null,
+          "hometown": "Williamsburg, VA",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "7",
+      "team": "BSI Racing",
+      "sponsor": "BSI Racing",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "TBD",
+          "nationality": null,
+          "hometown": null,
+          "is_tbd": true,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "8",
+      "team": "JTR Motorsports Engineering",
+      "sponsor": "Tunnel to Towers Foundation",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Justin Gravett",
+          "nationality": null,
+          "hometown": "Austin, TX",
+          "is_tbd": false,
+          "markers": [
+            "rookie"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "09",
+      "team": "BSI Racing",
+      "sponsor": "Rocky Mountain Motorsports",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Damon Ockey",
+          "nationality": null,
+          "hometown": "Calgary, Canada",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "9",
+      "team": "Advanced Autosports",
+      "sponsor": "Nelson Bros / Rogers City Dental",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Vaughn Mishko",
+          "nationality": null,
+          "hometown": "Sylvan Lake, MI",
+          "is_tbd": false,
+          "markers": [
+            "rookie"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "11",
+      "team": "Advanced Autosports",
+      "sponsor": "Regeneracy / LVRY",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Matt Novak",
+          "nationality": null,
+          "hometown": "Bartlett, IL",
+          "is_tbd": false,
+          "markers": [
+            "rookie"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "12",
+      "team": "Hendricks Motorsports",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Noah Harmon",
+          "nationality": null,
+          "hometown": "Orlando, FL",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "15",
+      "team": "BSI Racing",
+      "sponsor": "BSI Racing",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Massimo Sunseri",
+          "nationality": null,
+          "hometown": "Pittsburgh, PA",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "21",
+      "team": "Hendricks Motorsports",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "TBD",
+          "nationality": null,
+          "hometown": null,
+          "is_tbd": true,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "22",
+      "team": "McCumbee McAleer Racing",
+      "sponsor": "The Holster Store",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Jeremy Fletcher",
+          "nationality": null,
+          "hometown": "St. Cloud, FL",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "23",
+      "team": "McCumbee McAleer Racing",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Justin Adakonis",
+          "nationality": null,
+          "hometown": "Ridgefield, CT",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "31",
+      "team": "Hendricks Motorsports",
+      "sponsor": "Mazda Motorsports / Whelen / Sunoco / Team Fox / M- Experiment",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Ethan Lampe",
+          "nationality": null,
+          "hometown": "Hollister, CA",
+          "is_tbd": false,
+          "markers": [
+            "rookie"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "32",
+      "team": "BSI Racing",
+      "sponsor": "BSI Racing",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Christian Hodneland",
+          "nationality": null,
+          "hometown": "Hinsdale, IL",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "34",
+      "team": "JTR Motorsports Engineering",
+      "sponsor": "Allocco Recycling / Salerno Center / Greenchip LTD",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "John Salerno",
+          "nationality": null,
+          "hometown": "Fairfield, CT",
+          "is_tbd": false,
+          "markers": [
+            "rookie"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "38",
+      "team": "McCumbee McAleer Racing",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Marcello Paniccia",
+          "nationality": null,
+          "hometown": "Aurora, Canada",
+          "is_tbd": false,
+          "markers": [
+            "rookie"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "40",
+      "team": "Rocksteady Racing",
+      "sponsor": "Rocksteady Racing",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Brian Dombroski",
+          "nationality": null,
+          "hometown": "Oklahoma City, OK",
+          "is_tbd": false,
+          "markers": [
+            "rookie"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "42",
+      "team": "Parker Delong Racing",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Parker DeLong",
+          "nationality": null,
+          "hometown": "Glendale, AZ",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "43",
+      "team": "Parker Delong Racing",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Charlotte Traynor",
+          "nationality": null,
+          "hometown": "Fountain Hills, AZ",
+          "is_tbd": false,
+          "markers": [
+            "rookie"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "44",
+      "team": "BSI Racing",
+      "sponsor": "Salty Dog Racing",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Bobby Gossett",
+          "nationality": null,
+          "hometown": "Hilton Head Island, SC",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "48",
+      "team": "Spark Performance",
+      "sponsor": "Jet Accessory Center / FARA",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Frankie Barroso",
+          "nationality": null,
+          "hometown": "Miami Springs, FL",
+          "is_tbd": false,
+          "markers": [
+            "rookie"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "51",
+      "team": "McCumbee McAleer Racing",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Carlton MacFarlane",
+          "nationality": null,
+          "hometown": "Calgary, Canada",
+          "is_tbd": false,
+          "markers": [
+            "rookie"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "55",
+      "team": "Advanced Autosports",
+      "sponsor": "Screamin' Sicilian / LVRY / J&S Design",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Cam Ebben",
+          "nationality": null,
+          "hometown": "Appleton, WI",
+          "is_tbd": false,
+          "markers": [
+            "rookie"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "56",
+      "team": "Advanced Autosports",
+      "sponsor": "Whelen Aerospace Technologies / Advanced Autosports / Factory Canopies / LVRY",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Nathan Nicholson",
+          "nationality": null,
+          "hometown": "Bloomington, IN",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "69",
+      "team": "JTR Motorsports Engineering",
+      "sponsor": "iRacing / JTR Motorsports Engineering",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Glenn McGee",
+          "nationality": null,
+          "hometown": "Tampa, FL",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "71",
+      "team": "JDH Racing",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Ben Jacobs",
+          "nationality": null,
+          "hometown": "Oshkosh, WI",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "77",
+      "team": "BSI Racing",
+      "sponsor": "Salty Dog Racing / Shift Up Now",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Ellie Gossett",
+          "nationality": null,
+          "hometown": "Hilton Head Island, SC",
+          "is_tbd": false,
+          "markers": [
+            "rookie"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "89",
+      "team": "Spark Performance",
+      "sponsor": "Power Design",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Ryan Leach",
+          "nationality": null,
+          "hometown": "St. Petersburg, FL",
+          "is_tbd": false,
+          "markers": [
+            "rookie"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "95",
+      "team": "BSI Racing",
+      "sponsor": "FastMD Racing",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Julian DaCosta",
+          "nationality": null,
+          "hometown": "Myakka City, FL",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "96",
+      "team": "JTR Motorsports Engineering",
+      "sponsor": "JTR Motorsports Engineering",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Jared Thomas",
+          "nationality": null,
+          "hometown": "North Vernon, IN",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "98",
+      "team": "Wheels America Racing",
+      "sponsor": "Wheels America Racing / Pleasant Ridge Internal Medicine",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Logan Stretch",
+          "nationality": null,
+          "hometown": "Arlington, TX",
+          "is_tbd": false,
+          "markers": [
+            "rookie"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "ND2 (ND2)",
+      "class_code": "ND2",
+      "class_order": 1,
+      "car_number": "99",
+      "team": "JDH Racing",
+      "sponsor": "Power Train Control Solutions / Jacobs Design Homes",
+      "bronze_cup": false,
+      "car_type": "Mazda MX-5",
+      "tire": "Michelin",
+      "engine": "Mazda",
+      "fuel": null,
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Ethan Jacobs",
+          "nationality": null,
+          "hometown": "Oshkosh, WI",
+          "is_tbd": false,
+          "markers": [
+            "rookie"
+          ]
+        }
+      ]
+    }
+  ]
+}

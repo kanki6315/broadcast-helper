@@ -1,0 +1,1103 @@
+{
+  "event": {
+    "name": "Chevrolet Grand Prix",
+    "circuit": "Canadian Tire Motorsport Park",
+    "location": "Bowmanville, Ontario",
+    "total_entries": 33,
+    "start_date": "2026-07-10",
+    "end_date": "2026-07-12",
+    "series": "IWSC",
+    "source_file": "2026_IWSC_CTMP_PreEvent_EntryList.pdf"
+  },
+  "entries": [
+    {
+      "class_name": "LE MANS PROTOTYPE 2 (LMP2)",
+      "class_code": "LMP2",
+      "class_order": 1,
+      "car_number": "2",
+      "team": "United Autosports USA",
+      "sponsor": "Nuvei / AssuredPartners / ANCH Property Tech",
+      "bronze_cup": false,
+      "car_type": "ORECA LMP2 07",
+      "tire": "Michelin",
+      "engine": "Gibson",
+      "fuel": "E-20C",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "Phil Fayer",
+          "nationality": "CAN",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "P",
+          "name": "Mikkel Jensen",
+          "nationality": "DNK",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "LE MANS PROTOTYPE 2 (LMP2)",
+      "class_code": "LMP2",
+      "class_order": 1,
+      "car_number": "04",
+      "team": "Crowdstrike Racing by APR",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "ORECA LMP2 07",
+      "tire": "Michelin",
+      "engine": "Gibson",
+      "fuel": "E-20C",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "George Kurtz",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "G",
+          "name": "Alex Quinn",
+          "nationality": "GBR",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "LE MANS PROTOTYPE 2 (LMP2)",
+      "class_code": "LMP2",
+      "class_order": 1,
+      "car_number": "8",
+      "team": "Tower Motorsports",
+      "sponsor": "Tower Events / Motul",
+      "bronze_cup": false,
+      "car_type": "ORECA LMP2 07",
+      "tire": "Michelin",
+      "engine": "Gibson",
+      "fuel": "E-20C",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "John Farano",
+          "nationality": "CAN",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "S",
+          "name": "Sebastian Alvarez",
+          "nationality": "MEX",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "LE MANS PROTOTYPE 2 (LMP2)",
+      "class_code": "LMP2",
+      "class_order": 1,
+      "car_number": "11",
+      "team": "TDS Racing",
+      "sponsor": "Shopify",
+      "bronze_cup": false,
+      "car_type": "ORECA LMP2 07",
+      "tire": "Michelin",
+      "engine": "Gibson",
+      "fuel": "E-20C",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "Tobi Lutke",
+          "nationality": "CAN",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "G",
+          "name": "Mathias Beche",
+          "nationality": "CHE",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "LE MANS PROTOTYPE 2 (LMP2)",
+      "class_code": "LMP2",
+      "class_order": 1,
+      "car_number": "22",
+      "team": "United Autosports USA",
+      "sponsor": "CSCI / Richard Mille / Invesco QQQ / Wheels Up",
+      "bronze_cup": false,
+      "car_type": "ORECA LMP2 07",
+      "tire": "Michelin",
+      "engine": "Gibson",
+      "fuel": "E-20C",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "Daniel Goldburg",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "G",
+          "name": "Ben Hanley",
+          "nationality": "GBR",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "LE MANS PROTOTYPE 2 (LMP2)",
+      "class_code": "LMP2",
+      "class_order": 1,
+      "car_number": "37",
+      "team": "Intersport Racing",
+      "sponsor": "Bricker Design Group / Borchetta Bourbon / ZMax / Carlock Automotive",
+      "bronze_cup": false,
+      "car_type": "ORECA LMP2 07",
+      "tire": "Michelin",
+      "engine": "Gibson",
+      "fuel": "E-20C",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "Jon Field",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "TBD",
+          "nationality": null,
+          "hometown": null,
+          "is_tbd": true,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "LE MANS PROTOTYPE 2 (LMP2)",
+      "class_code": "LMP2",
+      "class_order": 1,
+      "car_number": "43",
+      "team": "Inter Europol Competition",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "ORECA LMP2 07",
+      "tire": "Michelin",
+      "engine": "Gibson",
+      "fuel": "E-20C",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "G",
+          "name": "Tom Dillmann",
+          "nationality": "FRA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "B",
+          "name": "Jeremy Clarke",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "LE MANS PROTOTYPE 2 (LMP2)",
+      "class_code": "LMP2",
+      "class_order": 1,
+      "car_number": "52",
+      "team": "Bryan Herta Autosport with PR1/Mathiasen",
+      "sponsor": "In Power / MyPrize",
+      "bronze_cup": false,
+      "car_type": "ORECA LMP2 07",
+      "tire": "Michelin",
+      "engine": "Gibson",
+      "fuel": "E-20C",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "Misha Goikhberg",
+          "nationality": "CAN",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "P",
+          "name": "Ricky Taylor",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "LE MANS PROTOTYPE 2 (LMP2)",
+      "class_code": "LMP2",
+      "class_order": 1,
+      "car_number": "73",
+      "team": "Pratt Miller Motorsports",
+      "sponsor": "Evident / Santogal",
+      "bronze_cup": false,
+      "car_type": "ORECA LMP2 07",
+      "tire": "Michelin",
+      "engine": "Gibson",
+      "fuel": "E-20C",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "P",
+          "name": "Pietro Fittipaldi",
+          "nationality": "BRA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "B",
+          "name": "Chris Cumming",
+          "nationality": "CAN",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "LE MANS PROTOTYPE 2 (LMP2)",
+      "class_code": "LMP2",
+      "class_order": 1,
+      "car_number": "99",
+      "team": "AO Racing",
+      "sponsor": "Mobil 1",
+      "bronze_cup": false,
+      "car_type": "ORECA LMP2 07",
+      "tire": "Michelin",
+      "engine": "Gibson",
+      "fuel": "E-20C",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "PJ Hyett",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "P",
+          "name": "Dane Cameron",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA PRO (GTD Pro)",
+      "class_code": "GTD PRO",
+      "class_order": 2,
+      "car_number": "1",
+      "team": "Paul Miller Racing",
+      "sponsor": "I Heart Radio / Paul Miller Auto Group",
+      "bronze_cup": false,
+      "car_type": "BMW M4 GT3 EVO",
+      "tire": "Michelin",
+      "engine": "BMW",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "G",
+          "name": "Neil Verhagen",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "G",
+          "name": "Connor De Phillippi",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA PRO (GTD Pro)",
+      "class_code": "GTD PRO",
+      "class_order": 2,
+      "car_number": "3",
+      "team": "Corvette Racing by Pratt Miller Motorsports",
+      "sponsor": "Oshkosh / Mobil 1",
+      "bronze_cup": false,
+      "car_type": "Corvette Z06 GT3.R",
+      "tire": "Michelin",
+      "engine": "Chevrolet",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "P",
+          "name": "Antonio Garcia",
+          "nationality": "ESP",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "P",
+          "name": "Alexander Sims",
+          "nationality": "GBR",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA PRO (GTD Pro)",
+      "class_code": "GTD PRO",
+      "class_order": 2,
+      "car_number": "4",
+      "team": "Corvette Racing by Pratt Miller Motorsports",
+      "sponsor": "Oshkosh / Mobil 1",
+      "bronze_cup": false,
+      "car_type": "Corvette Z06 GT3.R",
+      "tire": "Michelin",
+      "engine": "Chevrolet",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "P",
+          "name": "Tommy Milner",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "P",
+          "name": "Nicky Catsburg",
+          "nationality": "NLD",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA PRO (GTD Pro)",
+      "class_code": "GTD PRO",
+      "class_order": 2,
+      "car_number": "9",
+      "team": "Pfaff Motorsports",
+      "sponsor": "Lithia & Driveway / Motul / Motomaster / XPEL",
+      "bronze_cup": false,
+      "car_type": "Lamborghini Temerario GT3",
+      "tire": "Michelin",
+      "engine": "Lamborghini",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "TBD",
+          "nationality": null,
+          "hometown": null,
+          "is_tbd": true,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "P",
+          "name": "Sandy Mitchell",
+          "nationality": "GBR",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA PRO (GTD Pro)",
+      "class_code": "GTD PRO",
+      "class_order": 2,
+      "car_number": "14",
+      "team": "Vasser Sullivan Racing",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Lexus RC F GT3",
+      "tire": "Michelin",
+      "engine": "Lexus",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "G",
+          "name": "Jack Hawksworth",
+          "nationality": "GBR",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "P",
+          "name": "Ben Barnicoat",
+          "nationality": "GBR",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA PRO (GTD Pro)",
+      "class_code": "GTD PRO",
+      "class_order": 2,
+      "car_number": "59",
+      "team": "RLL Team McLaren",
+      "sponsor": "McLaren",
+      "bronze_cup": false,
+      "car_type": "McLaren 720S GT3 EVO",
+      "tire": "Michelin",
+      "engine": "McLaren",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "S",
+          "name": "Max Esterson",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "S",
+          "name": "Nikita Johnson",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA PRO (GTD Pro)",
+      "class_code": "GTD PRO",
+      "class_order": 2,
+      "car_number": "64",
+      "team": "Ford Racing",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Ford Mustang GT3",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "G",
+          "name": "Ben Barker",
+          "nationality": "GBR",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "P",
+          "name": "Dennis Olsen",
+          "nationality": "NOR",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA PRO (GTD Pro)",
+      "class_code": "GTD PRO",
+      "class_order": 2,
+      "car_number": "65",
+      "team": "Ford Racing",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Ford Mustang GT3",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "P",
+          "name": "Christopher Mies",
+          "nationality": "DEU",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "G",
+          "name": "Frederic Vervisch",
+          "nationality": "BEL",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA PRO (GTD Pro)",
+      "class_code": "GTD PRO",
+      "class_order": 2,
+      "car_number": "68",
+      "team": "Car Blanche",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Aston Martin Vantage GT3 Evo",
+      "tire": "Michelin",
+      "engine": "Aston Martin",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "G",
+          "name": "Valentin Hasse Clot",
+          "nationality": "FRA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "G",
+          "name": "Scott Andrews",
+          "nationality": "AUS",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA PRO (GTD Pro)",
+      "class_code": "GTD PRO",
+      "class_order": 2,
+      "car_number": "77",
+      "team": "AO Racing",
+      "sponsor": "Mobil 1",
+      "bronze_cup": false,
+      "car_type": "Porsche 911 GT3 R (992)",
+      "tire": "Michelin",
+      "engine": "Porsche",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "P",
+          "name": "Nick Tandy",
+          "nationality": "GBR",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "G",
+          "name": "Harry King",
+          "nationality": "GBR",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA (GTD)",
+      "class_code": "GTD",
+      "class_order": 3,
+      "car_number": "12",
+      "team": "Vasser Sullivan Racing",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Lexus RC F GT3",
+      "tire": "Michelin",
+      "engine": "Lexus",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "G",
+          "name": "Aaron Telitz",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "S",
+          "name": "Benjamin Pedersen",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA (GTD)",
+      "class_code": "GTD",
+      "class_order": 3,
+      "car_number": "13",
+      "team": "13 Autosport",
+      "sponsor": "Orlando Corp / Sabelt / Motul / Sonic",
+      "bronze_cup": false,
+      "car_type": "Corvette Z06 GT3.R",
+      "tire": "Michelin",
+      "engine": "Chevrolet",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "Orey Fidani",
+          "nationality": "CAN",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "G",
+          "name": "Matthew Bell",
+          "nationality": "GBR",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA (GTD)",
+      "class_code": "GTD",
+      "class_order": 3,
+      "car_number": "16",
+      "team": "Myers Riley Motorsports",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Ford Mustang GT3",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "Sheena Monk",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "G",
+          "name": "Felipe Fraga",
+          "nationality": "BRA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA (GTD)",
+      "class_code": "GTD",
+      "class_order": 3,
+      "car_number": "27",
+      "team": "Heart of Racing Team",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Aston Martin Vantage GT3 Evo",
+      "tire": "Michelin",
+      "engine": "Aston Martin",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "S",
+          "name": "Dudu Barrichello",
+          "nationality": "BRA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "G",
+          "name": "Roman De Angelis",
+          "nationality": "CAN",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA (GTD)",
+      "class_code": "GTD",
+      "class_order": 3,
+      "car_number": "34",
+      "team": "Conquest Racing",
+      "sponsor": "CORSA HORIZON",
+      "bronze_cup": false,
+      "car_type": "Ferrari 296 GT3 EVO",
+      "tire": "Michelin",
+      "engine": "Ferrari",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "P",
+          "name": "Albert Costa",
+          "nationality": "ESP",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "S",
+          "name": "Lorenzo Patrese",
+          "nationality": "ITA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA (GTD)",
+      "class_code": "GTD",
+      "class_order": 3,
+      "car_number": "36",
+      "team": "DXDT Racing",
+      "sponsor": "Hanley Motorsports / Wealthspire",
+      "bronze_cup": false,
+      "car_type": "Corvette Z06 GT3.R",
+      "tire": "Michelin",
+      "engine": "Chevrolet",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "S",
+          "name": "Mason Filippi",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "S",
+          "name": "Robert Wickens",
+          "nationality": "CAN",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA (GTD)",
+      "class_code": "GTD",
+      "class_order": 3,
+      "car_number": "45",
+      "team": "Wayne Taylor Racing",
+      "sponsor": "DEX",
+      "bronze_cup": false,
+      "car_type": "Lamborghini Huracan GT3 EVO2",
+      "tire": "Michelin",
+      "engine": "Lamborghini",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "S",
+          "name": "Danny Formal",
+          "nationality": "CRI",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "G",
+          "name": "Trent Hindman",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA (GTD)",
+      "class_code": "GTD",
+      "class_order": 3,
+      "car_number": "57",
+      "team": "WINWARD RACING",
+      "sponsor": "TECHEMET / FIRST HORIZON / RAVENOL / CRAIN GROUP / HEXIS",
+      "bronze_cup": false,
+      "car_type": "Mercedes-AMG GT3",
+      "tire": "Michelin",
+      "engine": "Mercedes-AMG",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "S",
+          "name": "Russell Ward",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "G",
+          "name": "Philip Ellis",
+          "nationality": "GBR",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA (GTD)",
+      "class_code": "GTD",
+      "class_order": 3,
+      "car_number": "66",
+      "team": "Gradient Racing",
+      "sponsor": "Myota / Strategic Wealth Designers / MOTUL",
+      "bronze_cup": false,
+      "car_type": "Ford Mustang GT3",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "S",
+          "name": "Jake Walker",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "S",
+          "name": "Corey Lewis",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA (GTD)",
+      "class_code": "GTD",
+      "class_order": 3,
+      "car_number": "70",
+      "team": "Inception Racing",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Ferrari 296 GT3 EVO",
+      "tire": "Michelin",
+      "engine": "Ferrari",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "Brendan Iribe",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "G",
+          "name": "Frederik Schandorff",
+          "nationality": "DNK",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA (GTD)",
+      "class_code": "GTD",
+      "class_order": 3,
+      "car_number": "81",
+      "team": "DragonSpeed",
+      "sponsor": "10 Star",
+      "bronze_cup": false,
+      "car_type": "Corvette Z06 GT3.R",
+      "tire": "Michelin",
+      "engine": "Chevrolet",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "G",
+          "name": "Giacomo Altoè",
+          "nationality": "ITA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "S",
+          "name": "Casper Stevenson",
+          "nationality": "GBR",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA (GTD)",
+      "class_code": "GTD",
+      "class_order": 3,
+      "car_number": "96",
+      "team": "Turner Motorsport",
+      "sponsor": "Liqui Moly / H&R Springs / Belle Haven",
+      "bronze_cup": false,
+      "car_type": "BMW M4 GT3 EVO",
+      "tire": "Michelin",
+      "engine": "BMW",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "S",
+          "name": "Patrick Gallagher",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "G",
+          "name": "Robby Foley",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GT DAYTONA (GTD)",
+      "class_code": "GTD",
+      "class_order": 3,
+      "car_number": "120",
+      "team": "Wright Motorsports",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Porsche 911 GT3 R (992)",
+      "tire": "Michelin",
+      "engine": "Porsche",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "S",
+          "name": "Adam Adelson",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "P",
+          "name": "Callum Ilott",
+          "nationality": "GBR",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    }
+  ]
+}

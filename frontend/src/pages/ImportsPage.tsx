@@ -56,13 +56,13 @@ export default function ImportsPage() {
   return (
     <section>
       <p>
-        Upload results or standings JSON files. Each file is staged for review — nothing touches
-        the database until you commit it.
+        Upload results/standings JSON files or an entry list PDF. Each file is staged for review —
+        nothing touches the database until you commit it.
       </p>
       <input
         ref={fileInput}
         type="file"
-        accept=".json,application/json"
+        accept=".json,.pdf,application/json,application/pdf"
         multiple
         disabled={busy}
         onChange={(e) => e.target.files && uploadFiles(e.target.files)}
@@ -89,7 +89,13 @@ export default function ImportsPage() {
               <tr key={b.id}>
                 <td>{b.id}</td>
                 <td>{b.filename}</td>
-                <td>{b.kind === 'RACE_RESULTS' ? 'Results' : 'Standings'}</td>
+                <td>
+                  {b.kind === 'RACE_RESULTS'
+                    ? 'Results'
+                    : b.kind === 'ENTRY_LIST'
+                      ? 'Entry list'
+                      : 'Standings'}
+                </td>
                 <td>{b.summary}</td>
                 <td>{b.status}</td>
                 <td>

@@ -1,0 +1,477 @@
+{
+  "event": {
+    "name": "Chevrolet Grand Prix",
+    "circuit": "Canadian Tire Motorsport Park",
+    "location": "Bowmanville, Ontario",
+    "total_entries": 17,
+    "start_date": "2026-07-10",
+    "end_date": "2026-07-12",
+    "series": "VPRC",
+    "source_file": "2026_VPRC_CTMP_PreEvent_EntryList.pdf"
+  },
+  "entries": [
+    {
+      "class_name": "LE MANS PROTOTYPE 3 (P3)",
+      "class_code": "P3",
+      "class_order": 1,
+      "car_number": "1",
+      "team": "Gebhardt Motorsport USA Inc.",
+      "sponsor": "GEBHARDT Intralogistics North America  /  Contructor  /  LSJ Advisory  /  Thomas J Henry  /  Santiago de Cali",
+      "bronze_cup": false,
+      "car_type": "Duqueine D09",
+      "tire": "Michelin",
+      "engine": "Duqueine",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "S",
+          "name": "Oscar Tunjo",
+          "nationality": null,
+          "hometown": "Cali, Colombia",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "LE MANS PROTOTYPE 3 (P3)",
+      "class_code": "P3",
+      "class_order": 1,
+      "car_number": "2",
+      "team": "Shopify Racing",
+      "sponsor": "Shopify/Shop",
+      "bronze_cup": true,
+      "car_type": "Ligier JS P325",
+      "tire": "Michelin",
+      "engine": "Ligier",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "Travis Hill",
+          "nationality": null,
+          "hometown": "Ottawa, Canada",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "LE MANS PROTOTYPE 3 (P3)",
+      "class_code": "P3",
+      "class_order": 1,
+      "car_number": "11",
+      "team": "PINAXIS – ZONE 4 Racing",
+      "sponsor": "PINAXIS  /  ZONE 4  /  GEBHARDT Intralogistics North America",
+      "bronze_cup": false,
+      "car_type": "Duqueine D09",
+      "tire": "Michelin",
+      "engine": "Duqueine",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "S",
+          "name": "Danny Soufi",
+          "nationality": null,
+          "hometown": "Austin, TX",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "LE MANS PROTOTYPE 3 (P3)",
+      "class_code": "P3",
+      "class_order": 1,
+      "car_number": "30",
+      "team": "Toney Driver Development",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Ligier JS P325",
+      "tire": "Michelin",
+      "engine": "Ligier",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "TBD",
+          "nationality": null,
+          "hometown": null,
+          "is_tbd": true,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "LE MANS PROTOTYPE 3 (P3)",
+      "class_code": "P3",
+      "class_order": 1,
+      "car_number": "77",
+      "team": "Forte Racing",
+      "sponsor": "Thienes Engineering",
+      "bronze_cup": true,
+      "car_type": "Ligier JS P325",
+      "tire": "Michelin",
+      "engine": "Ligier",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "Brian Thienes",
+          "nationality": null,
+          "hometown": "Huntington Beach, CA",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "G",
+          "name": "Patrick Kujala",
+          "nationality": null,
+          "hometown": "Mäntsälä, Finland",
+          "is_tbd": false,
+          "markers": [
+            "coach"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "LE MANS PROTOTYPE 3 (P3)",
+      "class_code": "P3",
+      "class_order": 1,
+      "car_number": "87",
+      "team": "FastMD with Remstar",
+      "sponsor": "FASTMD / Remstar Management / TORQ",
+      "bronze_cup": true,
+      "car_type": "Duqueine D08",
+      "tire": "Michelin",
+      "engine": "Duqueine",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "Farhan Siddiqi",
+          "nationality": null,
+          "hometown": "Tampa, FL",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "S",
+          "name": "Jagger Jones",
+          "nationality": null,
+          "hometown": "Scottsdale, AZ",
+          "is_tbd": false,
+          "markers": [
+            "coach"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "LE MANS PROTOTYPE 3 (P3)",
+      "class_code": "P3",
+      "class_order": 1,
+      "car_number": "95",
+      "team": "Toney Driver Development",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Ligier JS P325",
+      "tire": "Michelin",
+      "engine": "Ligier",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "S",
+          "name": "Wyatt Brichacek",
+          "nationality": null,
+          "hometown": "Johnstown, CO",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT X (GSX)",
+      "class_code": "GSX",
+      "class_order": 2,
+      "car_number": "4",
+      "team": "Di Benedetto Racing",
+      "sponsor": "BOLT Digital Technologies / Syntheia AI / CORSA Media Group",
+      "bronze_cup": false,
+      "car_type": "Porsche 718 GT4 RS CS",
+      "tire": "Michelin",
+      "engine": "Porsche",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "S",
+          "name": "Justin Di Benedetto",
+          "nationality": null,
+          "hometown": "Vaughan, Canada",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT X (GSX)",
+      "class_code": "GSX",
+      "class_order": 2,
+      "car_number": "8",
+      "team": "RAFA Racing",
+      "sponsor": "RAFA Racing Club / 812 Apparel / Toyota Gazoo Racing / PHOOZY",
+      "bronze_cup": false,
+      "car_type": "Toyota GR Supra GT4 EVO2",
+      "tire": "Michelin",
+      "engine": "Toyota",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "S",
+          "name": "Westin Workman",
+          "nationality": null,
+          "hometown": "Charlotte, NC",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT X (GSX)",
+      "class_code": "GSX",
+      "class_order": 2,
+      "car_number": "25",
+      "team": "CSM",
+      "sponsor": "TireTech / VRS / Paul Miller Auto Group",
+      "bronze_cup": false,
+      "car_type": "Aston Martin Vantage AMR GT4 Evo",
+      "tire": "Michelin",
+      "engine": "Aston Martin",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "S",
+          "name": "Ismaeel Ellahi",
+          "nationality": null,
+          "hometown": "Mountain Lakes, NJ",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT X (GSX)",
+      "class_code": "GSX",
+      "class_order": 2,
+      "car_number": "26",
+      "team": "AutoTechnic Racing",
+      "sponsor": "Star Spangled Racing LLC / PSA / Auto Technic Racing",
+      "bronze_cup": true,
+      "car_type": "BMW M4 GT4 EVO",
+      "tire": "Michelin",
+      "engine": "BMW",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "Tiger Tari",
+          "nationality": null,
+          "hometown": "Jacksonville, FL",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT X (GSX)",
+      "class_code": "GSX",
+      "class_order": 2,
+      "car_number": "35",
+      "team": "CarBahn Motorsports",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "BMW M4 GT4 EVO",
+      "tire": "Michelin",
+      "engine": "BMW",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "S",
+          "name": "Courtney Crone",
+          "nationality": null,
+          "hometown": "Corona, CA",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "G",
+          "name": "Jeff Westphal",
+          "nationality": null,
+          "hometown": "Littleton, CO",
+          "is_tbd": false,
+          "markers": [
+            "coach"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT X (GSX)",
+      "class_code": "GSX",
+      "class_order": 2,
+      "car_number": "58",
+      "team": "KOHR MOTORSPORTS",
+      "sponsor": null,
+      "bronze_cup": true,
+      "car_type": "Ford Mustang GT4",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "Ray Mason",
+          "nationality": null,
+          "hometown": "Columbus, OH",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT X (GSX)",
+      "class_code": "GSX",
+      "class_order": 2,
+      "car_number": "68",
+      "team": "RAFA Racing",
+      "sponsor": "RAFA Racing Club / 812 Apparel / Toyota Gazoo Racing / PHOOZY",
+      "bronze_cup": true,
+      "car_type": "Toyota GR Supra GT4 EVO2",
+      "tire": "Michelin",
+      "engine": "Toyota",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "Rafa Martinez",
+          "nationality": null,
+          "hometown": "Houston, TX",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT X (GSX)",
+      "class_code": "GSX",
+      "class_order": 2,
+      "car_number": "81",
+      "team": "Kingpin Racing",
+      "sponsor": "RBC",
+      "bronze_cup": true,
+      "car_type": "Toyota GR Supra GT4 EVO2",
+      "tire": "Michelin",
+      "engine": "Toyota",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "Jon Brel",
+          "nationality": null,
+          "hometown": "Montreal, Canada",
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT X (GSX)",
+      "class_code": "GSX",
+      "class_order": 2,
+      "car_number": "91",
+      "team": "VRC Motorsports Group, LLC.",
+      "sponsor": null,
+      "bronze_cup": true,
+      "car_type": "Porsche 718 GT4 RS CS",
+      "tire": "Michelin",
+      "engine": "Porsche",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "B",
+          "name": "Dan Ammann",
+          "nationality": null,
+          "hometown": "Wellington, FL",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": "B",
+          "name": "Owen Trinkler",
+          "nationality": null,
+          "hometown": "Ashland City, TN",
+          "is_tbd": false,
+          "markers": [
+            "coach"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "GRAND SPORT X (GSX)",
+      "class_code": "GSX",
+      "class_order": 2,
+      "car_number": "98",
+      "team": "PANAM MOTORSPORT",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Toyota GR Supra GT4 EVO2",
+      "tire": "Michelin",
+      "engine": "Toyota",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": "S",
+          "name": "Caio Chaves",
+          "nationality": null,
+          "hometown": "Sao Paulo, Brazil",
+          "is_tbd": false,
+          "markers": []
+        },
+        {
+          "order": 2,
+          "rating": null,
+          "name": "TBD",
+          "nationality": null,
+          "hometown": null,
+          "is_tbd": true,
+          "markers": [
+            "coach"
+          ]
+        }
+      ]
+    }
+  ]
+}

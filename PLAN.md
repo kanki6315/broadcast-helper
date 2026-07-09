@@ -125,8 +125,18 @@ Importer = a plugin implementing `parse(file) → staged rows` for a
    series name, so series have **aliases** (e.g. "IMSA Michelin Endurance
    Cup" on IMSA) that the importer matches by longest prefix; missing aliases
    fail the commit with an actionable message.
-3. **IMSA entry list PDF** (PDFBox) — car/team/driver/rating/class per event
-   (authoritative for ratings, including derogations).
+3. **IMSA entry list PDF** — DONE, via the **Python parser sidecar**
+   (`parser/parse_entry_list.py`, adopted from the user's prior
+   imsa-broadcast-prep project; pdfplumber handles multi-line driver cells and
+   the italic-shear team/sponsor split). The backend shells out to it on PDF
+   upload; the two communicate via the entries.json contract (parser/SCHEMA.md).
+   Creates the event pre-weekend, upserts entries (sponsor/tire/fuel included),
+   supports TBD seats, and stores ratings with provenance: **ENTRY_LIST-sourced
+   ratings are authoritative** — a later results import keeps them (derogation
+   rule) and only fills RESULTS-sourced ratings for drivers the entry list
+   didn't cover. Series detection comes from the filename code (IWSC/IMPC/...)
+   matched against series abbreviation or alias. Also ready for the challenge
+   series (hometowns, Bronze Cup / coach / rookie icon markers).
 4. **Standings PDF / manual editor** — for championships without JSON files.
 5. **Image bulk upload** — match `#` in filename to entry, review grid,
    carryover from previous event of the same season.

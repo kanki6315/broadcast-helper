@@ -196,6 +196,34 @@ class ImportParserTest {
     }
 
     @Test
+    void parsesEntryListContractFromPythonSidecar() throws IOException {
+        JsonNode root = fixture("entry-list-ctmp-2026.json");
+        assertTrue(ImportParser.looksLikeEntryList(root));
+
+        EntryListImport imp = ImportParser.parseEntryList(root);
+        assertEquals("Chevrolet Grand Prix", imp.event().name());
+        assertEquals("Canadian Tire Motorsport Park", imp.event().circuit());
+        assertEquals("IWSC", imp.event().series());
+        assertEquals(java.time.LocalDate.of(2026, 7, 10), imp.event().startDate());
+        assertEquals(33, imp.entries().size());
+        assertEquals(33, imp.event().totalEntries());
+
+        // TBD seats survive: #37 Intersport announced only Jon Field.
+        EntryListImport.Entry car37 = imp.entries().stream()
+                .filter(e -> e.carNumber().equals("37")).findFirst().orElseThrow();
+        assertEquals(2, car37.drivers().size());
+        assertTrue(car37.drivers().get(1).isTbd());
+        assertNull(car37.drivers().get(1).rating());
+
+        // Sponsor split from the italic-shear detection, ratings as letters.
+        EntryListImport.Entry car52 = imp.entries().stream()
+                .filter(e -> e.carNumber().equals("52")).findFirst().orElseThrow();
+        assertEquals("Bryan Herta Autosport with PR1/Mathiasen", car52.team());
+        assertEquals("In Power / MyPrize", car52.sponsor());
+        assertEquals("B", car52.drivers().get(0).rating());
+    }
+
+    @Test
     void rejectsUnknownDateFormats() {
         assertNull(ImportParser.parseSessionDate(""));
         try {

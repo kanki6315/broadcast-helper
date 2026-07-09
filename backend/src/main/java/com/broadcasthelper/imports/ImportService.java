@@ -25,15 +25,25 @@ public class ImportService {
 
     private final JdbcClient db;
     private final ObjectMapper json;
+    private final String parserPython;
+    private final String parserScript;
 
-    public ImportService(JdbcClient db, ObjectMapper json) {
+    public ImportService(JdbcClient db, ObjectMapper json,
+                         @org.springframework.beans.factory.annotation.Value("${broadcast-helper.entry-list-parser.python:python3}") String parserPython,
+                         @org.springframework.beans.factory.annotation.Value("${broadcast-helper.entry-list-parser.script:../parser/parse_entry_list.py}") String parserScript) {
         this.db = db;
         this.json = json;
+        this.parserPython = parserPython;
+        this.parserScript = parserScript;
     }
 
     // ---------------------------------------------------------------- staging
 
     public BatchSummary stage(String filename, byte[] content) {
+        if (isPdf(content)) {
+            content = runEntryListParser(filename, content);
+        }
+
         JsonNode root;
         try {
             root = json.readTree(content); // Jackson strips the UTF-8 BOM some files carry
@@ -45,7 +55,22 @@ public class ImportService {
         String kind;
         Object payload;
         String summary;
-        if (ImportParser.looksLikeStandings(root)) {
+        if (ImportParser.looksLikeEntryList(root)) {
+            kind = "ENTRY_LIST";
+            EntryListImport parsed = ImportParser.parseEntryList(root);
+            payload = parsed;
+            long tbd = parsed.entries().stream()
+                    .flatMap(e -> e.drivers().stream()).filter(EntryListImport.Driver::isTbd).count();
+            long unparsed = parsed.entries().stream()
+                    .flatMap(e -> e.drivers().stream()).filter(EntryListImport.Driver::unparsed).count();
+            summary = "%s — entry list, %d entries".formatted(parsed.event().name(), parsed.entries().size());
+            if (tbd > 0) {
+                summary += ", %d TBD seat(s)".formatted(tbd);
+            }
+            if (unparsed > 0) {
+                summary += ", %d UNPARSED driver line(s)".formatted(unparsed);
+            }
+        } else if (ImportParser.looksLikeStandings(root)) {
             kind = "STANDINGS";
             StandingsImport parsed = ImportParser.parseStandings(root);
             payload = parsed;
@@ -131,6 +156,7 @@ public class ImportService {
             switch (batch.kind()) {
                 case "RACE_RESULTS" -> commitRaceResults(json.readValue(payload, RaceResultsImport.class));
                 case "STANDINGS" -> commitStandings(json.readValue(payload, StandingsImport.class));
+                case "ENTRY_LIST" -> commitEntryList(json.readValue(payload, EntryListImport.class));
                 default -> throw new IllegalStateException("Unknown batch kind " + batch.kind());
             }
         } catch (JsonProcessingException e) {
@@ -283,7 +309,183 @@ public class ImportService {
         }
     }
 
+    private void commitEntryList(EntryListImport imp) {
+        // Unparsed driver lines mean the parser saw a layout it didn't recognize.
+        // Per the entries.json contract these must fail loud, not import silently.
+        List<String> unparsed = imp.entries().stream()
+                .flatMap(e -> e.drivers().stream().filter(EntryListImport.Driver::unparsed)
+                        .map(d -> "#" + e.carNumber() + ": '" + d.name() + "'"))
+                .toList();
+        if (!unparsed.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Entry list has unparsed driver lines, fix the source or parser first: " + unparsed);
+        }
+        if (imp.event().startDate() == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Entry list has no event dates; cannot determine the season");
+        }
+
+        long seriesId = matchSeriesByCode(imp.event().series());
+        long seasonId = findOrCreateSeason(seriesId, imp.event().startDate().getYear());
+
+        Optional<Long> existing = db.sql("SELECT id FROM event WHERE season_id = :seasonId AND name = :name")
+                .param("seasonId", seasonId).param("name", imp.event().name()).query(Long.class).optional();
+        long eventId = existing.orElseGet(() -> db.sql("""
+                        INSERT INTO event (season_id, name, circuit_name, event_date)
+                        VALUES (:seasonId, :name, :circuit, :date)
+                        RETURNING id
+                        """)
+                .param("seasonId", seasonId)
+                .param("name", imp.event().name())
+                .param("circuit", imp.event().circuit())
+                .param("date", imp.event().endDate() != null ? imp.event().endDate() : imp.event().startDate())
+                .query(Long.class)
+                .single());
+
+        for (EntryListImport.Entry e : imp.entries()) {
+            // Class codes are normalized by dropping spaces so entry-list spelling
+            // ("GTD PRO") joins with results-file spelling ("GTDPRO").
+            String className = e.classCode() != null ? e.classCode().replace(" ", "") : null;
+            long entryId = db.sql("""
+                            INSERT INTO entry (event_id, car_number, class_name, team_name, vehicle, manufacturer,
+                                               sponsor, tire, fuel)
+                            VALUES (:eventId, :number, :className, :team, :vehicle, :manufacturer,
+                                    :sponsor, :tire, :fuel)
+                            ON CONFLICT (event_id, car_number) DO UPDATE
+                                SET class_name = EXCLUDED.class_name,
+                                    team_name = EXCLUDED.team_name,
+                                    vehicle = EXCLUDED.vehicle,
+                                    manufacturer = EXCLUDED.manufacturer,
+                                    sponsor = EXCLUDED.sponsor,
+                                    tire = EXCLUDED.tire,
+                                    fuel = EXCLUDED.fuel
+                            RETURNING id
+                            """)
+                    .param("eventId", eventId)
+                    .param("number", e.carNumber())
+                    .param("className", className)
+                    .param("team", e.team())
+                    .param("vehicle", e.carType())
+                    .param("manufacturer", e.engine())
+                    .param("sponsor", e.sponsor())
+                    .param("tire", e.tire())
+                    .param("fuel", e.fuel())
+                    .query(Long.class)
+                    .single();
+
+            db.sql("DELETE FROM driver_assignment WHERE entry_id = :entryId").param("entryId", entryId).update();
+            for (EntryListImport.Driver d : e.drivers()) {
+                Long driverId = d.isTbd() ? null : findOrCreateDriverByFullName(d.name(), d.nationality());
+                db.sql("""
+                                INSERT INTO driver_assignment (entry_id, driver_id, seat_order, rating, rating_source, is_tbd)
+                                VALUES (:entryId, :driverId, :seat, :rating, 'ENTRY_LIST', :isTbd)
+                                """)
+                        .param("entryId", entryId)
+                        .param("driverId", driverId)
+                        .param("seat", d.order())
+                        .param("rating", d.rating())
+                        .param("isTbd", d.isTbd())
+                        .update();
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- helpers
+
+    private static boolean isPdf(byte[] content) {
+        return content.length > 4 && content[0] == '%' && content[1] == 'P'
+               && content[2] == 'D' && content[3] == 'F';
+    }
+
+    /** Runs the Python parser sidecar (parser/parse_entry_list.py): PDF in, entries.json out. */
+    private byte[] runEntryListParser(String filename, byte[] pdf) {
+        try {
+            // Keep the original filename: the parser detects the series code
+            // (IWSC/IMPC/...) from it.
+            java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("entry-list-");
+            String safeName = java.nio.file.Path.of(filename == null ? "entry-list.pdf" : filename)
+                    .getFileName().toString();
+            java.nio.file.Path tmp = dir.resolve(safeName);
+            try {
+                java.nio.file.Files.write(tmp, pdf);
+                Process process = new ProcessBuilder(parserPython, parserScript, tmp.toString())
+                        .redirectErrorStream(false)
+                        .start();
+                byte[] out = process.getInputStream().readAllBytes();
+                String err = new String(process.getErrorStream().readAllBytes());
+                if (!process.waitFor(120, java.util.concurrent.TimeUnit.SECONDS)) {
+                    process.destroyForcibly();
+                    throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                            "Entry-list parser timed out on " + filename);
+                }
+                if (process.exitValue() != 0) {
+                    throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                            "Entry-list parser failed on " + filename + ": " + err.trim());
+                }
+                return out;
+            } finally {
+                java.nio.file.Files.deleteIfExists(tmp);
+                java.nio.file.Files.deleteIfExists(dir);
+            }
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Could not run entry-list parser (" + parserPython + " " + parserScript + "): " + e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Entry-list parser interrupted");
+        }
+    }
+
+    /** Matches an entry list's series code (e.g. "IWSC") to a series by abbreviation or alias. */
+    private long matchSeriesByCode(String code) {
+        if (code == null || code.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Entry list carries no series code; rename the file to include it (e.g. IWSC)");
+        }
+        Optional<Long> match = db.sql("""
+                        SELECT id FROM series WHERE lower(abbreviation) = lower(:code)
+                        UNION
+                        SELECT series_id FROM series_alias WHERE lower(alias) = lower(:code)
+                        """)
+                .param("code", code)
+                .query(Long.class)
+                .optional();
+        return match.orElseThrow(() -> new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "No series has abbreviation or alias '" + code
+                + "'. Add it as an alias on the Series page."));
+    }
+
+    /**
+     * Entry lists carry full names ("Tijmen van der Helm"); match against the
+     * driver table by full name first so we never duplicate a driver whose
+     * results-file first/surname split differs from a naive first-space split.
+     */
+    private Long findOrCreateDriverByFullName(String fullName, String country) {
+        Optional<Long> existing = db.sql("""
+                        SELECT id FROM driver WHERE lower(first_name || ' ' || surname) = lower(:name)
+                        """)
+                .param("name", fullName)
+                .query(Long.class)
+                .optional();
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        int split = fullName.indexOf(' ');
+        String first = split > 0 ? fullName.substring(0, split) : fullName;
+        String surname = split > 0 ? fullName.substring(split + 1) : "";
+        return db.sql("""
+                        INSERT INTO driver (first_name, surname, country)
+                        VALUES (:first, :surname, :country)
+                        ON CONFLICT (first_name, surname) DO UPDATE
+                            SET country = COALESCE(EXCLUDED.country, driver.country)
+                        RETURNING id
+                        """)
+                .param("first", first)
+                .param("surname", surname)
+                .param("country", country)
+                .query(Long.class)
+                .single();
+    }
 
     private long findOrCreateSeries(String name) {
         Optional<Long> existing = db.sql("SELECT id FROM series WHERE lower(name) = lower(:name)")
@@ -379,6 +581,18 @@ public class ImportService {
     }
 
     private void replaceDriverAssignments(long entryId, List<RaceResultsImport.DriverRow> drivers) {
+        // Ratings imported from an entry list are authoritative (derogations);
+        // remember them before replacing the lineup with the results file's.
+        Map<Long, String> entryListRatings = new java.util.HashMap<>();
+        db.sql("""
+                        SELECT driver_id, rating FROM driver_assignment
+                        WHERE entry_id = :entryId AND rating_source = 'ENTRY_LIST'
+                          AND driver_id IS NOT NULL AND rating IS NOT NULL
+                        """)
+                .param("entryId", entryId)
+                .query((rs, i) -> entryListRatings.put(rs.getLong("driver_id"), rs.getString("rating")))
+                .list();
+
         db.sql("DELETE FROM driver_assignment WHERE entry_id = :entryId").param("entryId", entryId).update();
         for (RaceResultsImport.DriverRow d : drivers) {
             long driverId = db.sql("""
@@ -395,16 +609,23 @@ public class ImportService {
                     .param("hometown", d.hometown())
                     .query(Long.class)
                     .single();
+            String entryListRating = entryListRatings.get(driverId);
             db.sql("""
-                            INSERT INTO driver_assignment (entry_id, driver_id, seat_order, rating)
-                            VALUES (:entryId, :driverId, :seat, :rating)
+                            INSERT INTO driver_assignment (entry_id, driver_id, seat_order, rating, rating_source)
+                            VALUES (:entryId, :driverId, :seat, :rating, :source)
                             """)
                     .param("entryId", entryId)
                     .param("driverId", driverId)
                     .param("seat", d.seatOrder())
-                    .param("rating", d.rating())
+                    .param("rating", entryListRating != null ? entryListRating : ratingLetter(d.rating()))
+                    .param("source", entryListRating != null ? "ENTRY_LIST" : "RESULTS")
                     .update();
         }
+    }
+
+    /** Results files spell ratings out ("Platinum"); store the single letter everywhere. */
+    private static String ratingLetter(String rating) {
+        return rating == null || rating.isBlank() ? null : rating.substring(0, 1).toUpperCase();
     }
 
     private static String normalizeSessionType(String sessionType, String sessionName) {

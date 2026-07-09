@@ -39,6 +39,60 @@ public final class ImportParser {
         return root.has("championship") && root.has("classification");
     }
 
+    public static boolean looksLikeEntryList(JsonNode root) {
+        return root.has("event") && root.has("entries");
+    }
+
+    public static EntryListImport parseEntryList(JsonNode root) {
+        JsonNode ev = root.path("event");
+        EntryListImport.Event event = new EntryListImport.Event(
+                text(ev, "name"),
+                text(ev, "circuit"),
+                text(ev, "location"),
+                text(ev, "series"),
+                dateOrNull(ev, "start_date"),
+                dateOrNull(ev, "end_date"),
+                intOrNull(ev, "total_entries"),
+                text(ev, "source_file")
+        );
+
+        List<EntryListImport.Entry> entries = new ArrayList<>();
+        for (JsonNode e : root.path("entries")) {
+            List<EntryListImport.Driver> drivers = new ArrayList<>();
+            for (JsonNode d : e.path("drivers")) {
+                List<String> markers = new ArrayList<>();
+                for (JsonNode m : d.path("markers")) {
+                    markers.add(m.asText());
+                }
+                drivers.add(new EntryListImport.Driver(
+                        d.path("order").asInt(),
+                        text(d, "rating"),
+                        text(d, "name"),
+                        text(d, "nationality"),
+                        text(d, "hometown"),
+                        markers,
+                        d.path("is_tbd").asBoolean(false),
+                        d.path("unparsed").asBoolean(false)
+                ));
+            }
+            entries.add(new EntryListImport.Entry(
+                    text(e, "class_name"),
+                    text(e, "class_code"),
+                    intOrNull(e, "class_order"),
+                    text(e, "car_number"),
+                    text(e, "team"),
+                    text(e, "sponsor"),
+                    e.path("bronze_cup").asBoolean(false),
+                    text(e, "car_type"),
+                    text(e, "tire"),
+                    text(e, "engine"),
+                    text(e, "fuel"),
+                    drivers
+            ));
+        }
+        return new EntryListImport(event, entries);
+    }
+
     public static RaceResultsImport parseRaceResults(JsonNode root) {
         JsonNode session = root.path("session");
         JsonNode circuit = session.path("circuit");
@@ -181,6 +235,11 @@ public final class ImportParser {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    private static java.time.LocalDate dateOrNull(JsonNode node, String field) {
+        String s = node.path(field).asText("");
+        return s.isBlank() ? null : java.time.LocalDate.parse(s);
     }
 
     private static Double doubleOrNull(JsonNode node, String field) {

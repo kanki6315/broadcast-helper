@@ -77,10 +77,10 @@ public class BrowseController {
         List<EventEntry> entries = db.sql("""
                         SELECT en.id AS entry_id, en.car_number, en.class_name, en.class_group, en.team_name,
                                en.vehicle, en.manufacturer, en.is_guest,
-                               (SELECT string_agg(d.first_name || ' ' || d.surname ||
-                                                  COALESCE(' (' || left(da.rating, 1) || ')', ''),
+                               (SELECT string_agg(COALESCE(d.first_name || ' ' || d.surname, 'TBD') ||
+                                                  COALESCE(' (' || da.rating || ')', ''),
                                                   ', ' ORDER BY da.seat_order)
-                                FROM driver_assignment da JOIN driver d ON d.id = da.driver_id
+                                FROM driver_assignment da LEFT JOIN driver d ON d.id = da.driver_id
                                 WHERE da.entry_id = en.id)                                      AS drivers,
                                r.position_overall, r.position_in_class, r.status
                         FROM entry en
