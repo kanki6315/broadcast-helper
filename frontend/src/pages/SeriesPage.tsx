@@ -4,12 +4,14 @@ interface Series {
   id: number
   name: string
   abbreviation: string | null
+  aliases: string[]
 }
 
 export default function SeriesPage() {
   const [series, setSeries] = useState<Series[]>([])
   const [name, setName] = useState('')
   const [abbreviation, setAbbreviation] = useState('')
+  const [aliasDrafts, setAliasDrafts] = useState<Record<number, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -51,6 +53,27 @@ export default function SeriesPage() {
     await loadSeries()
   }
 
+  async function addAlias(id: number) {
+    const alias = (aliasDrafts[id] ?? '').trim()
+    if (!alias) return
+    const res = await fetch(`/api/series/${id}/aliases`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alias }),
+    })
+    if (res.status === 409) {
+      setError('That alias already exists')
+      return
+    }
+    if (!res.ok) {
+      setError(`Backend returned ${res.status}`)
+      return
+    }
+    setError(null)
+    setAliasDrafts((d) => ({ ...d, [id]: '' }))
+    await loadSeries()
+  }
+
   return (
     <section>
       <form onSubmit={handleSubmit} className="series-form">
@@ -68,6 +91,11 @@ export default function SeriesPage() {
         <button type="submit">Add series</button>
       </form>
 
+      <p>
+        Aliases map standings titles to a series when a championship publishes under its own name —
+        e.g. alias <em>IMSA Michelin Endurance Cup</em> on the IMSA series.
+      </p>
+
       {error && <p className="error">{error}</p>}
 
       {loading ? (
@@ -80,6 +108,7 @@ export default function SeriesPage() {
             <tr>
               <th>Name</th>
               <th>Abbreviation</th>
+              <th>Aliases</th>
             </tr>
           </thead>
           <tbody>
@@ -87,6 +116,25 @@ export default function SeriesPage() {
               <tr key={s.id}>
                 <td>{s.name}</td>
                 <td>{s.abbreviation ?? '—'}</td>
+                <td>
+                  {s.aliases.length > 0 && (
+                    <div>
+                      {s.aliases.map((a) => (
+                        <div key={a}>{a}</div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="alias-form">
+                    <input
+                      value={aliasDrafts[s.id] ?? ''}
+                      onChange={(e) => setAliasDrafts((d) => ({ ...d, [s.id]: e.target.value }))}
+                      placeholder="Add alias…"
+                    />
+                    <button type="button" onClick={() => addAlias(s.id)}>
+                      Add
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>

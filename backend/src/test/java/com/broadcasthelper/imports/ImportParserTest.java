@@ -124,6 +124,35 @@ class ImportParserTest {
     }
 
     @Test
+    void parsesMichelinEnduranceCupCheckpointStandings() throws IOException {
+        StandingsImport imp = ImportParser.parseStandings(fixture("standings-imec-gtp-teams-2026.json"));
+        assertEquals("IMSA Michelin Endurance Cup GTP Teams", imp.mainTitle());
+        assertEquals("2026", imp.year());
+
+        // Cup structure: 5 endurance rounds scored at in-race checkpoints, not quali/race.
+        assertEquals(14, imp.sessions().size());
+        List<String> daytonaCheckpoints = imp.sessions().stream()
+                .filter(s -> s.eventName().equals("Daytona"))
+                .map(StandingsImport.SessionRef::sessionName)
+                .toList();
+        assertEquals(List.of("Hour 6", "Hour 12", "Hour 18", "Finish"), daytonaCheckpoints);
+        assertEquals(5, imp.sessions().stream().map(StandingsImport.SessionRef::eventName).distinct().count());
+
+        StandingsImport.Row leader = imp.rows().get(0);
+        assertEquals("7", leader.key());
+        assertEquals("Porsche Penske Motorsport", leader.team());
+        assertEquals(39.0, leader.totalPoints());
+    }
+
+    @Test
+    void imecUsesLongFormClassNames() throws IOException {
+        // IMEC titles spell classes long-form ("GT Daytona PRO") while race results
+        // use short codes ("GTDPRO"); normalization is deferred to Phase 2.
+        StandingsImport imp = ImportParser.parseStandings(fixture("standings-imec-gtdpro-teams-2026.json"));
+        assertEquals("IMSA Michelin Endurance Cup GT Daytona PRO Teams", imp.mainTitle());
+    }
+
+    @Test
     void allFixturesParseWithoutError() throws IOException {
         for (String name : List.of("race-daytona-2026.json", "race-sebring-2026.json",
                 "race-long-beach-2026.json", "race-laguna-2026.json", "race-detroit-2026.json",
@@ -137,6 +166,12 @@ class ImportParserTest {
             StandingsImport imp = ImportParser.parseStandings(fixture(name));
             assertTrue(imp.rows().size() >= 11, name);
             assertEquals(22, imp.sessions().size(), name);
+        }
+        for (String name : List.of("standings-imec-gtp-teams-2026.json", "standings-imec-lmp2-teams-2026.json",
+                "standings-imec-gtdpro-teams-2026.json", "standings-imec-gtd-teams-2026.json")) {
+            StandingsImport imp = ImportParser.parseStandings(fixture(name));
+            assertTrue(imp.rows().size() >= 11, name);
+            assertEquals(14, imp.sessions().size(), name);
         }
     }
 

@@ -119,6 +119,12 @@ Importer = a plugin implementing `parse(file) → staged rows` for a
 2. **IMSA standings JSON** — DONE. Teams championships arrive as JSON (UTF-8
    BOM!) with the full season calendar and per-session points (quali/race
    split per round). Championship class/kind derived from the title.
+   **Michelin Endurance Cup** files import through the same path: they carry
+   checkpoint sessions ("Hour 6" / "Finish") over a 5-round subset, proving
+   the generic championship_session model. Cup titles don't start with the
+   series name, so series have **aliases** (e.g. "IMSA Michelin Endurance
+   Cup" on IMSA) that the importer matches by longest prefix; missing aliases
+   fail the commit with an actionable message.
 3. **IMSA entry list PDF** (PDFBox) — car/team/driver/rating/class per event
    (authoritative for ratings, including derogations).
 4. **Standings PDF / manual editor** — for championships without JSON files.
@@ -167,13 +173,25 @@ print page + Playwright PDF export reproducing the hand-made 2026 WGI sheet
 
 **Phase 2 — Season tools.** Season reference table, computed standings with
 manual override, IMSA entry-list PDF importer, per-entry notes, better
-best/last-result tie handling and footnotes.
+best/last-result tie handling and footnotes. **Class-name normalization:**
+IMEC standings spell classes long-form ("GT Daytona PRO") while results files
+use short codes ("GTDPRO") — add a per-series class alias map so championships
+and entries join on the same class regardless of source spelling.
 
 **Phase 3 — Multi-series generalization.** Add one contrasting series (two-race
 sprint weekend, fastest-two-laps grids, single-driver entries). Grid rundown
 sheet. Grid-source engine exercised for real. Per-series configuration UI
 instead of code. Design the automated prior-year-at-this-track feature,
 including change context (manufacturer, lineup, team) alongside the raw result.
+**Harden import keys (tech debt from Phase 1):** sessions are currently keyed
+by `(event_id, raw session_name string)` and events by
+`(season_id, event_name string)`, with re-import as delete-then-insert on that
+key. This is brittle — a renamed file (`"Race"` vs `"Race 1"`) won't overwrite
+its predecessor, it adds alongside it, and multi-race weekends need a stable
+`(session_type, ordinal)` key rather than a free-text name. Replace string keys
+with the `Session` ordinal + grid-source model from §3, and make
+`normalizeSessionType` (keyword heuristic, defaults everything to RACE) explicit
+per-series config instead of a guess.
 
 **Phase 4 — Hosted.** Deploy (single container + managed Postgres), simple
 auth, multi-user (share sheets with the broadcast team).

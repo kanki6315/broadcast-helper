@@ -1,3 +1,9 @@
+# Include exception reasons in error responses so the UI can show the user
+# why an import failed (e.g. "No series or series alias matches ...").
+server:
+  error:
+    include-message: always
+
 spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/broadcast_helper

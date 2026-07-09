@@ -70,6 +70,16 @@ tr.clickable:hover td {
   background: rgba(128, 128, 128, 0.1);
 }
 
+.alias-form {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+}
+
+.alias-form input {
+  padding: 0.2rem 0.5rem;
+}
+
 .badge {
   display: inline-block;
   margin-left: 0.4rem;

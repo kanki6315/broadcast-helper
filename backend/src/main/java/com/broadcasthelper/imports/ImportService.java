@@ -201,13 +201,13 @@ public class ImportService {
     }
 
     private void commitStandings(StandingsImport imp) {
-        long seriesId = matchSeriesByTitle(imp.mainTitle());
-        long seasonId = findOrCreateSeason(seriesId, Integer.parseInt(imp.year()));
+        SeriesMatch match = matchSeriesByTitle(imp.mainTitle());
+        long seasonId = findOrCreateSeason(match.seriesId(), Integer.parseInt(imp.year()));
 
-        // Derive class/kind from the title remainder, e.g. "... Championship GTP Teams".
-        String seriesName = db.sql("SELECT name FROM series WHERE id = :id").param("id", seriesId)
-                .query(String.class).single();
-        String remainder = imp.mainTitle().substring(seriesName.length()).trim();
+        // Derive class/kind from what follows the matched prefix, e.g.
+        // "IMSA WeatherTech SportsCar Championship GTP Teams"  -> "GTP Teams"
+        // "IMSA Michelin Endurance Cup GT Daytona PRO Teams"   -> "GT Daytona PRO Teams" (via alias)
+        String remainder = imp.mainTitle().substring(match.matchedPrefix().length()).trim();
         String kind = null;
         String className = null;
         int lastSpace = remainder.lastIndexOf(' ');
@@ -292,23 +292,35 @@ public class ImportService {
                         .param("name", name).query(Long.class).single());
     }
 
-    /** Matches a standings title like "IMSA WeatherTech SportsCar Championship GTP Teams" to a series by prefix. */
-    private long matchSeriesByTitle(String mainTitle) {
-        List<Map<String, Object>> all = db.sql("SELECT id, name FROM series").query().listOfRows();
-        long bestId = -1;
-        int bestLength = -1;
-        for (Map<String, Object> row : all) {
-            String name = (String) row.get("name");
-            if (mainTitle.toLowerCase().startsWith(name.toLowerCase()) && name.length() > bestLength) {
-                bestId = ((Number) row.get("id")).longValue();
-                bestLength = name.length();
+    private record SeriesMatch(long seriesId, String matchedPrefix) {
+    }
+
+    /**
+     * Matches a standings title to a series by longest prefix, considering both
+     * series names and series aliases (cups within a series publish standings
+     * under their own title, e.g. "IMSA Michelin Endurance Cup ...").
+     */
+    private SeriesMatch matchSeriesByTitle(String mainTitle) {
+        List<Map<String, Object>> candidates = db.sql("""
+                        SELECT id, name AS label FROM series
+                        UNION ALL
+                        SELECT series_id AS id, alias AS label FROM series_alias
+                        """)
+                .query().listOfRows();
+        SeriesMatch best = null;
+        for (Map<String, Object> row : candidates) {
+            String label = (String) row.get("label");
+            if (mainTitle.toLowerCase().startsWith(label.toLowerCase())
+                    && (best == null || label.length() > best.matchedPrefix().length())) {
+                best = new SeriesMatch(((Number) row.get("id")).longValue(), label);
             }
         }
-        if (bestId == -1) {
+        if (best == null) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "No series matches standings title '" + mainTitle + "'. Create the series first.");
+                    "No series or series alias matches standings title '" + mainTitle
+                    + "'. Create the series, or add an alias for this title prefix on the Series page.");
         }
-        return bestId;
+        return best;
     }
 
     private long findOrCreateSeason(long seriesId, int year) {
