@@ -55,13 +55,21 @@
   margin: 0;
 }
 
+/* Everything centers except the two prose columns (team, drivers). */
 .sheet th,
 .sheet td {
   border: 0.5px solid #999;
   padding: 2px 4px;
-  text-align: left;
+  text-align: center;
   vertical-align: middle;
   overflow: hidden;
+}
+
+.sheet th.col-team,
+.sheet td.col-team,
+.sheet th.col-drivers,
+.sheet td.col-drivers {
+  text-align: left;
 }
 
 .sheet thead th {
@@ -79,7 +87,6 @@
   width: 4.5%;
   font-weight: 700;
   font-size: 12px;
-  text-align: center;
 }
 
 .col-team {
@@ -92,33 +99,27 @@
 
 .col-q {
   width: 5%;
-  text-align: center;
 }
 
 .col-prior {
   width: 8.5%;
-  text-align: center;
 }
 
 .col-champ {
   width: 11.5%;
-  text-align: center;
 }
 
 .col-best {
   width: 10%;
-  text-align: center;
 }
 
 .col-last {
   width: 8.5%;
-  text-align: center;
 }
 
 .col-photo {
   width: 16%;
   padding: 1px;
-  text-align: center;
 }
 
 .col-photo img {
