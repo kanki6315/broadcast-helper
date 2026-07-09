@@ -14,7 +14,7 @@ pit-lane entry list PDF.
 | First target series | IMSA WeatherTech SportsCar Championship (2026) |
 | Data input | Import (CSV/JSON preferred, per-series PDF importers where needed) with a **staging + review step** before commit; manual entry/edit always available as fallback |
 | Standings | A series can have **multiple championships** (team, driver, manufacturer, endurance cup). Standings are imported where files exist, manually entered/edited where they don't |
-| Entry-list champ column | Configurable per generated sheet; per-series/class default |
+| Entry-list champ column | Configurable per generated sheet. Default follows the series' entry style: **teams points for team-based series** (IMSA), **drivers points for single-driver series**. When a drivers' championship is selected for a multi-driver car, the cell lists **every crew member's position** (e.g. "1st Aitken · 14th Vesti") — best-only would hide diverging title situations within one car |
 | Guest / VIP entries | "GUEST" badge, blank championship column; best/last results still shown if they have starts |
 | Car images | Bulk upload with auto-match by car number in filename, review grid to fix mismatches; images carry over between events until replaced |
 | Season bootstrap | Import every completed round of the season; the tool computes best/last results and season tables from round data |
