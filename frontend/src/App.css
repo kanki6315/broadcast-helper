@@ -1,13 +1,31 @@
 .container {
-  max-width: 720px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 2rem 1rem;
   text-align: left;
 }
 
-.subtitle {
-  color: #888;
-  margin-top: -0.5rem;
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.5rem;
+}
+
+.tab {
+  border: none;
+  background: none;
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  color: var(--text);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.tab.active {
+  color: var(--text-h);
+  font-weight: 600;
+  border-bottom-color: var(--text-h);
 }
 
 .series-form {
@@ -28,17 +46,41 @@
 }
 
 .error {
-  color: #c0392b;
+  color: #e74c3c;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
+  margin: 0.75rem 0 1.5rem;
 }
 
 th,
 td {
   text-align: left;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid #ccc;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+tr.clickable {
+  cursor: pointer;
+}
+
+tr.clickable:hover td {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+}
+
+h2 small {
+  color: var(--text);
+  font-weight: 400;
 }

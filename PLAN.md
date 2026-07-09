@@ -19,7 +19,7 @@ pit-lane entry list PDF.
 | Car images | Bulk upload with auto-match by car number in filename, review grid to fix mismatches; images carry over between events until replaced |
 | Season bootstrap | Import every completed round of the season; the tool computes best/last results and season tables from round data |
 | Layout | Keep the format of the hand-made WGI sheet; **US Letter** paper in all cases |
-| IMSA source files | Race/qualifying results as **JSON**; **entry list PDF** per event; championship points only as **standings PDF** (includes per-round points broken down into qualifying and race points). User provides real samples when each importer is built |
+| IMSA source files | Race/qualifying results as **JSON**; **entry list PDF** per event; teams-championship standings as **JSON** (per-session points for the whole season calendar — richer than expected); other championships may still need the **standings PDF** importer or manual entry. User provides real samples when each importer is built |
 | Driver ratings | The **event entry list PDF is authoritative per event** — series can issue derogations overriding a driver's FIA rating for an event or season, so never assume the entry list matches the FIA list |
 | Runs where | Locally first, but built as a proper client/server web app so hosting it later is a deploy, not a rewrite |
 | Long-term ambition | Live timing integration during the race to surface storylines to the broadcast team |
@@ -111,19 +111,24 @@ Collected from the user and from their hand-made 2026 WGI example PDF:
 Importer = a plugin implementing `parse(file) → staged rows` for a
 (series, file-kind) pair. MVP importers, in order:
 
-1. **IMSA results JSON** (race + qualifying classification) — bootstraps
-   past rounds and ingests each new weekend.
-2. **IMSA entry list PDF** (PDFBox) — car/team/driver/rating/class per event
+1. **IMSA results JSON** (race + qualifying classification) — DONE. Bootstraps
+   past rounds and ingests each new weekend. Format quirks handled: two
+   session_date formats (`dd-MM-yyyy` and `dd/MM/yyyy`), string car numbers,
+   in-class positions derived from overall order (preserves penalty
+   demotions), 2–4 driver crews.
+2. **IMSA standings JSON** — DONE. Teams championships arrive as JSON (UTF-8
+   BOM!) with the full season calendar and per-session points (quali/race
+   split per round). Championship class/kind derived from the title.
+3. **IMSA entry list PDF** (PDFBox) — car/team/driver/rating/class per event
    (authoritative for ratings, including derogations).
-3. **IMSA standings PDF** (PDFBox) — championship points are only published as
-   PDF; the file includes each round's points split into qualifying and race
-   points, which the importer captures per round. **Manual standings editor**
-   as fallback for championships without files.
-4. **Image bulk upload** — match `#` in filename to entry, review grid,
+4. **Standings PDF / manual editor** — for championships without JSON files.
+5. **Image bulk upload** — match `#` in filename to entry, review grid,
    carryover from previous event of the same season.
 
 Real sample files for each format to be provided by the user when the
 importer is built — parsers are written against real files, not assumptions.
+The 2026 samples live in `backend/src/test/resources/fixtures/imsa/` and the
+parser test suite runs against them.
 
 Every importer output goes to the staging review screen (edit cells, drop rows,
 then commit). Unrecognized formats fail loudly with the raw text shown, never
