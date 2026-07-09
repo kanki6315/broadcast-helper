@@ -217,7 +217,14 @@ with the `Session` ordinal + grid-source model from §3, and make
 per-series config instead of a guess.
 
 **Phase 4 — Hosted.** Deploy (single container + managed Postgres), simple
-auth, multi-user (share sheets with the broadcast team).
+auth, multi-user (share sheets with the broadcast team). **Move car images to
+S3**: the local BYTEA storage in `car_image` becomes metadata + S3 object key,
+with images served from S3 (presigned URLs or CDN) instead of through the
+backend. The upload/matching flow and `(season, car_number)` keying stay as-is
+— only the byte storage and the `/data` / `/entries/{id}/image` serving paths
+change, so keep those endpoints as the single indirection point. Also: any
+reverse proxy in front of the backend needs its request-size limit raised to
+match the multipart limits in application.yml (nginx defaults to 1MB).
 
 **Phase 5 — Live timing.** Ingest a timing feed (provider TBD per series),
 WebSocket push to a dashboard, storyline surfacing (position changes vs champ
