@@ -19,6 +19,7 @@ interface SheetEntry {
   best: string | null
   last: string | null
   priorYearNote: string | null
+  priorYearAuto: boolean
   imageVersion: number | null
 }
 
@@ -50,7 +51,10 @@ export default function SheetPage({ eventId }: { eventId: number }) {
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load sheet'))
   }, [eventId])
 
-  async function saveNote(entryId: number, note: string) {
+  async function saveNote(entryId: number, note: string, original: string) {
+    // Only persist real edits: clicking through an auto-filled cell must not
+    // freeze the computed value into a manual note.
+    if (note.trim() === original.trim()) return
     await fetch(`/api/entries/${entryId}/prior-year-note`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -116,10 +120,13 @@ export default function SheetPage({ eventId }: { eventId: number }) {
                   </td>
                   <td className="col-q">{e.qualifying}</td>
                   <td
-                    className="col-prior editable"
+                    className={e.priorYearAuto ? 'col-prior editable prior-auto' : 'col-prior editable'}
+                    title={e.priorYearAuto ? 'Auto from last year (same car & team) — click to override' : undefined}
                     contentEditable
                     suppressContentEditableWarning
-                    onBlur={(ev) => saveNote(e.entryId, ev.currentTarget.textContent ?? '')}
+                    onBlur={(ev) =>
+                      saveNote(e.entryId, ev.currentTarget.textContent ?? '', e.priorYearNote ?? '')
+                    }
                   >
                     {e.priorYearNote}
                   </td>

@@ -95,10 +95,14 @@ Collected from the user and from their hand-made 2026 WGI example PDF:
 4. Single-driver vs multi-driver entries; endurance-only extra drivers.
 5. Car numbers are strings, unique across the event; leading zeros significant.
 6. "Best result of season" ties show all venues (`1st – DAY/SEB`).
-7. Prior-year-at-this-track: **deferred** — in the MVP this column is a
-   per-entry manual text field. The eventual feature needs real design: not
-   just last year's result, but context on what changed since (manufacturer,
-   driver lineup, team) so the number isn't quoted misleadingly on air.
+7. Prior-year-at-this-track: **auto-pass implemented** for the safe cases —
+   if last season has an event at the same venue (matched by venue, so sponsor
+   renames don't break it) with the same car number and a team name that
+   hasn't changed significantly (token-set match; sponsor suffixes pass,
+   renames/takeovers deliberately fail), the sheet fills the result
+   automatically, annotating a class switch ("1st (GTDPRO)"). A manual
+   per-entry note always overrides. The richer change-context design
+   (manufacturer, lineup) remains a Phase 3 item.
 8. Blank qualifying column until quali results are imported (sheets are
    generated before quali happens).
 11. Ratings derogations: the same driver can carry different ratings at

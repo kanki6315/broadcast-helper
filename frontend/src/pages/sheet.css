@@ -149,6 +149,11 @@
   background: #eef5fc;
 }
 
+/* Auto-passed prior-year values: visually flagged on screen, plain in print. */
+.prior-auto {
+  color: #2456a6;
+}
+
 @page {
   size: letter;
   margin: 0.35in;

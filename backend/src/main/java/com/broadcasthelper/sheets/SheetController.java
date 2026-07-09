@@ -41,7 +41,7 @@ public class SheetController {
     public record SheetEntry(long entryId, String carNumber, String teamName, String vehicle,
                              boolean isGuest, List<SheetDriver> drivers, String qualifying,
                              String championship, String best, String last, String priorYearNote,
-                             Long imageVersion) {
+                             boolean priorYearAuto, Long imageVersion) {
     }
 
     public record SheetClass(String className, List<SheetEntry> entries) {
@@ -105,6 +105,36 @@ public class SheetController {
                         """)
                 .param("id", id)
                 .query((rs, i) -> quali.put(rs.getLong("entry_id"), rs.getInt("pos")))
+                .list();
+
+        // Last year's result at this venue, auto-passed when car number and team
+        // carry over without significant change; a manual prior_year_note wins.
+        record PriorYearResult(String team, String className, int positionInClass, String status) {
+        }
+        Map<String, PriorYearResult> priorYear = new HashMap<>();
+        String venue = venueAbbrev(eventName, circuitName);
+        db.sql("""
+                        SELECT en.car_number, en.team_name, en.class_name, r.position_in_class, r.status,
+                               e.name AS event_name, e.circuit_name, e.event_date
+                        FROM result r
+                                 JOIN race_session rs ON rs.id = r.session_id AND rs.session_type = 'RACE'
+                                 JOIN entry en ON en.id = r.entry_id
+                                 JOIN event e ON e.id = en.event_id
+                                 JOIN season s ON s.id = e.season_id
+                        WHERE s.series_id = (SELECT series_id FROM season WHERE id = :seasonId)
+                          AND s.year = :priorYear
+                        ORDER BY e.event_date
+                        """)
+                .param("seasonId", seasonId)
+                .param("priorYear", year - 1)
+                .query((rs, i) -> {
+                    if (venueAbbrev(rs.getString("event_name"), rs.getString("circuit_name")).equals(venue)) {
+                        priorYear.put(rs.getString("car_number"),
+                                new PriorYearResult(rs.getString("team_name"), rs.getString("class_name"),
+                                        rs.getInt("position_in_class"), rs.getString("status")));
+                    }
+                    return null;
+                })
                 .list();
 
         // Season race results strictly before this event, per (car, class).
@@ -196,12 +226,26 @@ public class SheetController {
                         champText = ordinal(champ.position()) + " (" + formatPoints(champ.points()) + " pts)";
                     }
 
+                    String priorText = r.priorYearNote();
+                    boolean priorAuto = false;
+                    if (priorText == null) {
+                        PriorYearResult py = priorYear.get(r.carNumber());
+                        if (py != null && similarTeams(r.teamName(), py.team())) {
+                            priorText = "Not Started".equalsIgnoreCase(py.status())
+                                    ? "DNS" : ordinal(py.positionInClass());
+                            if (!py.className().equals(r.className())) {
+                                priorText += " (" + py.className() + ")";
+                            }
+                            priorAuto = true;
+                        }
+                    }
+
                     Integer qualiPos = quali.get(r.entryId());
                     byClass.computeIfAbsent(r.className(), k -> new ArrayList<>())
                             .add(new SheetEntry(r.entryId(), r.carNumber(), r.teamName(), r.vehicle(),
                                     r.isGuest(), driversByEntry.getOrDefault(r.entryId(), List.of()),
                                     qualiPos != null ? ordinal(qualiPos) : null,
-                                    champText, best, last, r.priorYearNote(),
+                                    champText, best, last, priorText, priorAuto,
                                     r.imageUploadedAt() != null ? r.imageUploadedAt().toInstant().toEpochMilli() : null));
                 });
 
@@ -264,6 +308,37 @@ public class SheetController {
 
     private static String formatPoints(double points) {
         return points == Math.floor(points) ? String.valueOf((long) points) : String.valueOf(points);
+    }
+
+    /**
+     * "Team name hasn't changed significantly": exact token set, one containing
+     * the other (sponsor add-ons like "w/Dreyer & Reinbold"), or a majority
+     * token overlap. Renames and takeovers stay below the bar on purpose —
+     * those cells are left for the broadcaster's judgment.
+     */
+    static boolean similarTeams(String a, String b) {
+        if (a == null || b == null) {
+            return false;
+        }
+        var ta = teamTokens(a);
+        var tb = teamTokens(b);
+        if (ta.isEmpty() || tb.isEmpty()) {
+            return false;
+        }
+        if (ta.equals(tb) || ta.containsAll(tb) || tb.containsAll(ta)) {
+            return true;
+        }
+        var intersection = new java.util.HashSet<>(ta);
+        intersection.retainAll(tb);
+        var union = new java.util.HashSet<>(ta);
+        union.addAll(tb);
+        return (double) intersection.size() / union.size() >= 0.5;
+    }
+
+    private static java.util.Set<String> teamTokens(String name) {
+        return java.util.Arrays.stream(name.toLowerCase().replaceAll("[^a-z0-9]+", " ").split(" "))
+                .filter(t -> !t.isBlank())
+                .collect(java.util.stream.Collectors.toSet());
     }
 
     /** Venue abbreviations as used on broadcast sheets; falls back to a prefix. */
