@@ -4,8 +4,9 @@ import SeriesPage from './pages/SeriesPage'
 import ImportsPage from './pages/ImportsPage'
 import EventsPage from './pages/EventsPage'
 import StandingsPage from './pages/StandingsPage'
+import ImagesPage from './pages/ImagesPage'
 
-const TABS = ['Imports', 'Events', 'Standings', 'Series'] as const
+const TABS = ['Imports', 'Events', 'Standings', 'Images', 'Series'] as const
 type Tab = (typeof TABS)[number]
 
 function App() {
@@ -25,6 +26,7 @@ function App() {
       {tab === 'Imports' && <ImportsPage />}
       {tab === 'Events' && <EventsPage />}
       {tab === 'Standings' && <StandingsPage />}
+      {tab === 'Images' && <ImagesPage />}
       {tab === 'Series' && <SeriesPage />}
     </main>
   )

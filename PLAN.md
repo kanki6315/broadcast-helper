@@ -138,8 +138,14 @@ Importer = a plugin implementing `parse(file) → staged rows` for a
    matched against series abbreviation or alias. Also ready for the challenge
    series (hometowns, Bronze Cup / coach / rookie icon markers).
 4. **Standings PDF / manual editor** — for championships without JSON files.
-5. **Image bulk upload** — match `#` in filename to entry, review grid,
-   carryover from previous event of the same season.
+5. **Image bulk upload** — DONE. Images are keyed by **(season, car number)**
+   — numbers repeat across series, so the season scope disambiguates while one
+   image carries over across a season's events until replaced. Filename
+   matching is strict-by-string against the season's known numbers (digit runs
+   of 1–3, so "2026" in a filename is never a candidate; `023` never matches
+   `23`); ambiguous or unknown filenames are surfaced for one-click manual
+   assignment, never guessed. Coverage view lists cars still missing an image.
+   Stored as BYTEA; served per entry via `/api/entries/{id}/image`.
 
 Real sample files for each format to be provided by the user when the
 importer is built — parsers are written against real files, not assumptions.

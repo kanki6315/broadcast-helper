@@ -70,6 +70,7 @@ export default function EventsPage() {
             <table>
               <thead>
                 <tr>
+                  <th></th>
                   <th>#</th>
                   <th>Team</th>
                   <th>Drivers</th>
@@ -83,6 +84,17 @@ export default function EventsPage() {
                   .filter((e) => e.className === cls)
                   .map((e) => (
                     <tr key={e.entryId}>
+                      <td>
+                        <img
+                          className="entry-thumb"
+                          src={`/api/entries/${e.entryId}/image`}
+                          alt=""
+                          loading="lazy"
+                          onError={(ev) => {
+                            ev.currentTarget.style.display = 'none'
+                          }}
+                        />
+                      </td>
                       <td>
                         {e.carNumber}
                         {e.isGuest && <span className="badge">GUEST</span>}
