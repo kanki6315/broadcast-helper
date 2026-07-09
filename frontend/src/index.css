@@ -1,0 +1,36 @@
+:root {
+  --text: #3d3a45;
+  --text-h: #08060d;
+  --bg: #fff;
+  --border: #e5e4e7;
+
+  font: 16px/1.5 system-ui, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: light dark;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #b6bcc7;
+    --text-h: #f3f4f6;
+    --bg: #16171d;
+    --border: #2e303a;
+  }
+}
+
+body {
+  margin: 0;
+}
+
+h1 {
+  color: var(--text-h);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--border);
+}

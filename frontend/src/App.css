@@ -1,0 +1,44 @@
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  text-align: left;
+}
+
+.subtitle {
+  color: #888;
+  margin-top: -0.5rem;
+}
+
+.series-form {
+  display: flex;
+  gap: 0.5rem;
+  margin: 1.5rem 0;
+  flex-wrap: wrap;
+}
+
+.series-form input {
+  flex: 1 1 200px;
+  padding: 0.5rem 0.75rem;
+  font-size: 1rem;
+}
+
+.series-form button {
+  padding: 0.5rem 1rem;
+}
+
+.error {
+  color: #c0392b;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #ccc;
+}
