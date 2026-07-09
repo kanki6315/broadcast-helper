@@ -24,6 +24,7 @@ interface EventEntry {
   racePositionOverall: number | null
   racePositionInClass: number | null
   raceStatus: string | null
+  imageVersion: number | null
 }
 
 interface EventDetail {
@@ -85,15 +86,14 @@ export default function EventsPage() {
                   .map((e) => (
                     <tr key={e.entryId}>
                       <td>
-                        <img
-                          className="entry-thumb"
-                          src={`/api/entries/${e.entryId}/image`}
-                          alt=""
-                          loading="lazy"
-                          onError={(ev) => {
-                            ev.currentTarget.style.display = 'none'
-                          }}
-                        />
+                        {e.imageVersion != null && (
+                          <img
+                            className="entry-thumb"
+                            src={`/api/entries/${e.entryId}/image?v=${e.imageVersion}`}
+                            alt=""
+                            loading="lazy"
+                          />
+                        )}
                       </td>
                       <td>
                         {e.carNumber}

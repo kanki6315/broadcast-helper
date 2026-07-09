@@ -199,7 +199,11 @@ export default function ImagesPage() {
       <div className="image-grid">
         {images.map((img) => (
           <figure key={img.id} className="car-image">
-            <img src={`/api/car-images/${img.id}/data`} alt={`Car ${img.carNumber}`} loading="lazy" />
+            <img
+              src={`/api/car-images/${img.id}/data?v=${Date.parse(img.uploadedAt)}`}
+              alt={`Car ${img.carNumber}`}
+              loading="lazy"
+            />
             <figcaption>#{img.carNumber}</figcaption>
           </figure>
         ))}

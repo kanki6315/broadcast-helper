@@ -49,7 +49,8 @@ public class BrowseController {
 
     public record EventEntry(long entryId, String carNumber, String className, String classGroup, String teamName,
                              String vehicle, String manufacturer, boolean isGuest, String drivers,
-                             Integer racePositionOverall, Integer racePositionInClass, String raceStatus) {
+                             Integer racePositionOverall, Integer racePositionInClass, String raceStatus,
+                             Long imageVersion) {
     }
 
     public record EventDetail(EventSummary event, List<EventEntry> entries) {
@@ -82,19 +83,28 @@ public class BrowseController {
                                                   ', ' ORDER BY da.seat_order)
                                 FROM driver_assignment da LEFT JOIN driver d ON d.id = da.driver_id
                                 WHERE da.entry_id = en.id)                                      AS drivers,
-                               r.position_overall, r.position_in_class, r.status
+                               r.position_overall, r.position_in_class, r.status,
+                               ci.uploaded_at AS image_uploaded_at
                         FROM entry en
+                                 JOIN event ev ON ev.id = en.event_id
+                                 LEFT JOIN car_image ci ON ci.season_id = ev.season_id
+                                                       AND ci.car_number = en.car_number
                                  LEFT JOIN race_session rs ON rs.event_id = en.event_id AND rs.session_type = 'RACE'
                                  LEFT JOIN result r ON r.session_id = rs.id AND r.entry_id = en.id
                         WHERE en.event_id = :id
                         ORDER BY en.class_name, r.position_in_class NULLS LAST, en.car_number
                         """)
                 .param("id", id)
-                .query((rs, i) -> new EventEntry(rs.getLong("entry_id"), rs.getString("car_number"),
-                        rs.getString("class_name"), rs.getString("class_group"), rs.getString("team_name"),
-                        rs.getString("vehicle"), rs.getString("manufacturer"), rs.getBoolean("is_guest"),
-                        rs.getString("drivers"), (Integer) rs.getObject("position_overall"),
-                        (Integer) rs.getObject("position_in_class"), rs.getString("status")))
+                .query((rs, i) -> {
+                    java.time.OffsetDateTime imageUploadedAt =
+                            rs.getObject("image_uploaded_at", java.time.OffsetDateTime.class);
+                    return new EventEntry(rs.getLong("entry_id"), rs.getString("car_number"),
+                            rs.getString("class_name"), rs.getString("class_group"), rs.getString("team_name"),
+                            rs.getString("vehicle"), rs.getString("manufacturer"), rs.getBoolean("is_guest"),
+                            rs.getString("drivers"), (Integer) rs.getObject("position_overall"),
+                            (Integer) rs.getObject("position_in_class"), rs.getString("status"),
+                            imageUploadedAt != null ? imageUploadedAt.toInstant().toEpochMilli() : null);
+                })
                 .list();
         return new EventDetail(summary, entries);
     }
