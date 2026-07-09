@@ -173,7 +173,14 @@ print page + Playwright PDF export reproducing the hand-made 2026 WGI sheet
 
 **Phase 2 — Season tools.** Season reference table, computed standings with
 manual override, IMSA entry-list PDF importer, per-entry notes, better
-best/last-result tie handling and footnotes. **Class-name normalization:**
+best/last-result tie handling and footnotes. **Season hub navigation:** the
+data model is already hierarchical (series → season → championships/events);
+restructure the UI around it — a landing page per series season that gathers
+its calendar, entry list, championship families (series championships, cups),
+and generated sheets in one place, so the broadcaster drills down from one
+hub instead of hopping between flat top-level tabs. The grouped Standings
+view (family headers via championship.group_title) is the first step.
+**Class-name normalization:**
 IMEC standings spell classes long-form ("GT Daytona PRO") while results files
 use short codes ("GTDPRO") — add a per-series class alias map so championships
 and entries join on the same class regardless of source spelling.

@@ -99,23 +99,27 @@ public class BrowseController {
         return new EventDetail(summary, entries);
     }
 
-    public record ChampionshipSummary(long id, String title, String className, String kind, int year,
-                                      String seriesName, long rowCount) {
+    public record ChampionshipSummary(long id, String title, String groupTitle, String className, String kind,
+                                      int year, String seriesName, long rowCount) {
     }
 
     @GetMapping("/championships")
     public List<ChampionshipSummary> championships() {
+        // The series' own championships (group_title = series name) sort before
+        // cups; within a group, primary kinds (DRIVERS/TEAMS) before the rest.
         return db.sql("""
-                        SELECT c.id, c.title, c.class_name, c.kind, s.year, sr.name AS series_name,
+                        SELECT c.id, c.title, c.group_title, c.class_name, c.kind, s.year, sr.name AS series_name,
                                (SELECT count(*) FROM standings_row r WHERE r.championship_id = c.id) AS row_count
                         FROM championship c
                                  JOIN season s ON s.id = c.season_id
                                  JOIN series sr ON sr.id = s.series_id
-                        ORDER BY s.year DESC, c.class_name
+                        ORDER BY s.year DESC, sr.name,
+                                 (c.group_title IS NOT DISTINCT FROM sr.name) DESC, c.group_title,
+                                 c.class_name, c.kind
                         """)
                 .query((rs, i) -> new ChampionshipSummary(rs.getLong("id"), rs.getString("title"),
-                        rs.getString("class_name"), rs.getString("kind"), rs.getInt("year"),
-                        rs.getString("series_name"), rs.getLong("row_count")))
+                        rs.getString("group_title"), rs.getString("class_name"), rs.getString("kind"),
+                        rs.getInt("year"), rs.getString("series_name"), rs.getLong("row_count")))
                 .list();
     }
 
@@ -128,7 +132,7 @@ public class BrowseController {
     @GetMapping("/championships/{id}")
     public ChampionshipDetail championship(@PathVariable long id) {
         ChampionshipSummary summary = db.sql("""
-                        SELECT c.id, c.title, c.class_name, c.kind, s.year, sr.name AS series_name,
+                        SELECT c.id, c.title, c.group_title, c.class_name, c.kind, s.year, sr.name AS series_name,
                                (SELECT count(*) FROM standings_row r WHERE r.championship_id = c.id) AS row_count
                         FROM championship c
                                  JOIN season s ON s.id = c.season_id
@@ -137,8 +141,8 @@ public class BrowseController {
                         """)
                 .param("id", id)
                 .query((rs, i) -> new ChampionshipSummary(rs.getLong("id"), rs.getString("title"),
-                        rs.getString("class_name"), rs.getString("kind"), rs.getInt("year"),
-                        rs.getString("series_name"), rs.getLong("row_count")))
+                        rs.getString("group_title"), rs.getString("class_name"), rs.getString("kind"),
+                        rs.getInt("year"), rs.getString("series_name"), rs.getLong("row_count")))
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such championship"));
 

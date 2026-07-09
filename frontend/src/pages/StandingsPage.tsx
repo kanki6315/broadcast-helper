@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 interface ChampionshipSummary {
   id: number
   title: string
+  groupTitle: string | null
   className: string | null
   kind: string | null
   year: number
@@ -71,34 +72,50 @@ export default function StandingsPage() {
     )
   }
 
+  // Group by season, then by championship family within it
+  // (e.g. the series' own championships vs the Michelin Endurance Cup).
+  const seasons = [...new Set(championships.map((c) => `${c.seriesName} ${c.year}`))]
+
   return (
     <section>
       {error && <p className="error">{error}</p>}
       {championships.length === 0 ? (
         <p>No standings yet — import a standings file first.</p>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Championship</th>
-              <th>Class</th>
-              <th>Type</th>
-              <th>Season</th>
-              <th>Competitors</th>
-            </tr>
-          </thead>
-          <tbody>
-            {championships.map((c) => (
-              <tr key={c.id} className="clickable" onClick={() => open(c.id)}>
-                <td>{c.title}</td>
-                <td>{c.className}</td>
-                <td>{c.kind}</td>
-                <td>{c.year}</td>
-                <td>{c.rowCount}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        seasons.map((season) => {
+          const inSeason = championships.filter((c) => `${c.seriesName} ${c.year}` === season)
+          const groups = [...new Set(inSeason.map((c) => c.groupTitle ?? c.title))]
+          return (
+            <div key={season}>
+              <h2>{season}</h2>
+              {groups.map((group) => (
+                <div key={group}>
+                  <h3>{group}</h3>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Class</th>
+                        <th>Type</th>
+                        <th>Competitors</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {inSeason
+                        .filter((c) => (c.groupTitle ?? c.title) === group)
+                        .map((c) => (
+                          <tr key={c.id} className="clickable" onClick={() => open(c.id)}>
+                            <td>{c.className}</td>
+                            <td>{c.kind}</td>
+                            <td>{c.rowCount}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          )
+        })
       )}
     </section>
   )

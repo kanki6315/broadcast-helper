@@ -222,8 +222,8 @@ public class ImportService {
         db.sql("DELETE FROM championship WHERE season_id = :seasonId AND name = :name")
                 .param("seasonId", seasonId).param("name", imp.name()).update();
         long championshipId = db.sql("""
-                        INSERT INTO championship (season_id, name, title, class_name, kind)
-                        VALUES (:seasonId, :name, :title, :className, :kind)
+                        INSERT INTO championship (season_id, name, title, class_name, kind, group_title)
+                        VALUES (:seasonId, :name, :title, :className, :kind, :groupTitle)
                         RETURNING id
                         """)
                 .param("seasonId", seasonId)
@@ -231,6 +231,7 @@ public class ImportService {
                 .param("title", imp.mainTitle())
                 .param("className", className)
                 .param("kind", kind)
+                .param("groupTitle", match.matchedPrefix())
                 .query(Long.class)
                 .single();
 
