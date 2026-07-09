@@ -1,0 +1,287 @@
+package com.broadcasthelper.sheets;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Assembles the pit-lane entry list sheet for an event: per car, the crew with
+ * ratings, qualifying result (blank until imported), championship position
+ * (teams points by default, per series style), best and last race result of
+ * the season so far (strictly before this event), and the livery image.
+ */
+@RestController
+@RequestMapping("/api")
+public class SheetController {
+
+    private final JdbcClient db;
+
+    public SheetController(JdbcClient db) {
+        this.db = db;
+    }
+
+    public record SheetDriver(String name, String rating, boolean isTbd) {
+    }
+
+    public record SheetEntry(long entryId, String carNumber, String teamName, String vehicle,
+                             boolean isGuest, List<SheetDriver> drivers, String qualifying,
+                             String championship, String best, String last, String priorYearNote,
+                             Long imageVersion) {
+    }
+
+    public record SheetClass(String className, List<SheetEntry> entries) {
+    }
+
+    public record Sheet(long eventId, String eventName, String circuitName, LocalDate eventDate,
+                        int year, String seriesName, String championshipLabel, String priorYearLabel,
+                        List<SheetClass> classes) {
+    }
+
+    @GetMapping("/events/{id}/sheet")
+    public Sheet sheet(@PathVariable long id) {
+        var header = db.sql("""
+                        SELECT e.name, e.circuit_name, e.event_date, e.season_id, s.year,
+                               sr.id AS series_id, sr.name AS series_name
+                        FROM event e JOIN season s ON s.id = e.season_id JOIN series sr ON sr.id = s.series_id
+                        WHERE e.id = :id
+                        """)
+                .param("id", id)
+                .query((rs, i) -> new Object[]{rs.getString("name"), rs.getString("circuit_name"),
+                        rs.getObject("event_date", LocalDate.class), rs.getLong("season_id"),
+                        rs.getInt("year"), rs.getString("series_name")})
+                .optional()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such event"));
+        String eventName = (String) header[0];
+        String circuitName = (String) header[1];
+        LocalDate eventDate = (LocalDate) header[2];
+        long seasonId = (Long) header[3];
+        int year = (Integer) header[4];
+        String seriesName = (String) header[5];
+
+        // Default champ column: the series' own TEAMS standings per class
+        // (teams points for team-based series — see PLAN.md decisions).
+        record ChampRow(String className, String key, int position, double points) {
+        }
+        Map<String, Map<String, ChampRow>> champByClass = new HashMap<>();
+        db.sql("""
+                        SELECT c.class_name, sr.competitor_key, sr.position, sr.total_points
+                        FROM standings_row sr
+                                 JOIN championship c ON c.id = sr.championship_id
+                                 JOIN season s ON s.id = c.season_id
+                                 JOIN series se ON se.id = s.series_id
+                        WHERE c.season_id = :seasonId AND c.kind = 'TEAMS' AND c.group_title = se.name
+                        """)
+                .param("seasonId", seasonId)
+                .query((rs, i) -> {
+                    ChampRow row = new ChampRow(rs.getString("class_name"), rs.getString("competitor_key"),
+                            rs.getInt("position"), rs.getDouble("total_points"));
+                    champByClass.computeIfAbsent(row.className(), k -> new HashMap<>()).put(row.key(), row);
+                    return row;
+                })
+                .list();
+
+        // Qualifying result for this event (blank until a quali file is imported).
+        Map<Long, Integer> quali = new HashMap<>();
+        db.sql("""
+                        SELECT r.entry_id, min(r.position_in_class) AS pos
+                        FROM result r JOIN race_session rs ON rs.id = r.session_id
+                        WHERE rs.event_id = :id AND rs.session_type = 'QUALIFYING'
+                        GROUP BY r.entry_id
+                        """)
+                .param("id", id)
+                .query((rs, i) -> quali.put(rs.getLong("entry_id"), rs.getInt("pos")))
+                .list();
+
+        // Season race results strictly before this event, per (car, class).
+        record PriorResult(LocalDate date, String eventName, String circuit, int positionInClass, String status) {
+        }
+        Map<String, List<PriorResult>> priorByCar = new HashMap<>();
+        db.sql("""
+                        SELECT en.car_number, en.class_name, e.name AS event_name, e.circuit_name, e.event_date,
+                               r.position_in_class, r.status
+                        FROM result r
+                                 JOIN race_session rs ON rs.id = r.session_id AND rs.session_type = 'RACE'
+                                 JOIN entry en ON en.id = r.entry_id
+                                 JOIN event e ON e.id = en.event_id
+                        WHERE e.season_id = :seasonId AND e.event_date < :date
+                        """)
+                .param("seasonId", seasonId)
+                .param("date", eventDate)
+                .query((rs, i) -> priorByCar
+                        .computeIfAbsent(rs.getString("car_number") + "|" + rs.getString("class_name"),
+                                k -> new ArrayList<>())
+                        .add(new PriorResult(rs.getObject("event_date", LocalDate.class),
+                                rs.getString("event_name"), rs.getString("circuit_name"),
+                                rs.getInt("position_in_class"), rs.getString("status"))))
+                .list();
+
+        record EntryRow(long entryId, String carNumber, String className, String teamName, String vehicle,
+                        boolean isGuest, String priorYearNote, OffsetDateTime imageUploadedAt) {
+        }
+        List<EntryRow> entryRows = db.sql("""
+                        SELECT en.id, en.car_number, en.class_name, en.team_name, en.vehicle, en.is_guest,
+                               en.prior_year_note, ci.uploaded_at AS image_uploaded_at
+                        FROM entry en
+                                 LEFT JOIN car_image ci ON ci.season_id = :seasonId AND ci.car_number = en.car_number
+                        WHERE en.event_id = :id
+                        """)
+                .param("id", id)
+                .param("seasonId", seasonId)
+                .query((rs, i) -> new EntryRow(rs.getLong("id"), rs.getString("car_number"),
+                        rs.getString("class_name"), rs.getString("team_name"), rs.getString("vehicle"),
+                        rs.getBoolean("is_guest"), rs.getString("prior_year_note"),
+                        rs.getObject("image_uploaded_at", OffsetDateTime.class)))
+                .list();
+
+        Map<Long, List<SheetDriver>> driversByEntry = new HashMap<>();
+        db.sql("""
+                        SELECT da.entry_id, da.rating, da.is_tbd,
+                               COALESCE(d.first_name || ' ' || d.surname, 'TBD') AS name
+                        FROM driver_assignment da LEFT JOIN driver d ON d.id = da.driver_id
+                        WHERE da.entry_id IN (SELECT id FROM entry WHERE event_id = :id)
+                        ORDER BY da.seat_order
+                        """)
+                .param("id", id)
+                .query((rs, i) -> driversByEntry
+                        .computeIfAbsent(rs.getLong("entry_id"), k -> new ArrayList<>())
+                        .add(new SheetDriver(rs.getString("name"), rs.getString("rating"), rs.getBoolean("is_tbd"))))
+                .list();
+
+        // Assemble, grouped by class in the order classes appear when sorted by
+        // the class's best overall finishing position (falls back to name).
+        Map<String, List<SheetEntry>> byClass = new LinkedHashMap<>();
+        entryRows.stream()
+                .sorted(Comparator.comparing((EntryRow r) -> r.className())
+                        .thenComparing(r -> numericValue(r.carNumber()))
+                        .thenComparing(EntryRow::carNumber))
+                .forEach(r -> {
+                    List<PriorResult> prior = priorByCar.getOrDefault(r.carNumber() + "|" + r.className(), List.of());
+
+                    String best = null;
+                    if (!prior.isEmpty()) {
+                        int bestPos = prior.stream().mapToInt(PriorResult::positionInClass).min().orElseThrow();
+                        List<String> venues = prior.stream()
+                                .filter(p -> p.positionInClass() == bestPos)
+                                .sorted(Comparator.comparing(PriorResult::date))
+                                .map(p -> venueAbbrev(p.eventName(), p.circuit()))
+                                .distinct()
+                                .toList();
+                        best = ordinal(bestPos) + " – " + String.join("/", venues);
+                    }
+
+                    String last = prior.stream().max(Comparator.comparing(PriorResult::date))
+                            .map(p -> "Not Started".equalsIgnoreCase(p.status()) ? "DNS" : ordinal(p.positionInClass()))
+                            .orElse(null);
+
+                    ChampRow champ = champByClass.getOrDefault(r.className(), Map.of()).get(r.carNumber());
+                    String champText = null;
+                    if (r.isGuest()) {
+                        champText = "GUEST";
+                    } else if (champ != null) {
+                        champText = ordinal(champ.position()) + " (" + formatPoints(champ.points()) + " pts)";
+                    }
+
+                    Integer qualiPos = quali.get(r.entryId());
+                    byClass.computeIfAbsent(r.className(), k -> new ArrayList<>())
+                            .add(new SheetEntry(r.entryId(), r.carNumber(), r.teamName(), r.vehicle(),
+                                    r.isGuest(), driversByEntry.getOrDefault(r.entryId(), List.of()),
+                                    qualiPos != null ? ordinal(qualiPos) : null,
+                                    champText, best, last, r.priorYearNote(),
+                                    r.imageUploadedAt() != null ? r.imageUploadedAt().toInstant().toEpochMilli() : null));
+                });
+
+        List<SheetClass> classes = byClass.entrySet().stream()
+                .map(e -> new SheetClass(e.getKey(), e.getValue()))
+                .sorted(Comparator.comparingInt(c -> classRank(c.className())))
+                .toList();
+        String priorYearLabel = "'" + String.format("%02d", (year - 1) % 100) + " "
+                                + venueAbbrev(eventName, circuitName);
+        return new Sheet(id, eventName, circuitName, eventDate, year, seriesName,
+                seriesName + " " + year + " Teams", priorYearLabel, classes);
+    }
+
+    public record NoteRequest(String note) {
+    }
+
+    @PatchMapping("/entries/{id}/prior-year-note")
+    public void updateNote(@PathVariable long id, @RequestBody NoteRequest request) {
+        int updated = db.sql("UPDATE entry SET prior_year_note = :note WHERE id = :id")
+                .param("note", request.note() == null || request.note().isBlank() ? null : request.note().trim())
+                .param("id", id)
+                .update();
+        if (updated == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such entry");
+        }
+    }
+
+    // ---------------------------------------------------------------- helpers
+
+    private static int numericValue(String carNumber) {
+        try {
+            return Integer.parseInt(carNumber);
+        } catch (NumberFormatException e) {
+            return Integer.MAX_VALUE;
+        }
+    }
+
+    /** Prototypes ahead of GT: the class order broadcasters expect. */
+    private static int classRank(String className) {
+        return switch (className) {
+            case "GTP" -> 0;
+            case "LMP2" -> 1;
+            case "LMP3" -> 2;
+            case "GTDPRO" -> 3;
+            case "GTD" -> 4;
+            default -> 5;
+        };
+    }
+
+    static String ordinal(int n) {
+        int mod100 = n % 100;
+        String suffix = (mod100 >= 11 && mod100 <= 13) ? "th" : switch (n % 10) {
+            case 1 -> "st";
+            case 2 -> "nd";
+            case 3 -> "rd";
+            default -> "th";
+        };
+        return n + suffix;
+    }
+
+    private static String formatPoints(double points) {
+        return points == Math.floor(points) ? String.valueOf((long) points) : String.valueOf(points);
+    }
+
+    /** Venue abbreviations as used on broadcast sheets; falls back to a prefix. */
+    static String venueAbbrev(String eventName, String circuitName) {
+        String haystack = ((eventName != null ? eventName : "") + " "
+                           + (circuitName != null ? circuitName : "")).toLowerCase();
+        if (haystack.contains("daytona")) return "DAY";
+        if (haystack.contains("sebring")) return "SEB";
+        if (haystack.contains("long beach")) return "LBH";
+        if (haystack.contains("laguna") || haystack.contains("monterey")) return "LAG";
+        if (haystack.contains("detroit")) return "DET";
+        if (haystack.contains("watkins") || haystack.contains("glen")) return "WGI";
+        if (haystack.contains("canadian tire") || haystack.contains("bowmanville")) return "CTMP";
+        if (haystack.contains("road america")) return "RDA";
+        if (haystack.contains("virginia")) return "VIR";
+        if (haystack.contains("indianapolis")) return "IMS";
+        if (haystack.contains("road atlanta") || haystack.contains("michelin raceway")) return "ATL";
+        String base = circuitName != null ? circuitName : eventName != null ? eventName : "???";
+        return base.replaceAll("[^A-Za-z]", "").toUpperCase().substring(0, Math.min(3, base.length()));
+    }
+}

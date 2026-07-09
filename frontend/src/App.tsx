@@ -5,12 +5,19 @@ import ImportsPage from './pages/ImportsPage'
 import EventsPage from './pages/EventsPage'
 import StandingsPage from './pages/StandingsPage'
 import ImagesPage from './pages/ImagesPage'
+import SheetPage from './pages/SheetPage'
 
 const TABS = ['Imports', 'Events', 'Standings', 'Images', 'Series'] as const
 type Tab = (typeof TABS)[number]
 
 function App() {
   const [tab, setTab] = useState<Tab>('Imports')
+
+  // Sheets open standalone (no app chrome) so the printed page is clean.
+  const sheetMatch = window.location.hash.match(/^#\/sheet\/(\d+)$/)
+  if (sheetMatch) {
+    return <SheetPage eventId={Number(sheetMatch[1])} />
+  }
 
   return (
     <main className="container">

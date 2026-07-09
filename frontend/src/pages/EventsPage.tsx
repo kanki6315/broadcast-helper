@@ -128,6 +128,7 @@ export default function EventsPage() {
               <th>Circuit</th>
               <th>Series</th>
               <th>Entries</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -140,6 +141,16 @@ export default function EventsPage() {
                   {e.seriesName} {e.year}
                 </td>
                 <td>{e.entryCount}</td>
+                <td>
+                  <a
+                    href={`#/sheet/${e.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(ev) => ev.stopPropagation()}
+                  >
+                    Sheet →
+                  </a>
+                </td>
               </tr>
             ))}
           </tbody>
