@@ -165,11 +165,13 @@ silently guess.
 1. **Pit-lane entry list PDF (MVP)** — ✅ DONE. Same layout as the hand-made
    example plus nationality flags, a manufacturer column (logo/name), and
    class-colored headers + zebra rows. Details in Phase 1 above.
-2. **Season reference table** — rows = entries, columns = rounds, each cell
-   quali/finish; per class.
-3. **Grid rundown sheet** — generated from a qualifying session (or derived
-   grid), in grid order with storyline fields (champ position, best/last,
-   notes). Exact contents to be specced with the user in Phase 3.
+2. **Season reference table** — ✅ DONE. Rows = cars, columns = rounds, each cell
+   the car's **start → finish** in class (broadcaster's call over quali/finish);
+   per class on the season hub. See Phase 4.
+3. **Grid rundown sheet** — generated from the imported starting grid, in grid
+   order with storyline fields (champ position, best/last, notes). Grid *data*
+   imports today; this presentation sheet is **deferred to after hosting**
+   (Phase 6). Exact contents to be specced with the user then.
 4. Free-text **notes per entry** that flow onto sheets (pit-lane intel:
    sponsor pronunciation, driver storylines).
 
@@ -353,11 +355,11 @@ display size.)
   child rows (results / grid_position), so importing one never wipes the other.
   This gives **start → finish** per car — the true race story. Verified on the
   2026 WGI grid (54 cars, leading zeros like `033`/`911` preserved).
-- **Still ahead** (deferred): the **grid rundown sheet** (grid-order sheet with
-  storyline fields) — the grid *data* now lands; the sheet that presents it is
-  still pending, most relevant to Carrera Cup Asia (not running for a while).
-  Design the automated prior-year-at-this-track feature, including change context
-  (manufacturer, lineup, team) alongside the raw result.
+- **Still ahead:** design the automated prior-year-at-this-track feature,
+  including change context (manufacturer, lineup, team) alongside the raw result.
+  The **grid rundown sheet** (grid-order sheet with storyline fields) is
+  **deferred to after hosting** (see Phase 6) — the grid *data* already lands, and
+  the sheet is most relevant to Carrera Cup Asia, which isn't running for a while.
 - **Session-key hardening (tech debt from Phase 1) — ✅ DONE.** Sessions were
   keyed `(event_id, raw session_name string)`, re-imported as delete-then-insert
   on that key — brittle: a renamed session (`"Race"` vs `"Race 1"`) added a second
@@ -408,10 +410,17 @@ WebSocket push to a dashboard, storyline surfacing (position changes vs champ
 implications, guest running ahead of points leader, pit-cycle notes). Separate
 design effort when Phase 4 is stable.
 
-## 7. Open questions (parked until Phase 3 per user)
+**Phase 6 — Grid rundown sheet (post-hosting).** The starting-grid *data* already
+imports (Phase 3, `grid_position`); this is the print-first **grid-order sheet**
+that presents it, with storyline fields (champ position, best/last, notes) —
+reusing the sheet infrastructure. Deferred here per the user: it's most relevant
+to Carrera Cup Asia, which isn't running for a while, so it waits until after
+hosting lands. Spec the exact contents with the user then.
+
+## 7. Open questions
 
 - Prior-year-at-this-track automation: what change context to surface
   (manufacturer, driver lineup, team) and how to present it without cluttering
   the sheet.
-- Grid rundown sheet contents.
+- Grid rundown sheet contents (spec in Phase 6, after hosting).
 - Live timing providers and feed access per series (Phase 5).
