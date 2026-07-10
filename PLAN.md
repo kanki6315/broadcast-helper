@@ -228,13 +228,18 @@ Fixed at import (`ImportParser.didNotStart` — DNS rows are kept but carry a nu
 position) + migration V11 backfilled existing rows. With that, best = strongest
 actual finish (DNS excluded, DNFs count at face value since they're classified),
 last = the finishing position or "DNS", and venue ties stay listed inline
-("2nd – SEB/LAG") — no footnotes, per the broadcaster's call. **Season hub navigation:** the
-data model is already hierarchical (series → season → championships/events);
-restructure the UI around it — a landing page per series season that gathers
-its calendar, entry list, championship families (series championships, cups),
-and generated sheets in one place, so the broadcaster drills down from one
-hub instead of hopping between flat top-level tabs. The grouped Standings
-view (family headers via championship.group_title) is the first step.
+("2nd – SEB/LAG") — no footnotes, per the broadcaster's call. **Season hub
+navigation — ✅ DONE.** The UI is restructured around the hierarchy. Top nav is
+now **Seasons · Imports · Logos · Series** (the flat Events/Standings tabs are
+gone). `/` lists series-seasons; `/seasons/{id}` is the hub gathering the
+calendar (rounds in order, each → event detail + Sheet), championship families
+(grouped by `group_title`), and per-season car images (the old Images page,
+refactored into a `SeasonImages` component that takes the hub's seasonId).
+Routing is **react-router (HashRouter)** — zero server-config and the existing
+`#/sheet/{id}` links keep working; the sheet renders outside the nav layout so
+the print page stays clean. Backend: new `SeasonController`
+(`/api/seasons`, `/api/seasons/{id}`); `seasonId` added to the event/championship
+summaries so detail pages link back to their hub.
 **Class-name normalization — ✅ DONE.**
 IMEC standings spell classes long-form ("GT Daytona PRO") while entries/results
 use short codes ("GTDPRO"). Rather than a per-series alias map, the entry list

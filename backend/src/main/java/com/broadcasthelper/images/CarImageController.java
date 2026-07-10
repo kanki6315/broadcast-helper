@@ -45,22 +45,6 @@ public class CarImageController {
         this.db = db;
     }
 
-    // ---------------------------------------------------------------- seasons
-
-    public record SeasonSummary(long id, int year, String seriesName) {
-    }
-
-    @GetMapping("/seasons")
-    public List<SeasonSummary> seasons() {
-        return db.sql("""
-                        SELECT s.id, s.year, sr.name AS series_name
-                        FROM season s JOIN series sr ON sr.id = s.series_id
-                        ORDER BY s.year DESC, sr.name
-                        """)
-                .query((rs, i) -> new SeasonSummary(rs.getLong("id"), rs.getInt("year"), rs.getString("series_name")))
-                .list();
-    }
-
     // ----------------------------------------------------------------- images
 
     public record ImageSummary(long id, String carNumber, String sourceFilename, OffsetDateTime uploadedAt) {

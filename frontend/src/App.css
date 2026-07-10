@@ -20,6 +20,8 @@
   color: var(--text);
   cursor: pointer;
   border-bottom: 2px solid transparent;
+  text-decoration: none;
+  display: inline-block;
 }
 
 .tab.active {
@@ -47,6 +49,44 @@
 
 .error {
   color: #e74c3c;
+}
+
+.season-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.season-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.season-card:hover {
+  border-color: var(--text-h);
+}
+
+.season-card .season-year {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.season-card .season-name {
+  font-weight: 600;
+}
+
+.season-card .season-meta {
+  font-size: 0.85rem;
+  color: var(--text);
+  opacity: 0.75;
 }
 
 .class-review {
