@@ -216,10 +216,17 @@ its calendar, entry list, championship families (series championships, cups),
 and generated sheets in one place, so the broadcaster drills down from one
 hub instead of hopping between flat top-level tabs. The grouped Standings
 view (family headers via championship.group_title) is the first step.
-**Class-name normalization:**
-IMEC standings spell classes long-form ("GT Daytona PRO") while results files
-use short codes ("GTDPRO") — add a per-series class alias map so championships
-and entries join on the same class regardless of source spelling.
+**Class-name normalization — ✅ DONE.**
+IMEC standings spell classes long-form ("GT Daytona PRO") while entries/results
+use short codes ("GTDPRO"). Rather than a per-series alias map, the entry list
+is the per-season **class authority**: an import that references a class matching
+no entry-list class (compared case/space-insensitively) is **flagged in the
+Imports review screen and blocks commit** until the reviewer maps it to a known
+class (`ImportService.classReview` / `canonicalizeClass`; commit takes an
+optional `classMapping`). A space/case-only difference auto-resolves; a cold
+season with no entry list yet accepts the file's classes as canon. Mappings are
+not persisted (re-imports re-ask). Migration V10 back-filled the existing IMEC
+championships to the canonical short codes.
 **Image size variants:** keep the full-resolution upload as the source of
 truth, but on upload generate a few downscaled variants (e.g. a ~400px
 sheet-sized WebP that preserves the transparent cutout). The sheet points at

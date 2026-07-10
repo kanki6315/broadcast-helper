@@ -12,6 +12,8 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -143,10 +145,78 @@ public class ImportService {
         }
     }
 
+    // -------------------------------------------------------------- class review
+
+    /** knownClasses: the season's canonical (entry-list) classes.
+     *  unknownClasses: class spellings in this batch that match none of them and
+     *  need a manual mapping before the batch can be committed. */
+    public record ClassReview(List<String> knownClasses, List<String> unknownClasses) {
+    }
+
+    /**
+     * Flags class spellings in a staged results/standings batch that don't match
+     * the season's canonical (entry-list) classes — e.g. Endurance Cup standings
+     * spelling "GT Daytona PRO" where entries say "GTDPRO". Best-effort and never
+     * throws: if the series/season isn't resolvable yet (or has no entries to be
+     * the authority), there is nothing to flag.
+     */
+    public ClassReview classReview(long id) {
+        BatchSummary batch = get(id);
+        if (!"STAGED".equals(batch.status())) {
+            return new ClassReview(List.of(), List.of());
+        }
+        String payload = payloadJson(id);
+        try {
+            return switch (batch.kind()) {
+                case "STANDINGS" -> reviewStandings(json.readValue(payload, StandingsImport.class));
+                case "RACE_RESULTS" -> reviewRaceResults(json.readValue(payload, RaceResultsImport.class));
+                default -> new ClassReview(List.of(), List.of());
+            };
+        } catch (JsonProcessingException e) {
+            return new ClassReview(List.of(), List.of());
+        }
+    }
+
+    private ClassReview reviewStandings(StandingsImport imp) {
+        try {
+            SeriesMatch match = matchSeriesByTitle(imp.mainTitle());
+            Optional<Long> seasonId = findSeasonId(match.seriesId(), Integer.parseInt(imp.year()));
+            if (seasonId.isEmpty()) {
+                return new ClassReview(List.of(), List.of());
+            }
+            List<String> known = seasonEntryClasses(seasonId.get());
+            String className = deriveClassAndKind(imp.mainTitle(), match.matchedPrefix()).className();
+            List<String> unknown = isUnknownClass(className, known) ? List.of(className) : List.of();
+            return new ClassReview(known, unknown);
+        } catch (ResponseStatusException | NumberFormatException e) {
+            return new ClassReview(List.of(), List.of());
+        }
+    }
+
+    private ClassReview reviewRaceResults(RaceResultsImport imp) {
+        if (imp.sessionStart() == null) {
+            return new ClassReview(List.of(), List.of());
+        }
+        Optional<Long> seriesId = findSeriesByName(imp.championshipName());
+        Optional<Long> seasonId = seriesId.flatMap(sid -> findSeasonId(sid, imp.sessionStart().getYear()));
+        if (seasonId.isEmpty()) {
+            return new ClassReview(List.of(), List.of());
+        }
+        List<String> known = seasonEntryClasses(seasonId.get());
+        LinkedHashSet<String> unknown = new LinkedHashSet<>();
+        for (RaceResultsImport.Row row : imp.rows()) {
+            if (isUnknownClass(row.className(), known)) {
+                unknown.add(row.className());
+            }
+        }
+        return new ClassReview(known, new ArrayList<>(unknown));
+    }
+
     // ---------------------------------------------------------------- commit
 
     @Transactional
-    public BatchSummary commit(long id) {
+    public BatchSummary commit(long id, Map<String, String> classMapping) {
+        Map<String, String> mapping = classMapping == null ? Map.of() : classMapping;
         BatchSummary batch = get(id);
         if (!"STAGED".equals(batch.status())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Batch is not in STAGED state");
@@ -154,8 +224,8 @@ public class ImportService {
         String payload = payloadJson(id);
         try {
             switch (batch.kind()) {
-                case "RACE_RESULTS" -> commitRaceResults(json.readValue(payload, RaceResultsImport.class));
-                case "STANDINGS" -> commitStandings(json.readValue(payload, StandingsImport.class));
+                case "RACE_RESULTS" -> commitRaceResults(json.readValue(payload, RaceResultsImport.class), mapping);
+                case "STANDINGS" -> commitStandings(json.readValue(payload, StandingsImport.class), mapping);
                 case "ENTRY_LIST" -> commitEntryList(json.readValue(payload, EntryListImport.class));
                 default -> throw new IllegalStateException("Unknown batch kind " + batch.kind());
             }
@@ -168,13 +238,16 @@ public class ImportService {
         return get(id);
     }
 
-    private void commitRaceResults(RaceResultsImport imp) {
+    private void commitRaceResults(RaceResultsImport imp, Map<String, String> mapping) {
         if (imp.sessionStart() == null) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "Results file has no session date; cannot determine the season");
         }
         long seriesId = findOrCreateSeries(imp.championshipName());
         long seasonId = findOrCreateSeason(seriesId, imp.sessionStart().getYear());
+        // Read the canonical class set before upserting entries, so the file's
+        // own rows don't seed it (see canonicalizeClass).
+        List<String> knownClasses = seasonEntryClasses(seasonId);
         long eventId = findOrCreateEvent(seasonId, imp);
 
         // Replace the session (and via cascade its results) if it was imported before.
@@ -195,7 +268,9 @@ public class ImportService {
                 .single();
 
         for (RaceResultsImport.Row row : imp.rows()) {
-            long entryId = upsertEntry(eventId, row);
+            String className = canonicalizeClass(row.className(), knownClasses, mapping,
+                    imp.championshipName() + " " + imp.sessionStart().getYear());
+            long entryId = upsertEntry(eventId, row, className);
             replaceDriverAssignments(entryId, row.drivers());
             db.sql("""
                             INSERT INTO result (session_id, entry_id, position_overall, position_in_class, status,
@@ -226,23 +301,17 @@ public class ImportService {
         }
     }
 
-    private void commitStandings(StandingsImport imp) {
+    private void commitStandings(StandingsImport imp, Map<String, String> mapping) {
         SeriesMatch match = matchSeriesByTitle(imp.mainTitle());
         long seasonId = findOrCreateSeason(match.seriesId(), Integer.parseInt(imp.year()));
 
-        // Derive class/kind from what follows the matched prefix, e.g.
-        // "IMSA WeatherTech SportsCar Championship GTP Teams"  -> "GTP Teams"
-        // "IMSA Michelin Endurance Cup GT Daytona PRO Teams"   -> "GT Daytona PRO Teams" (via alias)
-        String remainder = imp.mainTitle().substring(match.matchedPrefix().length()).trim();
-        String kind = null;
-        String className = null;
-        int lastSpace = remainder.lastIndexOf(' ');
-        if (lastSpace > 0) {
-            kind = remainder.substring(lastSpace + 1).toUpperCase();
-            className = remainder.substring(0, lastSpace).trim();
-        } else if (!remainder.isEmpty()) {
-            kind = remainder.toUpperCase();
-        }
+        ClassAndKind ck = deriveClassAndKind(imp.mainTitle(), match.matchedPrefix());
+        String kind = ck.kind();
+        // Standings often spell classes differently from the entry list (e.g. the
+        // Michelin Endurance Cup's "GT Daytona PRO" vs the entry-list "GTDPRO").
+        // Resolve to the season's canonical (entry-list) class; an unrecognized
+        // spelling fails the commit until it is mapped in the review screen.
+        String className = canonicalizeClass(ck.className(), seasonEntryClasses(seasonId), mapping, imp.mainTitle());
 
         // Replace this championship wholesale (cascade removes sessions/rows/points).
         db.sql("DELETE FROM championship WHERE season_id = :seasonId AND name = :name")
@@ -556,7 +625,7 @@ public class ImportService {
                 .single();
     }
 
-    private long upsertEntry(long eventId, RaceResultsImport.Row row) {
+    private long upsertEntry(long eventId, RaceResultsImport.Row row, String className) {
         // is_guest is deliberately untouched on update: it is user-managed state.
         return db.sql("""
                         INSERT INTO entry (event_id, car_number, class_name, team_name, vehicle, manufacturer, class_group)
@@ -571,10 +640,10 @@ public class ImportService {
                         """)
                 .param("eventId", eventId)
                 .param("number", row.number())
-                .param("className", row.className())
+                .param("className", className)
                 .param("team", row.team())
                 .param("vehicle", row.vehicle())
-                .param("manufacturer", resolveManufacturer(row.className(), row.vehicle(), row.manufacturer()))
+                .param("manufacturer", resolveManufacturer(className, row.vehicle(), row.manufacturer()))
                 .param("group", row.group())
                 .query(Long.class)
                 .single();
@@ -652,6 +721,93 @@ public class ImportService {
             return "PRACTICE";
         }
         return "RACE";
+    }
+
+    // ---------------------------------------------------------- class canon
+
+    private record ClassAndKind(String className, String kind) {
+    }
+
+    /**
+     * Splits the title remainder after the matched series prefix into class and
+     * kind, e.g. "GTP Teams" -> ("GTP", "TEAMS") and "GT Daytona PRO Teams" ->
+     * ("GT Daytona PRO", "TEAMS"). An overall championship with no class yields a
+     * null className.
+     */
+    private static ClassAndKind deriveClassAndKind(String mainTitle, String matchedPrefix) {
+        String remainder = mainTitle.substring(matchedPrefix.length()).trim();
+        int lastSpace = remainder.lastIndexOf(' ');
+        if (lastSpace > 0) {
+            return new ClassAndKind(remainder.substring(0, lastSpace).trim(),
+                    remainder.substring(lastSpace + 1).toUpperCase());
+        }
+        return new ClassAndKind(null, remainder.isEmpty() ? null : remainder.toUpperCase());
+    }
+
+    /** Normalize a class spelling for comparison: case- and space-insensitive. */
+    private static String normClass(String s) {
+        return s == null ? null : s.toLowerCase().replace(" ", "");
+    }
+
+    /** The season's canonical classes: the distinct entry (entry-list) classes. */
+    private List<String> seasonEntryClasses(long seasonId) {
+        return db.sql("""
+                        SELECT DISTINCT e.class_name
+                        FROM entry e
+                                 JOIN event ev ON ev.id = e.event_id
+                        WHERE ev.season_id = :seasonId AND e.class_name IS NOT NULL
+                        ORDER BY e.class_name
+                        """)
+                .param("seasonId", seasonId)
+                .query(String.class)
+                .list();
+    }
+
+    private static boolean isUnknownClass(String className, List<String> known) {
+        if (className == null || known.isEmpty()) {
+            return false;
+        }
+        String n = normClass(className);
+        return known.stream().noneMatch(k -> normClass(k).equals(n));
+    }
+
+    /**
+     * Resolve a source class spelling to the season's canonical (entry-list)
+     * class. A caller-supplied mapping wins (the reviewer's choice). Otherwise a
+     * spelling that matches a known class ignoring case/spaces is auto-resolved to
+     * that class. With no canonical set yet (bootstrap: no entry list imported),
+     * the raw spelling establishes canon. Anything else is unrecognized and fails
+     * the commit so it gets mapped in the review screen first.
+     */
+    private String canonicalizeClass(String raw, List<String> known, Map<String, String> mapping, String context) {
+        if (raw == null) {
+            return null;
+        }
+        if (mapping != null && mapping.containsKey(raw)) {
+            return mapping.get(raw);
+        }
+        if (known.isEmpty()) {
+            return raw;
+        }
+        String n = normClass(raw);
+        for (String k : known) {
+            if (normClass(k).equals(n)) {
+                return k;
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "Unrecognized class '" + raw + "' for " + context
+                + ". Map it to a known class in the review screen before committing. Known classes: " + known);
+    }
+
+    private Optional<Long> findSeriesByName(String name) {
+        return db.sql("SELECT id FROM series WHERE lower(name) = lower(:name)")
+                .param("name", name).query(Long.class).optional();
+    }
+
+    private Optional<Long> findSeasonId(long seriesId, int year) {
+        return db.sql("SELECT id FROM season WHERE series_id = :seriesId AND year = :year")
+                .param("seriesId", seriesId).param("year", year).query(Long.class).optional();
     }
 
     private String toJson(Object value) {

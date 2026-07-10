@@ -49,6 +49,25 @@
   color: #e74c3c;
 }
 
+.class-review {
+  margin-top: 0.4rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid rgba(230, 126, 34, 0.5);
+  border-radius: 4px;
+  background: rgba(230, 126, 34, 0.08);
+  font-size: 0.85rem;
+}
+
+.class-map-row {
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.class-map-source {
+  font-family: ui-monospace, monospace;
+  font-weight: 600;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
