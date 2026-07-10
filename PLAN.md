@@ -220,6 +220,16 @@ view (family headers via championship.group_title) is the first step.
 IMEC standings spell classes long-form ("GT Daytona PRO") while results files
 use short codes ("GTDPRO") — add a per-series class alias map so championships
 and entries join on the same class regardless of source spelling.
+**Image size variants:** keep the full-resolution upload as the source of
+truth, but on upload generate a few downscaled variants (e.g. a ~400px
+sheet-sized WebP that preserves the transparent cutout). The sheet points at
+the small variant so the exported PDF drops from ~24MB to ~1–3MB and the
+hosted live page lazy-loads light thumbnails; full-res stays available for
+larger uses. Serving stays behind the existing `/data` and
+`/entries/{id}/image` endpoints (+ a variant param), so this composes with the
+Phase 4 S3 move. Root cause: headless Chrome embeds each raster at ~source
+resolution regardless of display size; Ghostscript output-compression is a
+possible fallback but lossy and only helps the PDF, not the live page.
 
 **Phase 3 — Multi-series generalization.** Add one contrasting series (two-race
 sprint weekend, fastest-two-laps grids, single-driver entries). Grid rundown
