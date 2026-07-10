@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
+import 'flag-icons/css/flag-icons.min.css'
 import './sheet.css'
+import { flagCode } from '../lib/countries'
 
 interface SheetDriver {
   name: string
   rating: string | null
   isTbd: boolean
+  nationality: string | null
 }
 
 interface SheetEntry {
@@ -12,6 +15,8 @@ interface SheetEntry {
   carNumber: string
   teamName: string
   vehicle: string | null
+  manufacturer: string | null
+  manufacturerLogoVersion: number | null
   isGuest: boolean
   drivers: SheetDriver[]
   qualifying: string | null
@@ -108,15 +113,32 @@ export default function SheetPage({ eventId }: { eventId: number }) {
                   <td className="col-team">
                     {e.teamName}
                     {e.isGuest && <span className="sheet-badge">GUEST</span>}
-                    {e.vehicle && <div className="sheet-vehicle">{e.vehicle}</div>}
+                    {e.manufacturerLogoVersion != null ? (
+                      <div className="sheet-mfr">
+                        <img
+                          src={`/api/manufacturer-logos/${encodeURIComponent(
+                            (e.manufacturer ?? '').toLowerCase(),
+                          )}/data?v=${e.manufacturerLogoVersion}`}
+                          alt={e.manufacturer ?? ''}
+                        />
+                      </div>
+                    ) : (
+                      e.manufacturer && <div className="sheet-mfr-name">{e.manufacturer}</div>
+                    )}
                   </td>
                   <td className="col-drivers">
-                    {e.drivers.map((d, i) => (
-                      <div key={i}>
-                        {d.rating ? `(${d.rating}) ` : d.isTbd ? '(?) ' : ''}
-                        {d.name}
-                      </div>
-                    ))}
+                    {e.drivers.map((d, i) => {
+                      const flag = flagCode(d.nationality)
+                      return (
+                        <div key={i} className="sheet-driver">
+                          {flag && <span className={`fi fi-${flag}`} title={d.nationality ?? ''} />}
+                          <span>
+                            {d.rating ? `(${d.rating}) ` : d.isTbd ? '(?) ' : ''}
+                            {d.name}
+                          </span>
+                        </div>
+                      )
+                    })}
                   </td>
                   <td className="col-q">{e.qualifying}</td>
                   <td

@@ -51,8 +51,12 @@
   print-color-adjust: exact;
 }
 
-/* Per-class header colors for at-a-glance scanning. Unlisted classes
-   (e.g. GTP) keep the dark default above. */
+/* Per-class header colors for at-a-glance scanning. Any class not listed
+   here keeps the dark default above. */
+.sheet-class[data-class='GTP'] h2 {
+  background: #000;
+}
+
 .sheet-class[data-class='LMP2'] h2 {
   background: #17468f;
 }
@@ -147,9 +151,38 @@
   vertical-align: middle;
 }
 
-.sheet-vehicle {
+.sheet-mfr {
+  margin-top: 2px;
+}
+
+.sheet-mfr img {
+  max-height: 0.18in;
+  max-width: 1in;
+  object-fit: contain;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.sheet-mfr-name {
   font-size: 8px;
   color: #555;
+  margin-top: 2px;
+}
+
+.sheet-driver {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Flags print at a fixed small size regardless of theme. */
+.sheet-driver .fi {
+  width: 13px;
+  height: 10px;
+  flex: 0 0 auto;
+  border: 0.5px solid #ccc;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 
 .sheet-badge {

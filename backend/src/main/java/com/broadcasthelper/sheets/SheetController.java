@@ -35,13 +35,14 @@ public class SheetController {
         this.db = db;
     }
 
-    public record SheetDriver(String name, String rating, boolean isTbd) {
+    public record SheetDriver(String name, String rating, boolean isTbd, String nationality) {
     }
 
     public record SheetEntry(long entryId, String carNumber, String teamName, String vehicle,
-                             boolean isGuest, List<SheetDriver> drivers, String qualifying,
-                             String championship, String best, String last, String priorYearNote,
-                             boolean priorYearAuto, Long imageVersion) {
+                             String manufacturer, Long manufacturerLogoVersion, boolean isGuest,
+                             List<SheetDriver> drivers, String qualifying, String championship,
+                             String best, String last, String priorYearNote, boolean priorYearAuto,
+                             Long imageVersion) {
     }
 
     public record SheetClass(String className, List<SheetEntry> entries) {
@@ -161,26 +162,30 @@ public class SheetController {
                 .list();
 
         record EntryRow(long entryId, String carNumber, String className, String teamName, String vehicle,
-                        boolean isGuest, String priorYearNote, OffsetDateTime imageUploadedAt) {
+                        String manufacturer, OffsetDateTime logoUploadedAt, boolean isGuest,
+                        String priorYearNote, OffsetDateTime imageUploadedAt) {
         }
         List<EntryRow> entryRows = db.sql("""
-                        SELECT en.id, en.car_number, en.class_name, en.team_name, en.vehicle, en.is_guest,
-                               en.prior_year_note, ci.uploaded_at AS image_uploaded_at
+                        SELECT en.id, en.car_number, en.class_name, en.team_name, en.vehicle, en.manufacturer,
+                               en.is_guest, en.prior_year_note, ci.uploaded_at AS image_uploaded_at,
+                               ml.uploaded_at AS logo_uploaded_at
                         FROM entry en
                                  LEFT JOIN car_image ci ON ci.season_id = :seasonId AND ci.car_number = en.car_number
+                                 LEFT JOIN manufacturer_logo ml ON ml.name = lower(trim(en.manufacturer))
                         WHERE en.event_id = :id
                         """)
                 .param("id", id)
                 .param("seasonId", seasonId)
                 .query((rs, i) -> new EntryRow(rs.getLong("id"), rs.getString("car_number"),
                         rs.getString("class_name"), rs.getString("team_name"), rs.getString("vehicle"),
+                        rs.getString("manufacturer"), rs.getObject("logo_uploaded_at", OffsetDateTime.class),
                         rs.getBoolean("is_guest"), rs.getString("prior_year_note"),
                         rs.getObject("image_uploaded_at", OffsetDateTime.class)))
                 .list();
 
         Map<Long, List<SheetDriver>> driversByEntry = new HashMap<>();
         db.sql("""
-                        SELECT da.entry_id, da.rating, da.is_tbd,
+                        SELECT da.entry_id, da.rating, da.is_tbd, d.country,
                                COALESCE(d.first_name || ' ' || d.surname, 'TBD') AS name
                         FROM driver_assignment da LEFT JOIN driver d ON d.id = da.driver_id
                         WHERE da.entry_id IN (SELECT id FROM entry WHERE event_id = :id)
@@ -189,7 +194,8 @@ public class SheetController {
                 .param("id", id)
                 .query((rs, i) -> driversByEntry
                         .computeIfAbsent(rs.getLong("entry_id"), k -> new ArrayList<>())
-                        .add(new SheetDriver(rs.getString("name"), rs.getString("rating"), rs.getBoolean("is_tbd"))))
+                        .add(new SheetDriver(rs.getString("name"), rs.getString("rating"),
+                                rs.getBoolean("is_tbd"), rs.getString("country"))))
                 .list();
 
         // Assemble, grouped by class in the order classes appear when sorted by
@@ -243,6 +249,8 @@ public class SheetController {
                     Integer qualiPos = quali.get(r.entryId());
                     byClass.computeIfAbsent(r.className(), k -> new ArrayList<>())
                             .add(new SheetEntry(r.entryId(), r.carNumber(), r.teamName(), r.vehicle(),
+                                    r.manufacturer(),
+                                    r.logoUploadedAt() != null ? r.logoUploadedAt().toInstant().toEpochMilli() : null,
                                     r.isGuest(), driversByEntry.getOrDefault(r.entryId(), List.of()),
                                     qualiPos != null ? ordinal(qualiPos) : null,
                                     champText, best, last, priorText, priorAuto,
