@@ -213,11 +213,160 @@ public class ImportService {
         return new ClassReview(known, new ArrayList<>(unknown));
     }
 
+    // -------------------------------------------------------------- target review
+
+    public record SeriesOption(long id, String name, String abbreviation) {
+    }
+
+    public record EventOption(long id, String name, String eventDate) {
+    }
+
+    /** The tool's guess for the import target; every field is editable in review. */
+    public record TargetGuess(Long seriesId, String seriesName, Integer seasonYear,
+                              Long eventId, String eventName, String circuit, String eventDate,
+                              String classCode, String kind, Boolean isCup, String familyName) {
+    }
+
+    public record ImportReview(String kind, TargetGuess guess,
+                               List<SeriesOption> seriesOptions, List<EventOption> eventOptions,
+                               ClassReview classReview) {
+    }
+
+    /** Everything the review screen needs: the guessed target, the options to pick
+     *  from, and the class-mapping review — so nothing is inferred at commit. */
+    public ImportReview reviewTarget(long id) {
+        BatchSummary batch = get(id);
+        List<SeriesOption> seriesOptions = db.sql("SELECT id, name, abbreviation FROM series ORDER BY name")
+                .query((rs, i) -> new SeriesOption(rs.getLong("id"), rs.getString("name"),
+                        rs.getString("abbreviation")))
+                .list();
+        ClassReview cr = classReview(id);
+        String payload = payloadJson(id);
+        try {
+            TargetGuess guess = switch (batch.kind()) {
+                case "ENTRY_LIST" -> guessEntryList(json.readValue(payload, EntryListImport.class));
+                case "RACE_RESULTS" -> guessRaceResults(json.readValue(payload, RaceResultsImport.class));
+                case "STANDINGS" -> guessStandings(json.readValue(payload, StandingsImport.class));
+                default -> null;
+            };
+            List<EventOption> events = guess != null && guess.seriesId() != null && guess.seasonYear() != null
+                    ? eventsInSeason(guess.seriesId(), guess.seasonYear()) : List.of();
+            return new ImportReview(batch.kind(), guess, seriesOptions, events, cr);
+        } catch (JsonProcessingException e) {
+            return new ImportReview(batch.kind(), null, seriesOptions, List.of(), cr);
+        }
+    }
+
+    private TargetGuess guessEntryList(EntryListImport imp) {
+        Integer year = imp.event().startDate() != null ? imp.event().startDate().getYear() : null;
+        Optional<Long> seriesId = findSeriesByCode(imp.event().series());
+        LocalDate date = imp.event().endDate() != null ? imp.event().endDate() : imp.event().startDate();
+        Long eventGuess = seriesId.flatMap(sid -> year == null ? Optional.<Long>empty()
+                : findSeasonId(sid, year)).flatMap(sn -> findMatchingEvent(sn, imp.event().circuit(), date))
+                .orElse(null);
+        return new TargetGuess(seriesId.orElse(null), seriesId.map(this::seriesName).orElse(null), year,
+                eventGuess, imp.event().name(), imp.event().circuit(),
+                date != null ? date.toString() : null, null, null, null, null);
+    }
+
+    private TargetGuess guessRaceResults(RaceResultsImport imp) {
+        Integer year = imp.sessionStart() != null ? imp.sessionStart().getYear() : null;
+        Optional<Long> seriesId = findSeriesByName(imp.championshipName());
+        LocalDate date = imp.sessionStart() != null ? imp.sessionStart().toLocalDate() : null;
+        Long eventGuess = seriesId.flatMap(sid -> year == null ? Optional.<Long>empty()
+                : findSeasonId(sid, year)).flatMap(sn -> findMatchingEvent(sn, imp.circuitName(), date))
+                .orElse(null);
+        return new TargetGuess(seriesId.orElse(null), seriesId.map(this::seriesName).orElse(null), year,
+                eventGuess, imp.eventName(), imp.circuitName(),
+                date != null ? date.toString() : null, null, null, null, null);
+    }
+
+    private TargetGuess guessStandings(StandingsImport imp) {
+        Integer year = null;
+        try {
+            year = Integer.parseInt(imp.year());
+        } catch (NumberFormatException ignored) {
+            // leave null; reviewer supplies it via the series/season
+        }
+        Optional<SeriesMatch> match = matchSeriesByTitleOpt(imp.mainTitle());
+        Optional<Long> seriesId = match.map(SeriesMatch::seriesId);
+        ClassAndKind ck = match.isPresent()
+                ? deriveClassAndKind(imp.mainTitle(), match.get().matchedPrefix())
+                : deriveClassKindFromTail(imp.mainTitle());
+        String seriesName = seriesId.map(this::seriesName).orElse(null);
+        // Default: the primary championship, grouped under the series name. A cup
+        // is the reviewer flipping is_cup and naming the family.
+        return new TargetGuess(seriesId.orElse(null), seriesName, year, null, null, null, null,
+                ck.className(), ck.kind(), Boolean.FALSE, seriesName);
+    }
+
+    private List<EventOption> eventsInSeason(long seriesId, int year) {
+        return db.sql("""
+                        SELECT e.id, e.name, e.event_date
+                        FROM event e JOIN season s ON s.id = e.season_id
+                        WHERE s.series_id = :seriesId AND s.year = :year
+                        ORDER BY e.event_date NULLS LAST, e.id
+                        """)
+                .param("seriesId", seriesId).param("year", year)
+                .query((rs, i) -> new EventOption(rs.getLong("id"), rs.getString("name"),
+                        rs.getObject("event_date", LocalDate.class) != null
+                                ? rs.getObject("event_date", LocalDate.class).toString() : null))
+                .list();
+    }
+
+    private Optional<Long> findSeriesByCode(String code) {
+        if (code == null || code.isBlank()) {
+            return Optional.empty();
+        }
+        return db.sql("""
+                        SELECT id FROM series WHERE lower(abbreviation) = lower(:code)
+                        UNION
+                        SELECT series_id FROM series_alias WHERE lower(alias) = lower(:code)
+                        """)
+                .param("code", code).query(Long.class).optional();
+    }
+
+    private Optional<SeriesMatch> matchSeriesByTitleOpt(String mainTitle) {
+        try {
+            return Optional.of(matchSeriesByTitle(mainTitle));
+        } catch (ResponseStatusException e) {
+            return Optional.empty();
+        }
+    }
+
+    /** Fallback class/kind when no series prefix matched: kind is the last word,
+     *  class the word before it (works for single-token classes like GTP/DH). */
+    private static ClassAndKind deriveClassKindFromTail(String title) {
+        String[] parts = title == null ? new String[0] : title.trim().split("\\s+");
+        if (parts.length < 2) {
+            return new ClassAndKind(null, null);
+        }
+        return new ClassAndKind(parts[parts.length - 2], parts[parts.length - 1].toUpperCase());
+    }
+
     // ---------------------------------------------------------------- commit
 
+    /**
+     * The import's confirmed destination, chosen by the reviewer (pre-filled with
+     * the tool's guess). Series/event/championship are selected explicitly rather
+     * than re-matched from the file's free-text names at commit time.
+     */
+    public record ImportTarget(
+            Long seriesId, String newSeriesName,   // pick an existing series, or create one
+            Long eventId,                          // results/entry-list: attach to this event, or null = new
+            String classCode, String kind, Boolean isCup, String familyName, // standings championship
+            Map<String, String> classMapping
+    ) {
+        Map<String, String> mapping() {
+            return classMapping == null ? Map.of() : classMapping;
+        }
+    }
+
     @Transactional
-    public BatchSummary commit(long id, Map<String, String> classMapping) {
-        Map<String, String> mapping = classMapping == null ? Map.of() : classMapping;
+    public BatchSummary commit(long id, ImportTarget target) {
+        if (target == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No import target supplied");
+        }
         BatchSummary batch = get(id);
         if (!"STAGED".equals(batch.status())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Batch is not in STAGED state");
@@ -225,9 +374,9 @@ public class ImportService {
         String payload = payloadJson(id);
         try {
             switch (batch.kind()) {
-                case "RACE_RESULTS" -> commitRaceResults(json.readValue(payload, RaceResultsImport.class), mapping);
-                case "STANDINGS" -> commitStandings(json.readValue(payload, StandingsImport.class), mapping);
-                case "ENTRY_LIST" -> commitEntryList(json.readValue(payload, EntryListImport.class));
+                case "RACE_RESULTS" -> commitRaceResults(json.readValue(payload, RaceResultsImport.class), target);
+                case "STANDINGS" -> commitStandings(json.readValue(payload, StandingsImport.class), target);
+                case "ENTRY_LIST" -> commitEntryList(json.readValue(payload, EntryListImport.class), target);
                 default -> throw new IllegalStateException("Unknown batch kind " + batch.kind());
             }
         } catch (JsonProcessingException e) {
@@ -239,18 +388,32 @@ public class ImportService {
         return get(id);
     }
 
-    private void commitRaceResults(RaceResultsImport imp, Map<String, String> mapping) {
+    /** The chosen series: an existing id, or a new series created from a typed name. */
+    private long resolveSeriesId(ImportTarget target) {
+        if (target.seriesId() != null) {
+            return target.seriesId();
+        }
+        if (target.newSeriesName() != null && !target.newSeriesName().isBlank()) {
+            return findOrCreateSeries(target.newSeriesName().trim());
+        }
+        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "No series selected for this import");
+    }
+
+    private void commitRaceResults(RaceResultsImport imp, ImportTarget target) {
         if (imp.sessionStart() == null) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "Results file has no session date; cannot determine the season");
         }
-        long seriesId = findOrCreateSeries(imp.championshipName());
+        long seriesId = resolveSeriesId(target);
         long seasonId = findOrCreateSeason(seriesId, imp.sessionStart().getYear());
         // Read the canonical class set before upserting entries, so the file's
         // own rows don't seed it (see canonicalizeClass).
         List<String> knownClasses = seasonEntryClasses(seasonId);
-        long eventId = findOrCreateEvent(seasonId, imp);
+        long eventId = target.eventId() != null ? target.eventId()
+                : createEvent(seasonId, imp.eventName(), imp.circuitName(),
+                imp.circuitLengthM(), imp.circuitCountry(), imp.sessionStart().toLocalDate());
         renumberSeasonRounds(seasonId);
+        Map<String, String> mapping = target.mapping();
 
         // Replace the session (and via cascade its results) if it was imported before.
         db.sql("DELETE FROM race_session WHERE event_id = :eventId AND name = :name")
@@ -303,21 +466,24 @@ public class ImportService {
         }
     }
 
-    private void commitStandings(StandingsImport imp, Map<String, String> mapping) {
-        SeriesMatch match = matchSeriesByTitle(imp.mainTitle());
-        long seasonId = findOrCreateSeason(match.seriesId(), Integer.parseInt(imp.year()));
+    private void commitStandings(StandingsImport imp, ImportTarget target) {
+        long seriesId = resolveSeriesId(target);
+        long seasonId = findOrCreateSeason(seriesId, Integer.parseInt(imp.year()));
 
-        ClassAndKind ck = deriveClassAndKind(imp.mainTitle(), match.matchedPrefix());
-        // Standings often spell classes differently from the entry list (e.g. the
-        // Michelin Endurance Cup's "GT Daytona PRO" vs the entry-list "GTDPRO").
-        // Resolve to the season's canonical (entry-list) class; an unrecognized
-        // spelling fails the commit until it is mapped in the review screen.
-        String className = canonicalizeClass(ck.className(), seasonEntryClasses(seasonId), mapping, imp.mainTitle());
-        // The award set this class championship belongs to: the family (matched
-        // title prefix — series name for the main championship, the cup's alias
-        // for a cup) plus the kind. Cups publish under their own title, so a
-        // family that isn't the series' own name is a cup (Endurance/Sprint).
-        long groupId = findOrCreateChampionshipGroup(seasonId, match.matchedPrefix(), ck.kind());
+        // Class / kind / cup are confirmed by the reviewer (pre-filled from the
+        // title). Standings often spell classes differently from the entry list
+        // (the Endurance Cup's "GT Daytona PRO" vs "GTDPRO"); resolve to the
+        // season's canonical (entry-list) class, mapping unknowns in review.
+        String kind = target.kind();
+        boolean isCup = Boolean.TRUE.equals(target.isCup());
+        String className = canonicalizeClass(target.classCode(), seasonEntryClasses(seasonId),
+                target.mapping(), imp.mainTitle());
+        // The award set (family + kind) this class championship groups under. The
+        // family is the reviewer's confirmed name (defaults to the series name for
+        // the primary championship, the cup's own name for a cup).
+        String family = target.familyName() != null && !target.familyName().isBlank()
+                ? target.familyName().trim() : seriesName(seriesId);
+        long groupId = findOrCreateChampionshipGroup(seasonId, family, kind, isCup);
 
         // Replace this championship wholesale (cascade removes sessions/rows/points).
         db.sql("DELETE FROM championship WHERE season_id = :seasonId AND name = :name")
@@ -383,7 +549,7 @@ public class ImportService {
         }
     }
 
-    private void commitEntryList(EntryListImport imp) {
+    private void commitEntryList(EntryListImport imp, ImportTarget target) {
         // Unparsed driver lines mean the parser saw a layout it didn't recognize.
         // Per the entries.json contract these must fail loud, not import silently.
         List<String> unparsed = imp.entries().stream()
@@ -399,11 +565,12 @@ public class ImportService {
                     "Entry list has no event dates; cannot determine the season");
         }
 
-        long seriesId = matchSeriesByCode(imp.event().series());
+        long seriesId = resolveSeriesId(target);
         long seasonId = findOrCreateSeason(seriesId, imp.event().startDate().getYear());
 
         LocalDate eventDate = imp.event().endDate() != null ? imp.event().endDate() : imp.event().startDate();
-        long eventId = resolveEvent(seasonId, imp.event().name(), imp.event().circuit(), null, null, eventDate);
+        long eventId = target.eventId() != null ? target.eventId()
+                : createEvent(seasonId, imp.event().name(), imp.event().circuit(), null, null, eventDate);
         renumberSeasonRounds(seasonId);
 
         for (EntryListImport.Entry e : imp.entries()) {
@@ -508,25 +675,6 @@ public class ImportService {
         }
     }
 
-    /** Matches an entry list's series code (e.g. "IWSC") to a series by abbreviation or alias. */
-    private long matchSeriesByCode(String code) {
-        if (code == null || code.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Entry list carries no series code; rename the file to include it (e.g. IWSC)");
-        }
-        Optional<Long> match = db.sql("""
-                        SELECT id FROM series WHERE lower(abbreviation) = lower(:code)
-                        UNION
-                        SELECT series_id FROM series_alias WHERE lower(alias) = lower(:code)
-                        """)
-                .param("code", code)
-                .query(Long.class)
-                .optional();
-        return match.orElseThrow(() -> new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "No series has abbreviation or alias '" + code
-                + "'. Add it as an alias on the Series page."));
-    }
-
     /**
      * Entry lists carry full names ("Tijmen van der Helm"); match against the
      * driver table by full name first so we never duplicate a driver whose
@@ -608,11 +756,11 @@ public class ImportService {
 
     /**
      * The award set a class championship belongs to (family + kind), created on
-     * first use. A family that isn't the series' own name is a cup (the Endurance
-     * Cup, historically a Sprint Cup) — it publishes under its own title, matched
-     * via a series alias.
+     * first use. Whether it's a cup (the Endurance Cup, historically a Sprint Cup)
+     * vs the primary championship is confirmed by the reviewer, not inferred from
+     * the name.
      */
-    private long findOrCreateChampionshipGroup(long seasonId, String family, String kind) {
+    private long findOrCreateChampionshipGroup(long seasonId, String family, String kind, boolean isCup) {
         Optional<Long> existing = db.sql("""
                         SELECT id FROM championship_group
                         WHERE season_id = :seasonId AND family = :family AND kind IS NOT DISTINCT FROM :kind
@@ -622,11 +770,6 @@ public class ImportService {
         if (existing.isPresent()) {
             return existing.get();
         }
-        String seriesName = db.sql("""
-                        SELECT sr.name FROM season s JOIN series sr ON sr.id = s.series_id WHERE s.id = :seasonId
-                        """)
-                .param("seasonId", seasonId).query(String.class).single();
-        boolean isCup = !family.equalsIgnoreCase(seriesName);
         String label = family + " — " + (kind == null || kind.isBlank()
                 ? "Overall"
                 : kind.charAt(0) + kind.substring(1).toLowerCase());
@@ -660,42 +803,32 @@ public class ImportService {
                 .update();
     }
 
-    private long findOrCreateEvent(long seasonId, RaceResultsImport imp) {
-        return resolveEvent(seasonId, imp.eventName(), imp.circuitName(),
-                imp.circuitLengthM(), imp.circuitCountry(), imp.sessionStart().toLocalDate());
+    /**
+     * The tool's best guess for which existing event a session/entry-list belongs
+     * to, used to pre-fill the review: sources name the same weekend differently
+     * (entry list "Mid-Ohio SportsCar Weekend" vs results "O'Reilly Auto Parts 4
+     * Hours of Mid-Ohio"), so match on venue + weekend (same circuit within two
+     * weeks), not the free-text name. The reviewer confirms or overrides it.
+     */
+    private Optional<Long> findMatchingEvent(long seasonId, String circuit, LocalDate date) {
+        if (circuit == null || circuit.isBlank() || date == null) {
+            return Optional.empty();
+        }
+        return db.sql("""
+                        SELECT id FROM event
+                        WHERE season_id = :seasonId AND event_date IS NOT NULL
+                          AND lower(regexp_replace(trim(circuit_name), '\\s+', ' ', 'g'))
+                            = lower(regexp_replace(trim(:circuit), '\\s+', ' ', 'g'))
+                          AND abs(event_date - :date) <= 14
+                        ORDER BY abs(event_date - :date)
+                        LIMIT 1
+                        """)
+                .param("seasonId", seasonId).param("circuit", circuit).param("date", date)
+                .query(Long.class).optional();
     }
 
-    /**
-     * Resolve the event a session/entry-list belongs to. Sources name the same
-     * weekend differently (the entry list "Mid-Ohio SportsCar Weekend" vs the
-     * results "O'Reilly Auto Parts 4 Hours of Mid-Ohio"), so identity is the
-     * venue + weekend, not the free-text name: match an existing event at the
-     * same circuit within a two-week window, falling back to an exact name match,
-     * and only then create. This replaces the brittle name-only key from Phase 1.
-     */
-    private long resolveEvent(long seasonId, String name, String circuit,
-                              Double lengthM, String country, LocalDate date) {
-        if (circuit != null && !circuit.isBlank() && date != null) {
-            Optional<Long> byVenue = db.sql("""
-                            SELECT id FROM event
-                            WHERE season_id = :seasonId AND event_date IS NOT NULL
-                              AND lower(regexp_replace(trim(circuit_name), '\\s+', ' ', 'g'))
-                                = lower(regexp_replace(trim(:circuit), '\\s+', ' ', 'g'))
-                              AND abs(event_date - :date) <= 14
-                            ORDER BY abs(event_date - :date)
-                            LIMIT 1
-                            """)
-                    .param("seasonId", seasonId).param("circuit", circuit).param("date", date)
-                    .query(Long.class).optional();
-            if (byVenue.isPresent()) {
-                return byVenue.get();
-            }
-        }
-        Optional<Long> byName = db.sql("SELECT id FROM event WHERE season_id = :seasonId AND name = :name")
-                .param("seasonId", seasonId).param("name", name).query(Long.class).optional();
-        if (byName.isPresent()) {
-            return byName.get();
-        }
+    private long createEvent(long seasonId, String name, String circuit,
+                             Double lengthM, String country, LocalDate date) {
         return db.sql("""
                         INSERT INTO event (season_id, name, circuit_name, circuit_length_m, country, event_date)
                         VALUES (:seasonId, :name, :circuit, :length, :country, :date)
@@ -709,6 +842,11 @@ public class ImportService {
                 .param("date", date)
                 .query(Long.class)
                 .single();
+    }
+
+    private String seriesName(long seriesId) {
+        return db.sql("SELECT name FROM series WHERE id = :id").param("id", seriesId)
+                .query(String.class).single();
     }
 
     private long upsertEntry(long eventId, RaceResultsImport.Row row, String className) {

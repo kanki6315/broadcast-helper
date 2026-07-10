@@ -297,11 +297,25 @@ display size.)
   Qualifying import through the existing results importer (same timing-provider
   shape; DH/DHL already canonical, single-driver). The sources name the weekend
   differently (entry list "Mid-Ohio SportsCar Weekend" vs results "O'Reilly Auto
-  Parts 4 Hours of Mid-Ohio"), so `resolveEvent` now identifies an event by
-  **(season, normalized circuit, ±14-day window)** with a name fallback, instead
-  of the brittle Phase-1 name key — the results attach to the entry list's event
-  (one event, three sessions) rather than duplicating it. The sheet's Q column
-  fills from qualifying in-class positions.
+  Parts 4 Hours of Mid-Ohio"); events are now matched by circuit + date window
+  (see below), so results attach to the entry list's event (one event, three
+  sessions) rather than duplicating it. The sheet's Q column fills from
+  qualifying in-class positions.
+- **Import target confirmation — ✅ DONE (replaces name auto-matching).** Rather
+  than guessing series/event/championship from free-text names and accumulating
+  aliases (which failed silently or hard-errored), the **review step now confirms
+  the target**. `GET /api/imports/{id}/review` returns the tool's *guess* (series,
+  event via circuit+date, championship class/kind/cup) plus the selectable
+  options; the Imports page pre-fills them and the reviewer picks/overrides;
+  `POST /commit` takes an explicit `ImportTarget` (series id or new-series name,
+  event id or new, championship class/kind/is-cup/family, class map) and commits
+  to it with no re-matching. Series aliases and the "family ≠ series name ⇒ cup"
+  heuristic are retired as hard requirements (aliases stay only as guess hints).
+  This is how the Mustang **drivers** standings (DH + DHL) imported — the reviewer
+  just picked the series; no `Mustang Challenge` alias needed. (The Mustang sheet
+  **champ column** is still blank — it reads TEAMS standings; showing a DRIVERS
+  championship keyed by driver name, with a per-series-aligned snapshot, is a
+  follow-up.)
 - **Per-series class colours + order — ✅ DONE.** The hardcoded IMSA class
   colours (sheet.css) and `classRank` order (SheetController) are replaced by a
   `class_style(series_id, class_code, ordinal, color)` table (V15, seeded IMSA +

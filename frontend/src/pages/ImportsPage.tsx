@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 
 interface ImportBatch {
   id: number
@@ -9,17 +9,77 @@ interface ImportBatch {
   createdAt: string
 }
 
+interface SeriesOption {
+  id: number
+  name: string
+  abbreviation: string | null
+}
+interface EventOption {
+  id: number
+  name: string
+  eventDate: string | null
+}
+interface TargetGuess {
+  seriesId: number | null
+  seriesName: string | null
+  seasonYear: number | null
+  eventId: number | null
+  eventName: string | null
+  circuit: string | null
+  eventDate: string | null
+  classCode: string | null
+  kind: string | null
+  isCup: boolean | null
+  familyName: string | null
+}
 interface ClassReview {
   knownClasses: string[]
   unknownClasses: string[]
 }
+interface ImportReview {
+  kind: string
+  guess: TargetGuess | null
+  seriesOptions: SeriesOption[]
+  eventOptions: EventOption[]
+  classReview: ClassReview
+}
+
+// The reviewer's editable choices for one batch, seeded from the guess.
+interface TargetState {
+  seriesId: number | 'new' | ''
+  newSeriesName: string
+  eventId: number | 'new'
+  classCode: string
+  kind: string
+  isCup: boolean
+  familyName: string
+  classMapping: Record<string, string>
+}
+
+function initTarget(r: ImportReview): TargetState {
+  const g = r.guess
+  return {
+    seriesId: g?.seriesId ?? '',
+    newSeriesName: '',
+    eventId: g?.eventId ?? 'new',
+    classCode: g?.classCode ?? '',
+    kind: g?.kind ?? '',
+    isCup: g?.isCup ?? false,
+    familyName: g?.familyName ?? '',
+    classMapping: {},
+  }
+}
+
+const KIND_LABEL: Record<string, string> = {
+  RACE_RESULTS: 'Results',
+  ENTRY_LIST: 'Entry list',
+  STANDINGS: 'Standings',
+}
 
 export default function ImportsPage() {
   const [batches, setBatches] = useState<ImportBatch[]>([])
-  // Per-batch class review (unrecognized classes needing a manual mapping).
-  const [reviews, setReviews] = useState<Record<number, ClassReview>>({})
-  // Per-batch chosen mapping: source class spelling -> canonical class.
-  const [mappings, setMappings] = useState<Record<number, Record<string, string>>>({})
+  const [reviews, setReviews] = useState<Record<number, ImportReview>>({})
+  const [targets, setTargets] = useState<Record<number, TargetState>>({})
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -30,19 +90,24 @@ export default function ImportsPage() {
     const list: ImportBatch[] = await res.json()
     setBatches(list)
 
-    // Fetch class review for each staged results/standings batch.
-    const staged = list.filter(
-      (b) => b.status === 'STAGED' && (b.kind === 'RACE_RESULTS' || b.kind === 'STANDINGS'),
-    )
+    const staged = list.filter((b) => b.status === 'STAGED')
     const entries = await Promise.all(
       staged.map(async (b) => {
-        const r = await fetch(`/api/imports/${b.id}/class-review`)
-        return [b.id, r.ok ? ((await r.json()) as ClassReview) : null] as const
+        const r = await fetch(`/api/imports/${b.id}/review`)
+        return [b.id, r.ok ? ((await r.json()) as ImportReview) : null] as const
       }),
     )
-    const next: Record<number, ClassReview> = {}
-    for (const [id, review] of entries) if (review) next[id] = review
-    setReviews(next)
+    const nextReviews: Record<number, ImportReview> = {}
+    setTargets((prev) => {
+      const nextTargets = { ...prev }
+      for (const [id, review] of entries) {
+        if (!review) continue
+        nextReviews[id] = review
+        if (!(id in nextTargets)) nextTargets[id] = initTarget(review) // keep in-progress edits
+      }
+      return nextTargets
+    })
+    setReviews(nextReviews)
   }
 
   useEffect(() => {
@@ -66,28 +131,54 @@ export default function ImportsPage() {
     setBusy(false)
   }
 
-  function setMapping(batchId: number, sourceClass: string, canonical: string) {
-    setMappings((m) => ({ ...m, [batchId]: { ...m[batchId], [sourceClass]: canonical } }))
+  function patch(id: number, change: Partial<TargetState>) {
+    setTargets((t) => ({ ...t, [id]: { ...t[id], ...change } }))
   }
 
-  function unresolved(batchId: number): string[] {
-    const unknown = reviews[batchId]?.unknownClasses ?? []
-    const chosen = mappings[batchId] ?? {}
+  function unresolvedClasses(id: number): string[] {
+    const unknown = reviews[id]?.classReview.unknownClasses ?? []
+    const chosen = targets[id]?.classMapping ?? {}
     return unknown.filter((c) => !chosen[c])
   }
 
+  function seriesChosen(t: TargetState): boolean {
+    if (t.seriesId === 'new') return t.newSeriesName.trim().length > 0
+    return t.seriesId !== ''
+  }
+
+  function canCommit(id: number): boolean {
+    const t = targets[id]
+    return !!t && seriesChosen(t) && unresolvedClasses(id).length === 0
+  }
+
   async function commit(id: number) {
-    if (unresolved(id).length > 0) return
+    if (!canCommit(id)) return
+    const t = targets[id]
+    const review = reviews[id]
+    const body: Record<string, unknown> = {
+      seriesId: t.seriesId === 'new' || t.seriesId === '' ? null : t.seriesId,
+      newSeriesName: t.seriesId === 'new' ? t.newSeriesName.trim() : null,
+      classMapping: t.classMapping,
+    }
+    if (review.kind === 'RACE_RESULTS' || review.kind === 'ENTRY_LIST') {
+      body.eventId = t.eventId === 'new' ? null : t.eventId
+    }
+    if (review.kind === 'STANDINGS') {
+      body.classCode = t.classCode
+      body.kind = t.kind
+      body.isCup = t.isCup
+      body.familyName = t.familyName.trim() || null
+    }
     setBusy(true)
     setError(null)
     const res = await fetch(`/api/imports/${id}/commit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ classMapping: mappings[id] ?? {} }),
+      body: JSON.stringify(body),
     })
     if (!res.ok) {
-      const body = await res.json().catch(() => null)
-      setError(`Batch ${id}: ${body?.message ?? `commit failed (${res.status})`}`)
+      const err = await res.json().catch(() => null)
+      setError(`Batch ${id}: ${err?.message ?? `commit failed (${res.status})`}`)
     }
     await loadBatches()
     setBusy(false)
@@ -96,11 +187,7 @@ export default function ImportsPage() {
   async function discard(id: number) {
     setBusy(true)
     setError(null)
-    const res = await fetch(`/api/imports/${id}/discard`, { method: 'POST' })
-    if (!res.ok) {
-      const body = await res.json().catch(() => null)
-      setError(`Batch ${id}: ${body?.message ?? `discard failed (${res.status})`}`)
-    }
+    await fetch(`/api/imports/${id}/discard`, { method: 'POST' })
     await loadBatches()
     setBusy(false)
   }
@@ -108,8 +195,8 @@ export default function ImportsPage() {
   return (
     <section>
       <p>
-        Upload results/standings JSON files or an entry list PDF. Each file is staged for review —
-        nothing touches the database until you commit it.
+        Upload results/standings JSON files or an entry list PDF. Each file is staged; confirm what
+        it belongs to (series, event or championship — pre-filled with a best guess) and commit.
       </p>
       <input
         ref={fileInput}
@@ -119,7 +206,6 @@ export default function ImportsPage() {
         disabled={busy}
         onChange={(e) => e.target.files && uploadFiles(e.target.files)}
       />
-
       {error && <p className="error">{error}</p>}
 
       {batches.length === 0 ? (
@@ -133,71 +219,167 @@ export default function ImportsPage() {
               <th>Kind</th>
               <th>Summary</th>
               <th>Status</th>
-              <th>Actions</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {batches.map((b) => {
-              const unknown = reviews[b.id]?.unknownClasses ?? []
-              const known = reviews[b.id]?.knownClasses ?? []
-              const blocked = unresolved(b.id).length > 0
+              const review = reviews[b.id]
+              const t = targets[b.id]
+              const staged = b.status === 'STAGED'
               return (
-                <tr key={b.id}>
-                  <td>{b.id}</td>
-                  <td>{b.filename}</td>
-                  <td>
-                    {b.kind === 'RACE_RESULTS'
-                      ? 'Results'
-                      : b.kind === 'ENTRY_LIST'
-                        ? 'Entry list'
-                        : 'Standings'}
-                  </td>
-                  <td>
-                    {b.summary}
-                    {b.status === 'STAGED' && unknown.length > 0 && (
-                      <div className="class-review">
-                        <strong>Unrecognized class{unknown.length > 1 ? 'es' : ''}</strong> — map to a
-                        known class before committing:
-                        {unknown.map((c) => (
-                          <label key={c} className="class-map-row">
-                            <span className="class-map-source">{c}</span> →{' '}
-                            <select
-                              value={mappings[b.id]?.[c] ?? ''}
-                              disabled={busy}
-                              onChange={(e) => setMapping(b.id, c, e.target.value)}
-                            >
-                              <option value="" disabled>
-                                choose…
-                              </option>
-                              {known.map((k) => (
-                                <option key={k} value={k}>
-                                  {k}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </td>
-                  <td>{b.status}</td>
-                  <td>
-                    {b.status === 'STAGED' && (
-                      <>
-                        <button
-                          disabled={busy || blocked}
-                          title={blocked ? 'Map every unrecognized class first' : undefined}
-                          onClick={() => commit(b.id)}
-                        >
-                          Commit
-                        </button>{' '}
+                <Fragment key={b.id}>
+                  <tr>
+                    <td>{b.id}</td>
+                    <td>{b.filename}</td>
+                    <td>{KIND_LABEL[b.kind] ?? b.kind}</td>
+                    <td>{b.summary}</td>
+                    <td>{b.status}</td>
+                    <td>
+                      {staged && (
                         <button disabled={busy} onClick={() => discard(b.id)}>
                           Discard
                         </button>
-                      </>
-                    )}
-                  </td>
-                </tr>
+                      )}
+                    </td>
+                  </tr>
+                  {staged && review && t && (
+                    <tr key={`${b.id}-target`}>
+                      <td></td>
+                      <td colSpan={5}>
+                        <div className="import-target">
+                          <label className="target-row">
+                            <span className="target-label">Series</span>
+                            <select
+                              value={t.seriesId}
+                              disabled={busy}
+                              onChange={(e) =>
+                                patch(b.id, {
+                                  seriesId: e.target.value === 'new' ? 'new' : e.target.value === '' ? '' : Number(e.target.value),
+                                })
+                              }
+                            >
+                              <option value="">choose…</option>
+                              {review.seriesOptions.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}
+                                </option>
+                              ))}
+                              <option value="new">+ new series…</option>
+                            </select>
+                            {t.seriesId === 'new' && (
+                              <input
+                                placeholder="New series name"
+                                value={t.newSeriesName}
+                                disabled={busy}
+                                onChange={(e) => patch(b.id, { newSeriesName: e.target.value })}
+                              />
+                            )}
+                          </label>
+
+                          {(review.kind === 'RACE_RESULTS' || review.kind === 'ENTRY_LIST') && (
+                            <label className="target-row">
+                              <span className="target-label">Event</span>
+                              <select
+                                value={t.eventId}
+                                disabled={busy}
+                                onChange={(e) =>
+                                  patch(b.id, { eventId: e.target.value === 'new' ? 'new' : Number(e.target.value) })
+                                }
+                              >
+                                {review.eventOptions.map((ev) => (
+                                  <option key={ev.id} value={ev.id}>
+                                    {ev.name}
+                                    {ev.eventDate ? ` (${ev.eventDate})` : ''}
+                                  </option>
+                                ))}
+                                <option value="new">
+                                  + new event{review.guess?.eventName ? `: ${review.guess.eventName}` : ''}
+                                </option>
+                              </select>
+                            </label>
+                          )}
+
+                          {review.kind === 'STANDINGS' && (
+                            <label className="target-row">
+                              <span className="target-label">Championship</span>
+                              <input
+                                className="target-narrow"
+                                title="Class"
+                                placeholder="Class"
+                                value={t.classCode}
+                                disabled={busy}
+                                onChange={(e) => patch(b.id, { classCode: e.target.value })}
+                              />
+                              <input
+                                className="target-narrow"
+                                title="Kind"
+                                placeholder="Kind"
+                                value={t.kind}
+                                disabled={busy}
+                                onChange={(e) => patch(b.id, { kind: e.target.value.toUpperCase() })}
+                              />
+                              <label className="target-checkbox">
+                                <input
+                                  type="checkbox"
+                                  checked={t.isCup}
+                                  disabled={busy}
+                                  onChange={(e) => patch(b.id, { isCup: e.target.checked })}
+                                />
+                                cup
+                              </label>
+                              {t.isCup && (
+                                <input
+                                  title="Cup / family name"
+                                  placeholder="Cup name"
+                                  value={t.familyName}
+                                  disabled={busy}
+                                  onChange={(e) => patch(b.id, { familyName: e.target.value })}
+                                />
+                              )}
+                            </label>
+                          )}
+
+                          {(review.classReview.unknownClasses ?? []).length > 0 && (
+                            <div className="class-review">
+                              <strong>Unrecognized class{review.classReview.unknownClasses.length > 1 ? 'es' : ''}</strong>{' '}
+                              — map to a known class:
+                              {review.classReview.unknownClasses.map((c) => (
+                                <label key={c} className="class-map-row">
+                                  <span className="class-map-source">{c}</span> →{' '}
+                                  <select
+                                    value={t.classMapping[c] ?? ''}
+                                    disabled={busy}
+                                    onChange={(e) =>
+                                      patch(b.id, { classMapping: { ...t.classMapping, [c]: e.target.value } })
+                                    }
+                                  >
+                                    <option value="" disabled>
+                                      choose…
+                                    </option>
+                                    {review.classReview.knownClasses.map((k) => (
+                                      <option key={k} value={k}>
+                                        {k}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              ))}
+                            </div>
+                          )}
+
+                          <button
+                            disabled={busy || !canCommit(b.id)}
+                            title={!seriesChosen(t) ? 'Choose a series first' : undefined}
+                            onClick={() => commit(b.id)}
+                          >
+                            Commit
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               )
             })}
           </tbody>

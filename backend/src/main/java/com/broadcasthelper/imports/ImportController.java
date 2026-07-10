@@ -15,7 +15,6 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/imports")
@@ -52,19 +51,17 @@ public class ImportController {
         return imports.payloadJson(id);
     }
 
-    @GetMapping("/{id}/class-review")
-    public ImportService.ClassReview classReview(@PathVariable long id) {
-        return imports.classReview(id);
+    /** The guessed target, selectable options, and class-mapping review. */
+    @GetMapping("/{id}/review")
+    public ImportService.ImportReview review(@PathVariable long id) {
+        return imports.reviewTarget(id);
     }
 
-    /** Optional body maps each unrecognized source class spelling to a canonical class. */
-    public record CommitRequest(Map<String, String> classMapping) {
-    }
-
+    /** Commit to the reviewer-confirmed target (series/event/championship + class map). */
     @PostMapping("/{id}/commit")
     public ImportService.BatchSummary commit(@PathVariable long id,
-                                             @RequestBody(required = false) CommitRequest body) {
-        return imports.commit(id, body == null ? Map.of() : body.classMapping());
+                                             @RequestBody ImportService.ImportTarget target) {
+        return imports.commit(id, target);
     }
 
     @PostMapping("/{id}/discard")
