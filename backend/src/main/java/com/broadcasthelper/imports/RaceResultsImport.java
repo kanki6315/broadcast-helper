@@ -12,6 +12,7 @@ public record RaceResultsImport(
         String eventName,
         String sessionName,
         String sessionType,
+        int sessionOrdinal, // 1-based within the type (Race 1 / Race 2), from the session name
         String reportMark,
         String reportMessage,
         LocalDateTime sessionStart,

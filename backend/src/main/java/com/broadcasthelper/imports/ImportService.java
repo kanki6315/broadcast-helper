@@ -415,16 +415,25 @@ public class ImportService {
         renumberSeasonRounds(seasonId);
         Map<String, String> mapping = target.mapping();
 
-        // Replace the session (and via cascade its results) if it was imported before.
-        db.sql("DELETE FROM race_session WHERE event_id = :eventId AND name = :name")
-                .param("eventId", eventId).param("name", imp.sessionName()).update();
+        // Replace the session (and via cascade its results) if it was imported
+        // before. The identity is (event_id, session_type, ordinal), not the
+        // free-text name — so a source that renames "Race" to "Race 1" overwrites
+        // its predecessor instead of adding a second RACE session.
+        String sessionType = normalizeSessionType(imp.sessionType(), imp.sessionName());
+        db.sql("""
+                        DELETE FROM race_session
+                        WHERE event_id = :eventId AND session_type = :type AND ordinal = :ordinal
+                        """)
+                .param("eventId", eventId).param("type", sessionType)
+                .param("ordinal", imp.sessionOrdinal()).update();
         long sessionId = db.sql("""
-                        INSERT INTO race_session (event_id, session_type, name, session_start, report_mark, report_message)
-                        VALUES (:eventId, :type, :name, :start, :mark, :message)
+                        INSERT INTO race_session (event_id, session_type, ordinal, name, session_start, report_mark, report_message)
+                        VALUES (:eventId, :type, :ordinal, :name, :start, :mark, :message)
                         RETURNING id
                         """)
                 .param("eventId", eventId)
-                .param("type", normalizeSessionType(imp.sessionType(), imp.sessionName()))
+                .param("type", sessionType)
+                .param("ordinal", imp.sessionOrdinal())
                 .param("name", imp.sessionName())
                 .param("start", imp.sessionStart())
                 .param("mark", imp.reportMark())

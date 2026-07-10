@@ -25,7 +25,15 @@ class ImportParserTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     private JsonNode fixture(String name) throws IOException {
-        try (InputStream in = getClass().getResourceAsStream("/fixtures/imsa/" + name)) {
+        return fixtureIn("imsa", name);
+    }
+
+    private JsonNode mustangFixture(String name) throws IOException {
+        return fixtureIn("mustang", name);
+    }
+
+    private JsonNode fixtureIn(String series, String name) throws IOException {
+        try (InputStream in = getClass().getResourceAsStream("/fixtures/" + series + "/" + name)) {
             assertNotNull(in, "missing fixture " + name);
             return mapper.readTree(in);
         }
@@ -55,6 +63,16 @@ class ImportParserTest {
         // Leading zeros survive: #04 (LMP2) and #068 (GTD) are distinct numbers.
         assertTrue(imp.rows().stream().anyMatch(r -> r.number().equals("04")));
         assertTrue(imp.rows().stream().anyMatch(r -> r.number().equals("068")));
+    }
+
+    @Test
+    void derivesSessionOrdinalFromName() throws IOException {
+        // Single-race weekend: "Race" -> ordinal 1.
+        assertEquals(1, ImportParser.parseRaceResults(fixture("race-wgi-2026.json")).sessionOrdinal());
+        // Multi-race weekend: "Race 1"/"Race 2" -> 1/2; "Qualifying" -> 1.
+        assertEquals(1, ImportParser.parseRaceResults(mustangFixture("results-midohio-race1-2026.json")).sessionOrdinal());
+        assertEquals(2, ImportParser.parseRaceResults(mustangFixture("results-midohio-race2-2026.json")).sessionOrdinal());
+        assertEquals(1, ImportParser.parseRaceResults(mustangFixture("results-midohio-qualifying-2026.json")).sessionOrdinal());
     }
 
     @Test

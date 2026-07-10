@@ -150,6 +150,7 @@ public final class ImportParser {
                 text(session, "event_name"),
                 text(session, "session_name"),
                 text(session, "session_type"),
+                sessionOrdinal(text(session, "session_name")),
                 text(session, "report_mark"),
                 text(session, "report_message"),
                 parseSessionDate(text(session, "session_date")),
@@ -224,6 +225,22 @@ public final class ImportParser {
     private static String text(JsonNode node, String field) {
         String value = node.path(field).asText("");
         return value.isBlank() ? null : value.trim();
+    }
+
+    /**
+     * The 1-based ordinal within a session type, read from the trailing number of
+     * the session name ("Race 2" -> 2). A name with no number is the sole session
+     * of its type ("Race", "Qualifying") -> 1. This is the stable per-event key
+     * (with session_type), so re-import overwrites regardless of name drift.
+     */
+    private static int sessionOrdinal(String sessionName) {
+        if (sessionName != null) {
+            var m = java.util.regex.Pattern.compile("(\\d+)\\s*$").matcher(sessionName);
+            if (m.find()) {
+                return Integer.parseInt(m.group(1));
+            }
+        }
+        return 1;
     }
 
     /** A car that did not take the start: no in-class finishing position. */

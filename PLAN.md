@@ -344,20 +344,26 @@ display size.)
   files) into a **grid rundown sheet** — always imported, never computed (the
   published order already reflects the carry-over + penalties, so no per-series
   config). Most relevant to Carrera Cup Asia, which isn't running for a while.
-  Also: a stable session `(type, ordinal)` key (Race 1/Race 2 work by name for
-  now).
-Grid-source engine still to be exercised for real. Design the automated
-prior-year-at-this-track feature, including change context (manufacturer,
-lineup, team) alongside the raw result.
-**Harden import keys (tech debt from Phase 1):** sessions are currently keyed
-by `(event_id, raw session_name string)` and events by
-`(season_id, event_name string)`, with re-import as delete-then-insert on that
-key. This is brittle — a renamed file (`"Race"` vs `"Race 1"`) won't overwrite
-its predecessor, it adds alongside it, and multi-race weekends need a stable
-`(session_type, ordinal)` key rather than a free-text name. Replace string keys
-with the `Session` ordinal + grid-source model from §3, and make
-`normalizeSessionType` (keyword heuristic, defaults everything to RACE) explicit
-per-series config instead of a guess.
+Grid-source engine still to be exercised for real (when the grid sheet is
+built). Design the automated prior-year-at-this-track feature, including change
+context (manufacturer, lineup, team) alongside the raw result.
+- **Session-key hardening (tech debt from Phase 1) — ✅ DONE.** Sessions were
+  keyed `(event_id, raw session_name string)`, re-imported as delete-then-insert
+  on that key — brittle: a renamed session (`"Race"` vs `"Race 1"`) added a second
+  RACE row instead of overwriting, and multi-race weekends leaned entirely on the
+  name to tell Race 1 from Race 2. Replaced with the structured
+  `(event_id, session_type, ordinal)` key (V16: `race_session.ordinal` added,
+  backfilled from the trailing number in the name; old `(event_id, name)` unique
+  constraint dropped). The parser derives `ordinal` from the session name's
+  trailing integer (default 1); `commitRaceResults` replaces on the new key, so
+  re-import is idempotent under name drift; `name` is a display label only.
+  `normalizeSessionType` stays the single centralized RACE/QUALIFYING/PRACTICE
+  derivation (both current series fit it; a per-series config table is deferred
+  until one doesn't). Also fixed a latent bug: `BrowseController`'s event-detail
+  query joined *any* RACE session, so multi-race events rendered every entry twice
+  — it now joins the latest (highest-ordinal) race. **Deferred (with the grid
+  sheet):** the grid-source descriptor from §3. Events already key on
+  circuit+date (Phase 3), so the event string-key half of this debt is retired.
 
 **Phase 4 — Hosted + deferred season tools.** **Season-hub build-out** (needs
 more concrete design first): the **season reference table** (entries × rounds,

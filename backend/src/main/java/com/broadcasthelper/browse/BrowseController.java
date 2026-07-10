@@ -89,7 +89,10 @@ public class BrowseController {
                                  JOIN event ev ON ev.id = en.event_id
                                  LEFT JOIN car_image ci ON ci.season_id = ev.season_id
                                                        AND ci.car_number = en.car_number
-                                 LEFT JOIN race_session rs ON rs.event_id = en.event_id AND rs.session_type = 'RACE'
+                                 LEFT JOIN race_session rs ON rs.id = (
+                                     SELECT id FROM race_session
+                                     WHERE event_id = en.event_id AND session_type = 'RACE'
+                                     ORDER BY ordinal DESC LIMIT 1)
                                  LEFT JOIN result r ON r.session_id = rs.id AND r.entry_id = en.id
                         WHERE en.event_id = :id
                         ORDER BY en.class_name, r.position_in_class NULLS LAST, en.car_number
