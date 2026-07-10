@@ -332,15 +332,23 @@ display size.)
   derived from the colour), so any new series renders correctly with no code
   change. A class without a row falls back to a neutral default sorted last.
   (DH navy / DHL bronze are seeded defaults, editable in the table.)
+- **Per-series class-style config UI — ✅ DONE.** `class_style` (colour + order)
+  is no longer SQL-only. `ClassStyleController` (`/api/series/{id}/class-styles`)
+  exposes GET (configured styles + class codes seen in the series' entries that
+  have no style yet, so codes carry the exact casing the sheet matches on),
+  `PUT /{classCode}` (upsert, `#rrggbb` validated), `DELETE /{classCode}`. The
+  Series page gains an expandable per-series editor (native colour picker,
+  ordinal, delete; add via a suggestion dropdown or free-text code). No migration
+  or code change to onboard a new series' classes now.
 - **Still ahead** (deferred): import the published **starting grids** (`grid[]`
   files) into a **grid rundown sheet** — always imported, never computed (the
   published order already reflects the carry-over + penalties, so no per-series
   config). Most relevant to Carrera Cup Asia, which isn't running for a while.
   Also: a stable session `(type, ordinal)` key (Race 1/Race 2 work by name for
-  now); a per-series config UI to edit `class_style` (currently seeded in SQL).
-Grid-source engine exercised for real. Per-series configuration UI
-instead of code. Design the automated prior-year-at-this-track feature,
-including change context (manufacturer, lineup, team) alongside the raw result.
+  now).
+Grid-source engine still to be exercised for real. Design the automated
+prior-year-at-this-track feature, including change context (manufacturer,
+lineup, team) alongside the raw result.
 **Harden import keys (tech debt from Phase 1):** sessions are currently keyed
 by `(event_id, raw session_name string)` and events by
 `(season_id, event_name string)`, with re-import as delete-then-insert on that
