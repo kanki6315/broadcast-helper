@@ -101,7 +101,12 @@ public final class ImportParser {
         Map<String, Integer> classCounters = new HashMap<>();
         for (JsonNode c : root.path("classification")) {
             String className = text(c, "class");
-            int inClass = classCounters.merge(className, 1, Integer::sum);
+            // A car that did not start has no in-class position in the source
+            // classification; don't count it (which would fabricate one) and
+            // leave its position_in_class null.
+            Integer inClass = didNotStart(text(c, "status"))
+                    ? null
+                    : classCounters.merge(className, 1, Integer::sum);
 
             List<RaceResultsImport.DriverRow> drivers = new ArrayList<>();
             for (JsonNode d : c.path("drivers")) {
@@ -219,6 +224,17 @@ public final class ImportParser {
     private static String text(JsonNode node, String field) {
         String value = node.path(field).asText("");
         return value.isBlank() ? null : value.trim();
+    }
+
+    /** A car that did not take the start: no in-class finishing position. */
+    private static boolean didNotStart(String status) {
+        if (status == null) {
+            return false;
+        }
+        return switch (status.trim().toLowerCase()) {
+            case "not started", "did not start", "dns", "dnp" -> true;
+            default -> false;
+        };
     }
 
     private static Integer intOrNull(JsonNode node, String field) {

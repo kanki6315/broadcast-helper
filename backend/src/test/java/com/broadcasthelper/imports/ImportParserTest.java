@@ -91,7 +91,10 @@ class ImportParserTest {
         assertTrue(daytona.rows().stream().anyMatch(r -> r.drivers().size() == 4));
 
         RaceResultsImport sebring = ImportParser.parseRaceResults(fixture("race-sebring-2026.json"));
-        assertTrue(sebring.rows().stream().anyMatch(r -> "Not Started".equals(r.status())));
+        // A car that did not start is kept, but carries no in-class position.
+        RaceResultsImport.Row dns = sebring.rows().stream()
+                .filter(r -> "Not Started".equals(r.status())).findFirst().orElseThrow();
+        assertNull(dns.positionInClass());
     }
 
     @Test

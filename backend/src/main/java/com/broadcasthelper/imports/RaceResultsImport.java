@@ -23,7 +23,7 @@ public record RaceResultsImport(
 
     public record Row(
             int positionOverall,
-            int positionInClass,
+            Integer positionInClass, // null when the car did not start (no class position)
             String number,
             String className,
             String group,

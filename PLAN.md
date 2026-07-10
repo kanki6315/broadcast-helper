@@ -208,8 +208,15 @@ sheet shows names until then) and that standings reflect the latest imported
 round rather than a pre-round snapshot.
 
 **Phase 2 — Season tools.** Season reference table, computed standings with
-manual override, IMSA entry-list PDF importer, per-entry notes, better
-best/last-result tie handling and footnotes. **Season hub navigation:** the
+manual override, IMSA entry-list PDF importer, per-entry notes.
+**Best/last-result handling — ✅ DONE.** Root cause found: the results parser
+derived `position_in_class` by counting rows, which fabricated a class position
+for DNS cars (e.g. #79 LMP2 shown "12th" at Sebring though it never started).
+Fixed at import (`ImportParser.didNotStart` — DNS rows are kept but carry a null
+position) + migration V11 backfilled existing rows. With that, best = strongest
+actual finish (DNS excluded, DNFs count at face value since they're classified),
+last = the finishing position or "DNS", and venue ties stay listed inline
+("2nd – SEB/LAG") — no footnotes, per the broadcaster's call. **Season hub navigation:** the
 data model is already hierarchical (series → season → championships/events);
 restructure the UI around it — a landing page per series season that gathers
 its calendar, entry list, championship families (series championships, cups),

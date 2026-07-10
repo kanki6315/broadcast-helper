@@ -139,12 +139,13 @@ public class SheetController {
                 .list();
 
         // Season race results strictly before this event, per (car, class).
-        record PriorResult(LocalDate date, String eventName, String circuit, int positionInClass, String status) {
+        // positionInClass is null for a DNS (no finishing position).
+        record PriorResult(LocalDate date, String eventName, String circuit, Integer positionInClass) {
         }
         Map<String, List<PriorResult>> priorByCar = new HashMap<>();
         db.sql("""
                         SELECT en.car_number, en.class_name, e.name AS event_name, e.circuit_name, e.event_date,
-                               r.position_in_class, r.status
+                               r.position_in_class
                         FROM result r
                                  JOIN race_session rs ON rs.id = r.session_id AND rs.session_type = 'RACE'
                                  JOIN entry en ON en.id = r.entry_id
@@ -158,7 +159,7 @@ public class SheetController {
                                 k -> new ArrayList<>())
                         .add(new PriorResult(rs.getObject("event_date", LocalDate.class),
                                 rs.getString("event_name"), rs.getString("circuit_name"),
-                                rs.getInt("position_in_class"), rs.getString("status"))))
+                                rs.getObject("position_in_class", Integer.class))))
                 .list();
 
         record EntryRow(long entryId, String carNumber, String className, String teamName, String vehicle,
@@ -208,10 +209,15 @@ public class SheetController {
                 .forEach(r -> {
                     List<PriorResult> prior = priorByCar.getOrDefault(r.carNumber() + "|" + r.className(), List.of());
 
+                    // Best is the strongest actual finish; DNS rounds (null
+                    // position) don't count. Ties across venues list all venues.
                     String best = null;
-                    if (!prior.isEmpty()) {
-                        int bestPos = prior.stream().mapToInt(PriorResult::positionInClass).min().orElseThrow();
-                        List<String> venues = prior.stream()
+                    List<PriorResult> classified = prior.stream()
+                            .filter(p -> p.positionInClass() != null)
+                            .toList();
+                    if (!classified.isEmpty()) {
+                        int bestPos = classified.stream().mapToInt(PriorResult::positionInClass).min().orElseThrow();
+                        List<String> venues = classified.stream()
                                 .filter(p -> p.positionInClass() == bestPos)
                                 .sorted(Comparator.comparing(PriorResult::date))
                                 .map(p -> venueAbbrev(p.eventName(), p.circuit()))
@@ -220,8 +226,9 @@ public class SheetController {
                         best = ordinal(bestPos) + " – " + String.join("/", venues);
                     }
 
+                    // Last shows the finishing position; a DNS has none, so "DNS".
                     String last = prior.stream().max(Comparator.comparing(PriorResult::date))
-                            .map(p -> "Not Started".equalsIgnoreCase(p.status()) ? "DNS" : ordinal(p.positionInClass()))
+                            .map(p -> p.positionInClass() == null ? "DNS" : ordinal(p.positionInClass()))
                             .orElse(null);
 
                     ChampRow champ = champByClass.getOrDefault(r.className(), Map.of()).get(r.carNumber());
