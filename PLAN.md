@@ -172,8 +172,10 @@ silently guess.
    order with storyline fields (champ position, best/last, notes). Grid *data*
    imports today; this presentation sheet is **deferred to after hosting**
    (Phase 6). Exact contents to be specced with the user then.
-4. Free-text **notes per entry** that flow onto sheets (pit-lane intel:
-   sponsor pronunciation, driver storylines).
+4. Free-text **notes per entry** (pit-lane intel: sponsor pronunciation, driver
+   storylines) — surfaced in a **dynamic dashboard** (click an entry to load its
+   notes), *not* on the generated PDF. Deferred until after hosting (Phase 4a),
+   which provides the auth/multi-user substrate this shared, living content needs.
 
 ## 6. Phases
 
@@ -391,19 +393,35 @@ display size.)
   (`SeasonReferenceController`) + `SeasonReferenceTable` component. The broadcaster
   chose **start → finish** over quali/finish: the grid (fastest-two-laps carry-over
   + penalties) is the true starting order, so the cell shows places gained/lost.
-- **Still to build (Season-hub build-out):** **per-entry notes** that flow onto
-  sheets, and the **championship-consolidation presentation** (hub grouping each
-  class's championship + cup(s)
-together; sheet Endurance Cup points column shown only at endurance rounds, cup
-rounds matched to the event via `venueAbbrev`). Then hosting: deploy (single
-container + managed Postgres), simple auth, multi-user (share sheets with the
-broadcast team). **Move car images to S3**: the local BYTEA storage in `car_image` becomes metadata + S3 object key,
-with images served from S3 (presigned URLs or CDN) instead of through the
-backend. The upload/matching flow and `(season, car_number)` keying stay as-is
-— only the byte storage and the `/data` / `/entries/{id}/image` serving paths
-change, so keep those endpoints as the single indirection point. Also: any
-reverse proxy in front of the backend needs its request-size limit raised to
-match the multipart limits in application.yml (nginx defaults to 1MB).
+- **Hosting — the active next block (see Phase 4a below).** Deploy + auth +
+  multi-user/sharing + the S3 image migration. Elevated to the priority because
+  it's the substrate the deferred notes dashboard needs, and it unblocks sharing
+  sheets/tables with the broadcast team.
+- **Per-entry notes — DEFERRED, and reframed.** Not a field on the generated PDF
+  (a print artifact read on air); instead a **dynamic dashboard** where the user
+  clicks an entry to load its detailed notes (pit-lane intel: sponsor
+  pronunciation, driver storylines). Living, searchable, shared content — so it is
+  built *after* hosting provides the auth/multi-user substrate, not retrofitted.
+- **Championship-consolidation presentation — DEFERRED (post-hosting polish):** the
+  hub grouping each class's championship + cup(s) together, and a sheet Endurance
+  Cup points column shown only at endurance rounds (cup rounds matched to the event
+  via `venueAbbrev`). Presentation on data the model already holds; not MVP.
+
+**Phase 4a — Hosting.** Make it a real, shared web app, not a local dev stack.
+Pieces (to be scoped/ADR'd with the user before building):
+- **Deploy:** single container (Spring Boot serving the built React bundle) +
+  managed Postgres. The Python entry-list parser sidecar must ship in the image
+  (or as a co-process). Target TBD.
+- **Auth + multi-user:** simple auth first; broadcast team can view/share the
+  sheets and reference tables. Roles TBD (likely owner + viewer to start).
+- **Move car images to S3:** the local BYTEA storage in `car_image` becomes
+  metadata + S3 object key, images served from S3 (presigned URLs or CDN) instead
+  of through the backend. The upload/matching flow and `(season, car_number)`
+  keying stay as-is — only the byte storage and the `/data` / `/entries/{id}/image`
+  serving paths change, so keep those endpoints as the single indirection point.
+- **Ops caveat:** any reverse proxy in front of the backend needs its request-size
+  limit raised to match the multipart limits in application.yml (nginx defaults to
+  1MB, which would reject entry-list PDFs / image bulk uploads).
 
 **Phase 5 — Live timing.** Ingest a timing feed (provider TBD per series),
 WebSocket push to a dashboard, storyline surfacing (position changes vs champ
@@ -419,8 +437,11 @@ hosting lands. Spec the exact contents with the user then.
 
 ## 7. Open questions
 
-- Prior-year-at-this-track automation: what change context to surface
-  (manufacturer, driver lineup, team) and how to present it without cluttering
-  the sheet.
+- **Hosting choices (Phase 4a, active):** deploy target, auth approach, image
+  storage (S3 provider), DB provider. Scope/ADR before building.
+- Per-entry notes dashboard: exact UX for click-an-entry → notes (design after
+  hosting).
+- Prior-year-at-this-track change-context automation — **deferred, not MVP.**
+  What to surface (manufacturer, driver lineup, team) and how, if built later.
 - Grid rundown sheet contents (spec in Phase 6, after hosting).
 - Live timing providers and feed access per series (Phase 5).
