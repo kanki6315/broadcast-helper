@@ -408,20 +408,43 @@ display size.)
   via `venueAbbrev`). Presentation on data the model already holds; not MVP.
 
 **Phase 4a — Hosting.** Make it a real, shared web app, not a local dev stack.
-Pieces (to be scoped/ADR'd with the user before building):
-- **Deploy:** single container (Spring Boot serving the built React bundle) +
-  managed Postgres. The Python entry-list parser sidecar must ship in the image
-  (or as a co-process). Target TBD.
-- **Auth + multi-user:** simple auth first; broadcast team can view/share the
-  sheets and reference tables. Roles TBD (likely owner + viewer to start).
-- **Move car images to S3:** the local BYTEA storage in `car_image` becomes
-  metadata + S3 object key, images served from S3 (presigned URLs or CDN) instead
-  of through the backend. The upload/matching flow and `(season, car_number)`
-  keying stay as-is — only the byte storage and the `/data` / `/entries/{id}/image`
-  serving paths change, so keep those endpoints as the single indirection point.
-- **Ops caveat:** any reverse proxy in front of the backend needs its request-size
-  limit raised to match the multipart limits in application.yml (nginx defaults to
-  1MB, which would reject entry-list PDFs / image bulk uploads).
+**Decisions locked (2026-07-10):**
+- **Platform: Railway** — push-to-deploy from a Dockerfile + managed Postgres
+  add-on. (Fly.io / DO VPS considered; Railway chosen for lowest-friction DX on a
+  solo tool; cost ~$10–20/mo.)
+- **Packaging: single container.** A multi-stage Docker image: build the React
+  bundle, build the Spring Boot jar serving that bundle as static assets (HashRouter
+  means no server-side SPA fallback needed — deep links are `#/...`), final image
+  `temurin:21-jre` + `python3` + `pdfplumber` with the `parser/` dir bundled (the
+  sidecar stays; a PDFBox rewrite to drop Python is an optional later cleanup, not
+  worth the regression risk now). Point the parser python/script config at the
+  in-image paths.
+- **Auth: Google login (Spring Security `oauth2-client` / OIDC) + email allowlist**
+  for edit/import; **unlisted share links** (unguessable token) for viewers so the
+  broadcast team sees sheets/reference tables without accounts. No third-party auth
+  SaaS.
+- **Images: stay in Postgres BYTEA for v1** (already ~284kB WebP variants; small).
+  S3/R2 deferred — the `/data` / `/entries/{id}/image` endpoints remain the single
+  indirection point, so S3 drops in later with no API change.
+- **Config via env:** datasource, Google client id/secret, and the allowlist come
+  from environment (Railway vars); application.yml keeps local dev defaults.
+
+**Build order:**
+1. **Single-container packaging** — serve the React build from Spring Boot,
+   multi-stage Dockerfile (Java + bundled Python), env-driven datasource. Runnable
+   locally as one container, then deployed to Railway (private URL). *(Deploy +
+   Railway account + Postgres provisioning are the user's to do; the code/Dockerfile
+   /config are prepared here.)*
+2. **Google OAuth login** — Spring Security oauth2-client, email allowlist gates the
+   app/nav and all import/edit endpoints. Needs a Google OAuth client (user creates;
+   creds via env).
+3. **Unlisted share links** — a share token (per season, sheet inherits) exposes
+   read-only sheet + reference views publicly by token; everything else stays authed.
+   (Sequential ids are enumerable, so a token is needed for true "unlisted".)
+
+**Ops caveat:** any reverse proxy needs its request-size limit raised to match the
+multipart limits in application.yml (defaults like nginx's 1MB would reject
+entry-list PDFs / image bulk uploads). Railway's proxy is generous, but note it.
 
 **Phase 5 — Live timing.** Ingest a timing feed (provider TBD per series),
 WebSocket push to a dashboard, storyline surfacing (position changes vs champ
