@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import SeasonImages from '../components/SeasonImages'
+import SeasonReferenceTable from '../components/SeasonReferenceTable'
 
 interface CalendarEvent {
   id: number
@@ -94,6 +95,9 @@ export default function SeasonHubPage() {
           </tbody>
         </table>
       )}
+
+      <h3>Reference table</h3>
+      <SeasonReferenceTable seasonId={Number(seasonId)} />
 
       <h3>Championships</h3>
       {hub.championships.length === 0 ? (

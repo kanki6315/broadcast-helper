@@ -476,7 +476,7 @@ public class SheetController {
     }
 
     /** Venue abbreviations as used on broadcast sheets; falls back to a prefix. */
-    static String venueAbbrev(String eventName, String circuitName) {
+    public static String venueAbbrev(String eventName, String circuitName) {
         String haystack = ((eventName != null ? eventName : "") + " "
                            + (circuitName != null ? circuitName : "")).toLowerCase();
         if (haystack.contains("daytona")) return "DAY";

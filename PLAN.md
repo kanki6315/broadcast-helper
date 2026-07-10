@@ -376,11 +376,22 @@ display size.)
   sheet):** the grid-source descriptor from §3. Events already key on
   circuit+date (Phase 3), so the event string-key half of this debt is retired.
 
-**Phase 4 — Hosted + deferred season tools.** **Season-hub build-out** (needs
-more concrete design first): the **season reference table** (entries × rounds,
-quali/finish per cell, per class — reuses `event.round_ordinal` as its column
-axis), **per-entry notes** that flow onto sheets, and the **championship-
-consolidation presentation** (hub grouping each class's championship + cup(s)
+**Phase 4 — Hosted + deferred season tools.**
+- **Season reference table — ✅ DONE.** On the season hub, a per-class grid: rows =
+  cars, columns = rounds (`event.round_ordinal`, header = round + venue abbrev),
+  each cell the car's **start → finish** in class for that round's race(s). Start
+  comes from `grid_position`, finish from `result`; a multi-race weekend stacks one
+  line per race (R1/R2), and a round with no grid imported falls back to finish
+  only (with a hint to import grids). Row identity is `(class, car)` — the best/last
+  key — so part-season cars blank the rounds they missed and a class-switcher shows
+  in both tables; team label taken at the car's latest round. Class order + header
+  colour reuse `class_style`. Read-only `GET /api/seasons/{id}/reference`
+  (`SeasonReferenceController`) + `SeasonReferenceTable` component. The broadcaster
+  chose **start → finish** over quali/finish: the grid (fastest-two-laps carry-over
+  + penalties) is the true starting order, so the cell shows places gained/lost.
+- **Still to build (Season-hub build-out):** **per-entry notes** that flow onto
+  sheets, and the **championship-consolidation presentation** (hub grouping each
+  class's championship + cup(s)
 together; sheet Endurance Cup points column shown only at endurance rounds, cup
 rounds matched to the event via `venueAbbrev`). Then hosting: deploy (single
 container + managed Postgres), simple auth, multi-user (share sheets with the

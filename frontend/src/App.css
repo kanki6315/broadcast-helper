@@ -254,6 +254,76 @@ tr.clickable:hover td {
   margin-top: 0.4rem;
 }
 
+.reference-scroll {
+  overflow-x: auto;
+  margin: 0.5rem 0 1.5rem;
+}
+
+.reference-table {
+  width: auto;
+  min-width: 100%;
+  margin: 0 0 1.25rem;
+  font-size: 0.85rem;
+  border-collapse: collapse;
+}
+
+.reference-table th,
+.reference-table td {
+  border: 1px solid var(--border);
+  padding: 0.25rem 0.5rem;
+  white-space: nowrap;
+}
+
+.ref-class {
+  text-align: left;
+  color: #fff;
+  font-weight: 700;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.ref-round {
+  text-align: center;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.ref-round-no,
+.ref-round-venue {
+  display: block;
+}
+
+.ref-round-no {
+  font-size: 0.7rem;
+  color: #888;
+}
+
+.ref-num {
+  font-family: ui-monospace, monospace;
+  font-weight: 700;
+}
+
+.ref-team {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ref-cell {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.ref-race {
+  display: block;
+}
+
+.ref-race-label {
+  color: #888;
+  margin-right: 0.3rem;
+  font-size: 0.72rem;
+}
+
 .badge {
   display: inline-block;
   margin-left: 0.4rem;
