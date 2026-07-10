@@ -1,15 +1,18 @@
 # Include exception reasons in error responses so the UI can show the user
 # why an import failed (e.g. "No series or series alias matches ...").
 server:
+  # Railway (and most PaaS) inject the port to listen on via $PORT.
+  port: ${PORT:8080}
   error:
     include-message: always
 
 # The Python sidecar that turns entry-list PDFs into entries.json
-# (see parser/SCHEMA.md). Paths are relative to the backend working directory.
+# (see parser/SCHEMA.md). Local defaults are relative to the backend working
+# directory; in the container these point at the bundled copy via env.
 broadcast-helper:
   entry-list-parser:
-    python: python3
-    script: ../parser/parse_entry_list.py
+    python: ${PARSER_PYTHON:python3}
+    script: ${PARSER_SCRIPT:../parser/parse_entry_list.py}
 
 spring:
   servlet:
@@ -18,9 +21,10 @@ spring:
       max-file-size: 25MB
       max-request-size: 500MB
   datasource:
-    url: jdbc:postgresql://localhost:5432/broadcast_helper
-    username: broadcast
-    password: broadcast
+    # Env-driven for hosting (Railway Postgres vars); local dev defaults preserved.
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/broadcast_helper}
+    username: ${SPRING_DATASOURCE_USERNAME:broadcast}
+    password: ${SPRING_DATASOURCE_PASSWORD:broadcast}
   jpa:
     # Flyway owns the schema; Hibernate only checks that entities match it.
     hibernate:

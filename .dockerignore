@@ -1,0 +1,13 @@
+# Keep the build context small and reproducible — pull in only source, let the
+# image build the frontend bundle and backend jar from scratch.
+**/node_modules
+**/dist
+**/build
+**/.gradle
+.git
+.gitignore
+**/.impeccable
+**/*.log
+PLAN.md
+docs
+docker-compose.yml
