@@ -284,9 +284,20 @@ indirection point, so this composes with the Phase 4 S3 move. (Root cause was
 headless Chrome embedding each raster at ~source resolution regardless of
 display size.)
 
-**Phase 3 — Multi-series generalization.** Add one contrasting series (two-race
-sprint weekend, fastest-two-laps grids, single-driver entries). Grid rundown
-sheet. Grid-source engine exercised for real. Per-series configuration UI
+**Phase 3 — Multi-series generalization.** First contrasting series:
+**Mustang Challenge North America** (one-make, single-driver, two races/weekend).
+- **Entry-list sheet — ✅ DONE.** Registered the series (abbrev `MC`); the sidecar
+  now detects `MC` and parses its `Name NAT` driver line (no rating, no hometown)
+  via `DRIVER_NAT_RE`; classes DH / DHL. VIP entries carry the same blue-V icon as
+  IMSA "invitational" entries, so detection already worked — the commit now maps
+  that marker to `entry.is_guest` (Jim Farley #17 → GUEST badge). Single-driver
+  rendering confirmed end-to-end on the sheet. Sample: `parser/samples/
+  2026_MC_MidOhio_EntryList.pdf`; parser tests cover it.
+- **Still ahead:** two-race weekends (session `(type, ordinal)` + stable keys),
+  the **fastest-two-laps grid engine** (Mustang: Race-2 grid = best-of
+  qualifying / Race-1 two-lap times; Carrera Cup Asia has no carry-over — so
+  per-series config), grid rundown sheet, per-series class colors (DH/DHL).
+Grid-source engine exercised for real. Per-series configuration UI
 instead of code. Design the automated prior-year-at-this-track feature,
 including change context (manufacturer, lineup, team) alongside the raw result.
 **Harden import keys (tech debt from Phase 1):** sessions are currently keyed

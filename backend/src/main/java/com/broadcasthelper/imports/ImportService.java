@@ -420,11 +420,17 @@ public class ImportService {
             // Class codes are normalized by dropping spaces so entry-list spelling
             // ("GTD PRO") joins with results-file spelling ("GTDPRO").
             String className = e.classCode() != null ? e.classCode().replace(" ", "") : null;
+            // A VIP / Invitational entry (blue-V icon on a driver, "Indicates
+            // driver is a VIP Entry" / "Invitational Entry" in the legend) scores
+            // no points — the sheet's GUEST treatment. The entry list is the
+            // authority for this, so it sets is_guest on commit.
+            boolean isGuest = e.drivers().stream()
+                    .anyMatch(d -> d.markers() != null && d.markers().contains("invitational"));
             long entryId = db.sql("""
                             INSERT INTO entry (event_id, car_number, class_name, team_name, vehicle, manufacturer,
-                                               sponsor, tire, fuel)
+                                               sponsor, tire, fuel, is_guest)
                             VALUES (:eventId, :number, :className, :team, :vehicle, :manufacturer,
-                                    :sponsor, :tire, :fuel)
+                                    :sponsor, :tire, :fuel, :isGuest)
                             ON CONFLICT (event_id, car_number) DO UPDATE
                                 SET class_name = EXCLUDED.class_name,
                                     team_name = EXCLUDED.team_name,
@@ -432,7 +438,8 @@ public class ImportService {
                                     manufacturer = EXCLUDED.manufacturer,
                                     sponsor = EXCLUDED.sponsor,
                                     tire = EXCLUDED.tire,
-                                    fuel = EXCLUDED.fuel
+                                    fuel = EXCLUDED.fuel,
+                                    is_guest = EXCLUDED.is_guest
                             RETURNING id
                             """)
                     .param("eventId", eventId)
@@ -444,6 +451,7 @@ public class ImportService {
                     .param("sponsor", e.sponsor())
                     .param("tire", e.tire())
                     .param("fuel", e.fuel())
+                    .param("isGuest", isGuest)
                     .query(Long.class)
                     .single();
 

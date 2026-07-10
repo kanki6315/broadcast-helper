@@ -62,3 +62,37 @@ def test_team_sponsor_split(doc):
 def test_no_unparsed_driver_lines(doc):
     unparsed = [d for e in doc["entries"] for d in e["drivers"] if d.get("unparsed")]
     assert unparsed == []
+
+
+# --- Mustang Challenge (one-make, single-driver, "Name NAT" driver lines) ----
+
+MC_SAMPLE = Path(__file__).parent / "samples" / "2026_MC_MidOhio_EntryList.pdf"
+
+
+@pytest.fixture(scope="module")
+def mc_doc():
+    if not MC_SAMPLE.exists():
+        pytest.skip("Mustang sample PDF not present")
+    return p.parse(MC_SAMPLE, series="MC")
+
+
+def test_mustang_single_driver_entries(mc_doc):
+    assert {len(e["drivers"]) for e in mc_doc["entries"]} == {1}
+
+
+def test_mustang_name_nationality_parsed(mc_doc):
+    # "Name NAT" lines (no rating, no hometown) parse cleanly, nationality kept.
+    unparsed = [d for e in mc_doc["entries"] for d in e["drivers"] if d.get("unparsed")]
+    assert unparsed == []
+    farley = next(d for e in mc_doc["entries"] for d in e["drivers"] if d["name"] == "Jim Farley")
+    assert farley["nationality"] == "USA" and farley["rating"] is None
+
+
+def test_mustang_vip_marker(mc_doc):
+    # The VIP / Invitational blue-V icon tags the guest driver (#17 Jim Farley).
+    car17 = next(e for e in mc_doc["entries"] if e["car_number"] == "17")
+    assert "invitational" in car17["drivers"][0]["markers"]
+
+
+def test_mustang_classes(mc_doc):
+    assert {e["class_code"] for e in mc_doc["entries"]} == {"DH", "DHL"}

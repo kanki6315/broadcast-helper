@@ -1,0 +1,424 @@
+{
+  "event": {
+    "name": "Mid-Ohio SportsCar Weekend",
+    "circuit": "Mid-Ohio Sports Car Course",
+    "location": "Lexington, Ohio",
+    "total_entries": 17,
+    "start_date": "2026-06-05",
+    "end_date": "2026-06-07",
+    "series": "MC",
+    "source_file": "2026_MC_MidOhio_EntryList.pdf"
+  },
+  "entries": [
+    {
+      "class_name": "DARK HORSE (DH)",
+      "class_code": "DH",
+      "class_order": 1,
+      "car_number": "3",
+      "team": "Spark Performance",
+      "sponsor": "Faygo / Papa Power",
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Nolan Allaer",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "DARK HORSE (DH)",
+      "class_code": "DH",
+      "class_order": 1,
+      "car_number": "7",
+      "team": "Wheelhouse Motorsports",
+      "sponsor": "Crowned Eagle Racing",
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Sandy Satullo",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "DARK HORSE (DH)",
+      "class_code": "DH",
+      "class_order": 1,
+      "car_number": "17",
+      "team": "Wheelhouse Motorsports",
+      "sponsor": "Ford Racing",
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Jim Farley",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": [
+            "invitational"
+          ]
+        }
+      ]
+    },
+    {
+      "class_name": "DARK HORSE (DH)",
+      "class_code": "DH",
+      "class_order": 1,
+      "car_number": "21",
+      "team": "TechSport Racing",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Colin Harrison",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "DARK HORSE (DH)",
+      "class_code": "DH",
+      "class_order": 1,
+      "car_number": "22",
+      "team": "TechSport Racing",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Devin Anderson",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "DARK HORSE (DH)",
+      "class_code": "DH",
+      "class_order": 1,
+      "car_number": "25",
+      "team": "Flying Lion Motorsports",
+      "sponsor": "ECOKUT PLUS / PLANET FRY / Mrs G on Tik Tok / COATERZ",
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Ethan Low",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "DARK HORSE (DH)",
+      "class_code": "DH",
+      "class_order": 1,
+      "car_number": "28",
+      "team": "G2 Motorsports",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Lou Gigliotti",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "DARK HORSE (DH)",
+      "class_code": "DH",
+      "class_order": 1,
+      "car_number": "34",
+      "team": "Wheelhouse Motorsports",
+      "sponsor": "Dewbuck Consulting",
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Will Lucas",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "DARK HORSE (DH)",
+      "class_code": "DH",
+      "class_order": 1,
+      "car_number": "42",
+      "team": "Round 3 Racing",
+      "sponsor": "Trim-Tex Drywall Solutions / Lemons of Love",
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Cole Loftsgard",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "DARK HORSE (DH)",
+      "class_code": "DH",
+      "class_order": 1,
+      "car_number": "87",
+      "team": "Peterson Racing",
+      "sponsor": "3-Dimensional Services Group",
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Doug Peterson",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "DARK HORSE (DH)",
+      "class_code": "DH",
+      "class_order": 1,
+      "car_number": "98",
+      "team": "Automatic Racing",
+      "sponsor": "Cardinale Automotive Group/ Central Coast / Jail Flat Ranch / Longbranch Saloon",
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Tate Pritt",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "DARK HORSE LEGENDS (DHL)",
+      "class_code": "DHL",
+      "class_order": 2,
+      "car_number": "8",
+      "team": "Wheelhouse Motorsports",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Tom Tait",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "DARK HORSE LEGENDS (DHL)",
+      "class_code": "DHL",
+      "class_order": 2,
+      "car_number": "9",
+      "team": "Paley Motorsport with AAG Racing",
+      "sponsor": null,
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Chris Clarke",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "DARK HORSE LEGENDS (DHL)",
+      "class_code": "DHL",
+      "class_order": 2,
+      "car_number": "37",
+      "team": "Birdhouse Racing",
+      "sponsor": "LVMG, LLC",
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Dave Luaces",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "DARK HORSE LEGENDS (DHL)",
+      "class_code": "DHL",
+      "class_order": 2,
+      "car_number": "63",
+      "team": "Wheelhouse Motorsports",
+      "sponsor": "Dederichs Motorsports",
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Joseph Dederichs",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "DARK HORSE LEGENDS (DHL)",
+      "class_code": "DHL",
+      "class_order": 2,
+      "car_number": "70",
+      "team": "Round 3 Racing",
+      "sponsor": "Trim-Tex Drywall Solutions / Lemons of Love",
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Joe Koenig",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    },
+    {
+      "class_name": "DARK HORSE LEGENDS (DHL)",
+      "class_code": "DHL",
+      "class_order": 2,
+      "car_number": "84",
+      "team": "Torre Racing",
+      "sponsor": "U&M / Torre Crane LLC",
+      "bronze_cup": false,
+      "car_type": "Ford Mustang Dark Horse R",
+      "tire": "Michelin",
+      "engine": "Ford",
+      "fuel": "E-10",
+      "drivers": [
+        {
+          "order": 1,
+          "rating": null,
+          "name": "Paolo Salvatore",
+          "nationality": "USA",
+          "hometown": null,
+          "is_tbd": false,
+          "markers": []
+        }
+      ]
+    }
+  ]
+}

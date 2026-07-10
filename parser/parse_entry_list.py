@@ -34,6 +34,10 @@ DRIVER_RE = re.compile(r"^\((?P<rating>[A-Z?])\)\s+(?P<name>.+?)\s+(?P<nat>[A-Z]
 DRIVER_HOMETOWN_RE = re.compile(
     r"^(?:\((?P<rating>[A-Z?])\)\s+)?(?P<name>.+?)\s*/\s*(?P<hometown>.+)$"
 )
+# One-make driver line: name then a 3-letter nationality, no rating, no hometown.
+# e.g. "Jim Farley USA" (Mustang Challenge). Checked after the hometown form so
+# a "Name / Hometown" line is never mistaken for a nationality.
+DRIVER_NAT_RE = re.compile(r"^(?P<name>.+?)\s+(?P<nat>[A-Z]{3})$")
 # A TBD placeholder seat, with or without a rating prefix: "TBD" / "(?) TBD".
 TBD_RE = re.compile(r"^(?:\([A-Z?]\)\s+)?TBD$", re.IGNORECASE)
 # A bare car number cell (preserve leading zeros: 04, 033, 912)
@@ -141,6 +145,19 @@ def parse_drivers(cell: str | None) -> list[dict]:
                 "nationality": None,
                 "hometown": hm.group("hometown").strip(),
                 "is_tbd": rating == "?" or name.upper() == "TBD",
+            })
+            continue
+
+        nm = DRIVER_NAT_RE.match(line)
+        if nm:
+            name = nm.group("name").strip()
+            drivers.append({
+                "order": order,
+                "rating": None,
+                "name": name,
+                "nationality": nm.group("nat"),
+                "hometown": None,
+                "is_tbd": name.upper() == "TBD",
             })
             continue
 
@@ -278,7 +295,7 @@ def parse_event_header(page) -> dict:
 
 def detect_series(path: Path) -> str | None:
     name = path.name.upper()
-    for code in ("IWSC", "IMPC", "VPRC", "MX5"):
+    for code in ("IWSC", "IMPC", "VPRC", "MX5", "MC"):
         if code in name:
             return code
     return None
