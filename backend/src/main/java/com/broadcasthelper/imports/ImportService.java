@@ -307,27 +307,30 @@ public class ImportService {
         long seasonId = findOrCreateSeason(match.seriesId(), Integer.parseInt(imp.year()));
 
         ClassAndKind ck = deriveClassAndKind(imp.mainTitle(), match.matchedPrefix());
-        String kind = ck.kind();
         // Standings often spell classes differently from the entry list (e.g. the
         // Michelin Endurance Cup's "GT Daytona PRO" vs the entry-list "GTDPRO").
         // Resolve to the season's canonical (entry-list) class; an unrecognized
         // spelling fails the commit until it is mapped in the review screen.
         String className = canonicalizeClass(ck.className(), seasonEntryClasses(seasonId), mapping, imp.mainTitle());
+        // The award set this class championship belongs to: the family (matched
+        // title prefix — series name for the main championship, the cup's alias
+        // for a cup) plus the kind. Cups publish under their own title, so a
+        // family that isn't the series' own name is a cup (Endurance/Sprint).
+        long groupId = findOrCreateChampionshipGroup(seasonId, match.matchedPrefix(), ck.kind());
 
         // Replace this championship wholesale (cascade removes sessions/rows/points).
         db.sql("DELETE FROM championship WHERE season_id = :seasonId AND name = :name")
                 .param("seasonId", seasonId).param("name", imp.name()).update();
         long championshipId = db.sql("""
-                        INSERT INTO championship (season_id, name, title, class_name, kind, group_title)
-                        VALUES (:seasonId, :name, :title, :className, :kind, :groupTitle)
+                        INSERT INTO championship (season_id, group_id, name, title, class_name)
+                        VALUES (:seasonId, :groupId, :name, :title, :className)
                         RETURNING id
                         """)
                 .param("seasonId", seasonId)
+                .param("groupId", groupId)
                 .param("name", imp.name())
                 .param("title", imp.mainTitle())
                 .param("className", className)
-                .param("kind", kind)
-                .param("groupTitle", match.matchedPrefix())
                 .query(Long.class)
                 .single();
 
@@ -603,6 +606,42 @@ public class ImportService {
         return existing.orElseGet(() ->
                 db.sql("INSERT INTO season (series_id, year) VALUES (:seriesId, :year) RETURNING id")
                         .param("seriesId", seriesId).param("year", year).query(Long.class).single());
+    }
+
+    /**
+     * The award set a class championship belongs to (family + kind), created on
+     * first use. A family that isn't the series' own name is a cup (the Endurance
+     * Cup, historically a Sprint Cup) — it publishes under its own title, matched
+     * via a series alias.
+     */
+    private long findOrCreateChampionshipGroup(long seasonId, String family, String kind) {
+        Optional<Long> existing = db.sql("""
+                        SELECT id FROM championship_group
+                        WHERE season_id = :seasonId AND family = :family AND kind IS NOT DISTINCT FROM :kind
+                        """)
+                .param("seasonId", seasonId).param("family", family).param("kind", kind)
+                .query(Long.class).optional();
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        String seriesName = db.sql("""
+                        SELECT sr.name FROM season s JOIN series sr ON sr.id = s.series_id WHERE s.id = :seasonId
+                        """)
+                .param("seasonId", seasonId).query(String.class).single();
+        boolean isCup = !family.equalsIgnoreCase(seriesName);
+        String label = family + " — " + (kind == null || kind.isBlank()
+                ? "Overall"
+                : kind.charAt(0) + kind.substring(1).toLowerCase());
+        int ordinal = db.sql("SELECT COALESCE(max(ordinal), 0) + 1 FROM championship_group WHERE season_id = :seasonId")
+                .param("seasonId", seasonId).query(Integer.class).single();
+        return db.sql("""
+                        INSERT INTO championship_group (season_id, family, kind, label, ordinal, is_cup)
+                        VALUES (:seasonId, :family, :kind, :label, :ordinal, :isCup)
+                        RETURNING id
+                        """)
+                .param("seasonId", seasonId).param("family", family).param("kind", kind)
+                .param("label", label).param("ordinal", ordinal).param("isCup", isCup)
+                .query(Long.class).single();
     }
 
     /**

@@ -82,19 +82,17 @@ public class SeasonController {
                         rs.getLong("entry_count"), rs.getLong("session_count")))
                 .list();
 
-        // Same ordering as the standings browse view: the series' own
-        // championships (group_title = series name) before cups; within a group,
-        // primary kinds (DRIVERS/TEAMS) before the rest.
+        // Groups carry the display order (primary championship before its cups).
         List<BrowseController.ChampionshipSummary> championships = db.sql("""
-                        SELECT c.id, c.title, c.group_title, c.class_name, c.kind, s.year, s.id AS season_id,
+                        SELECT c.id, c.title, g.family AS group_title, c.class_name, g.kind, s.year, s.id AS season_id,
                                sr.name AS series_name,
                                (SELECT count(*) FROM standings_row r WHERE r.championship_id = c.id) AS row_count
                         FROM championship c
+                                 JOIN championship_group g ON g.id = c.group_id
                                  JOIN season s ON s.id = c.season_id
                                  JOIN series sr ON sr.id = s.series_id
                         WHERE c.season_id = :id
-                        ORDER BY (c.group_title IS NOT DISTINCT FROM sr.name) DESC, c.group_title,
-                                 c.class_name, c.kind
+                        ORDER BY g.ordinal, c.class_name
                         """)
                 .param("id", id)
                 .query((rs, i) -> new BrowseController.ChampionshipSummary(rs.getLong("id"), rs.getString("title"),

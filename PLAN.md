@@ -240,6 +240,21 @@ Routing is **react-router (HashRouter)** — zero server-config and the existing
 the print page stays clean. Backend: new `SeasonController`
 (`/api/seasons`, `/api/seasons/{id}`); `seasonId` added to the event/championship
 summaries so detail pages link back to their hub.
+**Championship model — `championship_group` ✅ DONE.** The Michelin Endurance Cup
+is not a separate contest — it's a **sub-cup within** the WeatherTech
+championship (an extra points award over 5 of the season's rounds; historically
+there's also been a Sprint Cup over the other subset). The loose
+`group_title`/`kind` strings on each per-class `championship` are lifted into a
+first-class `championship_group` (one per season × family × kind) with an
+explicit `ordinal` and an `is_cup` flag (V13; `championship` now hangs off a
+`group_id`, `group_title`/`kind` dropped). The importer find-or-creates the group
+(`family` that isn't the series' own name ⇒ cup). Frontend unchanged — the
+`ChampionshipSummary` API still exposes `groupTitle`/`kind` (mapped from the
+group). *Held for a follow-up:* consolidating the presentation on top of this —
+the hub grouping each class's championship + cup(s) together, and a sheet
+**Endurance Cup points column shown only at endurance rounds** (so one sheet, two
+columns, instead of a separate cup PDF; cup rounds match the event via
+`venueAbbrev`, reliable for the 5 endurance venues).
 **Class-name normalization — ✅ DONE.**
 IMEC standings spell classes long-form ("GT Daytona PRO") while entries/results
 use short codes ("GTDPRO"). Rather than a per-series alias map, the entry list

@@ -91,8 +91,7 @@ public class SheetController {
                         SELECT c.class_name, sr.competitor_key, COALESCE(sum(ssp.total_points), 0) AS points
                         FROM standings_row sr
                                  JOIN championship c ON c.id = sr.championship_id
-                                 JOIN season s ON s.id = c.season_id
-                                 JOIN series se ON se.id = s.series_id
+                                 JOIN championship_group g ON g.id = c.group_id
                                  JOIN standings_session_points ssp ON ssp.standings_row_id = sr.id
                                  JOIN (
                                      SELECT championship_id, session_index,
@@ -103,7 +102,7 @@ public class SheetController {
                                          FROM championship_session
                                      ) t
                                  ) rnd ON rnd.championship_id = c.id AND rnd.session_index = ssp.session_index
-                        WHERE c.season_id = :seasonId AND c.kind = 'TEAMS' AND c.group_title = se.name
+                        WHERE c.season_id = :seasonId AND g.kind = 'TEAMS' AND g.is_cup = false
                           AND rnd.round_no < :round
                         GROUP BY c.class_name, sr.competitor_key
                         """)
