@@ -438,9 +438,18 @@ display size.)
    in-container: serves the React app + `/api` from one origin, Flyway migrates, the
    parser runs on amd64 (the ARM-Mac SIGILL is a Docker-emulation artifact only).
    *(Actual Railway deploy + Postgres provisioning are the user's to do.)*
-2. **Google OAuth login** — Spring Security oauth2-client, email allowlist gates the
-   app/nav and all import/edit endpoints. Needs a Google OAuth client (user creates;
-   creds via env).
+2. **Google OAuth login — ✅ DONE.** Spring Security `oauth2-client`: two filter
+   chains gated by `AUTH_ENABLED` (off in dev → open; on in prod → Google OIDC).
+   A custom `OidcUserService` rejects any signed-in email not in
+   `AUTH_ALLOWED_EMAILS` (empty = nobody). SPA-driven: `/api/me` is public and
+   reports `{authEnabled, email}`; the Layout redirects to Google when auth is on
+   and unauthenticated, shows the signed-in email + logout otherwise. All other
+   `/api/**` are gated (401 → SPA redirects). Google's provider details are built
+   in, so prod only sets the client id/secret (+ `AUTH_ENABLED`, allowlist) via env
+   — the registration is *not* in application.yml (an empty client-id fails startup).
+   CSRF: SameSite=Lax session cookie, tokens off. Verified: dev open, auth-on gates
+   `/api/**` (401), `/oauth2/authorization/google` → Google. *(User creates the
+   Google OAuth client; see docs/DEPLOY.md.)*
 3. **Unlisted share links** — a share token (per season, sheet inherits) exposes
    read-only sheet + reference views publicly by token; everything else stays authed.
    (Sequential ids are enumerable, so a token is needed for true "unlisted".)

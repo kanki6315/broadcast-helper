@@ -47,14 +47,37 @@ Everything else (frontend, API, DB) runs fine on the native ARM image.
 
 4. Deploy. The app comes up on the Railway-provided URL.
 
+## Auth (Google login)
+
+Auth is **off by default** (local dev is open). To turn it on for the deployment:
+
+1. **Create a Google OAuth client** — Google Cloud Console → APIs & Services →
+   Credentials → Create Credentials → OAuth client ID → *Web application*.
+   - **Authorized redirect URI:** `https://<your-app>.up.railway.app/login/oauth2/code/google`
+     (add `http://localhost:8080/login/oauth2/code/google` too if you test the
+     container locally). The path is fixed by Spring.
+   - Copy the **Client ID** and **Client secret**.
+2. **Set these env vars** on the Railway app service:
+
+   | Variable | Value |
+   |---|---|
+   | `AUTH_ENABLED` | `true` |
+   | `AUTH_ALLOWED_EMAILS` | comma-separated Google emails allowed to sign in, e.g. `you@gmail.com,teammate@x.com` |
+   | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | the Client ID |
+   | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | the Client secret |
+
+How it behaves: the SPA polls `/api/me`; if auth is on and you're not signed in it
+redirects to Google, and a signed-in email **not** on `AUTH_ALLOWED_EMAILS` is
+rejected with an access-denied message. An **empty allowlist admits nobody** — set
+it. All `/api/**` (except `/api/me`) require a signed-in, allowed session.
+
+> Enabling auth requires the Google client id/secret to be present, or startup
+> fails. Set all four vars together.
+
 ## Not yet wired
 
-- **Auth (Step 2):** Google login is not in place yet, so the deployed URL is
-  currently **unauthenticated** — don't share it publicly until auth lands. It
-  needs a Google OAuth client (you create it in Google Cloud Console) with the
-  client id/secret provided as env vars, plus an email allowlist.
 - **Share links (Step 3):** unlisted read-only share tokens for sheets/reference
-  tables come after auth.
+  tables come after auth. Until then, viewing requires being signed in.
 
 ## Config reference (env)
 
@@ -66,3 +89,7 @@ Everything else (frontend, API, DB) runs fine on the native ARM image.
 | `PORT` | `8080` | Listen port (Railway sets this) |
 | `PARSER_PYTHON` | `python3` | Set to the venv python in-image (`/opt/venv/bin/python3`) |
 | `PARSER_SCRIPT` | `../parser/parse_entry_list.py` | In-image path (`/app/parser/parse_entry_list.py`) |
+| `AUTH_ENABLED` | `false` | Set `true` on the deployment to require Google login |
+| `AUTH_ALLOWED_EMAILS` | (empty) | Comma-separated allowed Google emails (empty = nobody) |
+| `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | — | Google OAuth client id (when auth on) |
+| `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret (when auth on) |

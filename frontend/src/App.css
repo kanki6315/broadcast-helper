@@ -254,6 +254,21 @@ tr.clickable:hover td {
   margin-top: 0.4rem;
 }
 
+.topbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+}
+
 .reference-scroll {
   overflow-x: auto;
   margin: 0.5rem 0 1.5rem;
