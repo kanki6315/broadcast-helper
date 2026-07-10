@@ -76,6 +76,49 @@ class ImportParserTest {
     }
 
     @Test
+    void parsesStartingGridWithInClassPositions() throws IOException {
+        JsonNode root = fixture("grid-wgi-2026.json");
+        assertTrue(ImportParser.looksLikeGrid(root));
+        GridImport grid = ImportParser.parseGrid(root);
+        assertEquals("Race", grid.sessionName());
+        assertEquals(1, grid.sessionOrdinal());
+
+        // Pole is #31, GTP P1. In-class positions count within each class over the
+        // overall grid order; a blank grid slot (overall P12) is skipped, so the
+        // first LMP2 (#43, overall P13) is LMP2 P1 — not thrown off by the gap.
+        GridImport.Row pole = grid.rows().get(0);
+        assertEquals("31", pole.number());
+        assertEquals("GTP", pole.className());
+        assertEquals(1, pole.positionInClass());
+        assertEquals(1, pole.positionOverall());
+
+        GridImport.Row firstLmp2 = grid.rows().stream()
+                .filter(r -> r.className().equals("LMP2")).findFirst().orElseThrow();
+        assertEquals("43", firstLmp2.number());
+        assertEquals(1, firstLmp2.positionInClass());
+        assertEquals(13, firstLmp2.positionOverall());
+
+        // Leading-zero car numbers survive as strings.
+        assertTrue(grid.rows().stream().anyMatch(r -> r.number().equals("04")));
+        assertTrue(grid.rows().stream().anyMatch(r -> r.number().equals("033")));
+        // The blank slot is dropped, never a phantom row.
+        assertTrue(grid.rows().stream().allMatch(r -> r.number() != null && !r.number().isBlank()));
+    }
+
+    @Test
+    void parsesMustangPerRaceGrids() throws IOException {
+        GridImport race1 = ImportParser.parseGrid(mustangFixture("grid-midohio-race1-2026.json"));
+        GridImport race2 = ImportParser.parseGrid(mustangFixture("grid-midohio-race2-2026.json"));
+        assertEquals(1, race1.sessionOrdinal());
+        assertEquals(2, race2.sessionOrdinal());
+        // #42 is on DH pole for Race 1.
+        GridImport.Row dhPole = race1.rows().stream()
+                .filter(r -> r.className().equals("DH")).findFirst().orElseThrow();
+        assertEquals("42", dhPole.number());
+        assertEquals(1, dhPole.positionInClass());
+    }
+
+    @Test
     void handlesDetroitSlashDateFormat() throws IOException {
         RaceResultsImport imp = ImportParser.parseRaceResults(fixture("race-detroit-2026.json"));
         assertEquals(LocalDateTime.of(2026, Month.MAY, 30, 4, 10), imp.sessionStart());

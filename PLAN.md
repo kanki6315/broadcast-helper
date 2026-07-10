@@ -340,13 +340,24 @@ display size.)
   Series page gains an expandable per-series editor (native colour picker,
   ordinal, delete; add via a suggestion dropdown or free-text code). No migration
   or code change to onboard a new series' classes now.
-- **Still ahead** (deferred): import the published **starting grids** (`grid[]`
-  files) into a **grid rundown sheet** — always imported, never computed (the
-  published order already reflects the carry-over + penalties, so no per-series
-  config). Most relevant to Carrera Cup Asia, which isn't running for a while.
-Grid-source engine still to be exercised for real (when the grid sheet is
-built). Design the automated prior-year-at-this-track feature, including change
-context (manufacturer, lineup, team) alongside the raw result.
+- **Starting-grid import — ✅ DONE.** The published **starting grids** (`grid[]`
+  files) now import through the same stage→review→commit pipeline (detected as
+  `GRID` = `session` + `grid`; `GridImport`/`ImportParser.parseGrid`). Grids are
+  always imported, never computed — the published order already reflects the
+  fastest-two-laps carry-over + penalties. A grid attaches to its race by the
+  hardened `(event, session_type, ordinal)` key and stores a per-entry start
+  position in `grid_position` (V17), with **in-class** start position derived from
+  the overall grid order (blank grid slots skipped). Results and grid are separate
+  files on the same session and may arrive in either order: `commitRaceResults`
+  and `commitGrid` both find-or-create the session and replace only their own
+  child rows (results / grid_position), so importing one never wipes the other.
+  This gives **start → finish** per car — the true race story. Verified on the
+  2026 WGI grid (54 cars, leading zeros like `033`/`911` preserved).
+- **Still ahead** (deferred): the **grid rundown sheet** (grid-order sheet with
+  storyline fields) — the grid *data* now lands; the sheet that presents it is
+  still pending, most relevant to Carrera Cup Asia (not running for a while).
+  Design the automated prior-year-at-this-track feature, including change context
+  (manufacturer, lineup, team) alongside the raw result.
 - **Session-key hardening (tech debt from Phase 1) — ✅ DONE.** Sessions were
   keyed `(event_id, raw session_name string)`, re-imported as delete-then-insert
   on that key — brittle: a renamed session (`"Race"` vs `"Race 1"`) added a second

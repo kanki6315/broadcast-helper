@@ -43,6 +43,52 @@ public final class ImportParser {
         return root.has("event") && root.has("entries");
     }
 
+    public static boolean looksLikeGrid(JsonNode root) {
+        return root.has("session") && root.has("grid");
+    }
+
+    public static GridImport parseGrid(JsonNode root) {
+        JsonNode session = root.path("session");
+        JsonNode circuit = session.path("circuit");
+
+        List<GridImport.Row> rows = new ArrayList<>();
+        Map<String, Integer> classCounters = new HashMap<>();
+        for (JsonNode g : root.path("grid")) {
+            // A blank slot (no car number) is a gap in the grid — a car that
+            // qualified but withdrew. It carries no class, so it neither becomes a
+            // row nor advances any class counter.
+            String number = text(g, "number");
+            if (number == null) {
+                continue;
+            }
+            String className = text(g, "class");
+            Integer inClass = classCounters.merge(className, 1, Integer::sum);
+            rows.add(new GridImport.Row(
+                    g.path("position").asInt(),
+                    inClass,
+                    number,
+                    className,
+                    text(g, "group"),
+                    text(g, "team"),
+                    text(g, "vehicle"),
+                    text(g, "manufacturer")
+            ));
+        }
+
+        return new GridImport(
+                text(session, "championship_name"),
+                text(session, "event_name"),
+                text(session, "session_name"),
+                text(session, "session_type"),
+                sessionOrdinal(text(session, "session_name")),
+                parseSessionDate(text(session, "session_date")),
+                text(circuit, "name"),
+                doubleOrNull(circuit, "length"),
+                text(circuit, "country"),
+                rows
+        );
+    }
+
     public static EntryListImport parseEntryList(JsonNode root) {
         JsonNode ev = root.path("event");
         EntryListImport.Event event = new EntryListImport.Event(

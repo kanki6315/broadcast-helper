@@ -85,10 +85,16 @@ public class ImportService {
             payload = parsed;
             summary = "%s — %s, %d classified entries".formatted(
                     parsed.eventName(), parsed.sessionName(), parsed.rows().size());
+        } else if (ImportParser.looksLikeGrid(root)) {
+            kind = "GRID";
+            GridImport parsed = ImportParser.parseGrid(root);
+            payload = parsed;
+            summary = "%s — %s starting grid, %d cars".formatted(
+                    parsed.eventName(), parsed.sessionName(), parsed.rows().size());
         } else {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Unrecognized file format: expected a results file (session + classification) "
-                    + "or a standings file (championship + classification)");
+                    "Unrecognized file format: expected a results file (session + classification), "
+                    + "a starting grid (session + grid), or a standings file (championship + classification)");
         }
 
         long id = db.sql("""
@@ -171,6 +177,7 @@ public class ImportService {
             return switch (batch.kind()) {
                 case "STANDINGS" -> reviewStandings(json.readValue(payload, StandingsImport.class));
                 case "RACE_RESULTS" -> reviewRaceResults(json.readValue(payload, RaceResultsImport.class));
+                case "GRID" -> reviewGrid(json.readValue(payload, GridImport.class));
                 default -> new ClassReview(List.of(), List.of());
             };
         } catch (JsonProcessingException e) {
@@ -213,6 +220,25 @@ public class ImportService {
         return new ClassReview(known, new ArrayList<>(unknown));
     }
 
+    private ClassReview reviewGrid(GridImport imp) {
+        if (imp.sessionStart() == null) {
+            return new ClassReview(List.of(), List.of());
+        }
+        Optional<Long> seriesId = findSeriesByName(imp.championshipName());
+        Optional<Long> seasonId = seriesId.flatMap(sid -> findSeasonId(sid, imp.sessionStart().getYear()));
+        if (seasonId.isEmpty()) {
+            return new ClassReview(List.of(), List.of());
+        }
+        List<String> known = seasonEntryClasses(seasonId.get());
+        LinkedHashSet<String> unknown = new LinkedHashSet<>();
+        for (GridImport.Row row : imp.rows()) {
+            if (isUnknownClass(row.className(), known)) {
+                unknown.add(row.className());
+            }
+        }
+        return new ClassReview(known, new ArrayList<>(unknown));
+    }
+
     // -------------------------------------------------------------- target review
 
     public record SeriesOption(long id, String name, String abbreviation) {
@@ -246,6 +272,7 @@ public class ImportService {
             TargetGuess guess = switch (batch.kind()) {
                 case "ENTRY_LIST" -> guessEntryList(json.readValue(payload, EntryListImport.class));
                 case "RACE_RESULTS" -> guessRaceResults(json.readValue(payload, RaceResultsImport.class));
+                case "GRID" -> guessGrid(json.readValue(payload, GridImport.class));
                 case "STANDINGS" -> guessStandings(json.readValue(payload, StandingsImport.class));
                 default -> null;
             };
@@ -270,6 +297,18 @@ public class ImportService {
     }
 
     private TargetGuess guessRaceResults(RaceResultsImport imp) {
+        Integer year = imp.sessionStart() != null ? imp.sessionStart().getYear() : null;
+        Optional<Long> seriesId = findSeriesByName(imp.championshipName());
+        LocalDate date = imp.sessionStart() != null ? imp.sessionStart().toLocalDate() : null;
+        Long eventGuess = seriesId.flatMap(sid -> year == null ? Optional.<Long>empty()
+                : findSeasonId(sid, year)).flatMap(sn -> findMatchingEvent(sn, imp.circuitName(), date))
+                .orElse(null);
+        return new TargetGuess(seriesId.orElse(null), seriesId.map(this::seriesName).orElse(null), year,
+                eventGuess, imp.eventName(), imp.circuitName(),
+                date != null ? date.toString() : null, null, null, null, null);
+    }
+
+    private TargetGuess guessGrid(GridImport imp) {
         Integer year = imp.sessionStart() != null ? imp.sessionStart().getYear() : null;
         Optional<Long> seriesId = findSeriesByName(imp.championshipName());
         LocalDate date = imp.sessionStart() != null ? imp.sessionStart().toLocalDate() : null;
@@ -375,6 +414,7 @@ public class ImportService {
         try {
             switch (batch.kind()) {
                 case "RACE_RESULTS" -> commitRaceResults(json.readValue(payload, RaceResultsImport.class), target);
+                case "GRID" -> commitGrid(json.readValue(payload, GridImport.class), target);
                 case "STANDINGS" -> commitStandings(json.readValue(payload, StandingsImport.class), target);
                 case "ENTRY_LIST" -> commitEntryList(json.readValue(payload, EntryListImport.class), target);
                 default -> throw new IllegalStateException("Unknown batch kind " + batch.kind());
@@ -415,36 +455,21 @@ public class ImportService {
         renumberSeasonRounds(seasonId);
         Map<String, String> mapping = target.mapping();
 
-        // Replace the session (and via cascade its results) if it was imported
-        // before. The identity is (event_id, session_type, ordinal), not the
-        // free-text name — so a source that renames "Race" to "Race 1" overwrites
-        // its predecessor instead of adding a second RACE session.
+        // Find-or-create the session by its stable (event, session_type, ordinal)
+        // key — not the free-text name, so a source that renames "Race" to
+        // "Race 1" updates its predecessor instead of adding a second RACE
+        // session. Then replace only this session's results; a starting grid
+        // imported separately hangs off the same session and must survive.
         String sessionType = normalizeSessionType(imp.sessionType(), imp.sessionName());
-        db.sql("""
-                        DELETE FROM race_session
-                        WHERE event_id = :eventId AND session_type = :type AND ordinal = :ordinal
-                        """)
-                .param("eventId", eventId).param("type", sessionType)
-                .param("ordinal", imp.sessionOrdinal()).update();
-        long sessionId = db.sql("""
-                        INSERT INTO race_session (event_id, session_type, ordinal, name, session_start, report_mark, report_message)
-                        VALUES (:eventId, :type, :ordinal, :name, :start, :mark, :message)
-                        RETURNING id
-                        """)
-                .param("eventId", eventId)
-                .param("type", sessionType)
-                .param("ordinal", imp.sessionOrdinal())
-                .param("name", imp.sessionName())
-                .param("start", imp.sessionStart())
-                .param("mark", imp.reportMark())
-                .param("message", imp.reportMessage())
-                .query(Long.class)
-                .single();
+        long sessionId = findOrCreateRaceSession(eventId, sessionType, imp.sessionOrdinal(),
+                imp.sessionName(), imp.sessionStart(), imp.reportMark(), imp.reportMessage());
+        db.sql("DELETE FROM result WHERE session_id = :sessionId").param("sessionId", sessionId).update();
 
         for (RaceResultsImport.Row row : imp.rows()) {
             String className = canonicalizeClass(row.className(), knownClasses, mapping,
                     imp.championshipName() + " " + imp.sessionStart().getYear());
-            long entryId = upsertEntry(eventId, row, className);
+            long entryId = upsertEntry(eventId, row.number(), className, row.team(), row.vehicle(),
+                    row.manufacturer(), row.group());
             replaceDriverAssignments(entryId, row.drivers());
             db.sql("""
                             INSERT INTO result (session_id, entry_id, position_overall, position_in_class, status,
@@ -471,6 +496,45 @@ public class ImportService {
                     .param("flKph", row.fastestLapKph())
                     .param("flSeat", row.fastestLapDriverSeat())
                     .param("pitStops", row.pitStops())
+                    .update();
+        }
+    }
+
+    private void commitGrid(GridImport imp, ImportTarget target) {
+        if (imp.sessionStart() == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Grid file has no session date; cannot determine the season");
+        }
+        long seriesId = resolveSeriesId(target);
+        long seasonId = findOrCreateSeason(seriesId, imp.sessionStart().getYear());
+        List<String> knownClasses = seasonEntryClasses(seasonId);
+        long eventId = target.eventId() != null ? target.eventId()
+                : createEvent(seasonId, imp.eventName(), imp.circuitName(),
+                imp.circuitLengthM(), imp.circuitCountry(), imp.sessionStart().toLocalDate());
+        renumberSeasonRounds(seasonId);
+        Map<String, String> mapping = target.mapping();
+
+        // The grid belongs to a race session; find-or-create it by the stable key
+        // (the results file may not have been imported yet), then replace only its
+        // grid rows — the session's results, if any, are untouched.
+        String sessionType = normalizeSessionType(imp.sessionType(), imp.sessionName());
+        long sessionId = findOrCreateRaceSession(eventId, sessionType, imp.sessionOrdinal(),
+                imp.sessionName(), imp.sessionStart(), null, null);
+        db.sql("DELETE FROM grid_position WHERE session_id = :sessionId").param("sessionId", sessionId).update();
+
+        for (GridImport.Row row : imp.rows()) {
+            String className = canonicalizeClass(row.className(), knownClasses, mapping,
+                    imp.championshipName() + " " + imp.sessionStart().getYear());
+            long entryId = upsertEntry(eventId, row.number(), className, row.team(),
+                    row.vehicle(), row.manufacturer(), row.group());
+            db.sql("""
+                            INSERT INTO grid_position (session_id, entry_id, position_overall, position_in_class)
+                            VALUES (:sessionId, :entryId, :posOverall, :posInClass)
+                            """)
+                    .param("sessionId", sessionId)
+                    .param("entryId", entryId)
+                    .param("posOverall", row.positionOverall())
+                    .param("posInClass", row.positionInClass())
                     .update();
         }
     }
@@ -858,7 +922,39 @@ public class ImportService {
                 .query(String.class).single();
     }
 
-    private long upsertEntry(long eventId, RaceResultsImport.Row row, String className) {
+    /**
+     * Find-or-create a session by its stable (event, session_type, ordinal) key,
+     * returning its id. Results and starting grids are separate files that hang
+     * off the same session and may arrive in either order, so both resolve it
+     * this way rather than delete-and-recreate (which would cascade away the
+     * other's rows). name/start refresh on each import; report fields only
+     * overwrite when supplied (a grid doesn't carry results' report marks).
+     */
+    private long findOrCreateRaceSession(long eventId, String sessionType, int ordinal, String name,
+                                         LocalDateTime start, String mark, String message) {
+        return db.sql("""
+                        INSERT INTO race_session (event_id, session_type, ordinal, name, session_start, report_mark, report_message)
+                        VALUES (:eventId, :type, :ordinal, :name, :start, :mark, :message)
+                        ON CONFLICT (event_id, session_type, ordinal) DO UPDATE
+                            SET name = EXCLUDED.name,
+                                session_start = COALESCE(EXCLUDED.session_start, race_session.session_start),
+                                report_mark = COALESCE(EXCLUDED.report_mark, race_session.report_mark),
+                                report_message = COALESCE(EXCLUDED.report_message, race_session.report_message)
+                        RETURNING id
+                        """)
+                .param("eventId", eventId)
+                .param("type", sessionType)
+                .param("ordinal", ordinal)
+                .param("name", name)
+                .param("start", start)
+                .param("mark", mark)
+                .param("message", message)
+                .query(Long.class)
+                .single();
+    }
+
+    private long upsertEntry(long eventId, String number, String className, String team,
+                             String vehicle, String manufacturer, String group) {
         // is_guest is deliberately untouched on update: it is user-managed state.
         return db.sql("""
                         INSERT INTO entry (event_id, car_number, class_name, team_name, vehicle, manufacturer, class_group)
@@ -872,12 +968,12 @@ public class ImportService {
                         RETURNING id
                         """)
                 .param("eventId", eventId)
-                .param("number", row.number())
+                .param("number", number)
                 .param("className", className)
-                .param("team", row.team())
-                .param("vehicle", row.vehicle())
-                .param("manufacturer", resolveManufacturer(className, row.vehicle(), row.manufacturer()))
-                .param("group", row.group())
+                .param("team", team)
+                .param("vehicle", vehicle)
+                .param("manufacturer", resolveManufacturer(className, vehicle, manufacturer))
+                .param("group", group)
                 .query(Long.class)
                 .single();
     }

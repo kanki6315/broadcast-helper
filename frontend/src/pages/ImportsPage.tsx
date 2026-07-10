@@ -74,7 +74,11 @@ const KIND_LABEL: Record<string, string> = {
   RACE_RESULTS: 'Results',
   ENTRY_LIST: 'Entry list',
   STANDINGS: 'Standings',
+  GRID: 'Starting grid',
 }
+
+// Kinds that attach to an event (vs. a championship) and so pick an event target.
+const EVENT_KINDS = ['RACE_RESULTS', 'ENTRY_LIST', 'GRID']
 
 export default function ImportsPage() {
   const [batches, setBatches] = useState<ImportBatch[]>([])
@@ -160,7 +164,7 @@ export default function ImportsPage() {
       newSeriesName: t.seriesId === 'new' ? t.newSeriesName.trim() : null,
       classMapping: t.classMapping,
     }
-    if (review.kind === 'RACE_RESULTS' || review.kind === 'ENTRY_LIST') {
+    if (EVENT_KINDS.includes(review.kind)) {
       body.eventId = t.eventId === 'new' ? null : t.eventId
     }
     if (review.kind === 'STANDINGS') {
@@ -277,7 +281,7 @@ export default function ImportsPage() {
                             )}
                           </label>
 
-                          {(review.kind === 'RACE_RESULTS' || review.kind === 'ENTRY_LIST') && (
+                          {EVENT_KINDS.includes(review.kind) && (
                             <label className="target-row">
                               <span className="target-label">Event</span>
                               <select
