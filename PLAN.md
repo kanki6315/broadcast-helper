@@ -207,11 +207,13 @@ only gap vs. the hand-made original is manufacturer logos (upload-pending, the
 sheet shows names until then) and that standings reflect the latest imported
 round rather than a pre-round snapshot.
 
-**Phase 2 — Season tools.** Remaining active item: **image size variants**
-(below). The **season reference table**, **per-entry notes**, and the
-**championship-consolidation presentation features** (hub per-class grouping +
-sheet Endurance Cup column) are **moved to Phase 4** — the season hub needs more
-concrete design first before those are built on it.
+**Phase 2 — Season tools. ✅ COMPLETE.** Delivered below: class-name
+canonicalization, best/last handling, pre-round standings snapshot, season-hub
+UI, championship_group remodel, image size variants. The **season reference
+table**, **per-entry notes**, and the **championship-consolidation presentation
+features** (hub per-class grouping + sheet Endurance Cup column) were **moved to
+Phase 4** — the season hub needs more concrete design first before those are
+built on it.
 **Standings — pre-round snapshot ✅ DONE; recompute-from-results + manual
 override DEFERRED.** Every IMSA championship publishes a JSON standings file with
 the full per-round points breakdown, so recomputing totals from results is
