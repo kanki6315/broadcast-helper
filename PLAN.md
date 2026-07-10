@@ -293,10 +293,22 @@ display size.)
   that marker to `entry.is_guest` (Jim Farley #17 → GUEST badge). Single-driver
   rendering confirmed end-to-end on the sheet. Sample: `parser/samples/
   2026_MC_MidOhio_EntryList.pdf`; parser tests cover it.
-- **Still ahead:** two-race weekends (session `(type, ordinal)` + stable keys),
-  the **fastest-two-laps grid engine** (Mustang: Race-2 grid = best-of
-  qualifying / Race-1 two-lap times; Carrera Cup Asia has no carry-over — so
-  per-series config), grid rundown sheet, per-series class colors (DH/DHL).
+- **Multi-race results + event-key hardening — ✅ DONE.** Race 1 / Race 2 /
+  Qualifying import through the existing results importer (same timing-provider
+  shape; DH/DHL already canonical, single-driver). The sources name the weekend
+  differently (entry list "Mid-Ohio SportsCar Weekend" vs results "O'Reilly Auto
+  Parts 4 Hours of Mid-Ohio"), so `resolveEvent` now identifies an event by
+  **(season, normalized circuit, ±14-day window)** with a name fallback, instead
+  of the brittle Phase-1 name key — the results attach to the entry list's event
+  (one event, three sessions) rather than duplicating it. The sheet's Q column
+  fills from qualifying in-class positions.
+- **Still ahead:** import the published **starting grids** (`grid[]` files) into
+  a **grid rundown sheet**. We always import the grid, never compute it: the
+  published order already reflects the fastest-two-laps carry-over *and* any
+  penalties/other changes, so it holds for every series (incl. Carrera Cup Asia)
+  with no per-series config or compute engine. Also ahead: a stable session
+  `(type, ordinal)` key (Race 1/Race 2 currently distinguished by name, which
+  works but isn't the §3 model); per-series class colors (DH/DHL).
 Grid-source engine exercised for real. Per-series configuration UI
 instead of code. Design the automated prior-year-at-this-track feature,
 including change context (manufacturer, lineup, team) alongside the raw result.

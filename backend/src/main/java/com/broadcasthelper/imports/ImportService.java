@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -401,19 +402,8 @@ public class ImportService {
         long seriesId = matchSeriesByCode(imp.event().series());
         long seasonId = findOrCreateSeason(seriesId, imp.event().startDate().getYear());
 
-        Optional<Long> existing = db.sql("SELECT id FROM event WHERE season_id = :seasonId AND name = :name")
-                .param("seasonId", seasonId).param("name", imp.event().name()).query(Long.class).optional();
-        long eventId = existing.orElseGet(() -> db.sql("""
-                        INSERT INTO event (season_id, name, circuit_name, event_date)
-                        VALUES (:seasonId, :name, :circuit, :date)
-                        RETURNING id
-                        """)
-                .param("seasonId", seasonId)
-                .param("name", imp.event().name())
-                .param("circuit", imp.event().circuit())
-                .param("date", imp.event().endDate() != null ? imp.event().endDate() : imp.event().startDate())
-                .query(Long.class)
-                .single());
+        LocalDate eventDate = imp.event().endDate() != null ? imp.event().endDate() : imp.event().startDate();
+        long eventId = resolveEvent(seasonId, imp.event().name(), imp.event().circuit(), null, null, eventDate);
         renumberSeasonRounds(seasonId);
 
         for (EntryListImport.Entry e : imp.entries()) {
@@ -671,11 +661,40 @@ public class ImportService {
     }
 
     private long findOrCreateEvent(long seasonId, RaceResultsImport imp) {
-        LocalDateTime start = imp.sessionStart();
-        Optional<Long> existing = db.sql("SELECT id FROM event WHERE season_id = :seasonId AND name = :name")
-                .param("seasonId", seasonId).param("name", imp.eventName()).query(Long.class).optional();
-        if (existing.isPresent()) {
-            return existing.get();
+        return resolveEvent(seasonId, imp.eventName(), imp.circuitName(),
+                imp.circuitLengthM(), imp.circuitCountry(), imp.sessionStart().toLocalDate());
+    }
+
+    /**
+     * Resolve the event a session/entry-list belongs to. Sources name the same
+     * weekend differently (the entry list "Mid-Ohio SportsCar Weekend" vs the
+     * results "O'Reilly Auto Parts 4 Hours of Mid-Ohio"), so identity is the
+     * venue + weekend, not the free-text name: match an existing event at the
+     * same circuit within a two-week window, falling back to an exact name match,
+     * and only then create. This replaces the brittle name-only key from Phase 1.
+     */
+    private long resolveEvent(long seasonId, String name, String circuit,
+                              Double lengthM, String country, LocalDate date) {
+        if (circuit != null && !circuit.isBlank() && date != null) {
+            Optional<Long> byVenue = db.sql("""
+                            SELECT id FROM event
+                            WHERE season_id = :seasonId AND event_date IS NOT NULL
+                              AND lower(regexp_replace(trim(circuit_name), '\\s+', ' ', 'g'))
+                                = lower(regexp_replace(trim(:circuit), '\\s+', ' ', 'g'))
+                              AND abs(event_date - :date) <= 14
+                            ORDER BY abs(event_date - :date)
+                            LIMIT 1
+                            """)
+                    .param("seasonId", seasonId).param("circuit", circuit).param("date", date)
+                    .query(Long.class).optional();
+            if (byVenue.isPresent()) {
+                return byVenue.get();
+            }
+        }
+        Optional<Long> byName = db.sql("SELECT id FROM event WHERE season_id = :seasonId AND name = :name")
+                .param("seasonId", seasonId).param("name", name).query(Long.class).optional();
+        if (byName.isPresent()) {
+            return byName.get();
         }
         return db.sql("""
                         INSERT INTO event (season_id, name, circuit_name, circuit_length_m, country, event_date)
@@ -683,11 +702,11 @@ public class ImportService {
                         RETURNING id
                         """)
                 .param("seasonId", seasonId)
-                .param("name", imp.eventName())
-                .param("circuit", imp.circuitName())
-                .param("length", imp.circuitLengthM())
-                .param("country", imp.circuitCountry())
-                .param("date", start.toLocalDate())
+                .param("name", name)
+                .param("circuit", circuit)
+                .param("length", lengthM)
+                .param("country", country)
+                .param("date", date)
                 .query(Long.class)
                 .single();
     }
