@@ -162,12 +162,9 @@ silently guess.
 
 ## 5. Outputs
 
-1. **Pit-lane entry list PDF (MVP)** — same layout as the hand-made example:
-   car #, team, drivers + ratings, qualifying result, last-year-at-this-track
-   (manual text field for now — see edge case 7), championship position +
-   points (configurable source), best result of season (+ venue, ties listed),
-   last race result, car photo. Grouped by class, guest badge where
-   applicable. US Letter, print-preview page + one-click export.
+1. **Pit-lane entry list PDF (MVP)** — ✅ DONE. Same layout as the hand-made
+   example plus nationality flags, a manufacturer column (logo/name), and
+   class-colored headers + zebra rows. Details in Phase 1 above.
 2. **Season reference table** — rows = entries, columns = rounds, each cell
    quali/finish; per class.
 3. **Grid rundown sheet** — generated from a qualifying session (or derived
@@ -182,14 +179,33 @@ silently guess.
 Docker Compose, Flyway baseline schema, one vertical slice (create a series in
 the UI, persisted). `git init` the repo.
 
-**Phase 1 — MVP: IMSA entry list PDF.**
-Domain model + CRUD for series/season/event/entry/drivers. IMSA results JSON
-importer and IMSA standings PDF importer (with per-round quali/race points
-split), both with staging review. Manual standings editor. Season bootstrap
-(load all completed 2026 rounds). Image bulk upload + match review. Entry-list
-print page + Playwright PDF export reproducing the hand-made 2026 WGI sheet
-(prior-year column as a manual field).
-**Acceptance test: regenerate the attached example PDF from imported data.**
+**Phase 1 — MVP: IMSA entry list PDF. ✅ COMPLETE (2026-07-09).**
+Delivered:
+- Domain model: series (+ aliases) → season → events → sessions/entries/
+  drivers/results, and championships → per-session points. Postgres + Flyway
+  (migrations V1–V9).
+- Importers, all auto-detected on upload and staged for review before commit:
+  IMSA **results JSON**, **standings JSON** (team, driver, and Michelin
+  Endurance Cup families), and **entry-list PDF** via the Python parser
+  sidecar (`parser/`). Manual standings entry not needed — everything IMSA
+  publishes arrived as JSON except the entry list, which the sidecar handles.
+- Season bootstrap: all completed 2026 rounds + 2025 CTMP loaded from real
+  files; standings grouped by championship family in the UI.
+- Bulk **car images** keyed by (season, car number); **manufacturer logos**
+  keyed by name (user-uploaded, own column on the sheet).
+- **Pit-lane entry list sheet**: print-first US Letter page (`#/sheet/{event}`)
+  → PDF via headless Chromium (the browser page *is* the export; no separate
+  Playwright renderer needed). Columns: #, team, manufacturer (logo/name),
+  drivers with nationality flags + ratings (TBD seats as "(?)"), qualifying
+  (blank until imported), prior-year-at-venue (auto-passed when car+team carry
+  over, else manual override), championship position + points (teams default,
+  per series style), best result of season (+venue, ties listed), last race
+  result, car photo. Class-colored headers + subtle class-tinted zebra rows,
+  guest badges.
+**Acceptance test met: the 2026 sheet regenerates from imported data;** the
+only gap vs. the hand-made original is manufacturer logos (upload-pending, the
+sheet shows names until then) and that standings reflect the latest imported
+round rather than a pre-round snapshot.
 
 **Phase 2 — Season tools.** Season reference table, computed standings with
 manual override, IMSA entry-list PDF importer, per-entry notes, better
