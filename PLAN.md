@@ -430,11 +430,14 @@ display size.)
   from environment (Railway vars); application.yml keeps local dev defaults.
 
 **Build order:**
-1. **Single-container packaging** — serve the React build from Spring Boot,
-   multi-stage Dockerfile (Java + bundled Python), env-driven datasource. Runnable
-   locally as one container, then deployed to Railway (private URL). *(Deploy +
-   Railway account + Postgres provisioning are the user's to do; the code/Dockerfile
-   /config are prepared here.)*
+1. **Single-container packaging — ✅ DONE.** Root `Dockerfile` (multi-stage: React
+   build → Spring Boot jar serving it as static assets → JRE + bundled Python
+   venv/pdfplumber + `parser/`), env-driven datasource/PORT/parser paths, base
+   pinned to `jammy` (Python 3.10; the rolling tag's 3.14 crashes pdfplumber),
+   JVM heap sized to the container. `docs/DEPLOY.md` has the Railway steps. Verified
+   in-container: serves the React app + `/api` from one origin, Flyway migrates, the
+   parser runs on amd64 (the ARM-Mac SIGILL is a Docker-emulation artifact only).
+   *(Actual Railway deploy + Postgres provisioning are the user's to do.)*
 2. **Google OAuth login** — Spring Security oauth2-client, email allowlist gates the
    app/nav and all import/edit endpoints. Needs a Google OAuth client (user creates;
    creds via env).
