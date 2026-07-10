@@ -69,6 +69,26 @@
   background: #1f7a34;
 }
 
+/* Alternating row tint, keyed to the class color and kept very light so text
+   stays legible and print stays clean. print-color-adjust keeps it in the PDF. */
+.sheet tbody tr:nth-child(even) td {
+  background: rgba(0, 0, 0, 0.045);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.sheet-class[data-class='LMP2'] tbody tr:nth-child(even) td {
+  background: rgba(23, 70, 143, 0.07);
+}
+
+.sheet-class[data-class='GTDPRO'] tbody tr:nth-child(even) td {
+  background: rgba(179, 38, 30, 0.07);
+}
+
+.sheet-class[data-class='GTD'] tbody tr:nth-child(even) td {
+  background: rgba(31, 122, 52, 0.07);
+}
+
 .sheet table {
   width: 100%;
   border-collapse: collapse;
