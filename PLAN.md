@@ -302,13 +302,20 @@ display size.)
   of the brittle Phase-1 name key — the results attach to the entry list's event
   (one event, three sessions) rather than duplicating it. The sheet's Q column
   fills from qualifying in-class positions.
-- **Still ahead:** import the published **starting grids** (`grid[]` files) into
-  a **grid rundown sheet**. We always import the grid, never compute it: the
-  published order already reflects the fastest-two-laps carry-over *and* any
-  penalties/other changes, so it holds for every series (incl. Carrera Cup Asia)
-  with no per-series config or compute engine. Also ahead: a stable session
-  `(type, ordinal)` key (Race 1/Race 2 currently distinguished by name, which
-  works but isn't the §3 model); per-series class colors (DH/DHL).
+- **Per-series class colours + order — ✅ DONE.** The hardcoded IMSA class
+  colours (sheet.css) and `classRank` order (SheetController) are replaced by a
+  `class_style(series_id, class_code, ordinal, color)` table (V15, seeded IMSA +
+  Mustang DH/DHL). The sheet returns each class's colour and orders by the
+  config; the frontend applies it via `--class-color`/`--class-tint` (zebra tint
+  derived from the colour), so any new series renders correctly with no code
+  change. A class without a row falls back to a neutral default sorted last.
+  (DH navy / DHL bronze are seeded defaults, editable in the table.)
+- **Still ahead** (deferred): import the published **starting grids** (`grid[]`
+  files) into a **grid rundown sheet** — always imported, never computed (the
+  published order already reflects the carry-over + penalties, so no per-series
+  config). Most relevant to Carrera Cup Asia, which isn't running for a while.
+  Also: a stable session `(type, ordinal)` key (Race 1/Race 2 work by name for
+  now); a per-series config UI to edit `class_style` (currently seeded in SQL).
 Grid-source engine exercised for real. Per-series configuration UI
 instead of code. Design the automated prior-year-at-this-track feature,
 including change context (manufacturer, lineup, team) alongside the raw result.

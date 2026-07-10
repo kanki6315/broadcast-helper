@@ -45,7 +45,7 @@ public class SheetController {
                              Long imageVersion) {
     }
 
-    public record SheetClass(String className, List<SheetEntry> entries) {
+    public record SheetClass(String className, String color, List<SheetEntry> entries) {
     }
 
     public record Sheet(long eventId, String eventName, String circuitName, LocalDate eventDate,
@@ -64,7 +64,8 @@ public class SheetController {
                 .param("id", id)
                 .query((rs, i) -> new Object[]{rs.getString("name"), rs.getString("circuit_name"),
                         rs.getObject("event_date", LocalDate.class), rs.getLong("season_id"),
-                        rs.getObject("round_ordinal", Integer.class), rs.getInt("year"), rs.getString("series_name")})
+                        rs.getObject("round_ordinal", Integer.class), rs.getInt("year"), rs.getString("series_name"),
+                        rs.getLong("series_id")})
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such event"));
         String eventName = (String) header[0];
@@ -74,6 +75,18 @@ public class SheetController {
         Integer roundOrdinal = (Integer) header[4];
         int year = (Integer) header[5];
         String seriesName = (String) header[6];
+        long seriesId = (Long) header[7];
+
+        // Per-series class display config (order + header colour); classes with
+        // no row fall back to a neutral colour sorted last.
+        record ClassStyle(int ordinal, String color) {
+        }
+        Map<String, ClassStyle> classStyles = new HashMap<>();
+        db.sql("SELECT class_code, ordinal, color FROM class_style WHERE series_id = :seriesId")
+                .param("seriesId", seriesId)
+                .query((rs, i) -> classStyles.put(rs.getString("class_code"),
+                        new ClassStyle(rs.getInt("ordinal"), rs.getString("color"))))
+                .list();
 
         // Default champ column: the series' own TEAMS standings per class (teams
         // points for team-based series — see PLAN.md decisions), as they stood
@@ -296,9 +309,16 @@ public class SheetController {
                                     r.imageUploadedAt() != null ? r.imageUploadedAt().toInstant().toEpochMilli() : null));
                 });
 
+        String defaultColor = "#1a1a1a";
         List<SheetClass> classes = byClass.entrySet().stream()
-                .map(e -> new SheetClass(e.getKey(), e.getValue()))
-                .sorted(Comparator.comparingInt(c -> classRank(c.className())))
+                .map(e -> {
+                    ClassStyle st = classStyles.get(e.getKey());
+                    return new SheetClass(e.getKey(), st != null ? st.color() : defaultColor, e.getValue());
+                })
+                .sorted(Comparator.comparingInt(c -> {
+                    ClassStyle st = classStyles.get(c.className());
+                    return st != null ? st.ordinal() : Integer.MAX_VALUE;
+                }))
                 .toList();
         String priorYearLabel = "'" + String.format("%02d", (year - 1) % 100) + " "
                                 + venueAbbrev(eventName, circuitName);
@@ -328,18 +348,6 @@ public class SheetController {
         } catch (NumberFormatException e) {
             return Integer.MAX_VALUE;
         }
-    }
-
-    /** Prototypes ahead of GT: the class order broadcasters expect. */
-    private static int classRank(String className) {
-        return switch (className) {
-            case "GTP" -> 0;
-            case "LMP2" -> 1;
-            case "LMP3" -> 2;
-            case "GTDPRO" -> 3;
-            case "GTD" -> 4;
-            default -> 5;
-        };
     }
 
     static String ordinal(int n) {

@@ -40,53 +40,26 @@
   break-inside: avoid-page;
 }
 
+/* Header colour and zebra tint come from per-series config (SheetController's
+   class_style), passed in as --class-color / --class-tint. Any class without
+   config falls back to the neutral defaults here. */
 .sheet-class h2 {
   font-size: 13px;
   margin: 10px 0 3px;
   padding: 2px 6px;
-  background: #1a1a1a;
+  background: var(--class-color, #1a1a1a);
   color: #fff;
   /* Force the header fill to appear in the printed/exported PDF. */
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
 
-/* Per-class header colors for at-a-glance scanning. Any class not listed
-   here keeps the dark default above. */
-.sheet-class[data-class='GTP'] h2 {
-  background: #000;
-}
-
-.sheet-class[data-class='LMP2'] h2 {
-  background: #17468f;
-}
-
-.sheet-class[data-class='GTDPRO'] h2 {
-  background: #b3261e;
-}
-
-.sheet-class[data-class='GTD'] h2 {
-  background: #1f7a34;
-}
-
-/* Alternating row tint, keyed to the class color and kept very light so text
-   stays legible and print stays clean. print-color-adjust keeps it in the PDF. */
+/* Alternating row tint, a light version of the class colour so text stays
+   legible and print stays clean. print-color-adjust keeps it in the PDF. */
 .sheet tbody tr:nth-child(even) td {
-  background: rgba(0, 0, 0, 0.045);
+  background: var(--class-tint, rgba(0, 0, 0, 0.045));
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
-}
-
-.sheet-class[data-class='LMP2'] tbody tr:nth-child(even) td {
-  background: rgba(23, 70, 143, 0.07);
-}
-
-.sheet-class[data-class='GTDPRO'] tbody tr:nth-child(even) td {
-  background: rgba(179, 38, 30, 0.07);
-}
-
-.sheet-class[data-class='GTD'] tbody tr:nth-child(even) td {
-  background: rgba(31, 122, 52, 0.07);
 }
 
 .sheet table {

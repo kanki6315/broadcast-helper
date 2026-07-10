@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import 'flag-icons/css/flag-icons.min.css'
 import './sheet.css'
 import { flagCode } from '../lib/countries'
@@ -30,7 +30,16 @@ interface SheetEntry {
 
 interface SheetClass {
   className: string
+  color: string
   entries: SheetEntry[]
+}
+
+/** Light translucent tint of the class colour, for zebra rows. */
+function tint(hex: string, alpha: number): string {
+  const h = hex.replace('#', '')
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
+  const n = parseInt(full, 16)
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`
 }
 
 interface Sheet {
@@ -92,7 +101,17 @@ export default function SheetPage({ eventId }: { eventId: number }) {
       </header>
 
       {sheet.classes.map((cls) => (
-        <section key={cls.className} className="sheet-class" data-class={cls.className}>
+        <section
+          key={cls.className}
+          className="sheet-class"
+          data-class={cls.className}
+          style={
+            {
+              '--class-color': cls.color,
+              '--class-tint': tint(cls.color, 0.07),
+            } as CSSProperties
+          }
+        >
           <h2>{cls.className}</h2>
           <table>
             <thead>
