@@ -98,33 +98,57 @@ public class SheetController {
         }
         record ChampAgg(String className, String key, double points) {
         }
-        Map<String, Map<String, ChampRow>> champByClass = new HashMap<>();
-        Map<String, List<ChampAgg>> aggByClass = new LinkedHashMap<>();
+        // The primary (non-cup) championship to show per class: teams points for a
+        // team-based series, drivers points for a single-driver series. Prefer a
+        // TEAMS championship when one exists, else DRIVERS. Its kind decides how a
+        // car is matched to a standings row (car number vs driver name).
+        record PrimaryChamp(long id, String className, String kind) {
+        }
+        Map<String, PrimaryChamp> chosenByClass = new HashMap<>();
         db.sql("""
-                        SELECT c.class_name, sr.competitor_key, COALESCE(sum(ssp.total_points), 0) AS points
-                        FROM standings_row sr
-                                 JOIN championship c ON c.id = sr.championship_id
-                                 JOIN championship_group g ON g.id = c.group_id
-                                 JOIN standings_session_points ssp ON ssp.standings_row_id = sr.id
-                                 JOIN (
-                                     SELECT championship_id, session_index,
-                                            dense_rank() OVER (PARTITION BY championship_id ORDER BY first_idx) AS round_no
-                                     FROM (
-                                         SELECT championship_id, session_index,
-                                                min(session_index) OVER (PARTITION BY championship_id, event_name) AS first_idx
-                                         FROM championship_session
-                                     ) t
-                                 ) rnd ON rnd.championship_id = c.id AND rnd.session_index = ssp.session_index
-                        WHERE c.season_id = :seasonId AND g.kind = 'TEAMS' AND g.is_cup = false
-                          AND rnd.round_no < :round
-                        GROUP BY c.class_name, sr.competitor_key
+                        SELECT c.id, c.class_name, g.kind
+                        FROM championship c JOIN championship_group g ON g.id = c.group_id
+                        WHERE c.season_id = :seasonId AND g.is_cup = false
                         """)
                 .param("seasonId", seasonId)
-                .param("round", roundOrdinal) // null (no ordinal) -> no rows -> blank column
-                .query((rs, i) -> new ChampAgg(rs.getString("class_name"), rs.getString("competitor_key"),
-                        rs.getDouble("points")))
+                .query((rs, i) -> new PrimaryChamp(rs.getLong("id"), rs.getString("class_name"), rs.getString("kind")))
                 .list()
-                .forEach(a -> aggByClass.computeIfAbsent(a.className(), k -> new ArrayList<>()).add(a));
+                .forEach(pc -> chosenByClass.merge(pc.className(), pc,
+                        (a, b) -> champKindRank(a.kind()) <= champKindRank(b.kind()) ? a : b));
+        Map<String, String> champKindByClass = new HashMap<>();
+        java.util.Set<Long> champIds = new java.util.HashSet<>();
+        chosenByClass.forEach((cls, pc) -> {
+            champKindByClass.put(cls, pc.kind());
+            champIds.add(pc.id());
+        });
+
+        Map<String, Map<String, ChampRow>> champByClass = new HashMap<>();
+        Map<String, List<ChampAgg>> aggByClass = new LinkedHashMap<>();
+        if (!champIds.isEmpty() && roundOrdinal != null) {
+            db.sql("""
+                            SELECT c.class_name, sr.competitor_key, COALESCE(sum(ssp.total_points), 0) AS points
+                            FROM standings_row sr
+                                     JOIN championship c ON c.id = sr.championship_id
+                                     JOIN standings_session_points ssp ON ssp.standings_row_id = sr.id
+                                     JOIN (
+                                         SELECT championship_id, session_index,
+                                                dense_rank() OVER (PARTITION BY championship_id ORDER BY first_idx) AS round_no
+                                         FROM (
+                                             SELECT championship_id, session_index,
+                                                    min(session_index) OVER (PARTITION BY championship_id, event_name) AS first_idx
+                                             FROM championship_session
+                                         ) t
+                                     ) rnd ON rnd.championship_id = c.id AND rnd.session_index = ssp.session_index
+                            WHERE c.id IN (:champIds) AND rnd.round_no < :round
+                            GROUP BY c.class_name, sr.competitor_key
+                            """)
+                    .param("champIds", champIds)
+                    .param("round", roundOrdinal)
+                    .query((rs, i) -> new ChampAgg(rs.getString("class_name"), rs.getString("competitor_key"),
+                            rs.getDouble("points")))
+                    .list()
+                    .forEach(a -> aggByClass.computeIfAbsent(a.className(), k -> new ArrayList<>()).add(a));
+        }
 
         // Rank each class by points (desc); ties share a position (1, 2, 2, 4).
         aggByClass.forEach((className, aggs) -> {
@@ -276,12 +300,31 @@ public class SheetController {
                             .map(p -> p.positionInClass() == null ? "DNS" : ordinal(p.positionInClass()))
                             .orElse(null);
 
-                    ChampRow champ = champByClass.getOrDefault(r.className(), Map.of()).get(r.carNumber());
+                    Map<String, ChampRow> classChamp = champByClass.getOrDefault(r.className(), Map.of());
                     String champText = null;
                     if (r.isGuest()) {
                         champText = "GUEST";
-                    } else if (champ != null) {
-                        champText = ordinal(champ.position()) + " (" + formatPoints(champ.points()) + " pts)";
+                    } else if ("DRIVERS".equals(champKindByClass.get(r.className()))) {
+                        // Drivers championship: match each crew member by name. A
+                        // single-driver car shows one position + points; a crew
+                        // lists each member's standing (see PLAN's decisions).
+                        List<SheetDriver> drivers = driversByEntry.getOrDefault(r.entryId(), List.of());
+                        List<ChampRow> hits = drivers.stream()
+                                .map(d -> byNormalizedKey(classChamp, d.name()))
+                                .filter(java.util.Objects::nonNull)
+                                .toList();
+                        if (hits.size() == 1) {
+                            champText = ordinal(hits.get(0).position()) + " (" + formatPoints(hits.get(0).points()) + " pts)";
+                        } else if (hits.size() > 1) {
+                            champText = hits.stream()
+                                    .map(cr -> ordinal(cr.position()) + " " + surname(cr.key()))
+                                    .reduce((a, b) -> a + " · " + b).orElse(null);
+                        }
+                    } else {
+                        ChampRow champ = classChamp.get(r.carNumber());
+                        if (champ != null) {
+                            champText = ordinal(champ.position()) + " (" + formatPoints(champ.points()) + " pts)";
+                        }
                     }
 
                     String priorText = r.priorYearNote();
@@ -348,6 +391,42 @@ public class SheetController {
         } catch (NumberFormatException e) {
             return Integer.MAX_VALUE;
         }
+    }
+
+    /** Championship kind preference for the sheet's champ column: teams first. */
+    private static int champKindRank(String kind) {
+        return switch (kind == null ? "" : kind) {
+            case "TEAMS" -> 0;
+            case "DRIVERS" -> 1;
+            default -> 2;
+        };
+    }
+
+    /** Look up a value by key, exact first then case/space-insensitively — so a
+     *  standings driver key ("Cole Loftsgard") matches the entry's driver name. */
+    private static <V> V byNormalizedKey(Map<String, V> map, String name) {
+        if (name == null) {
+            return null;
+        }
+        V exact = map.get(name);
+        if (exact != null) {
+            return exact;
+        }
+        String norm = name.trim().toLowerCase();
+        for (Map.Entry<String, V> e : map.entrySet()) {
+            if (e.getKey() != null && e.getKey().trim().toLowerCase().equals(norm)) {
+                return e.getValue();
+            }
+        }
+        return null;
+    }
+
+    private static String surname(String fullName) {
+        if (fullName == null || fullName.isBlank()) {
+            return "";
+        }
+        String[] parts = fullName.trim().split("\\s+");
+        return parts[parts.length - 1];
     }
 
     static String ordinal(int n) {

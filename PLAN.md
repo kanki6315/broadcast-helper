@@ -312,10 +312,16 @@ display size.)
   to it with no re-matching. Series aliases and the "family ≠ series name ⇒ cup"
   heuristic are retired as hard requirements (aliases stay only as guess hints).
   This is how the Mustang **drivers** standings (DH + DHL) imported — the reviewer
-  just picked the series; no `Mustang Challenge` alias needed. (The Mustang sheet
-  **champ column** is still blank — it reads TEAMS standings; showing a DRIVERS
-  championship keyed by driver name, with a per-series-aligned snapshot, is a
-  follow-up.)
+  just picked the series; no `Mustang Challenge` alias needed.
+- **Drivers-championship champ column — ✅ DONE.** The sheet's champ column now
+  picks the primary (non-cup) championship **per class, preferring TEAMS, else
+  DRIVERS** (so IMSA stays team points, Mustang uses driver points). A TEAMS
+  championship matches by car number; a DRIVERS one matches each crew member by
+  **driver name** (single-driver → one position + points; a crew lists each
+  member). Same pre-round snapshot: Mustang's imported events are a chronological
+  prefix of the championship calendar, so `event.round_ordinal` aligns with the
+  championship round position (Mid-Ohio round 3 → standings through round 4).
+  Verified: Cole Loftsgard 1st (1350 pts) going into Mid-Ohio; IMSA unchanged.
 - **Per-series class colours + order — ✅ DONE.** The hardcoded IMSA class
   colours (sheet.css) and `classRank` order (SheetController) are replaced by a
   `class_style(series_id, class_code, ordinal, color)` table (V15, seeded IMSA +
