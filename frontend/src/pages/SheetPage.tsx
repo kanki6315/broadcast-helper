@@ -97,6 +97,7 @@ export default function SheetPage({ eventId }: { eventId: number }) {
               <tr>
                 <th className="col-num">#</th>
                 <th className="col-team">Team</th>
+                <th className="col-mfr">Mfr</th>
                 <th className="col-drivers">Drivers</th>
                 <th className="col-q">Q</th>
                 <th className="col-prior">{sheet.priorYearLabel}</th>
@@ -113,17 +114,18 @@ export default function SheetPage({ eventId }: { eventId: number }) {
                   <td className="col-team">
                     {e.teamName}
                     {e.isGuest && <span className="sheet-badge">GUEST</span>}
+                  </td>
+                  <td className="col-mfr">
                     {e.manufacturerLogoVersion != null ? (
-                      <div className="sheet-mfr">
-                        <img
-                          src={`/api/manufacturer-logos/${encodeURIComponent(
-                            (e.manufacturer ?? '').toLowerCase(),
-                          )}/data?v=${e.manufacturerLogoVersion}`}
-                          alt={e.manufacturer ?? ''}
-                        />
-                      </div>
+                      <img
+                        className="sheet-mfr-logo"
+                        src={`/api/manufacturer-logos/${encodeURIComponent(
+                          (e.manufacturer ?? '').toLowerCase(),
+                        )}/data?v=${e.manufacturerLogoVersion}`}
+                        alt={e.manufacturer ?? ''}
+                      />
                     ) : (
-                      e.manufacturer && <div className="sheet-mfr-name">{e.manufacturer}</div>
+                      e.manufacturer && <span className="sheet-mfr-name">{e.manufacturer}</span>
                     )}
                   </td>
                   <td className="col-drivers">

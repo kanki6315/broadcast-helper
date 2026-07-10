@@ -366,7 +366,7 @@ public class ImportService {
                     .param("className", className)
                     .param("team", e.team())
                     .param("vehicle", e.carType())
-                    .param("manufacturer", e.engine())
+                    .param("manufacturer", resolveManufacturer(className, e.carType(), e.engine()))
                     .param("sponsor", e.sponsor())
                     .param("tire", e.tire())
                     .param("fuel", e.fuel())
@@ -574,10 +574,24 @@ public class ImportService {
                 .param("className", row.className())
                 .param("team", row.team())
                 .param("vehicle", row.vehicle())
-                .param("manufacturer", row.manufacturer())
+                .param("manufacturer", resolveManufacturer(row.className(), row.vehicle(), row.manufacturer()))
                 .param("group", row.group())
                 .query(Long.class)
                 .single();
+    }
+
+    /**
+     * LMP2 cars are identified by chassis, not engine: every LMP2 is
+     * Gibson-powered, so the meaningful marque is the constructor (ORECA),
+     * which is the first word of the car type. Other classes keep the source
+     * file's manufacturer (where "Corvette" would wrongly shadow "Chevrolet").
+     */
+    private static String resolveManufacturer(String className, String vehicle, String fallback) {
+        if (className != null && className.replace(" ", "").equalsIgnoreCase("LMP2")
+            && vehicle != null && !vehicle.isBlank()) {
+            return vehicle.trim().split("\\s+")[0];
+        }
+        return fallback;
     }
 
     private void replaceDriverAssignments(long entryId, List<RaceResultsImport.DriverRow> drivers) {

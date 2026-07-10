@@ -111,35 +111,39 @@
 }
 
 .col-team {
-  width: 19%;
+  width: 16.5%;
+}
+
+.col-mfr {
+  width: 9%;
 }
 
 .col-drivers {
-  width: 17%;
+  width: 15.5%;
 }
 
 .col-q {
-  width: 5%;
+  width: 4.5%;
 }
 
 .col-prior {
-  width: 8.5%;
+  width: 8%;
 }
 
 .col-champ {
-  width: 11.5%;
+  width: 11%;
 }
 
 .col-best {
-  width: 10%;
+  width: 9.5%;
 }
 
 .col-last {
-  width: 8.5%;
+  width: 8%;
 }
 
 .col-photo {
-  width: 16%;
+  width: 13.5%;
   padding: 1px;
 }
 
@@ -151,22 +155,17 @@
   vertical-align: middle;
 }
 
-.sheet-mfr {
-  margin-top: 2px;
-}
-
-.sheet-mfr img {
-  max-height: 0.18in;
-  max-width: 1in;
+.sheet-mfr-logo {
+  max-height: 0.3in;
+  max-width: 100%;
   object-fit: contain;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
 
 .sheet-mfr-name {
-  font-size: 8px;
-  color: #555;
-  margin-top: 2px;
+  font-size: 8.5px;
+  color: #333;
 }
 
 .sheet-driver {
