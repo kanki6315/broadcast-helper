@@ -161,7 +161,7 @@ export default function SheetPage({ eventId }: { eventId: number }) {
                   <td className="col-last">{e.last}</td>
                   <td className="col-photo">
                     {e.imageVersion != null && (
-                      <img src={`/api/entries/${e.entryId}/image?v=${e.imageVersion}`} alt="" />
+                      <img src={`/api/entries/${e.entryId}/image?variant=sheet&v=${e.imageVersion}`} alt="" />
                     )}
                   </td>
                 </tr>

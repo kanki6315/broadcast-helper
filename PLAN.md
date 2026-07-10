@@ -207,7 +207,11 @@ only gap vs. the hand-made original is manufacturer logos (upload-pending, the
 sheet shows names until then) and that standings reflect the latest imported
 round rather than a pre-round snapshot.
 
-**Phase 2 — Season tools.** Season reference table, per-entry notes.
+**Phase 2 — Season tools.** Remaining active item: **image size variants**
+(below). The **season reference table**, **per-entry notes**, and the
+**championship-consolidation presentation features** (hub per-class grouping +
+sheet Endurance Cup column) are **moved to Phase 4** — the season hub needs more
+concrete design first before those are built on it.
 **Standings — pre-round snapshot ✅ DONE; recompute-from-results + manual
 override DEFERRED.** Every IMSA championship publishes a JSON standings file with
 the full per-round points breakdown, so recomputing totals from results is
@@ -250,7 +254,7 @@ explicit `ordinal` and an `is_cup` flag (V13; `championship` now hangs off a
 `group_id`, `group_title`/`kind` dropped). The importer find-or-creates the group
 (`family` that isn't the series' own name ⇒ cup). Frontend unchanged — the
 `ChampionshipSummary` API still exposes `groupTitle`/`kind` (mapped from the
-group). *Held for a follow-up:* consolidating the presentation on top of this —
+group). *Moved to Phase 4:* the presentation consolidation on top of this model —
 the hub grouping each class's championship + cup(s) together, and a sheet
 **Endurance Cup points column shown only at endurance rounds** (so one sheet, two
 columns, instead of a separate cup PDF; cup rounds match the event via
@@ -266,16 +270,19 @@ optional `classMapping`). A space/case-only difference auto-resolves; a cold
 season with no entry list yet accepts the file's classes as canon. Mappings are
 not persisted (re-imports re-ask). Migration V10 back-filled the existing IMEC
 championships to the canonical short codes.
-**Image size variants:** keep the full-resolution upload as the source of
-truth, but on upload generate a few downscaled variants (e.g. a ~400px
-sheet-sized WebP that preserves the transparent cutout). The sheet points at
-the small variant so the exported PDF drops from ~24MB to ~1–3MB and the
-hosted live page lazy-loads light thumbnails; full-res stays available for
-larger uses. Serving stays behind the existing `/data` and
-`/entries/{id}/image` endpoints (+ a variant param), so this composes with the
-Phase 4 S3 move. Root cause: headless Chrome embeds each raster at ~source
-resolution regardless of display size; Ghostscript output-compression is a
-possible fallback but lossy and only helps the PDF, not the live page.
+**Image size variants — ✅ DONE.** Full-res stays the source of truth in
+`car_image`; on upload a ~400px-longest-side **WebP** "sheet" variant is
+generated (scrimage-webp; bundled native cwebp binaries) into a new
+`car_image_variant` table (V14), and lazily for images uploaded before variants
+existed. Serving added a `?variant=sheet` param on both `/car-images/{id}/data`
+and `/entries/{id}/image`, falling back to full-res if a variant is absent or
+can't be produced (best-effort — never a hard dependency). The sheet, event-
+detail thumbnails, and the images grid all point at the variant; the transparent
+cutout is preserved. Measured on the 2026 set: **28 MB → 284 kB (1.0%)**, so the
+exported PDF lands well under 1 MB (vs ~24 MB). Serving stays the single
+indirection point, so this composes with the Phase 4 S3 move. (Root cause was
+headless Chrome embedding each raster at ~source resolution regardless of
+display size.)
 
 **Phase 3 — Multi-series generalization.** Add one contrasting series (two-race
 sprint weekend, fastest-two-laps grids, single-driver entries). Grid rundown
@@ -292,9 +299,15 @@ with the `Session` ordinal + grid-source model from §3, and make
 `normalizeSessionType` (keyword heuristic, defaults everything to RACE) explicit
 per-series config instead of a guess.
 
-**Phase 4 — Hosted.** Deploy (single container + managed Postgres), simple
-auth, multi-user (share sheets with the broadcast team). **Move car images to
-S3**: the local BYTEA storage in `car_image` becomes metadata + S3 object key,
+**Phase 4 — Hosted + deferred season tools.** **Season-hub build-out** (needs
+more concrete design first): the **season reference table** (entries × rounds,
+quali/finish per cell, per class — reuses `event.round_ordinal` as its column
+axis), **per-entry notes** that flow onto sheets, and the **championship-
+consolidation presentation** (hub grouping each class's championship + cup(s)
+together; sheet Endurance Cup points column shown only at endurance rounds, cup
+rounds matched to the event via `venueAbbrev`). Then hosting: deploy (single
+container + managed Postgres), simple auth, multi-user (share sheets with the
+broadcast team). **Move car images to S3**: the local BYTEA storage in `car_image` becomes metadata + S3 object key,
 with images served from S3 (presigned URLs or CDN) instead of through the
 backend. The upload/matching flow and `(season, car_number)` keying stay as-is
 — only the byte storage and the `/data` / `/entries/{id}/image` serving paths

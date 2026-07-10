@@ -165,7 +165,7 @@ export default function SeasonImages({ seasonId }: { seasonId: number }) {
         {images.map((img) => (
           <figure key={img.id} className="car-image">
             <img
-              src={`/api/car-images/${img.id}/data?v=${Date.parse(img.uploadedAt)}`}
+              src={`/api/car-images/${img.id}/data?variant=sheet&v=${Date.parse(img.uploadedAt)}`}
               alt={`Car ${img.carNumber}`}
               loading="lazy"
             />

@@ -1,5 +1,7 @@
 package com.broadcasthelper.images;
 
+import com.sksamuel.scrimage.ImmutableImage;
+import com.sksamuel.scrimage.webp.WebpWriter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +23,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -133,34 +136,75 @@ public class CarImageController {
     }
 
     @GetMapping("/car-images/{id}/data")
-    public ResponseEntity<byte[]> imageData(@PathVariable long id) {
-        return db.sql("SELECT content_type, data FROM car_image WHERE id = :id")
+    public ResponseEntity<byte[]> imageData(@PathVariable long id,
+                                            @RequestParam(required = false) String variant) {
+        FullImage full = db.sql("SELECT id, content_type, data FROM car_image WHERE id = :id")
                 .param("id", id)
-                .query((rs, i) -> ResponseEntity.ok()
-                        .contentType(MediaType.parseMediaType(rs.getString("content_type")))
-                        .header("Cache-Control", "max-age=300")
-                        .body(rs.getBytes("data")))
+                .query((rs, i) -> new FullImage(rs.getLong("id"), rs.getString("content_type"), rs.getBytes("data")))
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such image"));
+        return serve(full, variant);
     }
 
     /** The effective livery image for an entry: (its event's season, its car number). */
     @GetMapping("/entries/{entryId}/image")
-    public ResponseEntity<byte[]> entryImage(@PathVariable long entryId) {
-        return db.sql("""
-                        SELECT ci.content_type, ci.data
+    public ResponseEntity<byte[]> entryImage(@PathVariable long entryId,
+                                             @RequestParam(required = false) String variant) {
+        FullImage full = db.sql("""
+                        SELECT ci.id, ci.content_type, ci.data
                         FROM entry en
                                  JOIN event e ON e.id = en.event_id
                                  JOIN car_image ci ON ci.season_id = e.season_id AND ci.car_number = en.car_number
                         WHERE en.id = :entryId
                         """)
                 .param("entryId", entryId)
-                .query((rs, i) -> ResponseEntity.ok()
-                        .contentType(MediaType.parseMediaType(rs.getString("content_type")))
-                        .header("Cache-Control", "max-age=300")
-                        .body(rs.getBytes("data")))
+                .query((rs, i) -> new FullImage(rs.getLong("id"), rs.getString("content_type"), rs.getBytes("data")))
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No image for this entry"));
+        return serve(full, variant);
+    }
+
+    private record FullImage(long id, String contentType, byte[] data) {
+    }
+
+    private record VariantBlob(String contentType, Integer width, byte[] data) {
+    }
+
+    /**
+     * Serve full-res, or a named downscaled variant (currently just "sheet"). An
+     * existing variant is served straight; a missing "sheet" variant is generated
+     * on the fly and stored (covers images uploaded before variants existed). If
+     * a variant can't be produced, fall back to full-res — it's an optimization,
+     * never a hard dependency.
+     */
+    private ResponseEntity<byte[]> serve(FullImage full, String variant) {
+        if (variant == null || variant.isBlank()) {
+            return body(full.contentType(), full.data());
+        }
+        Optional<VariantBlob> existing = db.sql("""
+                        SELECT content_type, data FROM car_image_variant
+                        WHERE image_id = :id AND variant = :variant
+                        """)
+                .param("id", full.id()).param("variant", variant)
+                .query((rs, i) -> new VariantBlob(rs.getString("content_type"), null, rs.getBytes("data")))
+                .optional();
+        if (existing.isPresent()) {
+            return body(existing.get().contentType(), existing.get().data());
+        }
+        if ("sheet".equals(variant)) {
+            VariantBlob generated = ensureSheetVariant(full.id(), full.data());
+            if (generated != null) {
+                return body(generated.contentType(), generated.data());
+            }
+        }
+        return body(full.contentType(), full.data());
+    }
+
+    private static ResponseEntity<byte[]> body(String contentType, byte[] data) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(contentType))
+                .header("Cache-Control", "max-age=300")
+                .body(data);
     }
 
     @DeleteMapping("/car-images/{id}")
@@ -186,7 +230,7 @@ public class CarImageController {
         }
         boolean exists = db.sql("SELECT count(*) FROM car_image WHERE season_id = :s AND car_number = :n")
                 .param("s", seasonId).param("n", carNumber).query(Long.class).single() > 0;
-        db.sql("""
+        long imageId = db.sql("""
                         INSERT INTO car_image (season_id, car_number, content_type, source_filename, data)
                         VALUES (:seasonId, :number, :contentType, :filename, :data)
                         ON CONFLICT (season_id, car_number) DO UPDATE
@@ -194,14 +238,61 @@ public class CarImageController {
                                 source_filename = EXCLUDED.source_filename,
                                 data = EXCLUDED.data,
                                 uploaded_at = now()
+                        RETURNING id
                         """)
                 .param("seasonId", seasonId)
                 .param("number", carNumber)
                 .param("contentType", contentType(file))
                 .param("filename", file.getOriginalFilename())
                 .param("data", data)
-                .update();
+                .query(Long.class)
+                .single();
+        ensureSheetVariant(imageId, data);
         return exists;
+    }
+
+    private static final int SHEET_MAX = 400; // longest side of the sheet variant, px
+
+    /**
+     * Generate (and store) the ~400px WebP "sheet" variant from the source bytes,
+     * returning it, or null if the source is already small enough or can't be
+     * decoded. Best-effort: variants are an optimization, so failures never break
+     * upload or serving — the caller falls back to full-res.
+     */
+    private VariantBlob ensureSheetVariant(long imageId, byte[] source) {
+        VariantBlob variant = makeSheetVariant(source);
+        if (variant == null) {
+            db.sql("DELETE FROM car_image_variant WHERE image_id = :id AND variant = 'sheet'")
+                    .param("id", imageId).update();
+            return null;
+        }
+        db.sql("""
+                        INSERT INTO car_image_variant (image_id, variant, content_type, width, data)
+                        VALUES (:id, 'sheet', :contentType, :width, :data)
+                        ON CONFLICT (image_id, variant) DO UPDATE
+                            SET content_type = EXCLUDED.content_type,
+                                width = EXCLUDED.width,
+                                data = EXCLUDED.data
+                        """)
+                .param("id", imageId)
+                .param("contentType", variant.contentType())
+                .param("width", variant.width())
+                .param("data", variant.data())
+                .update();
+        return variant;
+    }
+
+    private static VariantBlob makeSheetVariant(byte[] source) {
+        try {
+            ImmutableImage image = ImmutableImage.loader().fromBytes(source);
+            if (image.width <= SHEET_MAX && image.height <= SHEET_MAX) {
+                return null; // already sheet-sized; full-res is fine
+            }
+            ImmutableImage scaled = image.max(SHEET_MAX, SHEET_MAX); // fit within, keep aspect + alpha
+            return new VariantBlob("image/webp", scaled.width, scaled.bytes(WebpWriter.DEFAULT));
+        } catch (IOException | RuntimeException e) {
+            return null; // undecodable or encoder trouble -> serve full-res
+        }
     }
 
     private static String contentType(MultipartFile file) {

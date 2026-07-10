@@ -92,7 +92,7 @@ export default function EventDetailPage() {
                       {e.imageVersion != null && (
                         <img
                           className="entry-thumb"
-                          src={`/api/entries/${e.entryId}/image?v=${e.imageVersion}`}
+                          src={`/api/entries/${e.entryId}/image?variant=sheet&v=${e.imageVersion}`}
                           alt=""
                           loading="lazy"
                         />
