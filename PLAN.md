@@ -207,8 +207,20 @@ only gap vs. the hand-made original is manufacturer logos (upload-pending, the
 sheet shows names until then) and that standings reflect the latest imported
 round rather than a pre-round snapshot.
 
-**Phase 2 — Season tools.** Season reference table, computed standings with
-manual override, IMSA entry-list PDF importer, per-entry notes.
+**Phase 2 — Season tools.** Season reference table, per-entry notes.
+**Standings — pre-round snapshot ✅ DONE; recompute-from-results + manual
+override DEFERRED.** Every IMSA championship publishes a JSON standings file with
+the full per-round points breakdown, so recomputing totals from results is
+redundant now (it belongs to Phase 3, when a series without standings files
+appears) and there's nothing to hand-enter. What was needed: the sheet's champ
+column showed the *latest* cumulative total, not standings as they stood *going
+into* the round. Fixed with `event.round_ordinal` (V12, backfilled by calendar
+order, kept current by `renumberSeasonRounds` on import). The sheet groups each
+championship's sessions into rounds at query time (no name-matching, no event FK)
+and sums only the rounds before this event's ordinal, re-ranking per class. Round
+number now shows in the sheet header; the same per-round series will feed a
+championship-gap trend graph later. Positions are re-derived from summed points
+(no official tie-break countback — an accepted approximation).
 **Best/last-result handling — ✅ DONE.** Root cause found: the results parser
 derived `position_in_class` by counting rows, which fabricated a class position
 for DNS cars (e.g. #79 LMP2 shown "12th" at Sebring though it never started).

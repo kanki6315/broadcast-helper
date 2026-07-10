@@ -249,6 +249,7 @@ public class ImportService {
         // own rows don't seed it (see canonicalizeClass).
         List<String> knownClasses = seasonEntryClasses(seasonId);
         long eventId = findOrCreateEvent(seasonId, imp);
+        renumberSeasonRounds(seasonId);
 
         // Replace the session (and via cascade its results) if it was imported before.
         db.sql("DELETE FROM race_session WHERE event_id = :eventId AND name = :name")
@@ -410,6 +411,7 @@ public class ImportService {
                 .param("date", imp.event().endDate() != null ? imp.event().endDate() : imp.event().startDate())
                 .query(Long.class)
                 .single());
+        renumberSeasonRounds(seasonId);
 
         for (EntryListImport.Entry e : imp.entries()) {
             // Class codes are normalized by dropping spaces so entry-list spelling
@@ -601,6 +603,24 @@ public class ImportService {
         return existing.orElseGet(() ->
                 db.sql("INSERT INTO season (series_id, year) VALUES (:seriesId, :year) RETURNING id")
                         .param("seriesId", seriesId).param("year", year).query(Long.class).single());
+    }
+
+    /**
+     * (Re)assign each event in the season a 1-based round_ordinal by calendar
+     * order. Idempotent: called after any event is created so the ordinal — the
+     * axis for pre-round standings snapshots — stays correct as rounds arrive.
+     */
+    private void renumberSeasonRounds(long seasonId) {
+        db.sql("""
+                        WITH ranked AS (
+                            SELECT id, row_number() OVER (ORDER BY event_date NULLS LAST, id) AS rn
+                            FROM event WHERE season_id = :seasonId
+                        )
+                        UPDATE event e SET round_ordinal = ranked.rn
+                        FROM ranked WHERE ranked.id = e.id
+                        """)
+                .param("seasonId", seasonId)
+                .update();
     }
 
     private long findOrCreateEvent(long seasonId, RaceResultsImport imp) {

@@ -39,6 +39,7 @@ interface Sheet {
   circuitName: string | null
   eventDate: string | null
   year: number
+  roundOrdinal: number | null
   seriesName: string
   championshipLabel: string
   priorYearLabel: string
@@ -84,6 +85,7 @@ export default function SheetPage({ eventId }: { eventId: number }) {
         <h1>{sheet.eventName}</h1>
         <p>
           {sheet.seriesName} {sheet.year}
+          {sheet.roundOrdinal && <> — Round {sheet.roundOrdinal}</>}
           {sheet.circuitName && <> — {sheet.circuitName}</>}
           {sheet.eventDate && <> — {sheet.eventDate}</>}
         </p>

@@ -49,14 +49,14 @@ public class SheetController {
     }
 
     public record Sheet(long eventId, String eventName, String circuitName, LocalDate eventDate,
-                        int year, String seriesName, String championshipLabel, String priorYearLabel,
-                        List<SheetClass> classes) {
+                        int year, Integer roundOrdinal, String seriesName, String championshipLabel,
+                        String priorYearLabel, List<SheetClass> classes) {
     }
 
     @GetMapping("/events/{id}/sheet")
     public Sheet sheet(@PathVariable long id) {
         var header = db.sql("""
-                        SELECT e.name, e.circuit_name, e.event_date, e.season_id, s.year,
+                        SELECT e.name, e.circuit_name, e.event_date, e.season_id, e.round_ordinal, s.year,
                                sr.id AS series_id, sr.name AS series_name
                         FROM event e JOIN season s ON s.id = e.season_id JOIN series sr ON sr.id = s.series_id
                         WHERE e.id = :id
@@ -64,37 +64,70 @@ public class SheetController {
                 .param("id", id)
                 .query((rs, i) -> new Object[]{rs.getString("name"), rs.getString("circuit_name"),
                         rs.getObject("event_date", LocalDate.class), rs.getLong("season_id"),
-                        rs.getInt("year"), rs.getString("series_name")})
+                        rs.getObject("round_ordinal", Integer.class), rs.getInt("year"), rs.getString("series_name")})
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such event"));
         String eventName = (String) header[0];
         String circuitName = (String) header[1];
         LocalDate eventDate = (LocalDate) header[2];
         long seasonId = (Long) header[3];
-        int year = (Integer) header[4];
-        String seriesName = (String) header[5];
+        Integer roundOrdinal = (Integer) header[4];
+        int year = (Integer) header[5];
+        String seriesName = (String) header[6];
 
-        // Default champ column: the series' own TEAMS standings per class
-        // (teams points for team-based series — see PLAN.md decisions).
+        // Default champ column: the series' own TEAMS standings per class (teams
+        // points for team-based series — see PLAN.md decisions), as they stood
+        // *going into* this round. Standings points live on each championship's
+        // own calendar; group its sessions into rounds and sum only the rounds
+        // before this event's round_ordinal, then rank per class. Round 1 (or an
+        // event with no ordinal yet) has no prior rounds, so the column is blank.
         record ChampRow(String className, String key, int position, double points) {
         }
+        record ChampAgg(String className, String key, double points) {
+        }
         Map<String, Map<String, ChampRow>> champByClass = new HashMap<>();
+        Map<String, List<ChampAgg>> aggByClass = new LinkedHashMap<>();
         db.sql("""
-                        SELECT c.class_name, sr.competitor_key, sr.position, sr.total_points
+                        SELECT c.class_name, sr.competitor_key, COALESCE(sum(ssp.total_points), 0) AS points
                         FROM standings_row sr
                                  JOIN championship c ON c.id = sr.championship_id
                                  JOIN season s ON s.id = c.season_id
                                  JOIN series se ON se.id = s.series_id
+                                 JOIN standings_session_points ssp ON ssp.standings_row_id = sr.id
+                                 JOIN (
+                                     SELECT championship_id, session_index,
+                                            dense_rank() OVER (PARTITION BY championship_id ORDER BY first_idx) AS round_no
+                                     FROM (
+                                         SELECT championship_id, session_index,
+                                                min(session_index) OVER (PARTITION BY championship_id, event_name) AS first_idx
+                                         FROM championship_session
+                                     ) t
+                                 ) rnd ON rnd.championship_id = c.id AND rnd.session_index = ssp.session_index
                         WHERE c.season_id = :seasonId AND c.kind = 'TEAMS' AND c.group_title = se.name
+                          AND rnd.round_no < :round
+                        GROUP BY c.class_name, sr.competitor_key
                         """)
                 .param("seasonId", seasonId)
-                .query((rs, i) -> {
-                    ChampRow row = new ChampRow(rs.getString("class_name"), rs.getString("competitor_key"),
-                            rs.getInt("position"), rs.getDouble("total_points"));
-                    champByClass.computeIfAbsent(row.className(), k -> new HashMap<>()).put(row.key(), row);
-                    return row;
-                })
-                .list();
+                .param("round", roundOrdinal) // null (no ordinal) -> no rows -> blank column
+                .query((rs, i) -> new ChampAgg(rs.getString("class_name"), rs.getString("competitor_key"),
+                        rs.getDouble("points")))
+                .list()
+                .forEach(a -> aggByClass.computeIfAbsent(a.className(), k -> new ArrayList<>()).add(a));
+
+        // Rank each class by points (desc); ties share a position (1, 2, 2, 4).
+        aggByClass.forEach((className, aggs) -> {
+            aggs.sort(Comparator.comparingDouble(ChampAgg::points).reversed());
+            double lastPoints = Double.NaN;
+            int lastPos = 0;
+            for (int i = 0; i < aggs.size(); i++) {
+                ChampAgg a = aggs.get(i);
+                int pos = a.points() == lastPoints ? lastPos : i + 1;
+                lastPoints = a.points();
+                lastPos = pos;
+                champByClass.computeIfAbsent(className, k -> new HashMap<>())
+                        .put(a.key(), new ChampRow(className, a.key(), pos, a.points()));
+            }
+        });
 
         // Qualifying result for this event (blank until a quali file is imported).
         Map<Long, Integer> quali = new HashMap<>();
@@ -270,7 +303,7 @@ public class SheetController {
                 .toList();
         String priorYearLabel = "'" + String.format("%02d", (year - 1) % 100) + " "
                                 + venueAbbrev(eventName, circuitName);
-        return new Sheet(id, eventName, circuitName, eventDate, year, seriesName,
+        return new Sheet(id, eventName, circuitName, eventDate, year, roundOrdinal, seriesName,
                 seriesName + " " + year + " Teams", priorYearLabel, classes);
     }
 
