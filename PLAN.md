@@ -419,10 +419,11 @@ display size.)
   sidecar stays; a PDFBox rewrite to drop Python is an optional later cleanup, not
   worth the regression risk now). Point the parser python/script config at the
   in-image paths.
-- **Auth: Google login (Spring Security `oauth2-client` / OIDC) + email allowlist**
-  for edit/import; **unlisted share links** (unguessable token) for viewers so the
-  broadcast team sees sheets/reference tables without accounts. No third-party auth
-  SaaS.
+- **Auth: Google login (Spring Security `oauth2-client` / OIDC) + email allowlist.**
+  No third-party auth SaaS. Team sharing was going to be unlisted share tokens, but
+  the user chose **account-based view access** instead (allowlist accounts for
+  viewing) — deferred, since nobody logs in soon and the sheet ships as a PDF. See
+  build-order step 3.
 - **Images: stay in Postgres BYTEA for v1** (already ~284kB WebP variants; small).
   S3/R2 deferred — the `/data` / `/entries/{id}/image` endpoints remain the single
   indirection point, so S3 drops in later with no API change.
@@ -452,9 +453,18 @@ display size.)
    CSRF: SameSite=Lax session cookie, tokens off. Verified: dev open, auth-on gates
    `/api/**` (401), `/oauth2/authorization/google` → Google. *(User creates the
    Google OAuth client; see docs/DEPLOY.md.)*
-3. **Unlisted share links** — a share token (per season, sheet inherits) exposes
-   read-only sheet + reference views publicly by token; everything else stays authed.
-   (Sequential ids are enumerable, so a token is needed for true "unlisted".)
+3. **Team sharing — DEFERRED, and reframed (decided 2026-07-10).** No one else is
+   expected to log in soon, and the main deliverable (the pit-lane sheet) is already
+   shared as an exported **PDF**, so live sharing isn't needed yet. When it is, it
+   will be **account-based view access** — allowlist specific Google accounts for
+   viewing the live dashboards — *not* unlisted share tokens. Concretely that means
+   splitting today's single allowlist into an **editor** allowlist and a **viewer**
+   allowlist and gating mutating requests (POST/PUT/PATCH/DELETE) to editors; a
+   small, clean add when someone actually needs live access. Share tokens or a
+   richer permission model only if the project's scope grows.
+
+   ⇒ **Phase 4a is code-complete pending the user's Railway deploy** (Steps 1–2 done;
+   the app is hosted-ready, behind Google login, team gets PDFs).
 
 **Ops caveat:** any reverse proxy needs its request-size limit raised to match the
 multipart limits in application.yml (defaults like nginx's 1MB would reject

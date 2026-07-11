@@ -74,10 +74,13 @@ it. All `/api/**` (except `/api/me`) require a signed-in, allowed session.
 > Enabling auth requires the Google client id/secret to be present, or startup
 > fails. Set all four vars together.
 
-## Not yet wired
+## Team sharing
 
-- **Share links (Step 3):** unlisted read-only share tokens for sheets/reference
-  tables come after auth. Until then, viewing requires being signed in.
+Deferred by design. The pit-lane sheet ships as an exported **PDF**, so the team
+doesn't need live access yet, and no one else is expected to sign in soon. When
+live viewing is wanted, the plan is **account-based view access** (allowlist
+specific Google accounts, view-only) rather than share tokens — a small future
+add. Until then, anything live requires being signed in and on `AUTH_ALLOWED_EMAILS`.
 
 ## Config reference (env)
 
