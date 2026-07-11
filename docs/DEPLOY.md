@@ -54,9 +54,15 @@ Auth is **off by default** (local dev is open). To turn it on for the deployment
 1. **Create a Google OAuth client** — Google Cloud Console → APIs & Services →
    Credentials → Create Credentials → OAuth client ID → *Web application*.
    - **Authorized redirect URI:** `https://<your-app>.up.railway.app/login/oauth2/code/google`
-     (add `http://localhost:8080/login/oauth2/code/google` too if you test the
-     container locally). The path is fixed by Spring.
+     — it **must be `https`** (Google rejects `http` for non-localhost). The path is
+     fixed by Spring. Add `http://localhost:8080/login/oauth2/code/google` too only
+     if you test the container locally.
    - Copy the **Client ID** and **Client secret**.
+
+   > Railway terminates TLS at its proxy and forwards plain http to the container.
+   > The app sets `server.forward-headers-strategy=framework`, so Spring rebuilds
+   > the original `https` origin and generates an `https` redirect URI that matches
+   > the one you register. (Without it Spring would emit `http` and Google rejects it.)
 2. **Set these env vars** on the Railway app service:
 
    | Variable | Value |

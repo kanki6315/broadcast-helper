@@ -3,6 +3,11 @@
 server:
   # Railway (and most PaaS) inject the port to listen on via $PORT.
   port: ${PORT:8080}
+  # Behind Railway's TLS-terminating proxy the app receives plain http; honour the
+  # X-Forwarded-* headers so Spring rebuilds the original https origin. Without this
+  # the OAuth redirect_uri is built as http://, which Google rejects. Harmless in
+  # local dev (no forwarded headers → the real request scheme is used).
+  forward-headers-strategy: framework
   error:
     include-message: always
   servlet:
