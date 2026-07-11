@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import './lib/authRedirect' // install the global 401 → login interceptor first
 import './index.css'
 import App from './App.tsx'
 

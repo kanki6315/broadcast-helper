@@ -444,7 +444,9 @@ display size.)
    `AUTH_ALLOWED_EMAILS` (empty = nobody). SPA-driven: `/api/me` is public and
    reports `{authEnabled, email}`; the Layout redirects to Google when auth is on
    and unauthenticated, shows the signed-in email + logout otherwise. All other
-   `/api/**` are gated (401 → SPA redirects). Google's provider details are built
+   `/api/**` are gated; a global `fetch` interceptor (`lib/authRedirect`) redirects
+   to Google on any `/api` 401, so a session that expires mid-use re-authenticates
+   gracefully instead of surfacing errors. Google's provider details are built
    in, so prod only sets the client id/secret (+ `AUTH_ENABLED`, allowlist) via env
    — the registration is *not* in application.yml (an empty client-id fails startup).
    CSRF: SameSite=Lax session cookie, tokens off. Verified: dev open, auth-on gates
