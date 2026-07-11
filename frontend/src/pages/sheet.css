@@ -36,8 +36,12 @@
   color: #444;
 }
 
+/* Do NOT set break-inside: avoid here. A class taller than one page (e.g. GS
+   with 29 entries) can't satisfy it, so the browser strands the whole section
+   on a fresh page and leaves a large gap under the sheet header. Instead we let
+   the table flow across pages and keep rows/header intact below. */
 .sheet-class {
-  break-inside: avoid-page;
+  break-inside: auto;
 }
 
 /* Header colour and zebra tint come from per-series config (SheetController's
@@ -49,9 +53,17 @@
   padding: 2px 6px;
   background: var(--class-color, #1a1a1a);
   color: #fff;
+  /* Keep the class header attached to the start of its table across a page
+     break, so it never sits orphaned at the bottom of a page. */
+  break-after: avoid;
   /* Force the header fill to appear in the printed/exported PDF. */
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
+}
+
+/* Repeat the column header on every printed page of a table that spans pages. */
+.sheet thead {
+  display: table-header-group;
 }
 
 /* Alternating row tint, a light version of the class colour so text stays
