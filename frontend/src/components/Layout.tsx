@@ -20,17 +20,13 @@ export default function Layout() {
   useEffect(() => {
     void fetch('/api/me')
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((m: Me) => {
-        // Auth on but not signed in → hand off to Google; the SPA reloads
-        // authenticated afterwards. (A rejected email comes back as authError.)
-        if (m.authEnabled && !m.email && !authError) {
-          window.location.href = '/oauth2/authorization/google'
-          return
-        }
-        setMe(m)
-      })
+      .then(setMe)
       .catch(() => setMe({ authEnabled: false, email: null }))
-  }, [authError])
+  }, [])
+
+  function login() {
+    window.location.href = '/oauth2/authorization/google'
+  }
 
   function logout() {
     void fetch('/logout', { method: 'POST' }).then(() => {
@@ -38,16 +34,27 @@ export default function Layout() {
     })
   }
 
-  if (!me) return null // brief: waiting on /api/me (or redirecting to Google)
+  if (!me) return null // brief: waiting on /api/me
 
-  if (authError && !me.email) {
+  // Auth on but not signed in → a minimal login screen; the button is the only
+  // interactive control (no app data loads for a signed-out visitor anyway, since
+  // every /api call but /api/me requires a session). A 401 mid-session routes the
+  // user back here (see lib/authRedirect).
+  if (me.authEnabled && !me.email) {
     return (
-      <main className="container">
+      <main className="login-screen">
         <h1>Broadcast Helper</h1>
-        <p className="error">
-          That Google account isn’t on the allowlist. Ask the owner to add your email, then{' '}
-          <a href="/oauth2/authorization/google">try again</a>.
-        </p>
+        {authError ? (
+          <p className="error">
+            That Google account isn’t on the allowlist. Ask the owner to add your email, then try
+            again.
+          </p>
+        ) : (
+          <p className="muted">Sign in to continue.</p>
+        )}
+        <button type="button" className="login-button" onClick={login}>
+          Sign in with Google
+        </button>
       </main>
     )
   }
