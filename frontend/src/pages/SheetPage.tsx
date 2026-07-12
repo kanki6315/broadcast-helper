@@ -120,7 +120,7 @@ export default function SheetPage({ eventId }: { eventId: number }) {
                 <th className="col-team">Team</th>
                 <th className="col-mfr">Mfr</th>
                 <th className="col-drivers">Drivers</th>
-                <th className="col-q">Q</th>
+                <th className="col-q">Start Pos</th>
                 <th className="col-prior">{sheet.priorYearLabel}</th>
                 <th className="col-champ">{sheet.year} Champ</th>
                 <th className="col-best">Best {sheet.year}</th>
