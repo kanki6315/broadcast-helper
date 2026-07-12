@@ -12,10 +12,21 @@ server:
     include-message: always
   servlet:
     session:
+      # Idle window: the login survives up to this long between requests (sliding
+      # — active use keeps it alive). Sessions are in-memory, so a redeploy still
+      # ends every session regardless; after either, the next /api call does a
+      # (usually silent) Google re-login.
+      timeout: 3d
       cookie:
         # SameSite=Lax keeps the session cookie off cross-site requests, which
         # mitigates CSRF for our state-changing POSTs (we don't run CSRF tokens).
         same-site: lax
+        # Persist the cookie past browser close (without this it's a session
+        # cookie the browser drops on exit). It's only an opaque session id —
+        # inert once the idle window lapses or the service redeploys — so it
+        # never outlives the server-side session. Headroom past the 3d idle
+        # window so continuous use can't hit an absolute cap mid-session.
+        max-age: 7d
 
 # The Python sidecar that turns entry-list PDFs into entries.json
 # (see parser/SCHEMA.md). Local defaults are relative to the backend working
