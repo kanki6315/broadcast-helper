@@ -38,10 +38,18 @@ public class SheetController {
     public record SheetDriver(String name, String rating, boolean isTbd, String nationality) {
     }
 
+    /** One race of a prior round: start (grid) → finish (result), in class. */
+    public record FormRace(int raceOrdinal, Integer start, Integer finish, String status) {
+    }
+
+    /** A season round strictly before this event — a column of the form strip. */
+    public record FormRound(int ordinal, String venue, int raceCount) {
+    }
+
     public record SheetEntry(long entryId, String carNumber, String teamName, String vehicle,
                              String manufacturer, Long manufacturerLogoVersion, boolean isGuest,
                              List<SheetDriver> drivers, String qualifying, String championship,
-                             String best, String last, String priorYearNote, boolean priorYearAuto,
+                             Map<Integer, List<FormRace>> form, String priorYearNote, boolean priorYearAuto,
                              Long imageVersion, Integer teamSheetPage) {
     }
 
@@ -50,7 +58,8 @@ public class SheetController {
 
     public record Sheet(long eventId, String eventName, String circuitName, LocalDate eventDate,
                         int year, Integer roundOrdinal, String seriesName, String championshipLabel,
-                        String priorYearLabel, Long teamSheetsVersion, List<SheetClass> classes) {
+                        String priorYearLabel, Long teamSheetsVersion, List<FormRound> formRounds,
+                        List<SheetClass> classes) {
     }
 
     @GetMapping("/events/{id}/sheet")
@@ -223,28 +232,61 @@ public class SheetController {
                 })
                 .list();
 
-        // Season race results strictly before this event, per (car, class).
-        // positionInClass is null for a DNS (no finishing position).
-        record PriorResult(LocalDate date, String eventName, String circuit, Integer positionInClass) {
-        }
-        Map<String, List<PriorResult>> priorByCar = new HashMap<>();
-        db.sql("""
-                        SELECT en.car_number, en.class_name, e.name AS event_name, e.circuit_name, e.event_date,
-                               r.position_in_class
-                        FROM result r
-                                 JOIN race_session rs ON rs.id = r.session_id AND rs.session_type = 'RACE'
-                                 JOIN entry en ON en.id = r.entry_id
-                                 JOIN event e ON e.id = en.event_id
-                        WHERE e.season_id = :seasonId AND e.event_date < :date
+        // The form strip's columns: season rounds strictly before this event
+        // (same "prior rounds only" convention as the champ snapshot). Rounds
+        // need an ordinal and at least one race to appear.
+        List<FormRound> formRounds = db.sql("""
+                        SELECT e.round_ordinal, e.name, e.circuit_name,
+                               (SELECT count(*) FROM race_session rs
+                                WHERE rs.event_id = e.id AND rs.session_type = 'RACE') AS race_count
+                        FROM event e
+                        WHERE e.season_id = :seasonId AND e.round_ordinal IS NOT NULL
+                          AND e.event_date < :date
+                          AND EXISTS (SELECT 1 FROM race_session rs
+                                      WHERE rs.event_id = e.id AND rs.session_type = 'RACE')
+                        ORDER BY e.round_ordinal
                         """)
                 .param("seasonId", seasonId)
                 .param("date", eventDate)
-                .query((rs, i) -> priorByCar
-                        .computeIfAbsent(rs.getString("car_number") + "|" + rs.getString("class_name"),
-                                k -> new ArrayList<>())
-                        .add(new PriorResult(rs.getObject("event_date", LocalDate.class),
-                                rs.getString("event_name"), rs.getString("circuit_name"),
-                                rs.getObject("position_in_class", Integer.class))))
+                .query((rs, i) -> new FormRound(rs.getInt("round_ordinal"),
+                        venueAbbrev(rs.getString("name"), rs.getString("circuit_name")),
+                        rs.getInt("race_count")))
+                .list();
+
+        // Per (car, class): start (grid) -> finish (result) for every race of
+        // those prior rounds — the same cell data as the season reference table
+        // (SeasonReferenceController). A row with neither position nor status
+        // means the car wasn't in that race and is skipped, so a missed round
+        // simply has no entry for the car.
+        Map<String, Map<Integer, List<FormRace>>> formByCar = new HashMap<>();
+        db.sql("""
+                        SELECT en.car_number, en.class_name, ev.round_ordinal, rs.ordinal AS race_ordinal,
+                               g.position_in_class AS start_pos, r.position_in_class AS finish_pos, r.status
+                        FROM entry en
+                                 JOIN event ev ON ev.id = en.event_id
+                                 JOIN race_session rs ON rs.event_id = ev.id AND rs.session_type = 'RACE'
+                                 LEFT JOIN result r ON r.session_id = rs.id AND r.entry_id = en.id
+                                 LEFT JOIN grid_position g ON g.session_id = rs.id AND g.entry_id = en.id
+                        WHERE ev.season_id = :seasonId AND ev.round_ordinal IS NOT NULL
+                          AND ev.event_date < :date
+                        ORDER BY ev.round_ordinal, rs.ordinal
+                        """)
+                .param("seasonId", seasonId)
+                .param("date", eventDate)
+                .query((rs, i) -> {
+                    Integer start = rs.getObject("start_pos", Integer.class);
+                    Integer finish = rs.getObject("finish_pos", Integer.class);
+                    String status = rs.getString("status");
+                    if (start == null && finish == null && status == null) {
+                        return null; // not in this race
+                    }
+                    formByCar
+                            .computeIfAbsent(rs.getString("car_number") + "|" + rs.getString("class_name"),
+                                    k -> new LinkedHashMap<>())
+                            .computeIfAbsent(rs.getInt("round_ordinal"), k -> new ArrayList<>())
+                            .add(new FormRace(rs.getInt("race_ordinal"), start, finish, status));
+                    return null;
+                })
                 .list();
 
         // Team-sheets PDF deep links: car number -> first page of the team's
@@ -318,30 +360,6 @@ public class SheetController {
                         .thenComparing(r -> numericValue(r.carNumber()))
                         .thenComparing(EntryRow::carNumber))
                 .forEach(r -> {
-                    List<PriorResult> prior = priorByCar.getOrDefault(r.carNumber() + "|" + r.className(), List.of());
-
-                    // Best is the strongest actual finish; DNS rounds (null
-                    // position) don't count. Ties across venues list all venues.
-                    String best = null;
-                    List<PriorResult> classified = prior.stream()
-                            .filter(p -> p.positionInClass() != null)
-                            .toList();
-                    if (!classified.isEmpty()) {
-                        int bestPos = classified.stream().mapToInt(PriorResult::positionInClass).min().orElseThrow();
-                        List<String> venues = classified.stream()
-                                .filter(p -> p.positionInClass() == bestPos)
-                                .sorted(Comparator.comparing(PriorResult::date))
-                                .map(p -> venueAbbrev(p.eventName(), p.circuit()))
-                                .distinct()
-                                .toList();
-                        best = ordinal(bestPos) + " – " + String.join("/", venues);
-                    }
-
-                    // Last shows the finishing position; a DNS has none, so "DNS".
-                    String last = prior.stream().max(Comparator.comparing(PriorResult::date))
-                            .map(p -> p.positionInClass() == null ? "DNS" : ordinal(p.positionInClass()))
-                            .orElse(null);
-
                     Map<String, ChampRow> classChamp = champByClass.getOrDefault(r.className(), Map.of());
                     String champText = null;
                     if (r.isGuest()) {
@@ -390,7 +408,9 @@ public class SheetController {
                                     r.logoUploadedAt() != null ? r.logoUploadedAt().toInstant().toEpochMilli() : null,
                                     r.isGuest(), driversByEntry.getOrDefault(r.entryId(), List.of()),
                                     qualiPos != null ? ordinal(qualiPos) : null,
-                                    champText, best, last, priorText, priorAuto,
+                                    champText,
+                                    formByCar.getOrDefault(r.carNumber() + "|" + r.className(), Map.of()),
+                                    priorText, priorAuto,
                                     r.imageUploadedAt() != null ? r.imageUploadedAt().toInstant().toEpochMilli() : null,
                                     teamSheetPages.get(normalizeCarNumber(r.carNumber()))));
                 });
@@ -409,7 +429,7 @@ public class SheetController {
         String priorYearLabel = "'" + String.format("%02d", (year - 1) % 100) + " "
                                 + venueAbbrev(eventName, circuitName);
         return new Sheet(id, eventName, circuitName, eventDate, year, roundOrdinal, seriesName,
-                seriesName + " " + year + " Teams", priorYearLabel, teamSheetsVersion, classes);
+                seriesName + " " + year + " Teams", priorYearLabel, teamSheetsVersion, formRounds, classes);
     }
 
     public record NoteRequest(String note) {

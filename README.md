@@ -27,7 +27,9 @@ sheet with one-click PDF export, and a per-class season reference table. Phase 4
   logos (matched by name).
 - **Generate** the pit-lane entry-list sheet per event: drivers with flags and
   ratings, qualifying, prior-year-at-venue (auto or manual), championship
-  position, best/last result, car photo — as a print-ready US Letter PDF.
+  position, car photo, and a per-round season form strip under each entry
+  (round + venue over start→finish in class, prior rounds only) — as a
+  print-ready US Letter PDF.
 - **Deep-link team sheets**: attach the series' team-sheets PDF to an event
   (car → page map auto-extracted, manually correctable) and click any row on
   the live sheet to open a modal scrolled straight to that team's pages.

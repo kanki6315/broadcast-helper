@@ -2,13 +2,19 @@
    canvas, and the browser's Print/Save-as-PDF output IS the deliverable. */
 
 .sheet {
+  /* Row + content scale. Every size that drives row height (fonts, cell
+     padding, images, flags) is expressed as base × this factor, so the whole
+     sheet grows proportionally from one knob. Unitless line-heights and em
+     sizes scale on their own. */
+  --row-scale: 1.25;
+
   color-scheme: light;
   background: #fff;
   color: #111;
   max-width: 8.5in;
   margin: 0 auto;
   padding: 0.4in 0.35in;
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--row-scale));
   line-height: 1.25;
 }
 
@@ -48,9 +54,9 @@
    class_style), passed in as --class-color / --class-tint. Any class without
    config falls back to the neutral defaults here. */
 .sheet-class h2 {
-  font-size: 13px;
+  font-size: calc(13px * var(--row-scale));
   margin: 10px 0 3px;
-  padding: 2px 6px;
+  padding: calc(2px * var(--row-scale)) calc(6px * var(--row-scale));
   background: var(--class-color, #1a1a1a);
   color: #fff;
   /* Keep the class header attached to the start of its table across a page
@@ -66,9 +72,11 @@
   display: table-header-group;
 }
 
-/* Alternating row tint, a light version of the class colour so text stays
-   legible and print stays clean. print-color-adjust keeps it in the PDF. */
-.sheet tbody tr:nth-child(even) td {
+/* Alternating entry tint, a light version of the class colour so text stays
+   legible and print stays clean. Each entry is its own tbody (main row + form
+   strip), so the tint alternates per entry and covers both rows.
+   print-color-adjust keeps it in the PDF. */
+.sheet tbody:nth-of-type(even) td {
   background: var(--class-tint, rgba(0, 0, 0, 0.045));
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
@@ -85,7 +93,7 @@
 .sheet th,
 .sheet td {
   border: 0.5px solid #999;
-  padding: 2px 4px;
+  padding: calc(2px * var(--row-scale)) calc(4px * var(--row-scale));
   text-align: center;
   vertical-align: middle;
   overflow: hidden;
@@ -100,9 +108,14 @@
 
 .sheet thead th {
   background: #e8e8e8;
-  font-size: 9px;
+  font-size: calc(9px * var(--row-scale));
   text-transform: uppercase;
   letter-spacing: 0.02em;
+}
+
+/* An entry (tbody: main row + form strip) never splits across printed pages. */
+.sheet tbody {
+  break-inside: avoid;
 }
 
 .sheet tbody tr {
@@ -112,56 +125,48 @@
 .col-num {
   width: 4.5%;
   font-weight: 700;
-  font-size: 12px;
+  font-size: calc(12px * var(--row-scale));
 }
 
 .col-team {
-  width: 16.5%;
+  width: 20%;
 }
 
 .col-mfr {
-  width: 9%;
+  width: 10%;
 }
 
 .col-drivers {
-  width: 15.5%;
+  width: 20%;
 }
 
 .col-q {
-  width: 6%;
+  width: 5%;
 }
 
 .col-prior {
-  width: 8%;
+  width: 7.5%;
 }
 
 .col-champ {
-  width: 11%;
-}
-
-.col-best {
-  width: 9.5%;
-}
-
-.col-last {
-  width: 8%;
+  width: 13%;
 }
 
 .col-photo {
-  width: 13.5%;
-  padding: 1px;
+  width: 20%;
+  padding: calc(1px * var(--row-scale));
 }
 
 .col-photo img {
   max-width: 100%;
-  max-height: 0.42in;
+  max-height: calc(0.42in * var(--row-scale));
   object-fit: contain;
   display: inline-block;
   vertical-align: middle;
 }
 
 .sheet-mfr-logo {
-  max-height: 0.3in;
+  max-height: calc(0.3in * var(--row-scale));
   max-width: 100%;
   object-fit: contain;
   -webkit-print-color-adjust: exact;
@@ -169,33 +174,147 @@
 }
 
 .sheet-mfr-name {
-  font-size: 8.5px;
+  font-size: calc(8.5px * var(--row-scale));
   color: #333;
 }
 
 .sheet-driver {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: calc(4px * var(--row-scale));
 }
 
 /* Flags print at a fixed small size regardless of theme. */
 .sheet-driver .fi {
-  width: 13px;
-  height: 10px;
+  width: calc(13px * var(--row-scale));
+  height: calc(10px * var(--row-scale));
   flex: 0 0 auto;
   border: 0.5px solid #ccc;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
 
+/* Season form strip: an even grid under the entry's main row, one column per
+   round the class contested (template set inline from the round count) —
+   round header (R1 DAY) over raw start→finish in class. Equal columns span
+   the full row width and align vertically across every entry of the class. */
+/* The position row is a subtle neutral band, set apart from the team row above
+   it regardless of the entry's zebra tint (hence the tbody specificity, which
+   beats the nth-of-type tint rule). */
+.sheet tbody .form-row td {
+  padding: 0;
+  background: #eef0f2;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.form-strip {
+  display: grid;
+}
+
+.form-round {
+  text-align: center;
+  padding: calc(2px * var(--row-scale)) calc(3px * var(--row-scale)) calc(3px * var(--row-scale));
+}
+
+/* Faint inner dividers for column spacing — lighter than the sheet's #999 grid
+   so they read as gentle separators against the band, not hard rules. */
+.form-round + .form-round {
+  border-left: 0.5px solid #dcdfe3;
+}
+
+.form-round-hd {
+  font-size: calc(8px * var(--row-scale));
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #555;
+}
+
+.form-round-val {
+  font-size: calc(11px * var(--row-scale));
+  display: flex;
+  justify-content: center;
+  gap: calc(8px * var(--row-scale));
+  margin-top: 1px;
+}
+
+.form-race {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.form-race-label {
+  color: #777;
+  font-size: calc(7.5px * var(--row-scale));
+  margin-right: 2px;
+}
+
+.form-start {
+  color: #444;
+}
+
+.form-arrow {
+  color: #999;
+  margin: 0 1px;
+}
+
+/* Finish position, colour-coded by in-class result so the season form reads at
+   a glance. A chip (not just coloured text) keeps the podium metals legible on
+   white; print-color-adjust forces the fills into the exported PDF. */
+.form-finish {
+  display: inline-block;
+  min-width: 1.15em;
+  padding: 0 calc(3px * var(--row-scale));
+  border-radius: calc(3px * var(--row-scale));
+  font-weight: 700;
+  color: #111;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.pos-p1 {
+  background: #edc531;
+} /* gold */
+
+.pos-p2 {
+  background: #c4c8cc;
+} /* silver */
+
+.pos-p3 {
+  background: #d08c4f;
+} /* bronze */
+
+.pos-p4 {
+  background: #4a90d9;
+  color: #fff;
+} /* blue: 4–5 */
+
+.pos-p6 {
+  background: #9366cc;
+  color: #fff;
+} /* purple: 6–10 */
+
+.pos-p11 {
+  background: #a6d4ec;
+} /* light blue: 11–20 */
+
+.pos-p21 {
+  background: #cdb595;
+} /* light brown: 21+ classified */
+
+.pos-out {
+  background: #1a1a1a;
+  color: #fff;
+} /* DNS / DQ / DNF */
+
 .sheet-badge {
   display: inline-block;
-  margin-left: 4px;
-  padding: 0 3px;
+  margin-left: calc(4px * var(--row-scale));
+  padding: 0 calc(3px * var(--row-scale));
   border: 1px solid #111;
   border-radius: 2px;
-  font-size: 7.5px;
+  font-size: calc(7.5px * var(--row-scale));
   font-weight: 700;
 }
 

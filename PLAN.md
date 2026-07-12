@@ -521,6 +521,32 @@ trigger the modal. Lazy rendering is scroll-position-driven (not
 IntersectionObserver — deterministic, and canvases far from the viewport are
 released; 64 rendered canvases would hold hundreds of MB).
 
+**Sheet season-form strip — ✅ DONE (2026-07-12).** Each sheet entry now carries
+a two-line strip under its main row: a header line of prior rounds (`R1 DAY` …)
+over raw **start→finish in class** values — the season reference table's cell
+data (same query shape: result ⟕ grid_position per race session), scoped to
+rounds strictly before the event and filtered per class (LMP2 doesn't show
+IMSA's sprint rounds as "—"; a round the *car* missed within a contested round
+set does show "—"). Multi-race weekends render `R1 5 R2 4` within the round
+block; `raceText`/`statusAbbr` moved to `frontend/src/lib/raceForm.ts`, shared
+with `SeasonReferenceTable`. The **Best/Last columns are dropped** (the strip
+supersedes them; widths redistributed). Structural change: each entry is now
+its own `<tbody>` (main row + strip) — zebra moved from
+`tr:nth-child(even)` to `tbody:nth-of-type(even)` so the tint alternates per
+entry and covers both rows, and `break-inside: avoid` on the tbody keeps the
+pair together across printed pages (verified: 3-page CTMP export, every page
+starts at the repeated column header). Entries with no prior data omit the
+strip. Cars with data still deep-link to team sheets from either row. The
+finish value is a **colour-coded chip** (gold P1 / silver P2 / bronze P3 / blue
+4–5 / purple 6–10 / light-blue 11–20 / light-brown 21+ classified / black for
+DNS·DQ·DNF) so the season form reads at a glance; brackets + non-result
+detection live in `finishBucket`/`isNonResult` (raceForm.ts), the start stays
+plain. The strip's position rows sit on a subtle neutral band with faint inner
+dividers. The whole sheet's row height + content now scales from one knob —
+`--row-scale` on `.sheet` (currently 1.25), applied as `base × var(--row-scale)`
+to every size that drives row height (fonts, cell padding, images, flags),
+still breaking cleanly at entry boundaries.
+
 **Phase 5 — Live timing.** Ingest a timing feed (provider TBD per series),
 WebSocket push to a dashboard, storyline surfacing (position changes vs champ
 implications, guest running ahead of points leader, pit-cycle notes). Separate
