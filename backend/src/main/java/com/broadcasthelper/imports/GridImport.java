@@ -31,7 +31,8 @@ public record GridImport(
             String group,
             String team,
             String vehicle,
-            String manufacturer
+            String manufacturer,
+            String time // qualifying time behind the slot (grid CSVs only; JSON grids carry none)
     ) {
     }
 }

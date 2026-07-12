@@ -28,9 +28,10 @@ public class ImportController {
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    public ImportService.BatchSummary upload(@RequestParam("file") MultipartFile file) {
+    public ImportService.BatchSummary upload(@RequestParam("file") MultipartFile file,
+                                             @RequestParam(value = "format", defaultValue = "AUTO") ImportFormat format) {
         try {
-            return imports.stage(file.getOriginalFilename(), file.getBytes());
+            return imports.stage(file.getOriginalFilename(), file.getBytes(), format);
         } catch (IOException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read upload: " + e.getMessage());
         }
@@ -51,10 +52,13 @@ public class ImportController {
         return imports.payloadJson(id);
     }
 
-    /** The guessed target, selectable options, and class-mapping review. */
+    /** The guessed target, selectable options, and class-mapping review.
+     *  eventId recomputes the class review against a chosen event's season —
+     *  needed for files with no session metadata (e.g. grid CSVs). */
     @GetMapping("/{id}/review")
-    public ImportService.ImportReview review(@PathVariable long id) {
-        return imports.reviewTarget(id);
+    public ImportService.ImportReview review(@PathVariable long id,
+                                             @RequestParam(required = false) Long eventId) {
+        return imports.reviewTarget(id, eventId);
     }
 
     /** Commit to the reviewer-confirmed target (series/event/championship + class map). */

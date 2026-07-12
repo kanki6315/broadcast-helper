@@ -357,6 +357,23 @@ display size.)
   child rows (results / grid_position), so importing one never wipes the other.
   This gives **start → finish** per car — the true race story. Verified on the
   2026 WGI grid (54 cars, leading zeros like `033`/`911` preserved).
+- **Importer-format foundation + grid CSV — ✅ DONE.** Uploads now carry an
+  explicit **format** (parser family = source provider × medium: `IMSA_JSON`,
+  `IMSA_PDF`, `IMSA_CSV`; `AUTO` default resolves to a concrete family and
+  `import_batch.format` (V19) records it). Document-kind detection lives inside
+  each family: the JSON family keeps its `looksLike*` chain; the CSV family
+  sniffs headers. `IMSA_CSV` parses the published semicolon grid CSV
+  (`ImportParser.parseGridCsv`: BOM/CRLF/trailing-`;` tolerant, driver columns
+  dropped — the entry list is the driver authority) including the **qualifying
+  time** per slot (`grid_position.qualifying_time`, V18). Because the CSV carries
+  no session/event metadata, review gains `needsSession`: the reviewer picks an
+  **existing event** (all-events fallback list; class review recomputed via
+  `?eventId=`) and the session type + race number; commit derives the season from
+  the event and synthesizes the session name ("Race 2"). `upsertEntry` now
+  COALESCEs manufacturer/class_group so a metadata-poor grid never erases
+  entry-list richness. **Next slices on this seam:** manual entry (paste-a-table
+  → editable grid → staged as a normal batch, `format=MANUAL`) and per-provider
+  PDF parsers (e.g. `CCA_PDF`, config-mapped sidecar scripts).
 - **Still ahead:** design the automated prior-year-at-this-track feature,
   including change context (manufacturer, lineup, team) alongside the raw result.
   The **grid rundown sheet** (grid-order sheet with storyline fields) is

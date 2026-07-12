@@ -11,8 +11,12 @@ logos, and the pit-lane entry-list sheet with one-click PDF export. See
 ## What it does today
 
 - **Import** IMSA results JSON, standings JSON (team/driver/Michelin Endurance
-  Cup championships), and entry-list PDFs — each auto-detected, staged, and
-  reviewed before it touches the database.
+  Cup championships), entry-list PDFs, and starting-grid CSVs — staged and
+  reviewed before touching the database. Uploads choose a **format** (parser
+  family = provider × medium, e.g. `IMSA_JSON`/`IMSA_PDF`/`IMSA_CSV`); the
+  default auto-detects JSON and PDF. A grid CSV carries no event/session
+  metadata, so review attaches it to an existing event and session (race
+  number), and it keeps the per-car qualifying time.
 - **Browse** events with class-grouped results, and championships grouped by
   family under each season.
 - **Manage** car photos (matched per season by car number) and manufacturer

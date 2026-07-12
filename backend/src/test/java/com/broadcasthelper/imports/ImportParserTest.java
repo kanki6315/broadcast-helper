@@ -297,4 +297,81 @@ class ImportParserTest {
             // loud failure on a new format is the desired behavior
         }
     }
+
+    // ------------------------------------------------------------ grid CSVs
+
+    private byte[] csvFixture(String name) throws IOException {
+        try (InputStream in = getClass().getResourceAsStream("/fixtures/pilot/" + name)) {
+            assertNotNull(in, "missing fixture " + name);
+            return in.readAllBytes();
+        }
+    }
+
+    @Test
+    void parsesGridCsv() throws IOException {
+        GridImport grid = ImportParser.parseGridCsv(csvFixture("grid-race-official.csv"));
+        assertEquals(7, grid.rows().size());
+
+        GridImport.Row pole = grid.rows().get(0);
+        assertEquals(1, pole.positionOverall());
+        assertEquals("26", pole.number());
+        assertEquals("GS", pole.className());
+        assertEquals("Heart of Racing Team", pole.team());
+        assertEquals("Aston Martin Vantage AMR GT4 Evo", pole.vehicle());
+        assertEquals("1:53.839", pole.time());
+
+        // The file carries no session or event metadata; the reviewer supplies it.
+        assertNull(grid.sessionStart());
+        assertNull(grid.championshipName());
+        assertNull(grid.sessionName());
+        assertNull(grid.circuitName());
+    }
+
+    @Test
+    void gridCsvDerivesInClassPositions() throws IOException {
+        GridImport grid = ImportParser.parseGridCsv(csvFixture("grid-race-official.csv"));
+        // GS counts 1..4 over the overall order; TCR restarts at 1.
+        List<GridImport.Row> gs = grid.rows().stream().filter(r -> r.className().equals("GS")).toList();
+        List<GridImport.Row> tcr = grid.rows().stream().filter(r -> r.className().equals("TCR")).toList();
+        assertEquals(4, gs.size());
+        assertEquals(3, tcr.size());
+        assertEquals(1, gs.get(0).positionInClass());
+        assertEquals(4, gs.get(3).positionInClass());
+        assertEquals(1, tcr.get(0).positionInClass());
+        assertEquals(5, tcr.get(0).positionOverall());
+    }
+
+    @Test
+    void gridCsvKeepsLeadingZeroNumbers() throws IOException {
+        GridImport grid = ImportParser.parseGridCsv(csvFixture("grid-race-official.csv"));
+        assertTrue(grid.rows().stream().anyMatch(r -> r.number().equals("08")));
+    }
+
+    @Test
+    void gridCsvHandlesBlanksAndTrailingSemicolon() throws IOException {
+        GridImport grid = ImportParser.parseGridCsv(csvFixture("grid-race-official.csv"));
+        // The last row (no qualifying driver, no time) still imports, time null.
+        GridImport.Row last = grid.rows().get(grid.rows().size() - 1);
+        assertEquals("5", last.number());
+        assertNull(last.time());
+        // The trailing semicolon on every line never creates phantom data.
+        assertTrue(grid.rows().stream().allMatch(r -> r.number() != null && !r.number().isBlank()));
+    }
+
+    @Test
+    void gridCsvDetection() throws IOException {
+        assertTrue(ImportParser.looksLikeGridCsv(csvFixture("grid-race-official.csv")));
+        assertTrue(!ImportParser.looksLikeGridCsv("{\"session\": {}, \"grid\": []}".getBytes()));
+    }
+
+    @Test
+    void rejectsUnrecognizedCsvHeader() {
+        byte[] wrong = "POS;NO;DRIVER\r\n1;26;Hannah Grisham\r\n".getBytes();
+        try {
+            ImportParser.parseGridCsv(wrong);
+            throw new AssertionError("expected IllegalArgumentException");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("POSITION"));
+        }
+    }
 }

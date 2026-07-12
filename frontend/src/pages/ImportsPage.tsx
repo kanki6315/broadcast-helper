@@ -3,6 +3,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 interface ImportBatch {
   id: number
   kind: string
+  format: string
   filename: string
   status: string
   summary: string | null
@@ -42,17 +43,20 @@ interface ImportReview {
   seriesOptions: SeriesOption[]
   eventOptions: EventOption[]
   classReview: ClassReview
+  needsSession: boolean
 }
 
 // The reviewer's editable choices for one batch, seeded from the guess.
 interface TargetState {
   seriesId: number | 'new' | ''
   newSeriesName: string
-  eventId: number | 'new'
+  eventId: number | 'new' | ''
   classCode: string
   kind: string
   isCup: boolean
   familyName: string
+  sessionType: string
+  sessionOrdinal: number
   classMapping: Record<string, string>
 }
 
@@ -61,11 +65,14 @@ function initTarget(r: ImportReview): TargetState {
   return {
     seriesId: g?.seriesId ?? '',
     newSeriesName: '',
-    eventId: g?.eventId ?? 'new',
+    // A metadata-less file must attach to an existing event; force a choice.
+    eventId: g?.eventId ?? (r.needsSession ? '' : 'new'),
     classCode: g?.classCode ?? '',
     kind: g?.kind ?? '',
     isCup: g?.isCup ?? false,
     familyName: g?.familyName ?? '',
+    sessionType: 'RACE',
+    sessionOrdinal: 1,
     classMapping: {},
   }
 }
@@ -77,6 +84,19 @@ const KIND_LABEL: Record<string, string> = {
   GRID: 'Starting grid',
 }
 
+// Upload formats: which parser family reads the file. AUTO covers the
+// historical JSON/PDF detection; CSVs must be chosen explicitly.
+const FORMAT_OPTIONS: [string, string][] = [
+  ['AUTO', 'Auto-detect'],
+  ['IMSA_CSV', 'IMSA — Grid CSV'],
+]
+
+const SESSION_TYPES: [string, string][] = [
+  ['RACE', 'Race'],
+  ['QUALIFYING', 'Qualifying'],
+  ['PRACTICE', 'Practice'],
+]
+
 // Kinds that attach to an event (vs. a championship) and so pick an event target.
 const EVENT_KINDS = ['RACE_RESULTS', 'ENTRY_LIST', 'GRID']
 
@@ -86,6 +106,7 @@ export default function ImportsPage() {
   const [targets, setTargets] = useState<Record<number, TargetState>>({})
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [format, setFormat] = useState('AUTO')
   const fileInput = useRef<HTMLInputElement>(null)
 
   async function loadBatches() {
@@ -124,6 +145,7 @@ export default function ImportsPage() {
     for (const file of Array.from(files)) {
       const form = new FormData()
       form.append('file', file)
+      form.append('format', format)
       const res = await fetch('/api/imports', { method: 'POST', body: form })
       if (!res.ok) {
         const body = await res.json().catch(() => null)
@@ -139,6 +161,17 @@ export default function ImportsPage() {
     setTargets((t) => ({ ...t, [id]: { ...t[id], ...change } }))
   }
 
+  // A metadata-less batch can't resolve its season alone, so the class review
+  // is recomputed against the chosen event's season.
+  async function chooseEvent(id: number, eventId: number | 'new' | '') {
+    patch(id, { eventId })
+    if (!reviews[id]?.needsSession || typeof eventId !== 'number') return
+    const res = await fetch(`/api/imports/${id}/review?eventId=${eventId}`)
+    if (!res.ok) return
+    const review = (await res.json()) as ImportReview
+    setReviews((r) => ({ ...r, [id]: review })) // target edits live in `targets`, untouched
+  }
+
   function unresolvedClasses(id: number): string[] {
     const unknown = reviews[id]?.classReview.unknownClasses ?? []
     const chosen = targets[id]?.classMapping ?? {}
@@ -152,7 +185,11 @@ export default function ImportsPage() {
 
   function canCommit(id: number): boolean {
     const t = targets[id]
-    return !!t && seriesChosen(t) && unresolvedClasses(id).length === 0
+    if (!t || unresolvedClasses(id).length > 0) return false
+    // A metadata-less file commits against a chosen existing event (which
+    // implies the series); other kinds need the series chosen.
+    if (reviews[id]?.needsSession) return typeof t.eventId === 'number'
+    return seriesChosen(t)
   }
 
   async function commit(id: number) {
@@ -165,7 +202,11 @@ export default function ImportsPage() {
       classMapping: t.classMapping,
     }
     if (EVENT_KINDS.includes(review.kind)) {
-      body.eventId = t.eventId === 'new' ? null : t.eventId
+      body.eventId = t.eventId === 'new' || t.eventId === '' ? null : t.eventId
+    }
+    if (review.needsSession) {
+      body.sessionType = t.sessionType
+      body.sessionOrdinal = t.sessionOrdinal
     }
     if (review.kind === 'STANDINGS') {
       body.classCode = t.classCode
@@ -199,13 +240,24 @@ export default function ImportsPage() {
   return (
     <section>
       <p>
-        Upload results/standings JSON files or an entry list PDF. Each file is staged; confirm what
-        it belongs to (series, event or championship — pre-filled with a best guess) and commit.
+        Upload results/standings JSON files, an entry list PDF, or a starting-grid CSV. Each file is
+        staged; confirm what it belongs to (series, event or championship — pre-filled with a best
+        guess) and commit.
       </p>
+      <label className="target-row">
+        <span className="target-label">Format</span>
+        <select value={format} disabled={busy} onChange={(e) => setFormat(e.target.value)}>
+          {FORMAT_OPTIONS.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
       <input
         ref={fileInput}
         type="file"
-        accept=".json,.pdf,application/json,application/pdf"
+        accept=".json,.pdf,.csv,application/json,application/pdf,text/csv"
         multiple
         disabled={busy}
         onChange={(e) => e.target.files && uploadFiles(e.target.files)}
@@ -221,6 +273,7 @@ export default function ImportsPage() {
               <th>#</th>
               <th>File</th>
               <th>Kind</th>
+              <th>Format</th>
               <th>Summary</th>
               <th>Status</th>
               <th></th>
@@ -237,6 +290,7 @@ export default function ImportsPage() {
                     <td>{b.id}</td>
                     <td>{b.filename}</td>
                     <td>{KIND_LABEL[b.kind] ?? b.kind}</td>
+                    <td>{b.format}</td>
                     <td>{b.summary}</td>
                     <td>{b.status}</td>
                     <td>
@@ -250,36 +304,38 @@ export default function ImportsPage() {
                   {staged && review && t && (
                     <tr key={`${b.id}-target`}>
                       <td></td>
-                      <td colSpan={5}>
+                      <td colSpan={6}>
                         <div className="import-target">
-                          <label className="target-row">
-                            <span className="target-label">Series</span>
-                            <select
-                              value={t.seriesId}
-                              disabled={busy}
-                              onChange={(e) =>
-                                patch(b.id, {
-                                  seriesId: e.target.value === 'new' ? 'new' : e.target.value === '' ? '' : Number(e.target.value),
-                                })
-                              }
-                            >
-                              <option value="">choose…</option>
-                              {review.seriesOptions.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.name}
-                                </option>
-                              ))}
-                              <option value="new">+ new series…</option>
-                            </select>
-                            {t.seriesId === 'new' && (
-                              <input
-                                placeholder="New series name"
-                                value={t.newSeriesName}
+                          {!review.needsSession && (
+                            <label className="target-row">
+                              <span className="target-label">Series</span>
+                              <select
+                                value={t.seriesId}
                                 disabled={busy}
-                                onChange={(e) => patch(b.id, { newSeriesName: e.target.value })}
-                              />
-                            )}
-                          </label>
+                                onChange={(e) =>
+                                  patch(b.id, {
+                                    seriesId: e.target.value === 'new' ? 'new' : e.target.value === '' ? '' : Number(e.target.value),
+                                  })
+                                }
+                              >
+                                <option value="">choose…</option>
+                                {review.seriesOptions.map((s) => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.name}
+                                  </option>
+                                ))}
+                                <option value="new">+ new series…</option>
+                              </select>
+                              {t.seriesId === 'new' && (
+                                <input
+                                  placeholder="New series name"
+                                  value={t.newSeriesName}
+                                  disabled={busy}
+                                  onChange={(e) => patch(b.id, { newSeriesName: e.target.value })}
+                                />
+                              )}
+                            </label>
+                          )}
 
                           {EVENT_KINDS.includes(review.kind) && (
                             <label className="target-row">
@@ -288,19 +344,52 @@ export default function ImportsPage() {
                                 value={t.eventId}
                                 disabled={busy}
                                 onChange={(e) =>
-                                  patch(b.id, { eventId: e.target.value === 'new' ? 'new' : Number(e.target.value) })
+                                  chooseEvent(
+                                    b.id,
+                                    e.target.value === 'new' ? 'new' : e.target.value === '' ? '' : Number(e.target.value),
+                                  )
                                 }
                               >
+                                {review.needsSession && <option value="">choose…</option>}
                                 {review.eventOptions.map((ev) => (
                                   <option key={ev.id} value={ev.id}>
                                     {ev.name}
                                     {ev.eventDate ? ` (${ev.eventDate})` : ''}
                                   </option>
                                 ))}
-                                <option value="new">
-                                  + new event{review.guess?.eventName ? `: ${review.guess.eventName}` : ''}
-                                </option>
+                                {/* A file with no metadata has no date to create an event from. */}
+                                {!review.needsSession && (
+                                  <option value="new">
+                                    + new event{review.guess?.eventName ? `: ${review.guess.eventName}` : ''}
+                                  </option>
+                                )}
                               </select>
+                            </label>
+                          )}
+
+                          {review.needsSession && (
+                            <label className="target-row">
+                              <span className="target-label">Session</span>
+                              <select
+                                value={t.sessionType}
+                                disabled={busy}
+                                onChange={(e) => patch(b.id, { sessionType: e.target.value })}
+                              >
+                                {SESSION_TYPES.map(([value, label]) => (
+                                  <option key={value} value={value}>
+                                    {label}
+                                  </option>
+                                ))}
+                              </select>
+                              <input
+                                className="target-narrow"
+                                type="number"
+                                min={1}
+                                title="Which race/session of the weekend (Race 2 → 2)"
+                                value={t.sessionOrdinal}
+                                disabled={busy}
+                                onChange={(e) => patch(b.id, { sessionOrdinal: Math.max(1, Number(e.target.value) || 1) })}
+                              />
                             </label>
                           )}
 
@@ -374,7 +463,15 @@ export default function ImportsPage() {
 
                           <button
                             disabled={busy || !canCommit(b.id)}
-                            title={!seriesChosen(t) ? 'Choose a series first' : undefined}
+                            title={
+                              review.needsSession
+                                ? typeof t.eventId !== 'number'
+                                  ? 'Choose an event first'
+                                  : undefined
+                                : !seriesChosen(t)
+                                  ? 'Choose a series first'
+                                  : undefined
+                            }
                             onClick={() => commit(b.id)}
                           >
                             Commit

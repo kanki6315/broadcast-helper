@@ -71,7 +71,8 @@ public final class ImportParser {
                     text(g, "group"),
                     text(g, "team"),
                     text(g, "vehicle"),
-                    text(g, "manufacturer")
+                    text(g, "manufacturer"),
+                    null // JSON grids carry no qualifying time
             ));
         }
 
@@ -87,6 +88,89 @@ public final class ImportParser {
                 text(circuit, "country"),
                 rows
         );
+    }
+
+    /** Sniffs the IMSA starting-grid CSV by its header (after any UTF-8 BOM). */
+    public static boolean looksLikeGridCsv(byte[] content) {
+        String text = stripBom(new String(content, java.nio.charset.StandardCharsets.UTF_8));
+        int eol = text.indexOf('\n');
+        String firstLine = (eol >= 0 ? text.substring(0, eol) : text).trim();
+        return firstLine.toUpperCase().startsWith("POSITION;CLASS;NUMBER");
+    }
+
+    /**
+     * Parses a published starting-grid CSV (semicolon-delimited, header
+     * POSITION;CLASS;NUMBER;...;TEAM;CAR;TIME;). Real files carry a UTF-8 BOM,
+     * CRLF line endings, and a trailing semicolon per line. Driver columns are
+     * dropped — the entry list is the driver authority. The file has no session
+     * or event metadata, so all of it is null here; the reviewer supplies the
+     * event and session at commit.
+     */
+    public static GridImport parseGridCsv(byte[] content) {
+        String text = stripBom(new String(content, java.nio.charset.StandardCharsets.UTF_8));
+        String[] lines = text.split("\\R");
+        if (lines.length == 0) {
+            throw new IllegalArgumentException("Empty CSV file");
+        }
+
+        Map<String, Integer> header = new HashMap<>();
+        String[] headerCells = lines[0].split(";", -1);
+        for (int i = 0; i < headerCells.length; i++) {
+            header.put(headerCells[i].trim().toUpperCase(), i);
+        }
+        for (String required : new String[]{"POSITION", "CLASS", "NUMBER", "TEAM", "CAR", "TIME"}) {
+            if (!header.containsKey(required)) {
+                throw new IllegalArgumentException(
+                        "Not a recognized grid CSV: expected header POSITION;CLASS;NUMBER;...;TEAM;CAR;TIME"
+                        + " but found no " + required + " column");
+            }
+        }
+
+        List<GridImport.Row> rows = new ArrayList<>();
+        Map<String, Integer> classCounters = new HashMap<>();
+        for (int i = 1; i < lines.length; i++) {
+            if (lines[i].isBlank()) {
+                continue;
+            }
+            String[] cells = lines[i].split(";", -1);
+            // A blank slot (no car number) is a gap in the grid, same as the
+            // JSON format: it neither becomes a row nor advances a counter.
+            String number = cell(cells, header.get("NUMBER"));
+            if (number == null) {
+                continue;
+            }
+            String position = cell(cells, header.get("POSITION"));
+            if (position == null) {
+                continue;
+            }
+            String className = cell(cells, header.get("CLASS"));
+            Integer inClass = classCounters.merge(className, 1, Integer::sum);
+            rows.add(new GridImport.Row(
+                    Integer.parseInt(position),
+                    inClass,
+                    number,
+                    className,
+                    null,
+                    cell(cells, header.get("TEAM")),
+                    cell(cells, header.get("CAR")),
+                    null,
+                    cell(cells, header.get("TIME"))
+            ));
+        }
+
+        return new GridImport(null, null, null, null, 1, null, null, null, null, rows);
+    }
+
+    private static String stripBom(String text) {
+        return text.startsWith("\uFEFF") ? text.substring(1) : text;
+    }
+
+    private static String cell(String[] cells, int index) {
+        if (index >= cells.length) {
+            return null;
+        }
+        String value = cells[index].trim();
+        return value.isEmpty() ? null : value;
     }
 
     public static EntryListImport parseEntryList(JsonNode root) {

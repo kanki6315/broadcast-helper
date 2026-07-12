@@ -22,8 +22,8 @@ import java.util.Optional;
 @Service
 public class ImportService {
 
-    public record BatchSummary(long id, String kind, String filename, String status, String summary,
-                               OffsetDateTime createdAt) {
+    public record BatchSummary(long id, String kind, String format, String filename, String status,
+                               String summary, OffsetDateTime createdAt) {
     }
 
     private final JdbcClient db;
@@ -42,11 +42,61 @@ public class ImportService {
 
     // ---------------------------------------------------------------- staging
 
-    public BatchSummary stage(String filename, byte[] content) {
-        if (isPdf(content)) {
-            content = runEntryListParser(filename, content);
-        }
+    /** One family parser's output, ready for the shared import_batch insert. */
+    private record Staged(String kind, Object payload, String summary) {
+    }
 
+    public BatchSummary stage(String filename, byte[] content, ImportFormat format) {
+        ImportFormat resolved = format == ImportFormat.AUTO ? resolveAuto(content) : format;
+        Staged staged = switch (resolved) {
+            case AUTO -> throw new IllegalStateException("AUTO must be resolved before staging");
+            case IMSA_JSON -> stageImsaJson(content);
+            case IMSA_PDF -> stageImsaPdf(filename, content);
+            case IMSA_CSV -> stageImsaCsv(content);
+        };
+
+        long id = db.sql("""
+                        INSERT INTO import_batch (kind, format, filename, payload, summary)
+                        VALUES (:kind, :format, :filename, :payload::jsonb, :summary)
+                        RETURNING id
+                        """)
+                .param("kind", staged.kind())
+                .param("format", resolved.name())
+                .param("filename", filename)
+                .param("payload", toJson(staged.payload()))
+                .param("summary", staged.summary())
+                .query(Long.class)
+                .single();
+        return get(id);
+    }
+
+    /**
+     * AUTO covers what the tool historically accepted: IMSA entry-list PDFs and
+     * timing-provider JSON. CSVs are never auto-detected — their shapes are
+     * provider-specific and would collide across families — but get a targeted
+     * hint instead of the generic JSON error.
+     */
+    private ImportFormat resolveAuto(byte[] content) {
+        if (isPdf(content)) {
+            return ImportFormat.IMSA_PDF;
+        }
+        if (ImportParser.looksLikeGridCsv(content)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "This looks like a semicolon-delimited CSV — choose a format explicitly"
+                    + " (e.g. IMSA — Grid CSV) instead of Auto-detect");
+        }
+        return ImportFormat.IMSA_JSON;
+    }
+
+    private Staged stageImsaPdf(String filename, byte[] pdf) {
+        if (!isPdf(pdf)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Not a PDF file (expected an IMSA entry-list PDF)");
+        }
+        return stageImsaJson(runEntryListParser(filename, pdf));
+    }
+
+    private Staged stageImsaJson(byte[] content) {
         JsonNode root;
         try {
             root = json.readTree(content); // Jackson strips the UTF-8 BOM some files carry
@@ -55,82 +105,75 @@ public class ImportService {
                     "Not valid JSON: " + e.getMessage());
         }
 
-        String kind;
-        Object payload;
-        String summary;
         if (ImportParser.looksLikeEntryList(root)) {
-            kind = "ENTRY_LIST";
             EntryListImport parsed = ImportParser.parseEntryList(root);
-            payload = parsed;
             long tbd = parsed.entries().stream()
                     .flatMap(e -> e.drivers().stream()).filter(EntryListImport.Driver::isTbd).count();
             long unparsed = parsed.entries().stream()
                     .flatMap(e -> e.drivers().stream()).filter(EntryListImport.Driver::unparsed).count();
-            summary = "%s — entry list, %d entries".formatted(parsed.event().name(), parsed.entries().size());
+            String summary = "%s — entry list, %d entries".formatted(parsed.event().name(), parsed.entries().size());
             if (tbd > 0) {
                 summary += ", %d TBD seat(s)".formatted(tbd);
             }
             if (unparsed > 0) {
                 summary += ", %d UNPARSED driver line(s)".formatted(unparsed);
             }
+            return new Staged("ENTRY_LIST", parsed, summary);
         } else if (ImportParser.looksLikeStandings(root)) {
-            kind = "STANDINGS";
             StandingsImport parsed = ImportParser.parseStandings(root);
-            payload = parsed;
-            summary = "%s — %d competitors, %d sessions".formatted(
-                    parsed.mainTitle(), parsed.rows().size(), parsed.sessions().size());
+            return new Staged("STANDINGS", parsed, "%s — %d competitors, %d sessions".formatted(
+                    parsed.mainTitle(), parsed.rows().size(), parsed.sessions().size()));
         } else if (ImportParser.looksLikeRaceResults(root)) {
-            kind = "RACE_RESULTS";
             RaceResultsImport parsed = ImportParser.parseRaceResults(root);
-            payload = parsed;
-            summary = "%s — %s, %d classified entries".formatted(
-                    parsed.eventName(), parsed.sessionName(), parsed.rows().size());
+            return new Staged("RACE_RESULTS", parsed, "%s — %s, %d classified entries".formatted(
+                    parsed.eventName(), parsed.sessionName(), parsed.rows().size()));
         } else if (ImportParser.looksLikeGrid(root)) {
-            kind = "GRID";
             GridImport parsed = ImportParser.parseGrid(root);
-            payload = parsed;
-            summary = "%s — %s starting grid, %d cars".formatted(
-                    parsed.eventName(), parsed.sessionName(), parsed.rows().size());
-        } else {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Unrecognized file format: expected a results file (session + classification), "
-                    + "a starting grid (session + grid), or a standings file (championship + classification)");
+            return new Staged("GRID", parsed, "%s — %s starting grid, %d cars".formatted(
+                    parsed.eventName(), parsed.sessionName(), parsed.rows().size()));
         }
+        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "Unrecognized file format: expected a results file (session + classification), "
+                + "a starting grid (session + grid), or a standings file (championship + classification)");
+    }
 
-        long id = db.sql("""
-                        INSERT INTO import_batch (kind, filename, payload, summary)
-                        VALUES (:kind, :filename, :payload::jsonb, :summary)
-                        RETURNING id
-                        """)
-                .param("kind", kind)
-                .param("filename", filename)
-                .param("payload", toJson(payload))
-                .param("summary", summary)
-                .query(Long.class)
-                .single();
-        return get(id);
+    /** The IMSA CSV family. Today it recognizes one document kind: the starting
+     *  grid (POSITION;CLASS;NUMBER;... header). A results CSV later is a new
+     *  header branch here, not a new format. */
+    private Staged stageImsaCsv(byte[] content) {
+        if (!ImportParser.looksLikeGridCsv(content)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Unrecognized IMSA CSV: expected a starting-grid header (POSITION;CLASS;NUMBER;...)");
+        }
+        GridImport parsed;
+        try {
+            parsed = ImportParser.parseGridCsv(content);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage());
+        }
+        return new Staged("GRID", parsed, "Starting grid CSV — %d cars".formatted(parsed.rows().size()));
     }
 
     public List<BatchSummary> list() {
         return db.sql("""
-                        SELECT id, kind, filename, status, summary, created_at
+                        SELECT id, kind, format, filename, status, summary, created_at
                         FROM import_batch ORDER BY id DESC
                         """)
                 .query((rs, i) -> new BatchSummary(rs.getLong("id"), rs.getString("kind"),
-                        rs.getString("filename"), rs.getString("status"), rs.getString("summary"),
-                        rs.getObject("created_at", OffsetDateTime.class)))
+                        rs.getString("format"), rs.getString("filename"), rs.getString("status"),
+                        rs.getString("summary"), rs.getObject("created_at", OffsetDateTime.class)))
                 .list();
     }
 
     public BatchSummary get(long id) {
         return db.sql("""
-                        SELECT id, kind, filename, status, summary, created_at
+                        SELECT id, kind, format, filename, status, summary, created_at
                         FROM import_batch WHERE id = :id
                         """)
                 .param("id", id)
                 .query((rs, i) -> new BatchSummary(rs.getLong("id"), rs.getString("kind"),
-                        rs.getString("filename"), rs.getString("status"), rs.getString("summary"),
-                        rs.getObject("created_at", OffsetDateTime.class)))
+                        rs.getString("format"), rs.getString("filename"), rs.getString("status"),
+                        rs.getString("summary"), rs.getObject("created_at", OffsetDateTime.class)))
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such import batch"));
     }
@@ -210,14 +253,8 @@ public class ImportService {
         if (seasonId.isEmpty()) {
             return new ClassReview(List.of(), List.of());
         }
-        List<String> known = seasonEntryClasses(seasonId.get());
-        LinkedHashSet<String> unknown = new LinkedHashSet<>();
-        for (RaceResultsImport.Row row : imp.rows()) {
-            if (isUnknownClass(row.className(), known)) {
-                unknown.add(row.className());
-            }
-        }
-        return new ClassReview(known, new ArrayList<>(unknown));
+        return classReviewForSeason(seasonId.get(),
+                imp.rows().stream().map(RaceResultsImport.Row::className).toList());
     }
 
     private ClassReview reviewGrid(GridImport imp) {
@@ -229,14 +266,8 @@ public class ImportService {
         if (seasonId.isEmpty()) {
             return new ClassReview(List.of(), List.of());
         }
-        List<String> known = seasonEntryClasses(seasonId.get());
-        LinkedHashSet<String> unknown = new LinkedHashSet<>();
-        for (GridImport.Row row : imp.rows()) {
-            if (isUnknownClass(row.className(), known)) {
-                unknown.add(row.className());
-            }
-        }
-        return new ClassReview(known, new ArrayList<>(unknown));
+        return classReviewForSeason(seasonId.get(),
+                imp.rows().stream().map(GridImport.Row::className).toList());
     }
 
     // -------------------------------------------------------------- target review
@@ -255,12 +286,15 @@ public class ImportService {
 
     public record ImportReview(String kind, TargetGuess guess,
                                List<SeriesOption> seriesOptions, List<EventOption> eventOptions,
-                               ClassReview classReview) {
+                               ClassReview classReview,
+                               boolean needsSession) {
     }
 
     /** Everything the review screen needs: the guessed target, the options to pick
-     *  from, and the class-mapping review — so nothing is inferred at commit. */
-    public ImportReview reviewTarget(long id) {
+     *  from, and the class-mapping review — so nothing is inferred at commit.
+     *  chosenEventId (optional) recomputes the class review against that event's
+     *  season, for files whose payload can't resolve a season by itself. */
+    public ImportReview reviewTarget(long id, Long chosenEventId) {
         BatchSummary batch = get(id);
         List<SeriesOption> seriesOptions = db.sql("SELECT id, name, abbreviation FROM series ORDER BY name")
                 .query((rs, i) -> new SeriesOption(rs.getLong("id"), rs.getString("name"),
@@ -269,18 +303,36 @@ public class ImportService {
         ClassReview cr = classReview(id);
         String payload = payloadJson(id);
         try {
-            TargetGuess guess = switch (batch.kind()) {
-                case "ENTRY_LIST" -> guessEntryList(json.readValue(payload, EntryListImport.class));
-                case "RACE_RESULTS" -> guessRaceResults(json.readValue(payload, RaceResultsImport.class));
-                case "GRID" -> guessGrid(json.readValue(payload, GridImport.class));
-                case "STANDINGS" -> guessStandings(json.readValue(payload, StandingsImport.class));
-                default -> null;
-            };
-            List<EventOption> events = guess != null && guess.seriesId() != null && guess.seasonYear() != null
-                    ? eventsInSeason(guess.seriesId(), guess.seasonYear()) : List.of();
-            return new ImportReview(batch.kind(), guess, seriesOptions, events, cr);
+            boolean needsSession = false;
+            TargetGuess guess;
+            switch (batch.kind()) {
+                case "ENTRY_LIST" -> guess = guessEntryList(json.readValue(payload, EntryListImport.class));
+                case "RACE_RESULTS" -> guess = guessRaceResults(json.readValue(payload, RaceResultsImport.class));
+                case "GRID" -> {
+                    GridImport imp = json.readValue(payload, GridImport.class);
+                    guess = guessGrid(imp);
+                    needsSession = imp.sessionStart() == null;
+                    if (chosenEventId != null && "STAGED".equals(batch.status())) {
+                        cr = classReviewForSeason(seasonIdOfEvent(chosenEventId),
+                                imp.rows().stream().map(GridImport.Row::className).toList());
+                    }
+                }
+                case "STANDINGS" -> guess = guessStandings(json.readValue(payload, StandingsImport.class));
+                default -> guess = null;
+            }
+            // Without a series/season guess the usual per-season event list is
+            // empty and the reviewer would be stuck — fall back to every event.
+            List<EventOption> events;
+            if (guess != null && guess.seriesId() != null && guess.seasonYear() != null) {
+                events = eventsInSeason(guess.seriesId(), guess.seasonYear());
+            } else if (needsSession) {
+                events = allEvents();
+            } else {
+                events = List.of();
+            }
+            return new ImportReview(batch.kind(), guess, seriesOptions, events, cr, needsSession);
         } catch (JsonProcessingException e) {
-            return new ImportReview(batch.kind(), null, seriesOptions, List.of(), cr);
+            return new ImportReview(batch.kind(), null, seriesOptions, List.of(), cr, false);
         }
     }
 
@@ -339,6 +391,44 @@ public class ImportService {
                 ck.className(), ck.kind(), Boolean.FALSE, seriesName);
     }
 
+    /** Every event across all seasons, labeled with series + year, newest first.
+     *  The fallback event list when a payload carries nothing to narrow by. */
+    private List<EventOption> allEvents() {
+        return db.sql("""
+                        SELECT e.id, sr.name || ' ' || s.year || ' — ' || e.name AS label, e.event_date
+                        FROM event e
+                                 JOIN season s ON s.id = e.season_id
+                                 JOIN series sr ON sr.id = s.series_id
+                        ORDER BY e.event_date DESC NULLS LAST, e.id DESC
+                        """)
+                .query((rs, i) -> new EventOption(rs.getLong("id"), rs.getString("label"),
+                        rs.getObject("event_date", LocalDate.class) != null
+                                ? rs.getObject("event_date", LocalDate.class).toString() : null))
+                .list();
+    }
+
+    /** Class review for a known season: which of the batch's class spellings
+     *  match none of the season's canonical (entry-list) classes. */
+    private ClassReview classReviewForSeason(long seasonId, List<String> batchClasses) {
+        List<String> known = seasonEntryClasses(seasonId);
+        LinkedHashSet<String> unknown = new LinkedHashSet<>();
+        for (String className : batchClasses) {
+            if (isUnknownClass(className, known)) {
+                unknown.add(className);
+            }
+        }
+        return new ClassReview(known, new ArrayList<>(unknown));
+    }
+
+    private long seasonIdOfEvent(long eventId) {
+        return db.sql("SELECT season_id FROM event WHERE id = :id")
+                .param("id", eventId)
+                .query(Long.class)
+                .optional()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "No such event: " + eventId));
+    }
+
     private List<EventOption> eventsInSeason(long seriesId, int year) {
         return db.sql("""
                         SELECT e.id, e.name, e.event_date
@@ -394,6 +484,7 @@ public class ImportService {
             Long seriesId, String newSeriesName,   // pick an existing series, or create one
             Long eventId,                          // results/entry-list: attach to this event, or null = new
             String classCode, String kind, Boolean isCup, String familyName, // standings championship
+            String sessionType, Integer sessionOrdinal, // for files with no session metadata (grid CSVs)
             Map<String, String> classMapping
     ) {
         Map<String, String> mapping() {
@@ -501,42 +592,75 @@ public class ImportService {
     }
 
     private void commitGrid(GridImport imp, ImportTarget target) {
-        if (imp.sessionStart() == null) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Grid file has no session date; cannot determine the season");
+        long seasonId;
+        long eventId;
+        String sessionType;
+        int sessionOrdinal;
+        String sessionName;
+        if (imp.sessionStart() != null) {
+            // Timing-provider JSON: the file names its own season/event/session.
+            long seriesId = resolveSeriesId(target);
+            seasonId = findOrCreateSeason(seriesId, imp.sessionStart().getYear());
+            eventId = target.eventId() != null ? target.eventId()
+                    : createEvent(seasonId, imp.eventName(), imp.circuitName(),
+                    imp.circuitLengthM(), imp.circuitCountry(), imp.sessionStart().toLocalDate());
+            renumberSeasonRounds(seasonId);
+            sessionType = normalizeSessionType(imp.sessionType(), imp.sessionName());
+            sessionOrdinal = imp.sessionOrdinal();
+            sessionName = imp.sessionName();
+        } else {
+            // No session metadata (grid CSVs): the reviewer chose an existing
+            // event — which pins the season — and named the session. No new
+            // event: the file has no date to create one with, and the entry
+            // list imported first creates it in the normal workflow.
+            if (target.eventId() == null) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "Grid file has no event/session metadata; choose an existing event in review");
+            }
+            eventId = target.eventId();
+            seasonId = seasonIdOfEvent(eventId);
+            sessionType = normalizeSessionType(target.sessionType(), null); // null -> RACE
+            sessionOrdinal = target.sessionOrdinal() != null ? target.sessionOrdinal() : 1;
+            sessionName = sessionDisplayName(sessionType, sessionOrdinal);
         }
-        long seriesId = resolveSeriesId(target);
-        long seasonId = findOrCreateSeason(seriesId, imp.sessionStart().getYear());
         List<String> knownClasses = seasonEntryClasses(seasonId);
-        long eventId = target.eventId() != null ? target.eventId()
-                : createEvent(seasonId, imp.eventName(), imp.circuitName(),
-                imp.circuitLengthM(), imp.circuitCountry(), imp.sessionStart().toLocalDate());
-        renumberSeasonRounds(seasonId);
         Map<String, String> mapping = target.mapping();
+        String context = imp.championshipName() != null && imp.sessionStart() != null
+                ? imp.championshipName() + " " + imp.sessionStart().getYear() : "grid import";
 
         // The grid belongs to a race session; find-or-create it by the stable key
         // (the results file may not have been imported yet), then replace only its
         // grid rows — the session's results, if any, are untouched.
-        String sessionType = normalizeSessionType(imp.sessionType(), imp.sessionName());
-        long sessionId = findOrCreateRaceSession(eventId, sessionType, imp.sessionOrdinal(),
-                imp.sessionName(), imp.sessionStart(), null, null);
+        long sessionId = findOrCreateRaceSession(eventId, sessionType, sessionOrdinal,
+                sessionName, imp.sessionStart(), null, null);
         db.sql("DELETE FROM grid_position WHERE session_id = :sessionId").param("sessionId", sessionId).update();
 
         for (GridImport.Row row : imp.rows()) {
-            String className = canonicalizeClass(row.className(), knownClasses, mapping,
-                    imp.championshipName() + " " + imp.sessionStart().getYear());
+            String className = canonicalizeClass(row.className(), knownClasses, mapping, context);
             long entryId = upsertEntry(eventId, row.number(), className, row.team(),
                     row.vehicle(), row.manufacturer(), row.group());
             db.sql("""
-                            INSERT INTO grid_position (session_id, entry_id, position_overall, position_in_class)
-                            VALUES (:sessionId, :entryId, :posOverall, :posInClass)
+                            INSERT INTO grid_position (session_id, entry_id, position_overall, position_in_class, qualifying_time)
+                            VALUES (:sessionId, :entryId, :posOverall, :posInClass, :qualifyingTime)
                             """)
                     .param("sessionId", sessionId)
                     .param("entryId", entryId)
                     .param("posOverall", row.positionOverall())
                     .param("posInClass", row.positionInClass())
+                    .param("qualifyingTime", row.time())
                     .update();
         }
+    }
+
+    /** Display name for a reviewer-defined session, built so its trailing number
+     *  round-trips the ordinal parse: "Race", "Race 2", "Qualifying". */
+    private static String sessionDisplayName(String sessionType, int ordinal) {
+        String base = switch (sessionType) {
+            case "QUALIFYING" -> "Qualifying";
+            case "PRACTICE" -> "Practice";
+            default -> "Race";
+        };
+        return ordinal > 1 ? base + " " + ordinal : base;
     }
 
     private void commitStandings(StandingsImport imp, ImportTarget target) {
@@ -956,6 +1080,8 @@ public class ImportService {
     private long upsertEntry(long eventId, String number, String className, String team,
                              String vehicle, String manufacturer, String group) {
         // is_guest is deliberately untouched on update: it is user-managed state.
+        // manufacturer/class_group only overwrite when the source supplies them —
+        // a metadata-poor import (grid CSV) must not erase entry-list richness.
         return db.sql("""
                         INSERT INTO entry (event_id, car_number, class_name, team_name, vehicle, manufacturer, class_group)
                         VALUES (:eventId, :number, :className, :team, :vehicle, :manufacturer, :group)
@@ -963,8 +1089,8 @@ public class ImportService {
                             SET class_name = EXCLUDED.class_name,
                                 team_name = EXCLUDED.team_name,
                                 vehicle = EXCLUDED.vehicle,
-                                manufacturer = EXCLUDED.manufacturer,
-                                class_group = EXCLUDED.class_group
+                                manufacturer = COALESCE(EXCLUDED.manufacturer, entry.manufacturer),
+                                class_group = COALESCE(EXCLUDED.class_group, entry.class_group)
                         RETURNING id
                         """)
                 .param("eventId", eventId)
