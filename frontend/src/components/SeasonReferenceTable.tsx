@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { raceText, type FormRace } from '../lib/raceForm'
 
 interface RefRound {
   ordinal: number
@@ -8,12 +9,7 @@ interface RefRound {
   raceCount: number
 }
 
-interface RefRace {
-  raceOrdinal: number
-  start: number | null
-  finish: number | null
-  status: string | null
-}
+type RefRace = FormRace
 
 interface RefEntry {
   carNumber: string
@@ -34,25 +30,6 @@ interface ReferenceTable {
   seriesName: string
   rounds: RefRound[]
   classes: RefClass[]
-}
-
-// A car that took no start has no finishing position; the importer nulls it and
-// marks the status. Everything classified (including DNFs) carries a position.
-function statusAbbr(status: string | null): string {
-  if (!status) return ''
-  const s = status.toLowerCase()
-  if (s.includes('not start') || s === 'dns' || s === 'dnp') return 'DNS'
-  if (s.includes('disqual') || s === 'dsq') return 'DSQ'
-  return ''
-}
-
-// One race's cell text: start → finish (in class). Start is absent when no grid
-// was imported for that race, so the cell falls back to finish only.
-function raceText(r: RefRace): string {
-  const finish = r.finish != null ? String(r.finish) : statusAbbr(r.status)
-  const start = r.start != null ? String(r.start) : null
-  if (start && finish) return `${start}→${finish}`
-  return finish || (start ? `${start}→·` : '')
 }
 
 export default function SeasonReferenceTable({ seasonId }: { seasonId: number }) {
