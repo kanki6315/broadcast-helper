@@ -1,5 +1,6 @@
 package com.broadcasthelper.images;
 
+import com.broadcasthelper.web.HttpCaching;
 import com.sksamuel.scrimage.ImmutableImage;
 import com.sksamuel.scrimage.webp.WebpWriter;
 import org.springframework.http.HttpStatus;
@@ -137,19 +138,21 @@ public class CarImageController {
 
     @GetMapping("/car-images/{id}/data")
     public ResponseEntity<byte[]> imageData(@PathVariable long id,
-                                            @RequestParam(required = false) String variant) {
+                                            @RequestParam(required = false) String variant,
+                                            @RequestParam(required = false) String v) {
         FullImage full = db.sql("SELECT id, content_type, data FROM car_image WHERE id = :id")
                 .param("id", id)
                 .query((rs, i) -> new FullImage(rs.getLong("id"), rs.getString("content_type"), rs.getBytes("data")))
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such image"));
-        return serve(full, variant);
+        return serve(full, variant, v != null);
     }
 
     /** The effective livery image for an entry: (its event's season, its car number). */
     @GetMapping("/entries/{entryId}/image")
     public ResponseEntity<byte[]> entryImage(@PathVariable long entryId,
-                                             @RequestParam(required = false) String variant) {
+                                             @RequestParam(required = false) String variant,
+                                             @RequestParam(required = false) String v) {
         FullImage full = db.sql("""
                         SELECT ci.id, ci.content_type, ci.data
                         FROM entry en
@@ -161,7 +164,7 @@ public class CarImageController {
                 .query((rs, i) -> new FullImage(rs.getLong("id"), rs.getString("content_type"), rs.getBytes("data")))
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No image for this entry"));
-        return serve(full, variant);
+        return serve(full, variant, v != null);
     }
 
     private record FullImage(long id, String contentType, byte[] data) {
@@ -177,9 +180,9 @@ public class CarImageController {
      * a variant can't be produced, fall back to full-res — it's an optimization,
      * never a hard dependency.
      */
-    private ResponseEntity<byte[]> serve(FullImage full, String variant) {
+    private ResponseEntity<byte[]> serve(FullImage full, String variant, boolean versioned) {
         if (variant == null || variant.isBlank()) {
-            return body(full.contentType(), full.data());
+            return body(full.contentType(), full.data(), versioned);
         }
         Optional<VariantBlob> existing = db.sql("""
                         SELECT content_type, data FROM car_image_variant
@@ -189,21 +192,21 @@ public class CarImageController {
                 .query((rs, i) -> new VariantBlob(rs.getString("content_type"), null, rs.getBytes("data")))
                 .optional();
         if (existing.isPresent()) {
-            return body(existing.get().contentType(), existing.get().data());
+            return body(existing.get().contentType(), existing.get().data(), versioned);
         }
         if ("sheet".equals(variant)) {
             VariantBlob generated = ensureSheetVariant(full.id(), full.data());
             if (generated != null) {
-                return body(generated.contentType(), generated.data());
+                return body(generated.contentType(), generated.data(), versioned);
             }
         }
-        return body(full.contentType(), full.data());
+        return body(full.contentType(), full.data(), versioned);
     }
 
-    private static ResponseEntity<byte[]> body(String contentType, byte[] data) {
+    private static ResponseEntity<byte[]> body(String contentType, byte[] data, boolean versioned) {
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(contentType))
-                .header("Cache-Control", "max-age=300")
+                .header("Cache-Control", HttpCaching.cacheControl(versioned))
                 .body(data);
     }
 

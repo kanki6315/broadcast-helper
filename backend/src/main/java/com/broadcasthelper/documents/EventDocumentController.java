@@ -1,5 +1,6 @@
 package com.broadcasthelper.documents;
 
+import com.broadcasthelper.web.HttpCaching;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
@@ -120,7 +121,8 @@ public class EventDocumentController {
     }
 
     @GetMapping("/events/{eventId}/team-sheets/data")
-    public ResponseEntity<byte[]> data(@PathVariable long eventId) {
+    public ResponseEntity<byte[]> data(@PathVariable long eventId,
+                                       @RequestParam(required = false) String v) {
         byte[] pdf = db.sql("SELECT data FROM event_document WHERE event_id = :eventId AND kind = :kind")
                 .param("eventId", eventId).param("kind", KIND)
                 .query(byte[].class)
@@ -128,7 +130,7 @@ public class EventDocumentController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No team sheets for this event"));
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
-                .header("Cache-Control", "max-age=300")
+                .header("Cache-Control", HttpCaching.cacheControl(v != null))
                 .body(pdf);
     }
 
