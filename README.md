@@ -3,22 +3,26 @@
 Event-preparation tool for motorsports broadcasters: import results, standings,
 entry lists, and car photos; generate broadcast reference documents as PDFs.
 
-**Status:** Phase 1 complete — IMSA importers (results/standings JSON, entry-list
-PDF), championship browsing grouped by family, bulk car images, manufacturer
-logos, and the pit-lane entry-list sheet with one-click PDF export. See
+**Status:** Phases 1–3 delivered — multi-series importers (results/standings/grid
+JSON, grid CSV, entry-list PDF) with staging + review, championship browsing
+grouped by family, bulk car images, manufacturer logos, the pit-lane entry-list
+sheet with one-click PDF export, and a per-class season reference table. Phase 4
+(single-container hosting + Google login) is code-complete pending deploy. See
 [PLAN.md](PLAN.md) for the full plan, domain model, and phase roadmap.
 
 ## What it does today
 
-- **Import** IMSA results JSON, standings JSON (team/driver/Michelin Endurance
-  Cup championships), entry-list PDFs, and starting-grid CSVs — staged and
-  reviewed before touching the database. Uploads choose a **format** (parser
+- **Import** timing-provider results, standings (team/driver/Michelin Endurance
+  Cup championships), and starting-grid JSON, plus entry-list PDFs and
+  starting-grid CSVs — across multiple series (IMSA, Mustang Challenge), staged
+  and reviewed before touching the database. Uploads choose a **format** (parser
   family = provider × medium, e.g. `IMSA_JSON`/`IMSA_PDF`/`IMSA_CSV`); the
   default auto-detects JSON and PDF. A grid CSV carries no event/session
   metadata, so review attaches it to an existing event and session (race
   number), and it keeps the per-car qualifying time.
-- **Browse** events with class-grouped results, and championships grouped by
-  family under each season.
+- **Browse** events with class-grouped results, championships grouped by family
+  under each season, and a per-class season reference table (rows = cars,
+  columns = rounds, each cell the car's start → finish in class).
 - **Manage** car photos (matched per season by car number) and manufacturer
   logos (matched by name).
 - **Generate** the pit-lane entry-list sheet per event: drivers with flags and

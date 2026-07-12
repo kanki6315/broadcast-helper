@@ -151,10 +151,18 @@ Importer = a plugin implementing `parse(file) → staged rows` for a
    assignment, never guessed. Coverage view lists cars still missing an image.
    Stored as BYTEA; served per entry via `/api/entries/{id}/image`.
 
+Since the MVP the pipeline gained **starting-grid importers** (JSON and, for
+events without published grid JSON, a semicolon **grid CSV**) and an explicit
+**format** on upload — the `ImportFormat` enum (parser family = provider ×
+medium: `IMSA_JSON` / `IMSA_PDF` / `IMSA_CSV`), which concretely realizes the
+`(series, file-kind)` plugin model above. `AUTO` stays the default and resolves
+to a concrete family; `import_batch.format` records which parser ran.
+Document-kind detection lives inside each family. Full detail in Phase 3.
+
 Real sample files for each format to be provided by the user when the
 importer is built — parsers are written against real files, not assumptions.
-The 2026 samples live in `backend/src/test/resources/fixtures/imsa/` and the
-parser test suite runs against them.
+The 2026 samples live under `backend/src/test/resources/fixtures/` (per series:
+`imsa/`, `mustang/`, `pilot/`) and the parser test suite runs against them.
 
 Every importer output goes to the staging review screen (edit cells, drop rows,
 then commit). Unrecognized formats fail loudly with the raw text shown, never
