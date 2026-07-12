@@ -1,5 +1,6 @@
 package com.broadcasthelper.images;
 
+import com.broadcasthelper.web.HttpCaching;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -98,12 +99,13 @@ public class ManufacturerLogoController {
     }
 
     @GetMapping("/manufacturer-logos/{name}/data")
-    public ResponseEntity<byte[]> data(@org.springframework.web.bind.annotation.PathVariable String name) {
+    public ResponseEntity<byte[]> data(@org.springframework.web.bind.annotation.PathVariable String name,
+                                       @RequestParam(required = false) String v) {
         return db.sql("SELECT content_type, data FROM manufacturer_logo WHERE name = :name")
                 .param("name", name.toLowerCase(Locale.ROOT))
                 .query((rs, i) -> ResponseEntity.ok()
                         .contentType(MediaType.parseMediaType(rs.getString("content_type")))
-                        .header("Cache-Control", "max-age=300")
+                        .header("Cache-Control", HttpCaching.cacheControl(v != null))
                         .body(rs.getBytes("data")))
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No logo for that manufacturer"));
