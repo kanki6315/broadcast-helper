@@ -177,6 +177,22 @@ public class SheetController {
                 .query((rs, i) -> quali.put(rs.getLong("entry_id"), rs.getInt("pos")))
                 .list();
 
+        // Fall back to the starting-grid in-class position for entries with no
+        // qualifying-session result. IMSA publishes the starting grid (which sets
+        // the Q column here) far more often than a separate qualifying
+        // classification; the grid reflects qualifying order (penalties aside),
+        // so it's the broadcaster's Q value when no quali file was imported.
+        // A real qualifying result, when present, always wins (putIfAbsent).
+        db.sql("""
+                        SELECT gp.entry_id, min(gp.position_in_class) AS pos
+                        FROM grid_position gp JOIN race_session rs ON rs.id = gp.session_id
+                        WHERE rs.event_id = :id
+                        GROUP BY gp.entry_id
+                        """)
+                .param("id", id)
+                .query((rs, i) -> quali.putIfAbsent(rs.getLong("entry_id"), rs.getInt("pos")))
+                .list();
+
         // Last year's result at this venue, auto-passed when car number and team
         // carry over without significant change; a manual prior_year_note wins.
         record PriorYearResult(String team, String className, int positionInClass, String status) {
