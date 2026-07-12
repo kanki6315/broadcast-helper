@@ -199,6 +199,21 @@
   font-weight: 700;
 }
 
+/* Rows with a team-sheets page deep-link (screen only; print is unaffected). */
+.row-linked {
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .row-linked:hover td {
+    background: var(--class-tint, rgba(0, 0, 0, 0.045));
+  }
+
+  .row-linked:hover td:first-child {
+    box-shadow: inset 2px 0 0 var(--class-color, #1a1a1a);
+  }
+}
+
 .editable:focus {
   outline: 2px solid #4a90d9;
   background: #eef5fc;

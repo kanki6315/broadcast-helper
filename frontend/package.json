@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "flag-icons": "^7.5.0",
+    "pdfjs-dist": "^6.1.200",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1"

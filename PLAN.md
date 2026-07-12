@@ -495,6 +495,32 @@ display size.)
 multipart limits in application.yml (defaults like nginx's 1MB would reject
 entry-list PDFs / image bulk uploads). Railway's proxy is generous, but note it.
 
+**Team-sheets PDF deep links — ✅ DONE (2026-07-12).** The series' team-sheets PDF
+(team/driver-bio pages, one multi-page section per car — e.g. IMSA's spotter-guide
+style "Team Sheets") attaches to a specific **event**: `event_document` +
+`event_document_page` (V20, one doc per `(event, kind)`; re-upload replaces bytes
+and map in place). On upload, a second sidecar (`parser/
+extract_team_sheet_pages.py`, same contract style as the entry-list parser;
+`TEAM_SHEET_PARSER_SCRIPT` in the container) extracts the **car-number → first
+page** map — the CTMP layout puts the car number as the first text line of every
+page, so the map is the first page per number. `EventDocumentController` exposes
+upload / metadata / raw-PDF / per-car `PATCH` (manual fix or clear) / delete; the
+event page gains a "Team sheets PDF" section (upload, mapped-count, unmatched
+entries with a manual page setter, full mapping editor, replace/remove). The
+sheet API adds `teamSheetPage` per entry + `teamSheetsVersion` (car numbers
+matched with leading zeros stripped: PDF "04" = entry "4"), and the sheet page
+makes mapped rows clickable → a modal (pdf.js, lazily rasterised ~5 pages around
+the viewport, placeholder heights exact so the jump is precise) scrolled straight
+to that team's section; continuous scroll reaches the rest of the document.
+pdf.js is a dynamic import (own chunk, ~427kB) so only sheet pages with team
+sheets pay for it; the modal and row-hover affordances are screen-only, so the
+printed/exported PDF is unchanged. Verified end-to-end on the 2026 CTMP round:
+64 pages, 32/32 cars auto-mapped (one true absentee, #37, correctly left
+unlinked), #04 CrowdStrike click lands on page 3, prior-year cell edits don't
+trigger the modal. Lazy rendering is scroll-position-driven (not
+IntersectionObserver — deterministic, and canvases far from the viewport are
+released; 64 rendered canvases would hold hundreds of MB).
+
 **Phase 5 — Live timing.** Ingest a timing feed (provider TBD per series),
 WebSocket push to a dashboard, storyline surfacing (position changes vs champ
 implications, guest running ahead of points leader, pit-cycle notes). Separate

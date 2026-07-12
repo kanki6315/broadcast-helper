@@ -42,7 +42,7 @@ public class SheetController {
                              String manufacturer, Long manufacturerLogoVersion, boolean isGuest,
                              List<SheetDriver> drivers, String qualifying, String championship,
                              String best, String last, String priorYearNote, boolean priorYearAuto,
-                             Long imageVersion) {
+                             Long imageVersion, Integer teamSheetPage) {
     }
 
     public record SheetClass(String className, String color, List<SheetEntry> entries) {
@@ -50,7 +50,7 @@ public class SheetController {
 
     public record Sheet(long eventId, String eventName, String circuitName, LocalDate eventDate,
                         int year, Integer roundOrdinal, String seriesName, String championshipLabel,
-                        String priorYearLabel, List<SheetClass> classes) {
+                        String priorYearLabel, Long teamSheetsVersion, List<SheetClass> classes) {
     }
 
     @GetMapping("/events/{id}/sheet")
@@ -247,6 +247,32 @@ public class SheetController {
                                 rs.getObject("position_in_class", Integer.class))))
                 .list();
 
+        // Team-sheets PDF deep links: car number -> first page of the team's
+        // section. Numbers are matched with leading zeros stripped — the PDF
+        // prints "04" where an entry list may say "4".
+        Long teamSheetsVersion = db.sql("""
+                        SELECT uploaded_at FROM event_document
+                        WHERE event_id = :id AND kind = 'TEAM_SHEETS'
+                        """)
+                .param("id", id)
+                .query(OffsetDateTime.class)
+                .optional()
+                .map(t -> t.toInstant().toEpochMilli())
+                .orElse(null);
+        Map<String, Integer> teamSheetPages = new HashMap<>();
+        if (teamSheetsVersion != null) {
+            db.sql("""
+                            SELECT p.car_number, p.page
+                            FROM event_document_page p
+                                     JOIN event_document d ON d.id = p.document_id
+                            WHERE d.event_id = :id AND d.kind = 'TEAM_SHEETS'
+                            """)
+                    .param("id", id)
+                    .query((rs, i) -> teamSheetPages.putIfAbsent(normalizeCarNumber(rs.getString("car_number")),
+                            rs.getInt("page")))
+                    .list();
+        }
+
         record EntryRow(long entryId, String carNumber, String className, String teamName, String vehicle,
                         String manufacturer, OffsetDateTime logoUploadedAt, boolean isGuest,
                         String priorYearNote, OffsetDateTime imageUploadedAt) {
@@ -365,7 +391,8 @@ public class SheetController {
                                     r.isGuest(), driversByEntry.getOrDefault(r.entryId(), List.of()),
                                     qualiPos != null ? ordinal(qualiPos) : null,
                                     champText, best, last, priorText, priorAuto,
-                                    r.imageUploadedAt() != null ? r.imageUploadedAt().toInstant().toEpochMilli() : null));
+                                    r.imageUploadedAt() != null ? r.imageUploadedAt().toInstant().toEpochMilli() : null,
+                                    teamSheetPages.get(normalizeCarNumber(r.carNumber()))));
                 });
 
         String defaultColor = "#1a1a1a";
@@ -382,7 +409,7 @@ public class SheetController {
         String priorYearLabel = "'" + String.format("%02d", (year - 1) % 100) + " "
                                 + venueAbbrev(eventName, circuitName);
         return new Sheet(id, eventName, circuitName, eventDate, year, roundOrdinal, seriesName,
-                seriesName + " " + year + " Teams", priorYearLabel, classes);
+                seriesName + " " + year + " Teams", priorYearLabel, teamSheetsVersion, classes);
     }
 
     public record NoteRequest(String note) {
@@ -400,6 +427,14 @@ public class SheetController {
     }
 
     // ---------------------------------------------------------------- helpers
+
+    /** "04" and "4" are the same car across documents; "0" stays "0". */
+    static String normalizeCarNumber(String carNumber) {
+        if (carNumber == null) {
+            return "";
+        }
+        return carNumber.trim().replaceFirst("^0+(?=\\d)", "");
+    }
 
     private static int numericValue(String carNumber) {
         try {

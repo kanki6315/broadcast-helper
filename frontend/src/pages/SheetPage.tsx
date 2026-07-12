@@ -1,7 +1,8 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react'
 import 'flag-icons/css/flag-icons.min.css'
 import './sheet.css'
 import { flagCode } from '../lib/countries'
+import TeamSheetsModal, { prefetchTeamSheets } from '../components/TeamSheetsModal'
 
 interface SheetDriver {
   name: string
@@ -26,6 +27,7 @@ interface SheetEntry {
   priorYearNote: string | null
   priorYearAuto: boolean
   imageVersion: number | null
+  teamSheetPage: number | null
 }
 
 interface SheetClass {
@@ -52,12 +54,14 @@ interface Sheet {
   seriesName: string
   championshipLabel: string
   priorYearLabel: string
+  teamSheetsVersion: number | null
   classes: SheetClass[]
 }
 
 export default function SheetPage({ eventId }: { eventId: number }) {
   const [sheet, setSheet] = useState<Sheet | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [teamSheet, setTeamSheet] = useState<{ page: number; title: string } | null>(null)
 
   useEffect(() => {
     void fetch(`/api/events/${eventId}/sheet`)
@@ -65,6 +69,25 @@ export default function SheetPage({ eventId }: { eventId: number }) {
       .then(setSheet)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load sheet'))
   }, [eventId])
+
+  const teamSheetsUrl =
+    sheet?.teamSheetsVersion != null
+      ? `/api/events/${eventId}/team-sheets/data?v=${sheet.teamSheetsVersion}`
+      : null
+
+  // Warm the PDF while the broadcaster reads the sheet, so the first row
+  // click opens instantly.
+  useEffect(() => {
+    if (teamSheetsUrl) prefetchTeamSheets(teamSheetsUrl)
+  }, [teamSheetsUrl])
+
+  function openTeamSheet(ev: MouseEvent, entry: SheetEntry) {
+    // The prior-year cell is contentEditable; clicks there are edits, not
+    // navigation.
+    if ((ev.target as HTMLElement).closest('[contenteditable]')) return
+    if (entry.teamSheetPage == null) return
+    setTeamSheet({ page: entry.teamSheetPage, title: `#${entry.carNumber} ${entry.teamName}` })
+  }
 
   async function saveNote(entryId: number, note: string, original: string) {
     // Only persist real edits: clicking through an auto-filled cell must not
@@ -130,7 +153,12 @@ export default function SheetPage({ eventId }: { eventId: number }) {
             </thead>
             <tbody>
               {cls.entries.map((e) => (
-                <tr key={e.entryId}>
+                <tr
+                  key={e.entryId}
+                  className={teamSheetsUrl && e.teamSheetPage != null ? 'row-linked' : undefined}
+                  title={teamSheetsUrl && e.teamSheetPage != null ? 'Open team sheets' : undefined}
+                  onClick={(ev) => openTeamSheet(ev, e)}
+                >
                   <td className="col-num">{e.carNumber}</td>
                   <td className="col-team">
                     {e.teamName}
@@ -189,6 +217,15 @@ export default function SheetPage({ eventId }: { eventId: number }) {
           </table>
         </section>
       ))}
+
+      {teamSheet && teamSheetsUrl && (
+        <TeamSheetsModal
+          url={teamSheetsUrl}
+          page={teamSheet.page}
+          title={teamSheet.title}
+          onClose={() => setTeamSheet(null)}
+        />
+      )}
     </div>
   )
 }
