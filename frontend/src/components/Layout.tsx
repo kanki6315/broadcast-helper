@@ -1,16 +1,49 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { Link, NavLink, Outlet } from 'react-router-dom'
+import { getTheme, setTheme, type Theme } from '../lib/theme'
 
 const TABS = [
-  { to: '/', label: 'Seasons', end: true },
+  { to: '/', label: 'Series', end: true },
   { to: '/imports', label: 'Imports', end: false },
   { to: '/logos', label: 'Logos', end: false },
-  { to: '/series', label: 'Series', end: false },
+  { to: '/series', label: 'Manage', end: false },
+]
+
+const THEMES: { value: Theme; label: string; title: string }[] = [
+  { value: 'system', label: 'Auto', title: 'Follow system theme' },
+  { value: 'light', label: 'Light', title: 'Force light theme' },
+  { value: 'dark', label: 'Dark', title: 'Force dark theme' },
 ]
 
 interface Me {
   authEnabled: boolean
   email: string | null
+}
+
+function ThemeToggle() {
+  const [theme, setThemeState] = useState<Theme>(() => getTheme())
+
+  function pick(t: Theme) {
+    setTheme(t)
+    setThemeState(t)
+  }
+
+  return (
+    <div className="theme-toggle" role="group" aria-label="Theme">
+      {THEMES.map((t) => (
+        <button
+          key={t.value}
+          type="button"
+          title={t.title}
+          className={theme === t.value ? 'active' : undefined}
+          aria-pressed={theme === t.value}
+          onClick={() => pick(t.value)}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 export default function Layout() {
@@ -62,15 +95,20 @@ export default function Layout() {
   return (
     <main className="container">
       <div className="topbar">
-        <h1>Broadcast Helper</h1>
-        {me.email && (
-          <div className="account">
-            <span className="muted">{me.email}</span>
-            <button type="button" onClick={logout}>
-              Log out
-            </button>
-          </div>
-        )}
+        <Link to="/" className="wordmark">
+          Broadcast<span> Helper</span>
+        </Link>
+        <div className="topbar-side">
+          <ThemeToggle />
+          {me.email && (
+            <div className="account">
+              <span className="muted">{me.email}</span>
+              <button type="button" onClick={logout}>
+                Log out
+              </button>
+            </div>
+          )}
+        </div>
       </div>
       <nav className="tabs">
         {TABS.map((t) => (

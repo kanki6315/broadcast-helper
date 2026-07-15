@@ -1,0 +1,778 @@
+/* Series directory, season hub, and season sub-pages. Tokens from index.css. */
+
+/* ==== series directory (landing) ==== */
+
+.dir-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+}
+
+.dir-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition:
+    border-color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+.dir-panel:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+
+.dir-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  padding: var(--space-5);
+  text-decoration: none;
+  color: var(--text);
+}
+
+.dir-main:hover {
+  text-decoration: none;
+}
+
+.dir-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.dir-series-name {
+  font-size: var(--text-2xl);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.dir-classes {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.dir-class {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.dir-class .swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.dir-season {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.dir-year {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.dir-season-meta {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.dir-open {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--accent-ink);
+}
+
+.dir-past {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.dir-past a {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  padding: 1px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text);
+}
+
+.dir-past a:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+/* ==== season header + sub-nav ==== */
+
+.season-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.season-crumb {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.season-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.season-title-row h2 {
+  margin: 0;
+  font-size: var(--text-xl);
+}
+
+.season-select {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  padding: 3px 8px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.season-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+/* ==== hub widgets ==== */
+
+.widget-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+  margin: var(--space-5) 0 var(--space-6);
+}
+
+.widget {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.widget-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.widget-head h3 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.widget-head a {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.widget-rows {
+  display: flex;
+  flex-direction: column;
+  font-size: var(--text-sm);
+}
+
+.widget-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 5px 0;
+  min-width: 0;
+}
+
+.widget-row + .widget-row {
+  border-top: 1px solid var(--border);
+}
+
+/* Aligned variant: a real column grid so every row's pill column is as wide as
+ * the LONGEST class pill and the names share one left edge. Rows become
+ * display:contents, so padding and dividers move onto the cells. */
+.widget-rows.aligned {
+  display: grid;
+  column-gap: var(--space-2);
+}
+
+.widget-rows.aligned > .widget-row {
+  display: contents;
+}
+
+.widget-rows.aligned > .widget-row > * {
+  padding: 5px 0;
+  min-width: 0;
+}
+
+.widget-rows.aligned > .widget-row:not(:first-child) > * {
+  border-top: 1px solid var(--border);
+}
+
+.widget-rows.cols-leaders {
+  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+  align-items: center;
+}
+
+/* Pills sit inside a wrapper cell: the cell takes the row padding and the
+ * full-width divider; the pill keeps its own box. */
+.widget-rows.aligned .wr-cell {
+  display: flex;
+  align-items: center;
+}
+
+.widget-rows.cols-leaders .car-no {
+  text-align: right;
+}
+
+.widget-rows.cols-winners {
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: start;
+}
+
+.widget-rows.cols-winners > .widget-row > * {
+  padding: 7px 0;
+}
+
+/* The identity block hugs the column's left edge (content-sized, not
+ * stretched) so its pill stays flush while the number centres under it. */
+.widget-rows.cols-winners .wr-ident {
+  justify-self: start;
+}
+
+.widget-row .grow {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widget-empty {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* Two-line widget rows: a compact identity block (class pill over car number)
+ * beside the name-over-detail block, so the name column starts hard against
+ * the pill instead of after a wide number gutter. */
+.widget-row.wr-two {
+  align-items: flex-start;
+  padding: 7px 0;
+}
+
+.wr-ident {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.wr-ident .class-tag {
+  margin-top: 2px; /* optically centre the pill against the 21px first line */
+}
+
+.wr-ident .car-no {
+  line-height: 1.35; /* second row sits level with the crew line */
+}
+
+.wr-main {
+  display: block;
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wr-sub {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+}
+
+/* Next-round feature block */
+.widget-feature {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.widget-feature-name {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.widget-feature-meta {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.widget-round-no {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.widget-round-no small {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+/* ==== filter bar (recap + standings) ==== */
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin: var(--space-4) 0 var(--space-3);
+}
+
+.filter-bar .spacer {
+  flex: 1;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend i {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  font-style: normal;
+}
+
+.legend .l-win i {
+  background: var(--res-win);
+}
+
+.legend .l-top3 i {
+  background: var(--res-top3);
+}
+
+.legend .l-top5 i {
+  background: var(--res-top5);
+}
+
+.legend .l-dnf i {
+  background: var(--res-dnf-bg);
+}
+
+.legend .l-pole {
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+/* ==== recap / standings / lineup tables ==== */
+
+.grid-scroll {
+  overflow: auto;
+  max-height: 80vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin: 0 0 var(--space-5);
+}
+
+.grid-table {
+  width: auto;
+  min-width: 100%;
+  margin: 0;
+  font-size: var(--text-sm);
+  border-collapse: separate;
+  border-spacing: 0;
+  white-space: nowrap;
+}
+
+.grid-table th,
+.grid-table td {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.grid-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 2;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.grid-table .round-head {
+  text-align: center;
+  line-height: 1.15;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.grid-table .round-head .venue {
+  display: block;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.grid-table .round-head .rd {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* Class band separating stacked class sections. Class colour is data; the
+ * name is always printed on it. */
+.class-band td {
+  background: var(--class-color, var(--surface-2));
+  color: #fff;
+  font-weight: 700;
+  font-size: var(--text-sm);
+  padding: 4px 10px;
+  position: sticky;
+  left: 0;
+}
+
+.grid-table .ident {
+  position: sticky;
+  background: var(--bg);
+  z-index: 1;
+}
+
+.grid-table thead .ident {
+  z-index: 3;
+  background: var(--surface);
+}
+
+.grid-table .num-cell {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.grid-table .car-no {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: right;
+}
+
+.grid-table .name-cell {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* In plain (non-matrix) tables, one column soaks the leftover width so the
+ * numeric columns stay tight against their neighbours. */
+.grid-table .soak {
+  width: 100%;
+  max-width: none;
+}
+
+.grid-table .back-cell {
+  color: var(--text-muted);
+}
+
+.grid-table .pos-cell {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  text-align: right;
+  color: var(--ink);
+}
+
+/* result cells: one line per race, tinted by the finish tier */
+.race-cell {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  padding: 2px 6px;
+}
+
+.race-line {
+  display: block;
+  padding: 0 6px;
+  border-radius: 3px;
+  margin: 1px 0;
+  min-width: 52px;
+}
+
+.race-line.res-win {
+  background: var(--res-win);
+}
+
+.race-line.res-top3 {
+  background: var(--res-top3);
+}
+
+.race-line.res-top5 {
+  background: var(--res-top5);
+}
+
+.race-line.res-dnf {
+  background: var(--res-dnf-bg);
+  color: var(--res-dnf-ink);
+}
+
+.race-line .pole {
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.race-line.res-dnf .pole {
+  color: var(--accent);
+}
+
+.cell-skip {
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* sticky identity columns switch off on narrow screens (they'd eat the viewport) */
+@media (max-width: 700px) {
+  .grid-table .ident {
+    position: static;
+  }
+
+  .grid-table thead .ident {
+    position: sticky;
+    top: 0;
+    left: auto;
+  }
+}
+
+/* ==== lineup (entries) matrix ==== */
+
+.lineup-cell {
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  vertical-align: top;
+  padding: 4px 10px;
+}
+
+.lineup-cell .drv {
+  display: block;
+  white-space: nowrap;
+}
+
+.lineup-cell .rating {
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
+td.lineup-changed {
+  background: var(--accent-tint);
+}
+
+.lineup-changed .change-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 5px;
+  vertical-align: 2px;
+}
+
+/* ==== results page ==== */
+
+.round-chips {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin: var(--space-4) 0;
+}
+
+.round-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 4px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: none;
+  cursor: pointer;
+  line-height: 1.25;
+  transition:
+    border-color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+.round-chip .venue {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.round-chip .rd {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.round-chip:hover {
+  border-color: var(--accent);
+}
+
+.round-chip.active {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.round-chip.active .venue {
+  color: var(--ink);
+}
+
+.session-block {
+  margin: var(--space-5) 0;
+}
+
+.session-block h3 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+}
+
+.session-block h4 {
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.status-dnf {
+  color: var(--error);
+  font-weight: 600;
+}
+
+/* class code chip used inline in results tables */
+.class-tag {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: #fff;
+  background: var(--class-color, var(--text-muted));
+}
+
+/* ==== shared page bits ==== */
+
+.page-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-top: var(--space-5);
+}
+
+.page-title-row h2 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.skeleton-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-4) 0;
+}
+
+.skeleton-block .skeleton:nth-child(1) {
+  width: 40%;
+}
+
+.skeleton-block .skeleton:nth-child(2) {
+  width: 100%;
+}
+
+.skeleton-block .skeleton:nth-child(3) {
+  width: 92%;
+}
+
+.skeleton-block .skeleton:nth-child(4) {
+  width: 96%;
+}
+
+@media (max-width: 700px) {
+  .dir-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  .dir-season {
+    align-items: flex-start;
+    text-align: left;
+  }
+}

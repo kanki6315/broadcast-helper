@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
     "flag-icons": "^7.5.0",
     "pdfjs-dist": "^6.1.200",
     "react": "^19.2.7",

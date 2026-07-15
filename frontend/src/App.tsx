@@ -1,10 +1,15 @@
 import { HashRouter, Routes, Route, useParams } from 'react-router-dom'
 import './App.css'
 import Layout from './components/Layout'
-import SeasonsLandingPage from './pages/SeasonsLandingPage'
-import SeasonHubPage from './pages/SeasonHubPage'
+import SeriesDirectoryPage from './pages/SeriesDirectoryPage'
+import SeasonLayout from './pages/season/SeasonLayout'
+import HubPage from './pages/season/HubPage'
+import SchedulePage from './pages/season/SchedulePage'
+import StandingsPage from './pages/season/StandingsPage'
+import ResultsPage from './pages/season/ResultsPage'
+import EntriesPage from './pages/season/EntriesPage'
+import PhotosPage from './pages/season/PhotosPage'
 import EventDetailPage from './pages/EventDetailPage'
-import StandingsDetailPage from './pages/StandingsDetailPage'
 import ImportsPage from './pages/ImportsPage'
 import LogosPage from './pages/LogosPage'
 import SeriesPage from './pages/SeriesPage'
@@ -22,10 +27,16 @@ export default function App() {
       <Routes>
         <Route path="/sheet/:eventId" element={<SheetRoute />} />
         <Route element={<Layout />}>
-          <Route path="/" element={<SeasonsLandingPage />} />
-          <Route path="/seasons/:seasonId" element={<SeasonHubPage />} />
+          <Route path="/" element={<SeriesDirectoryPage />} />
+          <Route path="/seasons/:seasonId" element={<SeasonLayout />}>
+            <Route index element={<HubPage />} />
+            <Route path="schedule" element={<SchedulePage />} />
+            <Route path="standings" element={<StandingsPage />} />
+            <Route path="results" element={<ResultsPage />} />
+            <Route path="entries" element={<EntriesPage />} />
+            <Route path="photos" element={<PhotosPage />} />
+          </Route>
           <Route path="/events/:eventId" element={<EventDetailPage />} />
-          <Route path="/championships/:championshipId" element={<StandingsDetailPage />} />
           <Route path="/imports" element={<ImportsPage />} />
           <Route path="/logos" element={<LogosPage />} />
           <Route path="/series" element={<SeriesPage />} />

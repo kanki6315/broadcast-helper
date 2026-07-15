@@ -449,7 +449,7 @@ public class SheetController {
     // ---------------------------------------------------------------- helpers
 
     /** "04" and "4" are the same car across documents; "0" stays "0". */
-    static String normalizeCarNumber(String carNumber) {
+    public static String normalizeCarNumber(String carNumber) {
         if (carNumber == null) {
             return "";
         }
@@ -553,14 +553,17 @@ public class SheetController {
         if (haystack.contains("daytona")) return "DAY";
         if (haystack.contains("sebring")) return "SEB";
         if (haystack.contains("long beach")) return "LBH";
-        if (haystack.contains("laguna") || haystack.contains("monterey")) return "LAG";
+        if (haystack.contains("laguna") || haystack.contains("monterey")
+            || haystack.contains("weathertech raceway") || haystack.contains("wrls")) return "LAG";
         if (haystack.contains("detroit")) return "DET";
         if (haystack.contains("watkins") || haystack.contains("glen")) return "WGI";
-        if (haystack.contains("canadian tire") || haystack.contains("bowmanville")) return "CTMP";
+        if (haystack.contains("canadian tire") || haystack.contains("bowmanville")
+            || haystack.contains("ctmp") || haystack.contains("mosport")) return "CTMP";
         if (haystack.contains("road america")) return "RDA";
         if (haystack.contains("virginia")) return "VIR";
         if (haystack.contains("indianapolis")) return "IMS";
         if (haystack.contains("road atlanta") || haystack.contains("michelin raceway")) return "ATL";
+        if (haystack.contains("cota") || haystack.contains("circuit of the americas")) return "COTA";
         String base = circuitName != null ? circuitName : eventName != null ? eventName : "???";
         return base.replaceAll("[^A-Za-z]", "").toUpperCase().substring(0, Math.min(3, base.length()));
     }
