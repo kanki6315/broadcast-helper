@@ -51,7 +51,8 @@ public class SeasonController {
 
     public record SeasonHub(long id, int year, long seriesId, String seriesName,
                             List<CalendarEvent> events,
-                            List<BrowseController.ChampionshipSummary> championships) {
+                            List<BrowseController.ChampionshipSummary> championships,
+                            List<String> entryClasses) {
     }
 
     @GetMapping("/{id}")
@@ -103,7 +104,20 @@ public class SeasonController {
                         rs.getString("series_name"), rs.getLong("row_count")))
                 .list();
 
+        // Classes that actually have entries this season. The UI offers only
+        // classes that can answer (entries or standings) — a class configured
+        // in class_style but absent from the data must not become a dead-end
+        // filter button.
+        List<String> entryClasses = db.sql("""
+                        SELECT DISTINCT en.class_name
+                        FROM entry en JOIN event ev ON ev.id = en.event_id
+                        WHERE ev.season_id = :id AND en.class_name IS NOT NULL
+                        """)
+                .param("id", id)
+                .query(String.class)
+                .list();
+
         return new SeasonHub(season.id(), season.year(), season.seriesId(), season.seriesName(),
-                events, championships);
+                events, championships, entryClasses);
     }
 }

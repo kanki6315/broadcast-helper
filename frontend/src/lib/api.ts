@@ -56,6 +56,9 @@ export interface SeasonHub {
   seriesName: string
   events: CalendarEvent[]
   championships: ChampionshipSummary[]
+  /** Distinct entry class names present this season — the UI only offers
+   * classes that can answer. */
+  entryClasses: string[]
 }
 
 /* -- recap ------------------------------------------------------------- */

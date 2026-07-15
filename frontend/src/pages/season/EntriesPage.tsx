@@ -55,6 +55,7 @@ function LineupRow({
           </td>
         )
       })}
+      <td className="grid-soak" />
     </tr>
   )
 }
@@ -101,15 +102,15 @@ export default function EntriesPage() {
   }
 
   const ordinals = lineups.rounds.map((r) => r.ordinal)
-  const identCols = [
-    { w: 64 },
-    { w: 220 },
-  ]
-  const identStyle = (i: number): React.CSSProperties => ({
-    left: i === 0 ? 0 : identCols[0].w,
-    minWidth: identCols[i].w,
-    maxWidth: i === 1 ? identCols[i].w : undefined,
-  })
+  // Widths are border-box (season.css) and the offset ships as a custom
+  // property so the stylesheet keeps control of `left` — see ChampionshipGrid.
+  const identCols = [{ w: 72 }, { w: 240 }]
+  const identStyle = (i: number): React.CSSProperties =>
+    ({
+      '--ident-left': i === 0 ? '0px' : `${identCols[0].w}px`,
+      minWidth: identCols[i].w,
+      maxWidth: i === 1 ? identCols[i].w : undefined,
+    }) as React.CSSProperties
 
   return (
     <div>
@@ -117,8 +118,17 @@ export default function EntriesPage() {
         Crew per car per round. A highlighted cell is a lineup change from the car’s previous
         round; “—” means the car skipped the round.
       </p>
-      <div className="grid-scroll">
+      <div
+        className="grid-scroll"
+        tabIndex={0}
+        role="region"
+        aria-label="Driver lineups by round"
+      >
         <table className="grid-table">
+          <caption className="sr-only">
+            Driver lineups per car per round; highlighted cells changed from the car’s previous
+            round
+          </caption>
           <thead>
             <tr>
               <th className="ident" style={identStyle(0)}>
@@ -128,11 +138,12 @@ export default function EntriesPage() {
                 Team
               </th>
               {lineups.rounds.map((r) => (
-                <th key={r.ordinal} className="round-head" title={r.eventName}>
+                <th key={r.ordinal} className="round-head" scope="col" title={r.eventName}>
                   <span className="venue">{r.venue}</span>
                   <span className="rd">Rd {r.ordinal}</span>
                 </th>
               ))}
+              <th className="grid-soak" aria-hidden="true" />
             </tr>
           </thead>
           <tbody>
@@ -144,7 +155,7 @@ export default function EntriesPage() {
                 cars={cls.cars}
                 ordinals={ordinals}
                 identStyle={identStyle}
-                colSpan={2 + lineups.rounds.length}
+                colSpan={3 + lineups.rounds.length}
               />
             ))}
           </tbody>
@@ -173,7 +184,7 @@ function FragmentRows({
     <>
       <tr className="class-band">
         <td colSpan={colSpan} style={{ '--class-color': color } as React.CSSProperties}>
-          {className}
+          <span className="band-label">{className}</span>
         </td>
       </tr>
       {cars.map((car) => (

@@ -203,21 +203,31 @@ button:not([class]):disabled {
     background var(--t-fast) var(--ease-out);
 }
 
+/* Class colours are user-configured and can land anywhere — a near-black class
+ * on the dark ground would vanish. Every block filled with a class colour
+ * carries a hairline so it always reads as a block. */
 .class-chip .swatch {
   width: 10px;
   height: 10px;
-  border-radius: 2px;
+  border-radius: 3px;
   background: var(--chip-color, var(--text-muted));
+  border: 1px solid var(--border-strong);
 }
 
 .class-chip:hover {
-  border-color: var(--chip-color, var(--border-strong));
+  border-color: var(--border-strong);
+  background: var(--surface);
 }
 
+/* Amber carries SELECTION, the swatch carries IDENTITY — never swapped. A class
+ * colour can't do the selection job: GTP (#000) measured 1.16:1 against the dark
+ * ground as an active border, i.e. dimmer than the inactive state. Amber is the
+ * one accent guaranteed legible in both themes. */
 .class-chip.active {
   color: var(--ink);
-  border-color: var(--chip-color, var(--accent));
-  background: color-mix(in oklab, var(--chip-color, var(--accent)) 12%, transparent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  background: color-mix(in oklab, var(--chip-color, var(--accent)) 14%, transparent);
 }
 
 /* -- theme toggle ----------------------------------------------------------------- */
@@ -226,7 +236,7 @@ button:not([class]):disabled {
   display: inline-flex;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 2px;
+  padding: 3px;
   gap: 1px;
   background: var(--surface);
 }
@@ -308,6 +318,19 @@ tr.clickable:hover td {
 
 .muted {
   color: var(--text-muted);
+}
+
+/* Screen-reader-only text (headings, table captions). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .error {

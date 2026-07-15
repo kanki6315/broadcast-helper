@@ -94,6 +94,7 @@ export default function SeriesDirectoryPage() {
 
   return (
     <section>
+      <h1 className="sr-only">Series</h1>
       <div className="dir-list">
         {groups.map((g) => (
           <div key={g.name} className="dir-panel">
