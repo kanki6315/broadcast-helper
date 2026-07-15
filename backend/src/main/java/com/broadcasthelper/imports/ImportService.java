@@ -321,14 +321,14 @@ public class ImportService {
                 default -> guess = null;
             }
             // Without a series/season guess the usual per-season event list is
-            // empty and the reviewer would be stuck — fall back to every event.
+            // empty and the reviewer would be stuck with only "+ new event" —
+            // forking a duplicate event rather than attaching to the real one.
+            // Fall back to every event so they can always override the guess.
             List<EventOption> events;
             if (guess != null && guess.seriesId() != null && guess.seasonYear() != null) {
                 events = eventsInSeason(guess.seriesId(), guess.seasonYear());
-            } else if (needsSession) {
-                events = allEvents();
             } else {
-                events = List.of();
+                events = allEvents();
             }
             return new ImportReview(batch.kind(), guess, seriesOptions, events, cr, needsSession);
         } catch (JsonProcessingException e) {
@@ -1255,8 +1255,19 @@ public class ImportService {
                 + ". Map it to a known class in the review screen before committing. Known classes: " + known);
     }
 
+    /**
+     * A session file names its series in free text, and one weekend's files can
+     * disagree ("Ford Mustang Challenge" on the live grid, "Mustang Challenge" on
+     * the results regenerated days later). Aliases cover the drift, the same way
+     * they do for standings titles.
+     */
     private Optional<Long> findSeriesByName(String name) {
-        return db.sql("SELECT id FROM series WHERE lower(name) = lower(:name)")
+        return db.sql("""
+                        SELECT id FROM series WHERE lower(name) = lower(:name)
+                        UNION ALL
+                        SELECT series_id FROM series_alias WHERE lower(alias) = lower(:name)
+                        LIMIT 1
+                        """)
                 .param("name", name).query(Long.class).optional();
     }
 
