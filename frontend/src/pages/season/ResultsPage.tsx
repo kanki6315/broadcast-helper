@@ -30,8 +30,15 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
   const shown = classFilter ? rows.filter((r) => r.className === classFilter) : rows
   if (shown.length === 0) return <p className="muted">No classified results.</p>
   return (
-    <div className="grid-scroll" style={{ maxHeight: 'none' }}>
+    <div
+      className="grid-scroll"
+      style={{ maxHeight: 'none' }}
+      tabIndex={0}
+      role="region"
+      aria-label="Session classification"
+    >
       <table className="grid-table">
+        <caption className="sr-only">Session classification</caption>
         <thead>
           <tr>
             <th className="num-cell">Pos</th>
@@ -87,8 +94,15 @@ function GridTable({ rows }: { rows: GridRow[] }) {
   if (shown.length === 0) return <p className="muted">No grid imported.</p>
   const hasTimes = shown.some((r) => r.qualifyingTime)
   return (
-    <div className="grid-scroll" style={{ maxHeight: 'none' }}>
+    <div
+      className="grid-scroll"
+      style={{ maxHeight: 'none' }}
+      tabIndex={0}
+      role="region"
+      aria-label="Starting grid"
+    >
       <table className="grid-table">
+        <caption className="sr-only">Starting grid</caption>
         <thead>
           <tr>
             <th className="num-cell">Pos</th>
@@ -196,6 +210,7 @@ export default function ResultsPage() {
             key={e.id}
             type="button"
             className={selected?.id === e.id ? 'round-chip active' : 'round-chip'}
+            aria-pressed={selected?.id === e.id}
             title={e.name}
             onClick={() => pick(e.id)}
           >

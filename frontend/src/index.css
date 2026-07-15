@@ -73,11 +73,14 @@
   --success: oklch(50% 0.13 160);           /* ~#067647 */
   --info: oklch(50% 0.16 260);              /* ~#1758d3 */
 
-  /* result-highlight vocabulary (recap cells) — tint fills, default ink on top */
+  /* result-highlight vocabulary (recap cells) — tint fills, default ink on top.
+   * DNF inverts against the surface in BOTH themes (dark chip on light, light
+   * chip on dark): a retirement is the most story-changing fact in a recap and
+   * must read loud in the booth and at the desk alike. */
   --res-win: oklch(90% 0.075 155);          /* green tint */
   --res-top3: oklch(91% 0.05 350);          /* pink tint */
   --res-top5: oklch(90% 0.055 295);         /* violet tint */
-  --res-dnf-bg: oklch(27% 0.012 277);       /* inverted chip */
+  --res-dnf-bg: oklch(27% 0.012 277);       /* inverted chip: dark on light */
   --res-dnf-ink: oklch(93% 0.005 260);
 
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
@@ -120,8 +123,8 @@
   --res-win: oklch(35% 0.07 155);
   --res-top3: oklch(35% 0.065 355);
   --res-top5: oklch(34% 0.075 290);
-  --res-dnf-bg: oklch(14% 0.01 277);
-  --res-dnf-ink: oklch(60% 0.012 268);
+  --res-dnf-bg: oklch(72% 0.014 277);       /* inverted chip: light on dark */
+  --res-dnf-ink: oklch(18% 0.012 277);
 
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
   --shadow-raise: 0 1px 2px oklch(0% 0 0 / 30%), 0 2px 8px oklch(0% 0 0 / 25%);
@@ -156,8 +159,8 @@
     --res-win: oklch(35% 0.07 155);
     --res-top3: oklch(35% 0.065 355);
     --res-top5: oklch(34% 0.075 290);
-    --res-dnf-bg: oklch(14% 0.01 277);
-    --res-dnf-ink: oklch(60% 0.012 268);
+    --res-dnf-bg: oklch(72% 0.014 277);
+    --res-dnf-ink: oklch(18% 0.012 277);
 
     --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
     --shadow-raise: 0 1px 2px oklch(0% 0 0 / 30%), 0 2px 8px oklch(0% 0 0 / 25%);
@@ -190,8 +193,12 @@ select {
   color: inherit;
 }
 
+/* The amber ring is a box-shadow, which forced-colors / Windows High Contrast
+ * strips — the transparent outline is the fallback the OS repaints, so focus
+ * survives in every mode. */
 :focus-visible {
-  outline: none;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
   box-shadow: var(--focus-ring);
   border-radius: var(--radius-sm);
 }

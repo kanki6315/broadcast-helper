@@ -4,11 +4,13 @@ Event-preparation tool for motorsports broadcasters: import results, standings,
 entry lists, and car photos; generate broadcast reference documents as PDFs.
 
 **Status:** Phases 1–3 delivered — multi-series importers (results/standings/grid
-JSON, grid CSV, entry-list PDF) with staging + review, championship browsing
-grouped by family, bulk car images, manufacturer logos, the pit-lane entry-list
-sheet with one-click PDF export, and a per-class season reference table. Phase 4
-(single-container hosting + Google login) is code-complete pending deploy. See
-[PLAN.md](PLAN.md) for the full plan, domain model, and phase roadmap.
+JSON, grid CSV, entry-list PDF) with staging + review, bulk car images,
+manufacturer logos, and the pit-lane entry-list sheet with one-click PDF export.
+The browse UI was rebuilt (2026-07-15) into a series directory + season hub with
+a season recap and five sub-pages, on a documented design system
+([PRODUCT.md](PRODUCT.md) / [DESIGN.md](DESIGN.md)). Phase 4 (single-container
+hosting + Google login) is code-complete pending deploy. See [PLAN.md](PLAN.md)
+for the full plan, domain model, and phase roadmap.
 
 ## What it does today
 
@@ -20,9 +22,18 @@ sheet with one-click PDF export, and a per-class season reference table. Phase 4
   default auto-detects JSON and PDF. A grid CSV carries no event/session
   metadata, so review attaches it to an existing event and session (race
   number), and it keeps the per-car qualifying time.
-- **Browse** events with class-grouped results, championships grouped by family
-  under each season, and a per-class season reference table (rows = cars,
-  columns = rounds, each cell the car's start → finish in class).
+- **Browse** from a series directory into a **season hub**: the hub sets a season
+  context (year switcher; class filter chips persisted in the URL, so a filtered
+  view is bookmarkable) and opens on four live widgets — latest/next round,
+  championship leaders, last winners, entry counts — over the **season recap**
+  table (rows = cars, columns = rounds, each cell the car's start → finish in
+  class, tinted by result tier). The recap switches between the WeatherTech
+  championship and the Michelin Endurance Cup — each with its own round
+  numbering — and between Teams and Drivers. Five sub-pages hang off the hub:
+  **Schedule**, **Standings** (points per round, each round a column),
+  **Results** (pick a round → qualifying/grid + race classification), **Entries**
+  (driver lineups per car per round, rotations highlighted, skipped rounds
+  blank), and **Photos**.
 - **Manage** car photos (matched per season by car number) and manufacturer
   logos (matched by name).
 - **Generate** the pit-lane entry-list sheet per event: drivers with flags and
@@ -78,8 +89,13 @@ page's **Print / Save PDF** button and choose "Save as PDF", or export headless:
 
 ```
 backend/    Spring Boot API + Flyway migrations (src/main/resources/db/migration)
-frontend/   React UI (Vite); sheet lives at src/pages/SheetPage.tsx
+frontend/   React UI (Vite)
+              src/index.css            design tokens (see DESIGN.md)
+              src/pages/season/        the season hub + its sub-pages
+              src/pages/SheetPage.tsx  the print-first pit-lane sheet
 parser/     Python entry-list PDF -> JSON sidecar (see parser/SCHEMA.md)
 docker-compose.yml
 PLAN.md     build plan / roadmap
+PRODUCT.md  who it's for, design principles, anti-references
+DESIGN.md   the visual system: tokens, components, named rules
 ```

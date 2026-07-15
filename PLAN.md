@@ -418,6 +418,37 @@ display size.)
   (`SeasonReferenceController`) + `SeasonReferenceTable` component. The broadcaster
   chose **start → finish** over quali/finish: the grid (fastest-two-laps carry-over
   + penalties) is the true starting order, so the cell shows places gained/lost.
+  *Superseded by the browse rebuild below:* the `SeasonReferenceTable` component
+  is gone and its cell vocabulary now lives in the hub's **season recap**.
+  `/reference` survives as the data source behind the hub's widgets.
+- **Browse rebuild — ✅ DONE (2026-07-15).** The seasons grid and old hub are
+  replaced by a **series directory** (`/`) → **season hub** (`/seasons/:id`) on a
+  documented design system (`PRODUCT.md` / `DESIGN.md`; register = product, north
+  star "The Timing Tower"). The hub sets the season context (year switcher; class
+  filter in the URL, so filtered views are bookmarkable and survive sub-page
+  navigation) and shows four live-extract widgets over the **season recap** —
+  the reference-table cell vocabulary plus Pos/Pts/Back/#/name, result tints
+  (win/top-3/top-5/DNF+`R`), pole marks, and a top-level **WeatherTech ⇄ Michelin
+  Endurance Cup** switch (the cup re-derives its *own* round numbering from
+  `championship_session`, so DAY/SEB/WGI/RDA/ATL read as Rd 1–5) with Teams ⇄
+  Drivers under it. Sub-pages: **Schedule**, **Standings** (points per round),
+  **Results** (round selector → quali/grid + race), **Entries** (lineup rotation
+  per car per round), **Photos** (the old hub's `SeasonImages`).
+  New read-only endpoints in `SeasonViewController`: `/championships/{id}/recap`,
+  `/seasons/{id}/lineups`, `/events/{id}/results`; `/seasons/{id}` also returns
+  `entryClasses` so the UI only offers classes that can answer (a `class_style`
+  row with no data used to render a dead-end filter whose empty states read as
+  "import failed"). `venueAbbrev` learned WRLS / CTMP / COTA / WeatherTech
+  Raceway — the cup and Mustang calendars name venues differently from the event
+  rows they must match. `StandingsDetailPage`, `SeasonsLandingPage`,
+  `SeasonHubPage` and `SeasonReferenceTable` retired; the event page, the sheet,
+  and the admin tabs are untouched.
+  **Known gaps** (from three `/impeccable critique` passes, snapshots in
+  `.impeccable/critique/`): no search — a ⌘K jump to car/driver/team is the top
+  candidate next; the recap is four independent tables (scroll-synced, but "one
+  table with class bands" is the open IA question); empty future rounds eat ~35%
+  of horizontal scroll (narrowing them per-grid would break cross-grid column
+  alignment, so it needs a parent-level pass).
 - **Hosting — the active next block (see Phase 4a below).** Deploy + auth +
   multi-user/sharing + the S3 image migration. Elevated to the priority because
   it's the substrate the deferred notes dashboard needs, and it unblocks sharing
@@ -427,10 +458,13 @@ display size.)
   clicks an entry to load its detailed notes (pit-lane intel: sponsor
   pronunciation, driver storylines). Living, searchable, shared content — so it is
   built *after* hosting provides the auth/multi-user substrate, not retrofitted.
-- **Championship-consolidation presentation — DEFERRED (post-hosting polish):** the
-  hub grouping each class's championship + cup(s) together, and a sheet Endurance
-  Cup points column shown only at endurance rounds (cup rounds matched to the event
-  via `venueAbbrev`). Presentation on data the model already holds; not MVP.
+- **Championship-consolidation presentation — ✅ HUB HALF DONE (2026-07-15), sheet
+  half still deferred.** The hub half shipped with the browse rebuild: the recap's
+  championship ⇄ cup switch consolidates each class's championship and its cup(s)
+  behind one control, with cup rounds matched to events via `venueAbbrev`. Still
+  deferred: the **sheet** Endurance Cup points column shown only at endurance
+  rounds — and the sheet is now legacy (PRODUCT.md scopes the PDF as a
+  proof-of-concept), so this may never be worth building.
 
 **Phase 4a — Hosting.** Make it a real, shared web app, not a local dev stack.
 **Decisions locked (2026-07-10):**
@@ -569,3 +603,15 @@ hosting lands. Spec the exact contents with the user then.
   What to surface (manufacturer, driver lineup, team) and how, if built later.
 - Grid rundown sheet contents (spec in Phase 6, after hosting).
 - Live timing providers and feed access per series (Phase 5).
+- **Lookup by search (⌘K)** — every critique pass flags it: the product's job is
+  "get to a fact without hunting", and the hub has no way to type a car number,
+  driver, or team and land on their row. Top candidate for the next feature.
+- **Is the season recap one table or four?** Today it's one scroll-synced grid
+  per class. One table with class bands as separators would kill four scroll
+  positions and four header blocks, and would answer "what happened at CTMP
+  across every class, at a glance" — the question four tables forecloses.
+- **Is chronological left-to-right right for a lookup surface?** The recap
+  auto-scrolls to the latest round because that's the live question; a
+  latest-first calendar would make the newest round sit next to the team name
+  and remove the auto-scroll entirely. Rejected once (2026-07-15) as inverting
+  how a season reads; revisit if booth use says otherwise.

@@ -1,7 +1,121 @@
-<!-- SEED: re-run /impeccable document once the visual system is built, to capture the actual tokens and components and generate the .impeccable/design.json sidecar. -->
 ---
 name: Broadcast Helper
 description: A skim-first motorsport reference — Apple-clean restraint fused with on-air timing-terminal density.
+colors:
+  # Hex values are sRGB approximations for tooling; the canonical OKLCH tokens
+  # live in frontend/src/index.css and .impeccable/design.json (colorMeta).
+  # "-dark" keys are the dark-theme values of the same role.
+  bg: "#ffffff"
+  bg-dark: "#16171d"
+  surface: "#f3f4f7"
+  surface-dark: "#1e2027"
+  surface-2: "#e9ebef"
+  surface-2-dark: "#262933"
+  border: "#dfe0e5"
+  border-dark: "#2e303a"
+  border-strong: "#cccfd6"
+  border-strong-dark: "#3b3e4a"
+  ink: "#0b0812"
+  ink-dark: "#f3f4f6"
+  text: "#3d3a45"
+  text-dark: "#b6bcc7"
+  text-muted: "#5e626e"
+  text-muted-dark: "#878e9e"
+  broadcast-amber: "#b8791f"
+  broadcast-amber-dark: "#f0b84a"
+  amber-ink: "#8f5e12"
+  on-accent: "#221806"
+  on-accent-dark: "#2a2008"
+  error: "#b32318"
+  error-dark: "#f5776b"
+  success: "#067647"
+  success-dark: "#47cd89"
+  info: "#1758d3"
+  info-dark: "#7fa8f2"
+  res-win: "#bfeccd"
+  res-win-dark: "#124631"
+  res-top3: "#f7dce9"
+  res-top3-dark: "#4b2337"
+  res-top5: "#e2dcf8"
+  res-top5-dark: "#362a58"
+  res-dnf-bg: "#25262c"
+  res-dnf-bg-dark: "#a2a4ae"
+  res-dnf-ink: "#e6e8eb"
+  res-dnf-ink-dark: "#101117"
+typography:
+  headline:
+    fontFamily: "Inter Variable, system-ui, sans-serif"
+    fontSize: "1.5rem"
+    fontWeight: 600
+    letterSpacing: "-0.02em"
+  title:
+    fontFamily: "Inter Variable, system-ui, sans-serif"
+    fontSize: "1.25rem"
+    fontWeight: 600
+    letterSpacing: "-0.02em"
+  body:
+    fontFamily: "Inter Variable, system-ui, sans-serif"
+    fontSize: "1rem"
+    fontWeight: 400
+    lineHeight: 1.5
+  label:
+    fontFamily: "Inter Variable, system-ui, sans-serif"
+    fontSize: "0.875rem"
+    fontWeight: 500
+  caption:
+    fontFamily: "Inter Variable, system-ui, sans-serif"
+    fontSize: "0.75rem"
+    fontWeight: 600
+  data:
+    fontFamily: "JetBrains Mono Variable, ui-monospace, monospace"
+    fontSize: "0.875rem"
+    fontWeight: 400
+    fontVariation: "tabular-nums"
+rounded:
+  xs: "3px"
+  sm: "4px"
+  md: "6px"
+  lg: "10px"
+  pill: "999px"
+spacing:
+  "1": "4px"
+  "2": "8px"
+  "3": "12px"
+  "4": "16px"
+  "5": "24px"
+  "6": "32px"
+  "7": "48px"
+  "8": "64px"
+components:
+  button-primary:
+    backgroundColor: "{colors.broadcast-amber}"
+    textColor: "{colors.on-accent}"
+    rounded: "{rounded.md}"
+    padding: "6px 14px"
+  button-secondary:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.text}"
+    rounded: "{rounded.md}"
+    padding: "6px 14px"
+  seg-btn-active:
+    backgroundColor: "{colors.bg}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.sm}"
+    padding: "4px 12px"
+  class-chip:
+    backgroundColor: "{colors.bg}"
+    textColor: "{colors.text}"
+    rounded: "{rounded.pill}"
+    padding: "3px 10px"
+  class-tag:
+    textColor: "#ffffff"
+    rounded: "{rounded.sm}"
+    padding: "0 6px"
+  input:
+    backgroundColor: "{colors.bg}"
+    textColor: "{colors.text}"
+    rounded: "{rounded.md}"
+    padding: "6px 10px"
 ---
 
 # Design System: Broadcast Helper
@@ -11,187 +125,259 @@ description: A skim-first motorsport reference — Apple-clean restraint fused w
 **Creative North Star: "The Timing Tower"**
 
 The trackside timing tower shows the running order at a glance — authoritative,
-unadorned, instantly legible from a distance and under pressure. That is the
-whole system in one image. Broadcast Helper is an instrument for reading facts
-fast: during desk prep, live on air, and trackside in a dim booth. Every surface
-earns its place by how quickly the broadcaster lands on the number they need.
+unadorned, instantly legible from a distance and under pressure. Broadcast
+Helper is an instrument for reading facts fast: during desk prep, live on air,
+and trackside in a dim booth. The system fuses **Apple-clean restraint**
+(immaculate spacing, one confident accent, nothing decorative) with **on-air
+timing-terminal density** (tight rows, tabular numbers, meaningful class
+colors). The material logic is cockpit night lighting: cool graphite panels,
+one warm amber instrument light.
 
-The character is a deliberate fusion of two worlds the product owner named
-explicitly: **Apple-clean restraint** (Linear / Raycast / macOS pro tools —
-immaculate spacing, one confident accent, nothing decorative) and **on-air
-timing-terminal density** (tight rows, tabular numbers, meaningful class colors,
-data-forward authority). The synthesis is the calm and craft of the former
-applied to the density and legibility of the latter. Dark mode is not a variant
-here; it is a primary surface, tuned for low-light booths.
+Dark mode is a first-class tuned surface, not a variant — theme is forced via
+`data-theme` on `<html>` ('light' | 'dark'; absent follows the system), applied
+before first paint. Motion is **booth-fast**: 70ms state feedback and 140ms
+transitions with an ease-out-quart curve, never choreography — the user asked
+for sub-100ms because a 150ms tab switch feels slow mid-broadcast. Every
+animation collapses under `prefers-reduced-motion`.
 
-This system explicitly rejects the four traps the owner ruled out: the **generic
-SaaS dashboard** (purple gradients, hero-metric cards, rounded-icon grids), the
-**consumer / gamified** look (badges, confetti, oversized friendly buttons), the
-**enterprise / bureaucratic** look (heavy chrome, gray-on-gray, clutter), and the
-**over-designed / decorative** (glassmorphism, motion for its own sake). If a
-change makes a table harder to skim, it is wrong regardless of how it looks.
+This system rejects: the generic SaaS dashboard (gradients, hero-metric cards),
+consumer/gamified looks, enterprise gray-on-gray clutter, and decorative
+flourish of any kind. If a change makes a table harder to skim, it is wrong
+regardless of how it looks.
 
 **Key Characteristics:**
-- Skim-first: tabular numerals, clear column rhythm, strong scanning hierarchy.
-- Restrained chrome, one warm accent (broadcast amber), functional class colors.
-- Dark-mode-first, WCAG AA floor, legible in a booth.
-- Fast, understated motion (50–100ms) — state feedback, never choreography.
-- Invisible, earned familiarity: standard affordances at instrument-grade precision.
+- Skim-first: tabular numerals, aligned columns, strong scanning hierarchy.
+- Restrained chrome; broadcast amber is the only voiced accent.
+- Class colors and result tints are data, never decoration.
+- Dark-mode-first, WCAG AA floor on every pair.
+- Booth-fast motion (70–140ms), state feedback only.
 
 ## 2. Colors
 
-A near-neutral, dark-mode-first surface carrying a single warm broadcast accent,
-with a separate functional palette reserved for motorsport class colors.
-*(Seed anchors below are committed; the full ramp, semantic-state set, and class
-palette resolve during implementation and the next scan-mode pass.)*
+Cool graphite neutrals (hue 277, chroma ≤0.014) carrying a single warm amber
+accent, a semantic state trio, and two functional data palettes (per-series
+class colors and result tints). Canonical values are OKLCH in
+`frontend/src/index.css`; the hex values here and in the frontmatter are sRGB
+approximations.
 
 ### Primary
-- **Broadcast Amber** (light `#B8791F`, dark `#F0B84A`): the one confident accent.
-  Primary actions, the current/active tab, focus and selection, and the live
-  indicator. Warm and on-air, never racing red. Used sparingly — see the One
-  Instrument Rule.
+- **Broadcast Amber** (light `#b8791f` / oklch(60% 0.115 75); dark `#f0b84a` /
+  oklch(80% 0.13 80)): the one instrument light. Primary actions, the active
+  tab underline, focus rings, selection washes (`--accent-tint` at 10–12%
+  alpha), and the recap's pole marker. As **text** on light backgrounds it
+  darkens to **Amber Ink** (`#8f5e12`, ≥4.5:1 on white); on dark, the amber is
+  bright enough to be its own text. Fills carry near-black ink (`--on-accent`).
 
 ### Neutral
-- **Ink** (light `#08060D` headings / `#3D3A45` body; dark `#F3F4F6` headings /
-  `#B6BCC7` body): text ramp. Body must clear WCAG AA (≥4.5:1) on its actual
-  surface — no washed-out gray-on-tint.
-- **Surface** (light `#FFFFFF`; dark `#16171D`): the content ground. A second,
-  slightly cooler panel tone for toolbars / side surfaces resolves in implementation.
-- **Divider** (light `#E5E4E7`; dark `#2E303A`): table rules, borders, hairlines —
-  the quiet grid the timing data sits on.
-
-### Functional — Class Palette (reserved, not decorative)
-- Motorsport class colors are **data**, driven per series by `class_style`
-  (`--class-color` / `--class-tint`), not chosen for aesthetics. They must never
-  be reused as UI accent. Because class hues can collide for color-vision
-  deficiency, class color is always paired with the class **code/label**, never
-  hue alone. `[exact tints to be resolved during implementation]`
+- **Graphite ground** (light `#ffffff`; dark `#16171d`): the content surface.
+- **Panel** (`--surface`, light `#f3f4f7`; dark `#1e2027`) and **Raised**
+  (`--surface-2`): toolbars, widgets, segmented controls, sticky table headers.
+  Depth in dark mode comes from these lightness steps, not shadows.
+- **Hairline / Strong borders** (`--border`, `--border-strong`): the quiet grid
+  every table sits on.
+- **Ink / Body / Muted text** (light `#0b0812` / `#3d3a45` / `#5e626e`; dark
+  `#f3f4f6` / `#b6bcc7` / `#878e9e`): all three clear AA on their surfaces.
 
 ### Semantic States
-`[hover / focus / active / selected / disabled / error / warning / success — to
-be resolved during implementation. Standardize once, apply everywhere. Error must
-be tokenized and AA-compliant, replacing the current hardcoded #e74c3c / #888.]`
+- **Error** (light `#b32318`; dark `#f5776b`) with a 9–13% `--error-tint` wash
+  for panels; **Success** (`#067647` / `#47cd89`); **Info** (`#1758d3` /
+  `#7fa8f2`). Warning has no separate hue — amber is already spoken for.
+
+### Functional — Result Tints (recap cells)
+- **Win** (green tint), **Top 3** (pink tint), **Top 5** (violet tint): fills
+  behind start→finish numbers, tuned per theme so default ink stays AA on top.
+- **DNF** (**inverts against the surface in both themes**: dark chip `#25262c`
+  on light, light chip `#a2a4ae` on dark — measured 15.1:1 and 7.3:1 against
+  their row): a retirement is the most story-changing fact in a recap, so it
+  reads loud at the desk and in the booth alike. It always carries the **`R`
+  text mark** as well — see the Color-Is-Data Rule.
+
+### Functional — Class Palette
+- Motorsport class colors come from per-series `class_style` rows in the
+  database (`--class-color` / `--chip-color` custom properties), never from
+  this spec. They are data.
+- Because the values are user-configured they can land anywhere in the space —
+  IMSA's GTP is `#000000`, which measured **1.16:1** as an active border and
+  **1.28:1** as a filled pill against the dark ground. Two rules below exist
+  specifically to keep a class colour from having to do a job it can't.
 
 ### Named Rules
-**The One Instrument Rule.** Broadcast amber is the *only* voiced accent, on ≤10%
-of any screen — primary action, current selection, live state. Its scarcity is
-what makes it read as an instrument light and not decoration.
+**The One Instrument Rule.** Broadcast amber is the *only* voiced accent, on
+≤10% of any screen. Its scarcity is what makes it read as an instrument light.
 
-**The Color-Is-Data Rule.** Any color that carries meaning (class, status) is
-always paired with a label or code. Hue never encodes information alone.
+**The Color-Is-Data Rule.** Any color that carries meaning (class, result tier,
+status) is always paired with a label, code, or number. Hue never encodes
+information alone. A win/podium is inferable from the finishing number itself;
+a **retirement is not**, so the DNF cell carries a literal `R` mark (plus
+screen-reader text) and never leans on its fill.
 
 **The Solid-Fill Rule.** No gradients on the accent, ever. A gradient amber
 button is the SaaS trap; a solid one is a broadcast instrument.
 
+**The Selection-Is-Amber Rule.** Amber marks **selection**; class colour marks
+**identity**. Never swapped. A class colour cannot carry selection — it is
+user-configured and free to be near-black, at which point the "on" state renders
+*dimmer than "off"* (measured: active GTP chip 1.16:1 vs inactive 1.8:1 in dark).
+Amber is the one accent guaranteed legible in both themes, so the active chip
+takes an amber border + ring and lets the swatch keep saying which class.
+
+**The Hairline Rule.** Every block filled with a class colour — chip swatch,
+class tag, class band — carries a `--border-strong` hairline. Without it a
+near-black class dissolves into the dark ground and its label floats in space.
+
 ## 3. Typography
 
-**Body / UI Font:** one neutral humanist-or-grotesque sans, all chrome, labels,
-and prose. `[family to be chosen at implementation; system-ui is the current
-placeholder]`
-**Data / Mono Font:** a monospaced or tabular-figure cut for numbers, lap/qual
-times, positions, and any aligned numeric column. `[family to be chosen at
-implementation]`
+**UI Font:** Inter Variable (system-ui fallback), self-hosted via @fontsource.
+**Data Font:** JetBrains Mono Variable (ui-monospace fallback) — every number
+that lives in a column: positions, points, times, car numbers, years.
 
-**Character:** one restrained sans doing the talking, with numerals that lock
-into columns so the eye scans straight down a results or reference table. No
-display face — identity comes from spacing, alignment, and the amber accent, not
-from letterforms.
+**Character:** one restrained sans does the talking; identity comes from
+spacing, alignment, and the amber accent, not letterforms. Numerals lock into
+columns so the eye scans straight down a results table.
 
 ### Hierarchy
-*(Fixed rem scale — product UI, viewed at consistent DPI. Not fluid/clamp. Tight
-1.125–1.2 ratio between steps to keep dense screens calm. Exact values resolve in
-implementation.)*
-- **Headline** (600, page title): `[size TBD]`. One per view; `letter-spacing:-0.02em`.
-- **Title** (600, section / table caption): `[size TBD]`.
-- **Body** (400, prose and labels): `[~16px TBD]`. Prose capped at 65–75ch; dense
-  tables may run wider.
-- **Data** (mono / tabular, numeric cells): `font-variant-numeric: tabular-nums`,
-  right-aligned in numeric columns. `[size TBD]`
-- **Label** (500–600, compact UI labels, badges): `[small size TBD]`. Sentence or
-  code case — **not** wide-tracked all-caps eyebrows.
+Fixed rem scale, ~1.2 ratio (product UI — predictable, never fluid):
+- **Headline** (600, 1.5rem, `letter-spacing: -0.02em`): the page title
+  (series + season). One per view.
+- **Title** (600, 1.25rem): section headings, session names.
+- **Body** (400, 1rem, 1.5): prose and labels; prose capped at 65–75ch.
+- **Label** (500–600, 0.875rem): tabs, buttons, segmented controls, chips.
+- **Caption** (600, 0.75rem, `--text-muted`): table headers, round numbers,
+  legends. Sentence case — never tracked uppercase.
+- **Data** (mono, 0.875rem, `font-variant-numeric: tabular-nums`): numeric
+  cells, right-aligned; car numbers at 700.
 
 ### Named Rules
-**The Tabular Rule.** Every number that lives in a column uses tabular figures and
-aligns on the decimal. Positions, times, points, car numbers — they must scan as a
-straight vertical read.
+**The Tabular Rule.** Every number in a column uses tabular figures and aligns
+— positions, times, points, car numbers must scan as a straight vertical read.
 
-**The No-Eyebrow Rule.** No tiny uppercase wide-tracked kicker above sections.
-Hierarchy comes from size and weight, not from decorative labels.
+**The No-Eyebrow Rule.** No tiny uppercase wide-tracked kickers. Hierarchy
+comes from size, weight, and space.
 
 ## 4. Elevation
 
-Flat by default. Depth is conveyed through the hairline divider grid and the
-second surface tone, not through shadows — a timing screen has no drop shadows.
-Elevation appears only as a **response to state**: a hovered clickable row, an
-open modal, a focused control. `[exact shadow / overlay tokens to be resolved
-during implementation; keep them tight and low-contrast.]`
+Flat by default — a timing screen has no drop shadows. Depth is conveyed by the
+hairline border grid and the surface lightness steps (`--bg` → `--surface` →
+`--surface-2`), which is also how dark mode expresses elevation. Shadows exist
+only as state responses.
+
+### Shadow Vocabulary
+- **Raise** (`--shadow-raise`: `0 1px 2px` + `0 2px 8px`, ~8%/6% black in
+  light, 30%/25% in dark): active segment buttons and theme-toggle thumbs —
+  the "pressed instrument key" cue.
+- **Modal** (`--shadow-modal`: `0 4px 12px` + `0 12px 40px+`): overlays only
+  (team-sheets PDF modal).
+- **Focus ring** (`--focus-ring`: 2px bg gap + 2px amber): every
+  `:focus-visible`, no exceptions.
 
 ### Named Rules
-**The Flat-Instrument Rule.** Surfaces are flat at rest. If a shadow appears with
-no state change behind it (hover, focus, overlay), it is decoration — remove it.
+**The Flat-Instrument Rule.** Surfaces are flat at rest. If a shadow appears
+with no state change behind it (hover, focus, overlay), it is decoration —
+remove it.
 
 ## 5. Components
 
-*(Direction for the surfaces to build; the current bare CSS is a throwaway
-baseline, not the spec. Exact values resolve in implementation and the next scan
-pass.)*
+Shared vocabulary in `frontend/src/App.css`; season surfaces in
+`frontend/src/pages/season.css`. Every interactive component defines default,
+hover, focus-visible, active, and disabled states; transitions run at
+`--t-fast` (70ms) ease-out-quart.
 
-### Data Table (the signature component)
-The heart of the tool — results, standings, the season reference grid. Dense,
-quiet, skim-first: hairline row dividers, tabular numerals, sticky headers on
-long/ wide tables, horizontal scroll contained (never breaking page layout).
-Clickable rows show a fast state change on hover; class color sits in a labeled
-cell, never as a bare stripe. No zebra-stripe noise unless density genuinely
-demands it.
+### Data Grid (the signature component — `.grid-table` in `.grid-scroll`)
+The heart of the tool: recap, standings, lineups, results. Hairline row
+dividers, `border-collapse: separate`, sticky headers (surface background) and
+sticky identity columns with explicit left offsets (disabled below 700px),
+scroll contained in a bordered `--radius-md` container capped at 80vh. Round
+columns show a mono venue code over a muted "Rd n". Class sections divide on a
+**class band** — a full-width row filled with the class color, name always
+printed on it. Result cells stack one `.race-line` per race, tinted by finish
+tier, with the amber **P** for pole and DNS/skips as quiet muted marks.
 
 ### Buttons
-- **Shape:** small, tight radius `[TBD]`. **Primary:** solid broadcast amber,
-  ink-on-amber text meeting AA. **Secondary / ghost:** neutral, divider-bordered.
-- **States:** default / hover / focus-visible / active / disabled — all defined,
-  none skipped. Fast (50–100ms) transitions.
+- **Shape:** `--radius-md` (6px), 6px 14px padding, label type.
+- **Primary:** solid amber, `--on-accent` ink; hover mixes 12% ink into the
+  fill. **Secondary/default:** `--surface` with `--border-strong`, hover
+  `--surface-2`. **Disabled:** 50% opacity, `not-allowed` cursor.
 
-### Tabs (top navigation)
-Text tabs with an amber underline on the active tab (the current pattern, kept and
-refined). Active = amber accent + weight; inactive = body ink. Focus-visible ring
-required.
+### Segmented Control (`.seg` / `.seg-btn`)
+The filter vocabulary (championship/cup, teams/drivers, sub-nav): a
+`--surface` pill-box (radius 6px, 2px padding); the active segment lifts on
+`--bg` with `--shadow-raise` and ink text. Overflows scroll invisibly within
+the pill — never the page.
+
+### Chips
+- **Class filter chip** (`.class-chip`): pill outline + 10px color swatch +
+  class code; active fills 12% of the class color and borders in it.
+- **Class tag** (`.class-tag`): solid class-color block, white 700 text —
+  the inline class marker in tables and widgets.
+- **Round chip** (`.round-chip`): venue code over "Rd n"; active = amber
+  border + `--accent-tint` fill.
 
 ### Inputs / Fields
-Divider-stroked, surface background, tight radius. Focus is an amber ring/border
-shift, not a glow. Error and disabled states tokenized (replacing hardcoded reds).
+`--bg` background, `--border-strong` 1px stroke, radius 6px, 6px 10px padding.
+Focus is the global amber `--focus-ring`. Errors use `.error-panel`
+(error-tint fill, 35% error border) — tokenized, never hardcoded red.
 
-### Season Reference / Timing Grid
-The densest surface: rows = cars, columns = rounds, cell = start→finish in class.
-Must stay readable at high density — tabular figures, class color + code, contained
-horizontal scroll, sticky first column and header.
+### Widgets (hub summary panels)
+`--surface` panels (radius `--radius-lg`, 16px padding) holding **live data
+extracts**, never icon+blurb cards: a title row with an amber-ink arrow link,
+then divider-separated rows. Aligned variants (`.widget-rows.aligned`) share
+column widths via grid so class pills, car numbers, and names sit on common
+edges; two-line rows put pill+number in a `.wr-ident` block beside
+name-over-detail.
+
+### Skeletons & Empty States
+Loading is `.skeleton` bars (surface-2, 1.4s opacity pulse) shaped like the
+content — never centered spinners. Empty states (`.empty-state`) are dashed
+`--radius-lg` panels whose copy teaches the fix ("import a standings file from
+the Imports tab").
+
+### Theme Toggle
+Three-state (Auto/Light/Dark) micro-segmented control in the top bar; persists
+to `localStorage('bh-theme')`; `index.html` applies it before first paint.
 
 ## 6. Do's and Don'ts
 
 ### Do:
-- **Do** make every numeric column tabular and aligned — skimming a results table
-  is the core job.
-- **Do** keep broadcast amber to ≤10% of any screen (the One Instrument Rule), as
-  a solid fill only.
-- **Do** tune dark mode as a first-class surface — legible in a low-light booth,
-  not a tint of the light theme.
-- **Do** hold body text to WCAG AA (≥4.5:1) on its real background; replace the
-  current hardcoded `#888` / `#e74c3c` with tokenized, AA-compliant values.
-- **Do** pair any meaningful color (class, status) with a label or code — never
-  hue alone.
-- **Do** keep motion fast and understated (50–100ms), state-only, with a
-  `prefers-reduced-motion` fallback.
+- **Do** set every numeric column in JetBrains Mono with `tabular-nums`,
+  right-aligned — skimming is the product.
+- **Do** keep broadcast amber ≤10% of any screen, solid fills only (the One
+  Instrument Rule).
+- **Do** pair every meaningful color with a label: class bands print the class
+  name, result tints sit under finish numbers, status has text.
+- **Do** keep `box-sizing: border-box` on data-grid cells. The sticky identity
+  columns cumulate their offsets from the declared widths, so those widths must
+  include the padding — otherwise every column sits 20px short and covers its
+  neighbour's right edge, which is exactly where the right-aligned digits are.
+- **Do** ship per-column sticky offsets as a `--ident-left` custom property, not
+  an inline `left`. An inline `left` outranks every stylesheet rule, so the
+  narrow-screen media query can never unpin the header.
+- **Do** contain wide tables in their own `.grid-scroll` — the page never
+  scrolls horizontally.
+- **Do** keep motion 70–140ms ease-out-quart, state-triggered, with the
+  `prefers-reduced-motion` kill switch already in `index.css`.
+- **Do** hold every text pair to WCAG AA on its actual background, both themes.
+- **Do** ship skeletons shaped like the content and empty states that point at
+  the Imports tab.
 
 ### Don't:
-- **Don't** build a **generic SaaS dashboard** — no purple gradients, hero-metric
-  cards, or rounded-icon-in-a-box grids.
-- **Don't** go **consumer / gamified** — no badges, confetti, or oversized friendly
-  buttons.
-- **Don't** go **enterprise / bureaucratic** — no heavy chrome, gray-on-gray, or
-  cluttered toolbars.
-- **Don't** **over-design** — no glassmorphism, no decorative motion, no flourish
-  that slows a lookup.
-- **Don't** use racing red as the accent (first-order motorsport cliché) or a
-  gradient on the amber (the SaaS trap).
-- **Don't** put a wide-tracked uppercase eyebrow above sections, or a
-  `border-left` colored stripe on rows/cards.
-- **Don't** treat the print-first PDF sheet as the design target — the on-screen
-  surfaces are the product now.
+- **Don't** build a **generic SaaS dashboard** — no purple gradients,
+  hero-metric cards, or icon-in-a-box grids.
+- **Don't** go **consumer/gamified** (badges, confetti, oversized friendly
+  buttons) or **enterprise/bureaucratic** (heavy chrome, gray-on-gray).
+- **Don't** **over-design** — no glassmorphism, no decorative motion, no
+  flourish that slows a lookup.
+- **Don't** use racing red as an accent, gradients on the amber, side-stripe
+  borders, or wide-tracked uppercase eyebrows.
+- **Don't** hardcode grays or reds — `#888` and `#e74c3c` were purged; use
+  `--text-muted` and `--error`.
+- **Don't** invent class or result colors — class colors come from
+  `class_style`; result tiers use the four `--res-*` tokens.
+- **Don't** treat the print-first PDF sheet as the design target — the
+  on-screen surfaces are the product.
+- **Don't** gate interaction state behind `requestAnimationFrame` (or a
+  transition). rAF is throttled in background tabs and headless renders, so an
+  rAF-reset re-entry guard wedges shut and the feature dies silently. Prefer
+  idempotent writes that settle on their own.
+- **Don't** auto-scroll a data grid on narrow screens. Below 700px the identity
+  columns unpin, so scrolling right carries the car number and team off-screen
+  and leaves every row anonymous.

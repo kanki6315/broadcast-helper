@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Link,
   NavLink,
   Outlet,
   useLocation,
@@ -76,28 +75,40 @@ export default function SeasonLayout() {
     }
   }, [seasonId])
 
-  // The season's classes in configured order: class_style order first, then any
-  // championship classes the config doesn't know (neutral colour).
+  // The season's classes in configured order (class_style first, then any the
+  // config doesn't know, in neutral colour) — but only classes that actually
+  // have data this season (entries or standings). A class configured in
+  // class_style with no data would otherwise be a permanent dead-end button
+  // whose empty states read as "import failed".
   const classes = useMemo<ClassInfo[]>(() => {
     if (!hub) return []
+    const present = new Set<string>(hub.entryClasses ?? [])
+    for (const c of hub.championships) {
+      if (c.className) present.add(c.className)
+    }
     const known = new Map<string, string>()
     for (const st of styles?.styles ?? []) known.set(st.classCode, st.color)
     const seen = new Set<string>()
     const out: ClassInfo[] = []
     for (const st of styles?.styles ?? []) {
+      if (!present.has(st.classCode)) continue
       out.push({ name: st.classCode, color: st.color })
       seen.add(st.classCode)
     }
-    for (const c of hub.championships) {
-      if (c.className && !seen.has(c.className)) {
-        seen.add(c.className)
-        out.push({ name: c.className, color: known.get(c.className) ?? DEFAULT_CLASS_COLOR })
+    for (const name of present) {
+      if (!seen.has(name)) {
+        seen.add(name)
+        out.push({ name, color: known.get(name) ?? DEFAULT_CLASS_COLOR })
       }
     }
     return out
   }, [hub, styles])
 
-  const classFilter = searchParams.get('class')
+  // A stale bookmark may carry a class this season can't answer; degrade to
+  // "All classes" rather than filtering every surface into emptiness.
+  const classParam = searchParams.get('class')
+  const classFilter =
+    classParam && classes.some((c) => c.name === classParam) ? classParam : null
 
   function setClassFilter(name: string | null) {
     const next = new URLSearchParams(searchParams)
@@ -135,12 +146,9 @@ export default function SeasonLayout() {
   return (
     <section>
       <header className="season-head">
-        <span className="season-crumb">
-          <Link to="/">Series</Link> / {hub.seriesName}
-        </span>
         <div className="season-toolbar">
           <div className="season-title-row">
-            <h2>{hub.seriesName}</h2>
+            <h1>{hub.seriesName}</h1>
             {sameSeries.length > 1 ? (
               <select
                 className="season-select"
@@ -165,6 +173,7 @@ export default function SeasonLayout() {
               <button
                 type="button"
                 className={classFilter === null ? 'class-chip active' : 'class-chip'}
+                aria-pressed={classFilter === null}
                 onClick={() => setClassFilter(null)}
               >
                 All classes
@@ -174,6 +183,7 @@ export default function SeasonLayout() {
                   key={c.name}
                   type="button"
                   className={classFilter === c.name ? 'class-chip active' : 'class-chip'}
+                  aria-pressed={classFilter === c.name}
                   style={{ '--chip-color': c.color } as React.CSSProperties}
                   onClick={() => setClassFilter(classFilter === c.name ? null : c.name)}
                 >
