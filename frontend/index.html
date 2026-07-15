@@ -5,6 +5,12 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Broadcast Helper</title>
+    <script>
+      // Apply the stored theme before first paint to avoid a flash. Kept in
+      // sync with src/lib/theme.ts.
+      const t = localStorage.getItem('bh-theme')
+      if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -1,0 +1,203 @@
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Link,
+  NavLink,
+  Outlet,
+  useLocation,
+  useNavigate,
+  useOutletContext,
+  useParams,
+  useSearchParams,
+} from 'react-router-dom'
+import {
+  getJson,
+  type ClassStylesResponse,
+  type SeasonHub,
+  type SeasonSummary,
+} from '../../lib/api'
+import '../season.css'
+
+export interface ClassInfo {
+  name: string
+  color: string
+}
+
+export interface SeasonContext {
+  hub: SeasonHub
+  classes: ClassInfo[]
+  /** null = all classes */
+  classFilter: string | null
+  classColor: (className: string | null | undefined) => string
+}
+
+export function useSeason(): SeasonContext {
+  return useOutletContext<SeasonContext>()
+}
+
+const DEFAULT_CLASS_COLOR = '#5e626e'
+
+const SUB_PAGES = [
+  { to: '', label: 'Overview', end: true },
+  { to: 'schedule', label: 'Schedule', end: false },
+  { to: 'standings', label: 'Standings', end: false },
+  { to: 'results', label: 'Results', end: false },
+  { to: 'entries', label: 'Entries', end: false },
+  { to: 'photos', label: 'Photos', end: false },
+]
+
+export default function SeasonLayout() {
+  const { seasonId } = useParams()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [hub, setHub] = useState<SeasonHub | null>(null)
+  const [seasons, setSeasons] = useState<SeasonSummary[]>([])
+  const [styles, setStyles] = useState<ClassStylesResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setHub(null)
+    setError(null)
+    getJson<SeasonHub>(`/api/seasons/${seasonId}`)
+      .then((h) => {
+        if (cancelled) return
+        setHub(h)
+        void getJson<ClassStylesResponse>(`/api/series/${h.seriesId}/class-styles`)
+          .then((s) => !cancelled && setStyles(s))
+          .catch(() => !cancelled && setStyles({ styles: [], unconfiguredClasses: [] }))
+      })
+      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : 'Failed to load'))
+    getJson<SeasonSummary[]>('/api/seasons')
+      .then((s) => !cancelled && setSeasons(s))
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [seasonId])
+
+  // The season's classes in configured order: class_style order first, then any
+  // championship classes the config doesn't know (neutral colour).
+  const classes = useMemo<ClassInfo[]>(() => {
+    if (!hub) return []
+    const known = new Map<string, string>()
+    for (const st of styles?.styles ?? []) known.set(st.classCode, st.color)
+    const seen = new Set<string>()
+    const out: ClassInfo[] = []
+    for (const st of styles?.styles ?? []) {
+      out.push({ name: st.classCode, color: st.color })
+      seen.add(st.classCode)
+    }
+    for (const c of hub.championships) {
+      if (c.className && !seen.has(c.className)) {
+        seen.add(c.className)
+        out.push({ name: c.className, color: known.get(c.className) ?? DEFAULT_CLASS_COLOR })
+      }
+    }
+    return out
+  }, [hub, styles])
+
+  const classFilter = searchParams.get('class')
+
+  function setClassFilter(name: string | null) {
+    const next = new URLSearchParams(searchParams)
+    if (name) next.set('class', name)
+    else next.delete('class')
+    setSearchParams(next, { replace: true })
+  }
+
+  function switchSeason(id: string) {
+    // Preserve the sub-page and filters when jumping between years.
+    const subPath = location.pathname.replace(/^\/seasons\/\d+/, '')
+    navigate(`/seasons/${id}${subPath}${location.search}`)
+  }
+
+  if (error) return <p className="error-panel">{error}</p>
+  if (!hub) {
+    return (
+      <div className="skeleton-block" aria-label="Loading season">
+        <span className="skeleton" />
+        <span className="skeleton" style={{ height: '8rem' }} />
+        <span className="skeleton" />
+      </div>
+    )
+  }
+
+  const sameSeries = seasons.filter((s) => s.seriesName === hub.seriesName)
+  const context: SeasonContext = {
+    hub,
+    classes,
+    classFilter,
+    classColor: (name) =>
+      (name && classes.find((c) => c.name === name)?.color) || DEFAULT_CLASS_COLOR,
+  }
+
+  return (
+    <section>
+      <header className="season-head">
+        <span className="season-crumb">
+          <Link to="/">Series</Link> / {hub.seriesName}
+        </span>
+        <div className="season-toolbar">
+          <div className="season-title-row">
+            <h2>{hub.seriesName}</h2>
+            {sameSeries.length > 1 ? (
+              <select
+                className="season-select"
+                value={hub.id}
+                aria-label="Season"
+                onChange={(e) => switchSeason(e.target.value)}
+              >
+                {sameSeries.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.year}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span className="season-select" aria-label="Season">
+                {hub.year}
+              </span>
+            )}
+          </div>
+          {classes.length > 1 && (
+            <div className="class-chips" role="group" aria-label="Class filter">
+              <button
+                type="button"
+                className={classFilter === null ? 'class-chip active' : 'class-chip'}
+                onClick={() => setClassFilter(null)}
+              >
+                All classes
+              </button>
+              {classes.map((c) => (
+                <button
+                  key={c.name}
+                  type="button"
+                  className={classFilter === c.name ? 'class-chip active' : 'class-chip'}
+                  style={{ '--chip-color': c.color } as React.CSSProperties}
+                  onClick={() => setClassFilter(classFilter === c.name ? null : c.name)}
+                >
+                  <i className="swatch" />
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <nav className="seg" aria-label="Season pages">
+          {SUB_PAGES.map((p) => (
+            <NavLink
+              key={p.label}
+              to={{ pathname: p.to, search: location.search }}
+              end={p.end}
+              className={({ isActive }) => (isActive ? 'seg-btn active' : 'seg-btn')}
+            >
+              {p.label}
+            </NavLink>
+          ))}
+        </nav>
+      </header>
+      <Outlet context={context} />
+    </section>
+  )
+}

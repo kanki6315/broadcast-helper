@@ -49,21 +49,23 @@ public class SeasonController {
                                 Integer roundOrdinal, long entryCount, long sessionCount) {
     }
 
-    public record SeasonHub(long id, int year, String seriesName,
+    public record SeasonHub(long id, int year, long seriesId, String seriesName,
                             List<CalendarEvent> events,
                             List<BrowseController.ChampionshipSummary> championships) {
     }
 
     @GetMapping("/{id}")
     public SeasonHub season(@PathVariable long id) {
-        SeasonSummary season = db.sql("""
-                        SELECT s.id, s.year, sr.name AS series_name, 0 AS round_count, 0 AS championship_count
+        record Header(long id, int year, long seriesId, String seriesName) {
+        }
+        Header season = db.sql("""
+                        SELECT s.id, s.year, sr.id AS series_id, sr.name AS series_name
                         FROM season s JOIN series sr ON sr.id = s.series_id
                         WHERE s.id = :id
                         """)
                 .param("id", id)
-                .query((rs, i) -> new SeasonSummary(rs.getLong("id"), rs.getInt("year"),
-                        rs.getString("series_name"), 0, 0))
+                .query((rs, i) -> new Header(rs.getLong("id"), rs.getInt("year"),
+                        rs.getLong("series_id"), rs.getString("series_name")))
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such season"));
 
@@ -84,8 +86,8 @@ public class SeasonController {
 
         // Groups carry the display order (primary championship before its cups).
         List<BrowseController.ChampionshipSummary> championships = db.sql("""
-                        SELECT c.id, c.title, g.family AS group_title, c.class_name, g.kind, s.year, s.id AS season_id,
-                               sr.name AS series_name,
+                        SELECT c.id, c.title, g.family AS group_title, c.class_name, g.kind, g.is_cup, s.year,
+                               s.id AS season_id, sr.name AS series_name,
                                (SELECT count(*) FROM standings_row r WHERE r.championship_id = c.id) AS row_count
                         FROM championship c
                                  JOIN championship_group g ON g.id = c.group_id
@@ -97,9 +99,11 @@ public class SeasonController {
                 .param("id", id)
                 .query((rs, i) -> new BrowseController.ChampionshipSummary(rs.getLong("id"), rs.getString("title"),
                         rs.getString("group_title"), rs.getString("class_name"), rs.getString("kind"),
-                        rs.getInt("year"), rs.getLong("season_id"), rs.getString("series_name"), rs.getLong("row_count")))
+                        rs.getBoolean("is_cup"), rs.getInt("year"), rs.getLong("season_id"),
+                        rs.getString("series_name"), rs.getLong("row_count")))
                 .list();
 
-        return new SeasonHub(season.id(), season.year(), season.seriesName(), events, championships);
+        return new SeasonHub(season.id(), season.year(), season.seriesId(), season.seriesName(),
+                events, championships);
     }
 }
