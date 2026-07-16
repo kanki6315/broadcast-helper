@@ -296,9 +296,10 @@ export default function ImportsPage() {
   return (
     <section>
       <p>
-        Upload results/standings JSON files, an entry list PDF, or a starting-grid CSV. Each file is
-        staged; confirm what it belongs to (series, event or championship — pre-filled with a best
-        guess) and commit.
+        Upload results/standings JSON files, an iRacing subsession result, an entry list PDF, or a
+        starting-grid CSV. Each file is staged; confirm what it belongs to (series, event or
+        championship — pre-filled with a best guess) and commit. One file can stage several batches:
+        an iRacing subsession carries qualifying, every race, and each race's grid.
       </p>
       <label className="target-row">
         <span className="target-label">Format</span>
