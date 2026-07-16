@@ -774,7 +774,7 @@ public class ImportService {
         // title). Standings often spell classes differently from the entry list
         // (the Endurance Cup's "GT Daytona PRO" vs "GTDPRO"); resolve to the
         // season's canonical (entry-list) class, mapping unknowns in review.
-        String kind = target.kind();
+        String kind = normalizeKind(target.kind(), imp.mainTitle());
         boolean isCup = Boolean.TRUE.equals(target.isCup());
         String className = canonicalizeClass(target.classCode(), seasonEntryClasses(seasonId),
                 target.mapping(), imp.mainTitle());
@@ -1301,6 +1301,32 @@ public class ImportService {
     }
 
     /**
+     * What a championship ranks. A closed set: these are the only values anything
+     * downstream distinguishes (SeasonViewController asks "is it DRIVERS",
+     * SheetController and the season grid rank TEAMS first, TeamController joins
+     * on kind = 'TEAMS'). A sheet's own wording can differ — Mustang Challenge
+     * prints "Entrants" for what IWSC calls "Teams" — and the reviewer maps it to
+     * one of these at import.
+     */
+    private static final List<String> CHAMPIONSHIP_KINDS = List.of("DRIVERS", "TEAMS", "MANUFACTURERS");
+
+    /**
+     * The reviewer's confirmed kind, or a hard failure. This is validated rather
+     * than trusted because it is free text on the wire: a "DRIVER" typo once
+     * created a whole second award group silently alongside "DRIVERS", and an
+     * unset dropdown would post "" and group a championship under no kind at all.
+     */
+    private static String normalizeKind(String raw, String context) {
+        String kind = raw == null ? "" : raw.trim().toUpperCase();
+        if (!CHAMPIONSHIP_KINDS.contains(kind)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Championship kind " + (kind.isEmpty() ? "is required" : "'" + raw + "' is not recognized")
+                    + " for " + context + ". Choose one of " + CHAMPIONSHIP_KINDS + ".");
+        }
+        return kind;
+    }
+
+    /**
      * Splits the title remainder after the matched series prefix into class and
      * kind, e.g. "GTP Teams" -> ("GTP", "TEAMS") and "GT Daytona PRO Teams" ->
      * ("GT Daytona PRO", "TEAMS"). An overall championship with no class yields a
@@ -1352,7 +1378,14 @@ public class ImportService {
      * the commit so it gets mapped in the review screen first.
      */
     private String canonicalizeClass(String raw, List<String> known, Map<String, String> mapping, String context) {
-        if (raw == null) {
+        // No class is a real answer, not a missing one: an overall championship
+        // spans every class ("...Points (Overall)") and a teams/dealer one isn't
+        // scoped to a class at all. Blank has to mean the same as null here — the
+        // reviewer clears the box to say it, and a caller that omits the field
+        // sends "" — otherwise the only way past this check is naming a class the
+        // championship doesn't have. That is not hypothetical: a PACCA (Overall)
+        // sheet was committed as class PRO to satisfy this validator.
+        if (raw == null || raw.isBlank()) {
             return null;
         }
         if (mapping != null && mapping.containsKey(raw)) {
