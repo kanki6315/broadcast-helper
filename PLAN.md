@@ -19,7 +19,7 @@ pit-lane entry list PDF.
 | Car images | Bulk upload with auto-match by car number in filename, review grid to fix mismatches; images carry over between events until replaced |
 | Season bootstrap | Import every completed round of the season; the tool computes best/last results and season tables from round data |
 | Layout | Keep the format of the hand-made WGI sheet; **US Letter** paper in all cases |
-| IMSA source files | Race/qualifying results as **JSON**; **entry list PDF** per event; teams-championship standings as **JSON** (per-session points for the whole season calendar — richer than expected); other championships may still need the **standings PDF** importer or manual entry. User provides real samples when each importer is built |
+| IMSA source files | Race/qualifying results as **JSON**; **entry list PDF** per event; teams-championship standings as **JSON** (per-session points for the whole season calendar — richer than expected). Not every series/season publishes the standings JSON (2024 Mustang Challenge doesn't), so those import from the **championship-points PDF** instead — lossier by nature, see §4. User provides real samples when each importer is built |
 | Driver ratings | The **event entry list PDF is authoritative per event** — series can issue derogations overriding a driver's FIA rating for an event or season, so never assume the entry list matches the FIA list |
 | Runs where | Locally first, but built as a proper client/server web app so hosting it later is a deploy, not a rewrite |
 | Long-term ambition | Live timing integration during the race to surface storylines to the broadcast team |
@@ -141,7 +141,31 @@ Importer = a plugin implementing `parse(file) → staged rows` for a
    didn't cover. Series detection comes from the filename code (IWSC/IMPC/...)
    matched against series abbreviation or alias. Also ready for the challenge
    series (hometowns, Bronze Cup / coach / rookie icon markers).
-4. **Standings PDF / manual editor** — for championships without JSON files.
+4. **Championship points PDF** — DONE (2026-07-15), via a second Python sidecar
+   (`parser/parse_points.py`), for the series that publish no standings JSON —
+   2024 Mustang Challenge among them. It emits the same standings JSON shape, so
+   the existing STANDINGS review/commit path carries it: PDF → `points.json`
+   (parser/POINTS_SCHEMA.md) → one batch per championship, because one sheet
+   holds every championship of the series. Chosen explicitly as `IMSA_POINTS_PDF`
+   — AUTO can't tell two IMSA PDFs apart without opening them, so it assumes an
+   entry list and now says so instead of staging an empty one.
+   Read as text these sheets are *quietly wrong*: points columns come in pairs
+   ("Extra"+"Round N", or "Qualifying"+"Race") and adjacent cells render flush,
+   so Noaker's 2024 row prints `350 10320 10320` where 10320 is Extra 10 + Round
+   320 — read naively his season totals 43230 against a printed 3270. The parser
+   is therefore geometry-driven: the column headers are **rotated 90°**, giving an
+   exact x anchor per column; long names overprint the numbers in the same font
+   with interleaved x, so fonts and baselines separate them and the name is read
+   in draw order. **Every row is checked against its printed total** and the
+   parser exits non-zero rather than emit points that merely look plausible.
+   `bonus_points` (V21) records the sheet's "Extra" column whole: the JSON splits
+   pole from fastest lap, the PDF prints them summed, and a 10 could be either —
+   so where a JSON exists, import that. The season year is the one thing the sheet
+   doesn't state (a points value can look like a year), so it falls back to the
+   PDF's creation date and **the reviewer confirms it**. Validated against a season
+   IMSA published in both formats: reproduces the JSON import row for row.
+   **Still open on this seam:** the manual editor for championships with neither
+   file.
 5. **Image bulk upload** — DONE. Images are keyed by **(season, car number)**
    — numbers repeat across series, so the season scope disambiguates while one
    image carries over across a season's events until replaced. Filename
@@ -152,12 +176,15 @@ Importer = a plugin implementing `parse(file) → staged rows` for a
    Stored as BYTEA; served per entry via `/api/entries/{id}/image`.
 
 Since the MVP the pipeline gained **starting-grid importers** (JSON and, for
-events without published grid JSON, a semicolon **grid CSV**) and an explicit
-**format** on upload — the `ImportFormat` enum (parser family = provider ×
-medium: `IMSA_JSON` / `IMSA_PDF` / `IMSA_CSV`), which concretely realizes the
-`(series, file-kind)` plugin model above. `AUTO` stays the default and resolves
-to a concrete family; `import_batch.format` records which parser ran.
-Document-kind detection lives inside each family. Full detail in Phase 3.
+events without published grid JSON, a semicolon **grid CSV**), a
+**championship-points PDF** importer for series that publish no standings JSON,
+and an explicit **format** on upload — the `ImportFormat` enum (parser family =
+provider × medium: `IMSA_JSON` / `IMSA_PDF` / `IMSA_CSV` / `IMSA_POINTS_PDF`),
+which concretely realizes the `(series, file-kind)` plugin model above. `AUTO`
+stays the default and resolves to a concrete family; `import_batch.format`
+records which parser ran. Document-kind detection lives inside each family. One
+upload can stage **several** batches — a points PDF holds every championship of
+the series. Full detail in Phase 3.
 
 Real sample files for each format to be provided by the user when the
 importer is built — parsers are written against real files, not assumptions.
@@ -382,6 +409,16 @@ display size.)
   entry-list richness. **Next slices on this seam:** manual entry (paste-a-table
   → editable grid → staged as a normal batch, `format=MANUAL`) and per-provider
   PDF parsers (e.g. `CCA_PDF`, config-mapped sidecar scripts).
+- **Championship points PDF (`IMSA_POINTS_PDF`) — ✅ DONE (2026-07-15).** The
+  second sidecar (`parser/parse_points.py`), for series/seasons with no standings
+  JSON — 2024 Mustang Challenge. Emits the standings JSON shape, so the existing
+  STANDINGS path commits it; one sheet holds every championship, so one upload
+  stages **one batch per championship** (`stage()` returns a list). New
+  `bonus_points` (V21) and a reviewer-confirmed **season year**
+  (`ImportTarget.seasonYear`, review recomputes classes via `?seasonYear=`).
+  Chosen explicitly: AUTO can't distinguish two IMSA PDFs without opening them.
+  See §4 for why the parser reads geometry rather than text, and
+  parser/POINTS_SCHEMA.md for the contract.
 - **Still ahead:** design the automated prior-year-at-this-track feature,
   including change context (manufacturer, lineup, team) alongside the raw result.
   The **grid rundown sheet** (grid-order sheet with storyline fields) is

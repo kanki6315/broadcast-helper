@@ -24,7 +24,8 @@ season form, a championship position — without hunting.
 ## Product Purpose
 
 Broadcast Helper turns raw timing-provider exports (results, standings, grids,
-entry-list PDFs) into a browsable, broadcast-ready reference: championships
+entry-list and championship-points PDFs) into a browsable, broadcast-ready
+reference: championships
 grouped by family, a per-class season reference table, and a per-event sheet
 with drivers, ratings, qualifying, prior-year-at-venue, championship position,
 and season form.

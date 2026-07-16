@@ -1,8 +1,8 @@
 # Deploying Broadcast Helper (Railway)
 
 The app ships as a **single container** (`Dockerfile` at the repo root): the Spring
-Boot backend serves the built React bundle as static assets, with the Python
-entry-list parser (pdfplumber) bundled in a venv. One image, one process.
+Boot backend serves the built React bundle as static assets, with the Python PDF
+parsers (pdfplumber) bundled in a venv. One image, one process.
 
 ## Build
 
@@ -96,8 +96,10 @@ add. Until then, anything live requires being signed in and on `AUTH_ALLOWED_EMA
 | `SPRING_DATASOURCE_USERNAME` | `broadcast` | |
 | `SPRING_DATASOURCE_PASSWORD` | `broadcast` | |
 | `PORT` | `8080` | Listen port (Railway sets this) |
-| `PARSER_PYTHON` | `python3` | Set to the venv python in-image (`/opt/venv/bin/python3`) |
+| `PARSER_PYTHON` | `python3` | Set to the venv python in-image (`/opt/venv/bin/python3`); shared by every sidecar |
 | `PARSER_SCRIPT` | `../parser/parse_entry_list.py` | In-image path (`/app/parser/parse_entry_list.py`) |
+| `TEAM_SHEET_PARSER_SCRIPT` | `../parser/extract_team_sheet_pages.py` | In-image path (`/app/parser/extract_team_sheet_pages.py`) |
+| `POINTS_PARSER_SCRIPT` | `../parser/parse_points.py` | In-image path (`/app/parser/parse_points.py`) |
 | `AUTH_ENABLED` | `false` | Set `true` on the deployment to require Google login |
 | `AUTH_ALLOWED_EMAILS` | (empty) | Comma-separated allowed Google emails (empty = nobody) |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | — | Google OAuth client id (when auth on) |
