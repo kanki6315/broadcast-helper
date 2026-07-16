@@ -26,10 +26,12 @@ public class ImportController {
         this.imports = imports;
     }
 
+    /** One upload can stage several batches: a championship-points PDF carries
+     *  every championship of the series, one batch each. */
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    public ImportService.BatchSummary upload(@RequestParam("file") MultipartFile file,
-                                             @RequestParam(value = "format", defaultValue = "AUTO") ImportFormat format) {
+    public List<ImportService.BatchSummary> upload(@RequestParam("file") MultipartFile file,
+                                                   @RequestParam(value = "format", defaultValue = "AUTO") ImportFormat format) {
         try {
             return imports.stage(file.getOriginalFilename(), file.getBytes(), format);
         } catch (IOException e) {
@@ -53,12 +55,14 @@ public class ImportController {
     }
 
     /** The guessed target, selectable options, and class-mapping review.
-     *  eventId recomputes the class review against a chosen event's season —
-     *  needed for files with no session metadata (e.g. grid CSVs). */
+     *  eventId / seasonYear recompute the class review against the season the
+     *  reviewer picked — needed for files with no session metadata (grid CSVs)
+     *  or that only guess their season (championship-points PDFs). */
     @GetMapping("/{id}/review")
     public ImportService.ImportReview review(@PathVariable long id,
-                                             @RequestParam(required = false) Long eventId) {
-        return imports.reviewTarget(id, eventId);
+                                             @RequestParam(required = false) Long eventId,
+                                             @RequestParam(required = false) Integer seasonYear) {
+        return imports.reviewTarget(id, eventId, seasonYear);
     }
 
     /** Commit to the reviewer-confirmed target (series/event/championship + class map). */

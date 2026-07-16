@@ -29,6 +29,13 @@ public record StandingsImport(
     ) {
     }
 
+    /**
+     * A session's points for one competitor. pole/fastestLap/penalty come from a
+     * standings JSON; bonusPoints is the points-PDF's single undifferentiated
+     * "Extra" column, which cannot be split back into pole vs fastest lap (see
+     * V21__standings_bonus_points.sql). A source populates one or the other,
+     * never both.
+     */
     public record SessionPoints(
             int sessionIndex,
             double totalPoints,
@@ -36,6 +43,7 @@ public record StandingsImport(
             double polePoints,
             double fastestLapPoints,
             double penaltyPoints,
+            double bonusPoints,
             String status
     ) {
     }

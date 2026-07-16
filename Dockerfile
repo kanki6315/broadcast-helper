@@ -34,7 +34,8 @@ COPY --from=backend /app/build/libs/backend-*.jar app.jar
 # Point the sidecar config at the in-image Python venv and parser script.
 ENV PARSER_PYTHON=/opt/venv/bin/python3 \
     PARSER_SCRIPT=/app/parser/parse_entry_list.py \
-    TEAM_SHEET_PARSER_SCRIPT=/app/parser/extract_team_sheet_pages.py
+    TEAM_SHEET_PARSER_SCRIPT=/app/parser/extract_team_sheet_pages.py \
+    POINTS_PARSER_SCRIPT=/app/parser/parse_points.py
 EXPOSE 8080
 # Size the heap to the container's memory limit (PaaS instances are small).
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]

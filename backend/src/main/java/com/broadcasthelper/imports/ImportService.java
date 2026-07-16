@@ -30,14 +30,17 @@ public class ImportService {
     private final ObjectMapper json;
     private final String parserPython;
     private final String parserScript;
+    private final String pointsParserScript;
 
     public ImportService(JdbcClient db, ObjectMapper json,
                          @org.springframework.beans.factory.annotation.Value("${broadcast-helper.entry-list-parser.python:python3}") String parserPython,
-                         @org.springframework.beans.factory.annotation.Value("${broadcast-helper.entry-list-parser.script:../parser/parse_entry_list.py}") String parserScript) {
+                         @org.springframework.beans.factory.annotation.Value("${broadcast-helper.entry-list-parser.script:../parser/parse_entry_list.py}") String parserScript,
+                         @org.springframework.beans.factory.annotation.Value("${broadcast-helper.points-parser.script:../parser/parse_points.py}") String pointsParserScript) {
         this.db = db;
         this.json = json;
         this.parserPython = parserPython;
         this.parserScript = parserScript;
+        this.pointsParserScript = pointsParserScript;
     }
 
     // ---------------------------------------------------------------- staging
@@ -46,28 +49,38 @@ public class ImportService {
     private record Staged(String kind, Object payload, String summary) {
     }
 
-    public BatchSummary stage(String filename, byte[] content, ImportFormat format) {
+    /**
+     * Stages an upload as one or more batches. Most files carry a single
+     * document, but one championship-points PDF holds every championship of the
+     * series — each becomes its own batch, reviewed and committed separately.
+     */
+    public List<BatchSummary> stage(String filename, byte[] content, ImportFormat format) {
         ImportFormat resolved = format == ImportFormat.AUTO ? resolveAuto(content) : format;
-        Staged staged = switch (resolved) {
+        List<Staged> staged = switch (resolved) {
             case AUTO -> throw new IllegalStateException("AUTO must be resolved before staging");
-            case IMSA_JSON -> stageImsaJson(content);
-            case IMSA_PDF -> stageImsaPdf(filename, content);
-            case IMSA_CSV -> stageImsaCsv(content);
+            case IMSA_JSON -> List.of(stageImsaJson(content));
+            case IMSA_PDF -> List.of(stageImsaPdf(filename, content));
+            case IMSA_POINTS_PDF -> stageImsaPointsPdf(filename, content);
+            case IMSA_CSV -> List.of(stageImsaCsv(content));
         };
 
-        long id = db.sql("""
-                        INSERT INTO import_batch (kind, format, filename, payload, summary)
-                        VALUES (:kind, :format, :filename, :payload::jsonb, :summary)
-                        RETURNING id
-                        """)
-                .param("kind", staged.kind())
-                .param("format", resolved.name())
-                .param("filename", filename)
-                .param("payload", toJson(staged.payload()))
-                .param("summary", staged.summary())
-                .query(Long.class)
-                .single();
-        return get(id);
+        List<BatchSummary> out = new ArrayList<>();
+        for (Staged s : staged) {
+            long id = db.sql("""
+                            INSERT INTO import_batch (kind, format, filename, payload, summary)
+                            VALUES (:kind, :format, :filename, :payload::jsonb, :summary)
+                            RETURNING id
+                            """)
+                    .param("kind", s.kind())
+                    .param("format", resolved.name())
+                    .param("filename", filename)
+                    .param("payload", toJson(s.payload()))
+                    .param("summary", s.summary())
+                    .query(Long.class)
+                    .single();
+            out.add(get(id));
+        }
+        return out;
     }
 
     /**
@@ -93,7 +106,48 @@ public class ImportService {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "Not a PDF file (expected an IMSA entry-list PDF)");
         }
-        return stageImsaJson(runEntryListParser(filename, pdf));
+        Staged staged = stageImsaJson(runEntryListParser(filename, pdf));
+        // An entry list with nothing in it is not a quiet success. The likeliest
+        // cause is another kind of IMSA PDF fed to this parser — AUTO can't tell
+        // the families apart without opening the file — so say so rather than
+        // staging an empty batch that looks importable.
+        if (staged.payload() instanceof EntryListImport entryList && entryList.entries().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "No entries found in " + filename + ". If this is a championship-points PDF,"
+                    + " choose the \"IMSA — Championship points PDF\" format instead of Auto-detect.");
+        }
+        return staged;
+    }
+
+    /**
+     * One championship-points PDF holds every championship of the series (11 for
+     * a WeatherTech sheet), so it fans out into one STANDINGS batch each. The
+     * sidecar has already checked that every row re-adds to its printed total;
+     * if it hadn't, it would have failed rather than returning.
+     */
+    private List<Staged> stageImsaPointsPdf(String filename, byte[] pdf) {
+        if (!isPdf(pdf)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Not a PDF file (expected an IMSA championship-points PDF)");
+        }
+        JsonNode root;
+        try {
+            root = json.readTree(runPointsParser(filename, pdf));
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Points parser returned invalid JSON: " + e.getMessage());
+        }
+        List<Staged> out = new ArrayList<>();
+        for (JsonNode champ : root.path("championships")) {
+            StandingsImport parsed = ImportParser.parseStandings(champ);
+            out.add(new Staged("STANDINGS", parsed, "%s — %d competitors, %d sessions".formatted(
+                    parsed.mainTitle(), parsed.rows().size(), parsed.sessions().size())));
+        }
+        if (out.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "No championship standings found in " + filename);
+        }
+        return out;
     }
 
     private Staged stageImsaJson(byte[] content) {
@@ -230,8 +284,20 @@ public class ImportService {
 
     private ClassReview reviewStandings(StandingsImport imp) {
         try {
+            return reviewStandings(imp, Integer.parseInt(imp.year()));
+        } catch (NumberFormatException e) {
+            return new ClassReview(List.of(), List.of());
+        }
+    }
+
+    /** Class review for a standings batch against a given season. The year is a
+     *  parameter because a points PDF only guesses its own (see resolveSeasonYear):
+     *  when the reviewer corrects it, the classes must be re-checked against the
+     *  season they'll actually land in, or a mapping they need never gets offered. */
+    private ClassReview reviewStandings(StandingsImport imp, int year) {
+        try {
             SeriesMatch match = matchSeriesByTitle(imp.mainTitle());
-            Optional<Long> seasonId = findSeasonId(match.seriesId(), Integer.parseInt(imp.year()));
+            Optional<Long> seasonId = findSeasonId(match.seriesId(), year);
             if (seasonId.isEmpty()) {
                 return new ClassReview(List.of(), List.of());
             }
@@ -239,7 +305,7 @@ public class ImportService {
             String className = deriveClassAndKind(imp.mainTitle(), match.matchedPrefix()).className();
             List<String> unknown = isUnknownClass(className, known) ? List.of(className) : List.of();
             return new ClassReview(known, unknown);
-        } catch (ResponseStatusException | NumberFormatException e) {
+        } catch (ResponseStatusException e) {
             return new ClassReview(List.of(), List.of());
         }
     }
@@ -282,6 +348,10 @@ public class ImportService {
     public record TargetGuess(Long seriesId, String seriesName, Integer seasonYear,
                               Long eventId, String eventName, String circuit, String eventDate,
                               String classCode, String kind, Boolean isCup, String familyName) {
+        TargetGuess withSeasonYear(Integer year) {
+            return new TargetGuess(seriesId, seriesName, year, eventId, eventName, circuit, eventDate,
+                    classCode, kind, isCup, familyName);
+        }
     }
 
     public record ImportReview(String kind, TargetGuess guess,
@@ -292,9 +362,10 @@ public class ImportService {
 
     /** Everything the review screen needs: the guessed target, the options to pick
      *  from, and the class-mapping review — so nothing is inferred at commit.
-     *  chosenEventId (optional) recomputes the class review against that event's
-     *  season, for files whose payload can't resolve a season by itself. */
-    public ImportReview reviewTarget(long id, Long chosenEventId) {
+     *  chosenEventId / chosenYear (optional) recompute the class review against the
+     *  season the reviewer actually picked, for payloads that can't resolve one by
+     *  themselves (grid CSVs) or only guess it (points PDFs). */
+    public ImportReview reviewTarget(long id, Long chosenEventId, Integer chosenYear) {
         BatchSummary batch = get(id);
         List<SeriesOption> seriesOptions = db.sql("SELECT id, name, abbreviation FROM series ORDER BY name")
                 .query((rs, i) -> new SeriesOption(rs.getLong("id"), rs.getString("name"),
@@ -317,7 +388,14 @@ public class ImportService {
                                 imp.rows().stream().map(GridImport.Row::className).toList());
                     }
                 }
-                case "STANDINGS" -> guess = guessStandings(json.readValue(payload, StandingsImport.class));
+                case "STANDINGS" -> {
+                    StandingsImport imp = json.readValue(payload, StandingsImport.class);
+                    guess = guessStandings(imp);
+                    if (chosenYear != null && "STAGED".equals(batch.status())) {
+                        cr = reviewStandings(imp, chosenYear);
+                        guess = guess.withSeasonYear(chosenYear);
+                    }
+                }
                 default -> guess = null;
             }
             // Without a series/season guess the usual per-season event list is
@@ -443,6 +521,30 @@ public class ImportService {
                 .list();
     }
 
+    /**
+     * The season a standings batch lands in. A standings JSON states its year, so
+     * the guess is the answer. A points PDF has no year in its text worth trusting
+     * — a points value can look like one — so the parser falls back to the sheet's
+     * creation date, which is wrong for a full season republished the following
+     * January. Hence the reviewer's override wins where they set one.
+     */
+    private int resolveSeasonYear(StandingsImport imp, ImportTarget target) {
+        if (target.seasonYear() != null) {
+            return target.seasonYear();
+        }
+        try {
+            return Integer.parseInt(imp.year());
+        } catch (NumberFormatException e) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "This standings file names no season year (found " + quoted(imp.year())
+                    + "). Set the year in review before committing.");
+        }
+    }
+
+    private static String quoted(String s) {
+        return s == null ? "none" : "'" + s + "'";
+    }
+
     private Optional<Long> findSeriesByCode(String code) {
         if (code == null || code.isBlank()) {
             return Optional.empty();
@@ -484,6 +586,7 @@ public class ImportService {
             Long seriesId, String newSeriesName,   // pick an existing series, or create one
             Long eventId,                          // results/entry-list: attach to this event, or null = new
             String classCode, String kind, Boolean isCup, String familyName, // standings championship
+            Integer seasonYear,                    // standings: overrides the year the payload claims
             String sessionType, Integer sessionOrdinal, // for files with no session metadata (grid CSVs)
             Map<String, String> classMapping
     ) {
@@ -665,7 +768,7 @@ public class ImportService {
 
     private void commitStandings(StandingsImport imp, ImportTarget target) {
         long seriesId = resolveSeriesId(target);
-        long seasonId = findOrCreateSeason(seriesId, Integer.parseInt(imp.year()));
+        long seasonId = findOrCreateSeason(seriesId, resolveSeasonYear(imp, target));
 
         // Class / kind / cup are confirmed by the reviewer (pre-filled from the
         // title). Standings often spell classes differently from the entry list
@@ -730,8 +833,8 @@ public class ImportService {
                 db.sql("""
                                 INSERT INTO standings_session_points (standings_row_id, session_index, total_points,
                                                                       race_points, pole_points, fastest_lap_points,
-                                                                      penalty_points, status)
-                                VALUES (:rowId, :idx, :total, :race, :pole, :fl, :penalty, :status)
+                                                                      penalty_points, bonus_points, status)
+                                VALUES (:rowId, :idx, :total, :race, :pole, :fl, :penalty, :bonus, :status)
                                 """)
                         .param("rowId", rowId)
                         .param("idx", p.sessionIndex())
@@ -740,6 +843,7 @@ public class ImportService {
                         .param("pole", p.polePoints())
                         .param("fl", p.fastestLapPoints())
                         .param("penalty", p.penaltyPoints())
+                        .param("bonus", p.bonusPoints())
                         .param("status", p.status())
                         .update();
             }
@@ -835,16 +939,27 @@ public class ImportService {
 
     /** Runs the Python parser sidecar (parser/parse_entry_list.py): PDF in, entries.json out. */
     private byte[] runEntryListParser(String filename, byte[] pdf) {
+        return runPdfParser(parserScript, "Entry-list", "entry-list", filename, pdf);
+    }
+
+    /** Runs the Python parser sidecar (parser/parse_points.py): PDF in, points.json out.
+     *  A non-zero exit is the sidecar's row checksum failing — surface it verbatim,
+     *  it names the row that didn't add up. */
+    private byte[] runPointsParser(String filename, byte[] pdf) {
+        return runPdfParser(pointsParserScript, "Points", "points", filename, pdf);
+    }
+
+    private byte[] runPdfParser(String script, String label, String slug, String filename, byte[] pdf) {
         try {
-            // Keep the original filename: the parser detects the series code
-            // (IWSC/IMPC/...) from it.
-            java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("entry-list-");
-            String safeName = java.nio.file.Path.of(filename == null ? "entry-list.pdf" : filename)
+            // Keep the original filename: the entry-list parser detects the
+            // series code (IWSC/IMPC/...) from it, and both name it in errors.
+            java.nio.file.Path dir = java.nio.file.Files.createTempDirectory(slug + "-");
+            String safeName = java.nio.file.Path.of(filename == null ? slug + ".pdf" : filename)
                     .getFileName().toString();
             java.nio.file.Path tmp = dir.resolve(safeName);
             try {
                 java.nio.file.Files.write(tmp, pdf);
-                Process process = new ProcessBuilder(parserPython, parserScript, tmp.toString())
+                Process process = new ProcessBuilder(parserPython, script, tmp.toString())
                         .redirectErrorStream(false)
                         .start();
                 byte[] out = process.getInputStream().readAllBytes();
@@ -852,11 +967,11 @@ public class ImportService {
                 if (!process.waitFor(120, java.util.concurrent.TimeUnit.SECONDS)) {
                     process.destroyForcibly();
                     throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                            "Entry-list parser timed out on " + filename);
+                            label + " parser timed out on " + filename);
                 }
                 if (process.exitValue() != 0) {
                     throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                            "Entry-list parser failed on " + filename + ": " + err.trim());
+                            label + " parser failed on " + filename + ": " + err.trim());
                 }
                 return out;
             } finally {
@@ -865,10 +980,12 @@ public class ImportService {
             }
         } catch (IOException e) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Could not run entry-list parser (" + parserPython + " " + parserScript + "): " + e.getMessage());
+                    "Could not run " + label.toLowerCase() + " parser (" + parserPython + " " + script
+                    + "): " + e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Entry-list parser interrupted");
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    label + " parser interrupted");
         }
     }
 

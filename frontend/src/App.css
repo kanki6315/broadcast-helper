@@ -469,6 +469,12 @@ h2 small {
   font-size: var(--text-sm);
 }
 
+/* Trailing note on a target row — why a field needs confirming. */
+.target-hint {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
 .class-review {
   margin-top: var(--space-2);
   padding: var(--space-2) var(--space-3);

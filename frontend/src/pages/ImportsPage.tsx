@@ -55,6 +55,7 @@ interface TargetState {
   kind: string
   isCup: boolean
   familyName: string
+  seasonYear: string
   sessionType: string
   sessionOrdinal: number
   classMapping: Record<string, string>
@@ -71,10 +72,22 @@ function initTarget(r: ImportReview): TargetState {
     kind: g?.kind ?? '',
     isCup: g?.isCup ?? false,
     familyName: g?.familyName ?? '',
+    seasonYear: g?.seasonYear != null ? String(g.seasonYear) : '',
     sessionType: 'RACE',
     sessionOrdinal: 1,
     classMapping: {},
   }
+}
+
+// A standings JSON states its season; a points PDF only infers one from the
+// sheet's creation date, which is wrong for a full season republished in
+// January. So that year is confirmed, not assumed.
+function needsYear(b: ImportBatch, r: ImportReview | undefined): boolean {
+  return r?.kind === 'STANDINGS' && b.format === 'IMSA_POINTS_PDF'
+}
+
+function validYear(value: string): boolean {
+  return /^\d{4}$/.test(value.trim())
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -86,9 +99,12 @@ const KIND_LABEL: Record<string, string> = {
 
 // Upload formats: which parser family reads the file. AUTO covers the
 // historical JSON/PDF detection; CSVs must be chosen explicitly.
+// Only the formats Auto-detect can't reach on its own: a grid CSV looks like any
+// other CSV, and a points PDF looks like any other PDF until Python opens it.
 const FORMAT_OPTIONS: [string, string][] = [
   ['AUTO', 'Auto-detect'],
   ['IMSA_CSV', 'IMSA — Grid CSV'],
+  ['IMSA_POINTS_PDF', 'IMSA — Championship points PDF'],
 ]
 
 const SESSION_TYPES: [string, string][] = [
@@ -166,7 +182,20 @@ export default function ImportsPage() {
   async function chooseEvent(id: number, eventId: number | 'new' | '') {
     patch(id, { eventId })
     if (!reviews[id]?.needsSession || typeof eventId !== 'number') return
-    const res = await fetch(`/api/imports/${id}/review?eventId=${eventId}`)
+    await refetchReview(id, `eventId=${eventId}`)
+  }
+
+  // Correcting the year moves the batch to a different season, so the classes
+  // must be re-checked against that one — otherwise a mapping the commit will
+  // demand never gets offered here.
+  async function chooseYear(id: number, seasonYear: string) {
+    patch(id, { seasonYear })
+    if (!validYear(seasonYear)) return
+    await refetchReview(id, `seasonYear=${seasonYear.trim()}`)
+  }
+
+  async function refetchReview(id: number, query: string) {
+    const res = await fetch(`/api/imports/${id}/review?${query}`)
     if (!res.ok) return
     const review = (await res.json()) as ImportReview
     setReviews((r) => ({ ...r, [id]: review })) // target edits live in `targets`, untouched
@@ -183,17 +212,19 @@ export default function ImportsPage() {
     return t.seriesId !== ''
   }
 
-  function canCommit(id: number): boolean {
-    const t = targets[id]
-    if (!t || unresolvedClasses(id).length > 0) return false
+  function canCommit(b: ImportBatch): boolean {
+    const t = targets[b.id]
+    if (!t || unresolvedClasses(b.id).length > 0) return false
+    if (needsYear(b, reviews[b.id]) && !validYear(t.seasonYear)) return false
     // A metadata-less file commits against a chosen existing event (which
     // implies the series); other kinds need the series chosen.
-    if (reviews[id]?.needsSession) return typeof t.eventId === 'number'
+    if (reviews[b.id]?.needsSession) return typeof t.eventId === 'number'
     return seriesChosen(t)
   }
 
-  async function commit(id: number) {
-    if (!canCommit(id)) return
+  async function commit(b: ImportBatch) {
+    if (!canCommit(b)) return
+    const id = b.id
     const t = targets[id]
     const review = reviews[id]
     const body: Record<string, unknown> = {
@@ -213,6 +244,8 @@ export default function ImportsPage() {
       body.kind = t.kind
       body.isCup = t.isCup
       body.familyName = t.familyName.trim() || null
+      // Only sent where it was confirmed; otherwise the payload's own year stands.
+      body.seasonYear = needsYear(b, review) ? Number(t.seasonYear) : null
     }
     setBusy(true)
     setError(null)
@@ -393,6 +426,26 @@ export default function ImportsPage() {
                             </label>
                           )}
 
+                          {needsYear(b, review) && (
+                            <label className="target-row">
+                              <span className="target-label">Season</span>
+                              <input
+                                className="target-narrow"
+                                title="Season year"
+                                placeholder="YYYY"
+                                inputMode="numeric"
+                                value={t.seasonYear}
+                                disabled={busy}
+                                onChange={(e) => void chooseYear(b.id, e.target.value)}
+                              />
+                              <span className="target-hint">
+                                {validYear(t.seasonYear)
+                                  ? 'Guessed from the PDF date — confirm it matches the season.'
+                                  : 'Four-digit year required.'}
+                              </span>
+                            </label>
+                          )}
+
                           {review.kind === 'STANDINGS' && (
                             <label className="target-row">
                               <span className="target-label">Championship</span>
@@ -462,7 +515,7 @@ export default function ImportsPage() {
                           )}
 
                           <button
-                            disabled={busy || !canCommit(b.id)}
+                            disabled={busy || !canCommit(b)}
                             title={
                               review.needsSession
                                 ? typeof t.eventId !== 'number'
@@ -472,7 +525,7 @@ export default function ImportsPage() {
                                   ? 'Choose a series first'
                                   : undefined
                             }
-                            onClick={() => commit(b.id)}
+                            onClick={() => commit(b)}
                           >
                             Commit
                           </button>

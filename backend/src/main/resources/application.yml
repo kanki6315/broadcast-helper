@@ -38,6 +38,10 @@ broadcast-helper:
   # Sibling sidecar (same python) mapping a team-sheets PDF's pages to cars.
   team-sheet-parser:
     script: ${TEAM_SHEET_PARSER_SCRIPT:../parser/extract_team_sheet_pages.py}
+  # Sibling sidecar (same python) turning a championship-points PDF into the
+  # standings JSON shape, for the series that publish no points JSON.
+  points-parser:
+    script: ${POINTS_PARSER_SCRIPT:../parser/parse_points.py}
 
 # Auth (Phase 4a Step 2). Disabled by default so local dev needs no Google creds;
 # set AUTH_ENABLED=true + the Google client + allowlist on the hosted deployment.
