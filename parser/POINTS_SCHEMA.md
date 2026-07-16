@@ -6,9 +6,12 @@ each entry to `championship`/`championship_session`/`standings_row`/
 `standings_session_points`. Keep changes here in lockstep on both sides.
 
 **Prefer the standings JSON where the series publishes one.** It splits a
-session's extras into pole and fastest-lap points; this PDF cannot (see
+session's extras into pole and fastest-lap points; the IMSA PDF cannot (see
 `bonus_points`). The PDF path exists for the series that only ever publish a
-sheet — 2024 Mustang Challenge, for one.
+sheet — 2024 Mustang Challenge and Carrera Cup Asia, for two.
+
+Two sheet layouts are recognized, sniffed page by page: the IMSA rotated-header
+geometry and the PACCA ruled grid (see "PACCA layout" below).
 
 One PDF holds **every championship of the series** (3 for a Mustang Challenge
 sheet, 11 across 17 pages for a WeatherTech one), so the top level is a list and
@@ -77,7 +80,11 @@ pages is merged into one classification.
 - **status** maps the sheet's own printed legend, `/ DNP  * DNS`, onto the
   values the standings JSON already uses. Confirmed against a season published in
   both formats: `/` is `did_not_race`, `*` is `not_classified`. A blank cell is a
-  round with no data yet — *not* the same as a DNP — and carries `""`.
+  round with no data yet — *not* the same as a DNP — and carries `""`. The PACCA
+  sheet spells its sentinels out: `-` → `did_not_race`, `DNS` → `not_classified`
+  (the IMSA mapping), plus two of its own, `DNF` → `did_not_finish` and `DSQ` →
+  `disqualified`. Only `did_not_race` gets special treatment downstream (a blank
+  round on the season view); DNF/DSQ rounds correctly count as contested.
 - **total_points** on the row is what the sheet prints. The parser guarantees the
   session cells re-add to it and fails rather than emit a row where they don't,
   so the loader can trust it without re-checking.
@@ -88,7 +95,31 @@ pages is merged into one classification.
 - **key** on a Drivers sheet is a person's name, so it is weaker than the JSON's
   car-number key: two drivers sharing a name would collide.
 
-## Layout notes (why this parser is geometry-driven)
+## PACCA layout (Carrera Cup Asia)
+
+The PACCA sheet is an Excel-exported, fully ruled grid — `find_tables()` reads
+it cell-perfectly, so none of the geometry heroics below apply. Its quirks are
+its own:
+
+- **One championship per page** (Overall / Pro-Am / Am / Masters / Porsche
+  Dealer Trophy), titled on the page's first line. The title leads with the
+  season ("2026 Porsche ..."), which beats the PDF creation date as the `year`
+  source.
+- **Each "Round N" is a session**, and driver pages split it into FLQ / Race /
+  FL sub-columns. Unlike the IMSA sheet this one CAN split its bonuses: FLQ
+  (fastest lap in qualifying — pole, in a one-make cup) → `pole_points`, FL →
+  `fastest_lap_points`, and `bonus_points` stays 0. An FLQ point survives a race
+  DSQ — the printed total only re-adds if it's counted.
+- **Points come in halves** (a shortened race pays 12.5), so points fields are
+  numbers, not necessarily ints, and the checksum compares with a tolerance.
+- **Ties share one merged position cell** whose glyph can land on any of its
+  rows (or between two rulings and on none). Numbering is dense — 14, 14, 15 —
+  so a blank position is the previous row's on equal points, else the next.
+- **The team page has no car-number column**, so the team name is both `key`
+  and `team`, with the trailing `#` (the entry list's Dealer Trophy marker)
+  stripped. Driver pages key on the driver name, like an IMSA Drivers sheet.
+
+## Layout notes (why the IMSA parser is geometry-driven)
 
 Read with `extract_text()` these sheets are quietly wrong, which is the whole
 reason the code looks the way it does:

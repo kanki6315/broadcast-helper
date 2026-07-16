@@ -24,7 +24,9 @@ parser emits exactly this shape; the loader maps it to `event`/`entry`/`lineup`/
       "car_number": "04",                      // string — preserves leading zeros
       "team": "Crowdstrike Racing by APR",
       "sponsor": "Mustang Sampling / St Jude", // may be null
+      "team_nationality": null,                // 3-letter code (PACCA prints one per team); null for IMSA
       "bronze_cup": false,                     // entry eligible for the Bronze Cup (trophy icon)
+      "dealer_trophy": false,                  // PACCA '#': entry scores in the Porsche Dealer Trophy
       "car_type": "ORECA LMP2 07",             // may be null
       "tire": "Michelin",                      // may be null
       "engine": "Gibson",                      // may be null
@@ -36,7 +38,8 @@ parser emits exactly this shape; the loader maps it to `event`/`entry`/`lineup`/
           "name": "George Kurtz",
           "nationality": "USA",                // 3-letter code (pro series), or null
           "hometown": null,                    // "City, State/Country" (challenge series), or null
-          "markers": [],                       // per-driver icons: "coach" | "rookie" | "invitational"
+          "markers": [],                       // "coach" | "rookie" | "invitational" (IMSA icons)
+                                               //   | "non_series" (PACCA's '*' legend)
           "is_tbd": false,
           "unparsed": true                     // present (true) only if the line
         }                                      //   didn't match the driver pattern
@@ -60,6 +63,15 @@ parser emits exactly this shape; the loader maps it to `event`/`entry`/`lineup`/
   `bronze_cup` bool; `coach` / `rookie` / `invitational` stay per-driver in
   `markers`. Pro-series (IWSC) entries carry `bronze_cup:false` and empty
   `markers` — those lists have no icons (ranking is implicit in the P/G/S/B).
+- **PACCA (Carrera Cup Asia)** entry lists are a two-up ruled grid, sniffed from
+  the table header, one driver per car with the cup class (`Pro` / `Pro-Am` /
+  `Am` / `Masters`) printed on the driver line — so `class_code` is that label
+  upper-cased and `class_order` is the cup's fixed rank, not PDF section order.
+  `dealer_trophy` is the team line's `#` ("Porsche Dealer Trophy" legend), the
+  Bronze Cup's analogue. The driver-line `*` ("Non series registered") becomes
+  the `non_series` marker — it must NOT be treated as the invitational/guest
+  flag: starred drivers still score on the real 2026 points sheets (XIE An).
+  `car_type`/`tire`/`engine`/`fuel` are null (a one-make cup doesn't print them).
 - **rating** maps to `lineup.rating`; `null` + `is_tbd:true` is a placeholder
   seat (`(?) TBD`). The loader should set `lineup.is_tbd` and leave `driver_id` null.
 - **unparsed** drivers should fail loud in the loader (a layout the parser didn't
