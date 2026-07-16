@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { getJson, type ChampionshipSummary, type Recap, type RecapRace } from '../../lib/api'
+import { getJson, type ChampionshipSummary, type Recap } from '../../lib/api'
+import { useInfoModal } from '../../components/infoModal'
+import RaceLine from '../../components/RaceLine'
 import { useSeason } from './SeasonLayout'
 
 /* Recaps are immutable between imports; cache per championship for the session
@@ -256,54 +258,6 @@ export function ChampFilterBar({
 
 /* ------------------------------------------------------------------------- */
 
-function raceTier(r: RecapRace): string {
-  if (r.notFinished) return 'res-dnf'
-  if (r.finish === 1) return 'res-win'
-  if (r.finish != null && r.finish <= 3) return 'res-top3'
-  if (r.finish != null && r.finish <= 5) return 'res-top5'
-  return ''
-}
-
-function isDns(r: RecapRace): boolean {
-  return (r.status ?? '').toLowerCase().includes('not started')
-}
-
-function RaceLine({ r }: { r: RecapRace }) {
-  if (isDns(r)) {
-    return <span className="race-line muted">DNS</span>
-  }
-  // No grid imported → just the finish; a start→finish pair only when both are
-  // known (pole renders as P). A known start with no finish yet is "4/–": the
-  // grid for a race still to run.
-  const startPart =
-    r.start === 1 ? (
-      <span className="pole" title="Started from pole">
-        P
-      </span>
-    ) : (
-      r.start
-    )
-  return (
-    <span className={`race-line ${raceTier(r)}`.trim()} title={r.notFinished ? 'Retired' : undefined}>
-      {r.start != null ? (
-        <>
-          {startPart}/{r.finish ?? '–'}
-        </>
-      ) : (
-        (r.finish ?? '–')
-      )}
-      {r.notFinished && (
-        <>
-          <span className="ret" aria-hidden="true">
-            R
-          </span>
-          <span className="sr-only"> retired</span>
-        </>
-      )}
-    </span>
-  )
-}
-
 function ClassGrid({
   champ,
   mode,
@@ -314,6 +268,7 @@ function ClassGrid({
   sync: ReturnType<typeof useSyncedScroll>
 }) {
   const { classColor } = useSeason()
+  const { openDriverByName, openTeam } = useInfoModal()
   const [recap, setRecap] = useState<Recap | null>(null)
   const [error, setError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -496,7 +451,21 @@ function ClassGrid({
                     default:
                       return (
                         <td key={c.key} className={`ident ${c.cls}`} style={style} title={name ?? undefined}>
-                          {name}
+                          {name ? (
+                            // The row header opens the competitor's info
+                            // modal — driver or team by championship kind.
+                            <button
+                              type="button"
+                              className="drv-link"
+                              onClick={() =>
+                                drivers ? openDriverByName(name) : openTeam(name)
+                              }
+                            >
+                              {name}
+                            </button>
+                          ) : (
+                            name
+                          )}
                         </td>
                       )
                   }

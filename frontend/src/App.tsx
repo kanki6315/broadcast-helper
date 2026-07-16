@@ -1,6 +1,7 @@
 import { HashRouter, Routes, Route, useParams } from 'react-router-dom'
 import './App.css'
 import Layout from './components/Layout'
+import InfoModalProvider from './components/InfoModalProvider'
 import SeriesDirectoryPage from './pages/SeriesDirectoryPage'
 import SeasonLayout from './pages/season/SeasonLayout'
 import HubPage from './pages/season/HubPage'
@@ -24,24 +25,28 @@ function SheetRoute() {
 export default function App() {
   return (
     <HashRouter>
-      <Routes>
-        <Route path="/sheet/:eventId" element={<SheetRoute />} />
-        <Route element={<Layout />}>
-          <Route path="/" element={<SeriesDirectoryPage />} />
-          <Route path="/seasons/:seasonId" element={<SeasonLayout />}>
-            <Route index element={<HubPage />} />
-            <Route path="schedule" element={<SchedulePage />} />
-            <Route path="standings" element={<StandingsPage />} />
-            <Route path="results" element={<ResultsPage />} />
-            <Route path="entries" element={<EntriesPage />} />
-            <Route path="photos" element={<PhotosPage />} />
+      {/* Provider sits outside the routes so the info modals open from the
+          app chrome (⌘K) and from the standalone sheet alike. */}
+      <InfoModalProvider>
+        <Routes>
+          <Route path="/sheet/:eventId" element={<SheetRoute />} />
+          <Route element={<Layout />}>
+            <Route path="/" element={<SeriesDirectoryPage />} />
+            <Route path="/seasons/:seasonId" element={<SeasonLayout />}>
+              <Route index element={<HubPage />} />
+              <Route path="schedule" element={<SchedulePage />} />
+              <Route path="standings" element={<StandingsPage />} />
+              <Route path="results" element={<ResultsPage />} />
+              <Route path="entries" element={<EntriesPage />} />
+              <Route path="photos" element={<PhotosPage />} />
+            </Route>
+            <Route path="/events/:eventId" element={<EventDetailPage />} />
+            <Route path="/imports" element={<ImportsPage />} />
+            <Route path="/logos" element={<LogosPage />} />
+            <Route path="/series" element={<SeriesPage />} />
           </Route>
-          <Route path="/events/:eventId" element={<EventDetailPage />} />
-          <Route path="/imports" element={<ImportsPage />} />
-          <Route path="/logos" element={<LogosPage />} />
-          <Route path="/series" element={<SeriesPage />} />
-        </Route>
-      </Routes>
+        </Routes>
+      </InfoModalProvider>
     </HashRouter>
   )
 }

@@ -4,6 +4,7 @@ import './sheet.css'
 import { flagCode } from '../lib/countries'
 import { finishText, finishTier, statusAbbr, type FormRace } from '../lib/raceForm'
 import TeamSheetsModal, { prefetchTeamSheets } from '../components/TeamSheetsModal'
+import { useInfoModal } from '../components/infoModal'
 
 interface SheetDriver {
   name: string
@@ -92,6 +93,7 @@ function StripRace({ race, showLabel }: { race: FormRace; showLabel: boolean }) 
 }
 
 export default function SheetPage({ eventId }: { eventId: number }) {
+  const { openDriverByName } = useInfoModal()
   const [sheet, setSheet] = useState<Sheet | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [teamSheet, setTeamSheet] = useState<{ page: number; title: string } | null>(null)
@@ -282,7 +284,22 @@ export default function SheetPage({ eventId }: { eventId: number }) {
                                   ) : d.isTbd ? (
                                     <span className="drv-rating">(?) </span>
                                   ) : null}
-                                  {d.name}
+                                  {d.isTbd ? (
+                                    d.name
+                                  ) : (
+                                    // stopPropagation: the row's own click
+                                    // opens the team-sheets PDF.
+                                    <button
+                                      type="button"
+                                      className="drv-link"
+                                      onClick={(ev) => {
+                                        ev.stopPropagation()
+                                        openDriverByName(d.name)
+                                      }}
+                                    >
+                                      {d.name}
+                                    </button>
+                                  )}
                                 </span>
                               </div>
                             )

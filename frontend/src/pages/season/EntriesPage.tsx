@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getJson, type LineupCar, type LineupDriver, type Lineups } from '../../lib/api'
 import { shortName } from '../../lib/names'
+import { useInfoModal } from '../../components/infoModal'
 import { useSeason } from './SeasonLayout'
 
 function sameCrew(a: LineupDriver[], b: LineupDriver[]): boolean {
@@ -18,6 +19,7 @@ function LineupRow({
   ordinals: number[]
   identStyle: (i: number) => React.CSSProperties
 }) {
+  const { openDriverByName, openTeam } = useInfoModal()
   return (
     <tr>
       <td className="ident car-no" style={identStyle(0)}>
@@ -25,7 +27,13 @@ function LineupRow({
         {car.isGuest && <span className="badge muted">G</span>}
       </td>
       <td className="ident name-cell" style={identStyle(1)} title={car.teamName ?? undefined}>
-        {car.teamName}
+        {car.teamName ? (
+          <button type="button" className="drv-link" onClick={() => openTeam(car.teamName!)}>
+            {car.teamName}
+          </button>
+        ) : (
+          car.teamName
+        )}
       </td>
       {ordinals.map((ord, idx) => {
         const crew = car.byRound[ord]
@@ -48,7 +56,18 @@ function LineupRow({
             {crew.map((d, i) => (
               <span key={`${d.name}-${i}`} className="drv">
                 {i === 0 && changed && <i className="change-dot" aria-hidden />}
-                {d.isTbd ? 'TBD' : shortName(d.name)}
+                {d.isTbd ? (
+                  'TBD'
+                ) : (
+                  <button
+                    type="button"
+                    className="drv-link"
+                    title={d.name}
+                    onClick={() => openDriverByName(d.name)}
+                  >
+                    {shortName(d.name)}
+                  </button>
+                )}
                 {d.rating && <span className="rating">{d.rating}</span>}
               </span>
             ))}

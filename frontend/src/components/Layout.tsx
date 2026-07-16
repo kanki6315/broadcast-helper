@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { getTheme, setTheme, type Theme } from '../lib/theme'
+import SearchPalette, { SearchIcon, isMacLike } from './SearchPalette'
 
 const TABS = [
   { to: '/', label: 'Series', end: true },
@@ -48,7 +49,21 @@ function ThemeToggle() {
 
 export default function Layout() {
   const [me, setMe] = useState<Me | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
   const authError = new URLSearchParams(window.location.search).get('authError')
+
+  // ⌘K / Ctrl-K opens driver search from anywhere in the app chrome, even
+  // mid-typing — standard command-palette behavior.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key.toLowerCase() === 'k' && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
+        e.preventDefault()
+        setSearchOpen(true)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
 
   useEffect(() => {
     void fetch('/api/me')
@@ -99,6 +114,17 @@ export default function Layout() {
           Broadcast<span> Helper</span>
         </Link>
         <div className="topbar-side">
+          <button
+            type="button"
+            className="search-trigger"
+            aria-label="Search drivers"
+            title={`Search drivers (${isMacLike ? '⌘K' : 'Ctrl K'})`}
+            onClick={() => setSearchOpen(true)}
+          >
+            <SearchIcon />
+            <span className="search-trigger-label">Search</span>
+            <kbd className="sp-kbd">{isMacLike ? '⌘K' : 'Ctrl K'}</kbd>
+          </button>
           <ThemeToggle />
           {me.email && (
             <div className="account">
@@ -123,6 +149,7 @@ export default function Layout() {
         ))}
       </nav>
       <Outlet />
+      <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} />
     </main>
   )
 }
