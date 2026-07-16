@@ -10,6 +10,11 @@ public enum ImportFormat {
     AUTO(null, null, "Auto-detect"),
     IMSA_JSON("IMSA", Medium.JSON, "IMSA — JSON (results/standings/grid/entry list)"),
     IMSA_PDF("IMSA", Medium.PDF, "IMSA — Entry list PDF"),
+    // Both PDF families need Python to tell them apart, so AUTO can't: it treats
+    // any PDF as an entry list and this one must be chosen explicitly, the same
+    // way a grid CSV is. Prefer the JSON where the series publishes one — it
+    // splits pole from fastest lap, which the PDF cannot.
+    IMSA_POINTS_PDF("IMSA", Medium.PDF, "IMSA — Championship points PDF"),
     IMSA_CSV("IMSA", Medium.CSV, "IMSA — Grid CSV");
 
     public enum Medium { JSON, PDF, CSV }

@@ -314,6 +314,9 @@ public final class ImportParser {
                         p.path("pole_points").asDouble(),
                         p.path("fastest_lap_points").asDouble(),
                         p.path("penalty_points").asDouble(),
+                        // Absent from a real standings JSON, which splits its
+                        // extras properly; only the points-PDF sidecar sets it.
+                        p.path("bonus_points").asDouble(),
                         text(p, "status")
                 ));
             }
