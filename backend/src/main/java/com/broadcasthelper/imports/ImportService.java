@@ -28,16 +28,18 @@ public class ImportService {
 
     private final JdbcClient db;
     private final ObjectMapper json;
+    private final IRacingClient iracing;
     private final String parserPython;
     private final String parserScript;
     private final String pointsParserScript;
 
-    public ImportService(JdbcClient db, ObjectMapper json,
+    public ImportService(JdbcClient db, ObjectMapper json, IRacingClient iracing,
                          @org.springframework.beans.factory.annotation.Value("${broadcast-helper.entry-list-parser.python:python3}") String parserPython,
                          @org.springframework.beans.factory.annotation.Value("${broadcast-helper.entry-list-parser.script:../parser/parse_entry_list.py}") String parserScript,
                          @org.springframework.beans.factory.annotation.Value("${broadcast-helper.points-parser.script:../parser/parse_points.py}") String pointsParserScript) {
         this.db = db;
         this.json = json;
+        this.iracing = iracing;
         this.parserPython = parserPython;
         this.parserScript = parserScript;
         this.pointsParserScript = pointsParserScript;
@@ -62,8 +64,26 @@ public class ImportService {
             case IMSA_PDF -> List.of(stageImsaPdf(filename, content));
             case IMSA_POINTS_PDF -> stageImsaPointsPdf(filename, content);
             case IMSA_CSV -> List.of(stageImsaCsv(content));
+            case IRACING_JSON -> stageIRacingJson(content);
         };
+        return persist(staged, resolved, filename);
+    }
 
+    /**
+     * Stages a subsession fetched from the Data API instead of uploaded. The
+     * payload is the same either way, so this shares the upload's parser and
+     * review flow entirely — only where the bytes came from differs.
+     *
+     * WIP: only the fetch is unproven (see IRacingClient); everything downstream
+     * of it here is the same code the file upload already exercises.
+     */
+    public List<BatchSummary> stageFromIRacing(long subsessionId) {
+        JsonNode payload = iracing.fetchResult(subsessionId);
+        return persist(stageIRacingResult(payload), ImportFormat.IRACING_JSON,
+                "subsession-" + subsessionId + ".json");
+    }
+
+    private List<BatchSummary> persist(List<Staged> staged, ImportFormat format, String filename) {
         List<BatchSummary> out = new ArrayList<>();
         for (Staged s : staged) {
             long id = db.sql("""
@@ -72,7 +92,7 @@ public class ImportService {
                             RETURNING id
                             """)
                     .param("kind", s.kind())
-                    .param("format", resolved.name())
+                    .param("format", format.name())
                     .param("filename", filename)
                     .param("payload", toJson(s.payload()))
                     .param("summary", s.summary())
@@ -88,6 +108,9 @@ public class ImportService {
      * timing-provider JSON. CSVs are never auto-detected — their shapes are
      * provider-specific and would collide across families — but get a targeted
      * hint instead of the generic JSON error.
+     *
+     * The JSON families do separate cleanly: an iRacing subsession names itself
+     * in its envelope, so unlike the PDF families this one needs no user hint.
      */
     private ImportFormat resolveAuto(byte[] content) {
         if (isPdf(content)) {
@@ -98,7 +121,61 @@ public class ImportService {
                     "This looks like a semicolon-delimited CSV — choose a format explicitly"
                     + " (e.g. IMSA — Grid CSV) instead of Auto-detect");
         }
+        if (looksLikeIRacingJson(content)) {
+            return ImportFormat.IRACING_JSON;
+        }
         return ImportFormat.IMSA_JSON;
+    }
+
+    /** Sniffs the iRacing envelope. Unparseable JSON falls through to the IMSA
+     *  family, whose staging reports the parse error properly. */
+    private boolean looksLikeIRacingJson(byte[] content) {
+        try {
+            return IRacingParser.looksLikeEventResult(json.readTree(content));
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /**
+     * One iRacing subsession is a whole meeting, so it fans out: a RACE_RESULTS
+     * batch per scoring session (qualifying, then each race) and a GRID batch per
+     * race. Practice and warmup are dropped in the parser. Each batch is reviewed
+     * and committed on its own, the same way a points PDF splits per championship.
+     */
+    private List<Staged> stageIRacingJson(byte[] content) {
+        JsonNode root;
+        try {
+            root = json.readTree(content);
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Not valid JSON: " + e.getMessage());
+        }
+        return stageIRacingResult(root);
+    }
+
+    /** Stages a parsed subsession payload, whether uploaded or fetched from the
+     *  Data API — the two are identical (see IRacingClient.fetchResult). */
+    List<Staged> stageIRacingResult(JsonNode root) {
+        if (!IRacingParser.looksLikeEventResult(root)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Not an iRacing subsession result: expected an \"event_result\" envelope"
+                    + " with session_results");
+        }
+        List<Staged> out = new ArrayList<>();
+        for (RaceResultsImport session : IRacingParser.parseSessions(root)) {
+            out.add(new Staged("RACE_RESULTS", session, "%s — %s, %d classified entries".formatted(
+                    session.eventName(), session.sessionName(), session.rows().size())));
+        }
+        for (GridImport grid : IRacingParser.parseGrids(root)) {
+            out.add(new Staged("GRID", grid, "%s — %s starting grid, %d cars".formatted(
+                    grid.eventName(), grid.sessionName(), grid.rows().size())));
+        }
+        if (out.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "No qualifying or race sessions found in this subsession");
+        }
+        return out;
     }
 
     private Staged stageImsaPdf(String filename, byte[] pdf) {

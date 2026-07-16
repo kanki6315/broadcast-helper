@@ -39,6 +39,21 @@ public class ImportController {
         }
     }
 
+    /**
+     * Stages an iRacing subsession straight from the Data API — the same batches
+     * uploading its exported file produces, without the export. The subsession id
+     * is the number in the result's URL on iRacing's site.
+     *
+     * WIP: the fetch half of this has never reached the real iRacing service — see
+     * IRacingClient. Uploading the exported file is the proven path meanwhile, and
+     * needs no credentials. Without them this answers 503.
+     */
+    @PostMapping("/iracing/{subsessionId}")
+    @ResponseStatus(HttpStatus.CREATED)
+    public List<ImportService.BatchSummary> fetchIRacing(@PathVariable long subsessionId) {
+        return imports.stageFromIRacing(subsessionId);
+    }
+
     @GetMapping
     public List<ImportService.BatchSummary> list() {
         return imports.list();

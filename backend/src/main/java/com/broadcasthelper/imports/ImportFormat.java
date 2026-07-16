@@ -15,7 +15,11 @@ public enum ImportFormat {
     // way a grid CSV is. Prefer the JSON where the series publishes one — it
     // splits pole from fastest lap, which the PDF cannot.
     IMSA_POINTS_PDF("IMSA", Medium.PDF, "IMSA — Championship points PDF"),
-    IMSA_CSV("IMSA", Medium.CSV, "IMSA — Grid CSV");
+    IMSA_CSV("IMSA", Medium.CSV, "IMSA — Grid CSV"),
+    // One subsession export holds a whole meeting — qualifying, every race, and
+    // each race's grid — so it stages as several batches. The same payload comes
+    // back from the Data API, so IRacingClient feeds this format's parser too.
+    IRACING_JSON("iRacing", Medium.JSON, "iRacing — Subsession result JSON");
 
     public enum Medium { JSON, PDF, CSV }
 

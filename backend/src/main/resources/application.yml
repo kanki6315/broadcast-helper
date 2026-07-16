@@ -42,6 +42,21 @@ broadcast-helper:
   # standings JSON shape, for the series that publish no points JSON.
   points-parser:
     script: ${POINTS_PARSER_SCRIPT:../parser/parse_points.py}
+  # iRacing Data API. Blank by default: local dev and CI import the exported
+  # subsession file instead, which is byte-identical to what the API returns.
+  # The client id is issued by iRacing on request and cannot be self-served —
+  # they paused issuance in 2025, so treat ours as irreplaceable.
+  iracing:
+    client-id: ${IRACING_CLIENT_ID:}
+    client-secret: ${IRACING_CLIENT_SECRET:}
+    # The iRacing account email, and its password. Both are masked before they
+    # leave the process (see IRacingClient.mask) but are plaintext in the env.
+    username: ${IRACING_USERNAME:}
+    password: ${IRACING_PASSWORD:}
+    # Default to the live service, so a missing override talks to iRacing rather
+    # than failing quietly. Overridden only to point at a stub.
+    token-url: ${IRACING_TOKEN_URL:https://oauth.iracing.com/oauth2/token}
+    data-base: ${IRACING_DATA_BASE:https://members-ng.iracing.com/data}
 
 # Auth (Phase 4a Step 2). Disabled by default so local dev needs no Google creds;
 # set AUTH_ENABLED=true + the Google client + allowlist on the hosted deployment.
