@@ -1,14 +1,17 @@
-/* Team-sheets PDF modal, opened from a sheet row. Screen-only (no-print). */
+/* Team-sheets PDF modal, opened from a sheet row. Screen-only (hidden in
+   print). Chrome on the token layer; the pages well stays a fixed dark
+   neutral in both themes — the PDF-viewer convention that makes white pages
+   read as pages. */
 
 .ts-overlay {
   position: fixed;
   inset: 0;
-  z-index: 100;
-  background: rgba(0, 0, 0, 0.55);
+  z-index: var(--z-modal);
+  background: oklch(0% 0 0 / 55%);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: var(--space-5);
 }
 
 .ts-dialog {
@@ -16,40 +19,43 @@
   flex-direction: column;
   width: min(820px, 100%);
   height: 100%;
-  background: #fff;
-  color: #111;
-  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-modal);
 }
 
 .ts-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   padding: 10px 14px;
-  border-bottom: 1px solid #ddd;
-  background: #f6f6f6;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .ts-title {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .ts-close {
   border: none;
   background: none;
-  font-size: 16px;
+  font-size: var(--text-base);
   line-height: 1;
   padding: 4px 6px;
   cursor: pointer;
-  color: #555;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  transition: color var(--t-fast) var(--ease-out);
 }
 
 .ts-close:hover {
-  color: #111;
+  color: var(--ink);
 }
 
 .ts-pages {
@@ -57,18 +63,18 @@
   position: relative;
   flex: 1;
   overflow-y: auto;
-  background: #4a4a4a;
-  padding: 12px;
+  background: oklch(38% 0.008 277);
+  padding: var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
   align-items: center;
 }
 
 .ts-page {
   width: min(760px, 100%);
   background: #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 2px 8px oklch(0% 0 0 / 40%);
   /* Jump-to-page lands with a hair of breathing room under the header. */
   scroll-margin-top: 4px;
 }
@@ -79,12 +85,19 @@
   height: auto;
 }
 
+/* Status text sits on the fixed dark well, so its colours are fixed too. */
 .ts-status {
-  color: #eee;
-  font-size: 13px;
-  margin: 24px 0;
+  color: oklch(90% 0.005 260);
+  font-size: var(--text-sm);
+  margin: var(--space-5) 0;
 }
 
 .ts-status.error {
-  color: #ffb4b4;
+  color: oklch(80% 0.09 25);
+}
+
+@media print {
+  .ts-overlay {
+    display: none !important;
+  }
 }

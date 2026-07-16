@@ -292,6 +292,17 @@ columns show a mono venue code over a muted "Rd n". Class sections divide on a
 printed on it. Result cells stack one `.race-line` per race, tinted by finish
 tier, with the amber **P** for pole and DNS/skips as quiet muted marks.
 
+### Event Sheet (`frontend/src/pages/sheet.css`)
+The standalone per-event reference (`/sheet/:eventId`), on the same token
+layer and result vocabulary as the recap: class bands with computed ink, one
+`tbody` per entry (main row + season form strip), zebra as the class colour
+mixed 8% into `--bg`, `.race-line` chips for start/finish. Rows deep-link to
+the team-sheets modal (the car number is a real button for keyboard reach);
+prior-year cells are contentEditable and save on blur. Its `@media print`
+block forces the light token values on the `.sheet` scope, so Print/Save-PDF
+emits the compact US-Letter deliverable from either theme. Manufacturer
+wordmark logos sit on a small white chip in dark mode only.
+
 ### Buttons
 - **Shape:** `--radius-md` (6px), 6px 14px padding, label type.
 - **Primary:** solid amber, `--on-accent` ink; hover mixes 12% ink into the
@@ -372,8 +383,9 @@ to `localStorage('bh-theme')`; `index.html` applies it before first paint.
   `--text-muted` and `--error`.
 - **Don't** invent class or result colors — class colors come from
   `class_style`; result tiers use the four `--res-*` tokens.
-- **Don't** treat the print-first PDF sheet as the design target — the
-  on-screen surfaces are the product.
+- **Don't** treat the sheet's print output as the design target — the
+  on-screen surface is the product; print is a scoped `@media print` override,
+  never a constraint on the screen design.
 - **Don't** gate interaction state behind `requestAnimationFrame` (or a
   transition). rAF is throttled in background tabs and headless renders, so an
   rAF-reset re-entry guard wedges shut and the feature dies silently. Prefer

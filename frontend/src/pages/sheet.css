@@ -1,102 +1,115 @@
-/* The pit-lane sheet is print-first: it always renders light, on a US Letter
-   canvas, and the browser's Print/Save-as-PDF output IS the deliverable. */
+/* Event sheet — the on-screen broadcast reference for one event, on the token
+   layer in index.css ("The Timing Tower"). The screen surface renders in the
+   app theme (dark mode first-class); the print block at the bottom forces the
+   compact light US-Letter deliverable regardless of on-screen theme. */
 
 .sheet {
-  /* Row + content scale. Every size that drives row height (fonts, cell
-     padding, images, flags) is expressed as base × this factor, so the whole
-     sheet grows proportionally from one knob. Unitless line-heights and em
-     sizes scale on their own. */
-  --row-scale: 1.25;
-
-  color-scheme: light;
-  background: #fff;
-  color: #111;
-  max-width: 8.5in;
+  max-width: 1240px;
   margin: 0 auto;
-  padding: 0.4in 0.35in;
-  font-size: calc(9.5px * var(--row-scale));
-  line-height: 1.25;
+  padding: var(--space-4) var(--space-5) var(--space-7);
+  font-size: var(--text-sm);
 }
 
-.sheet-toolbar {
+/* -- toolbar + header -------------------------------------------------------- */
+
+.sheet-topbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 1rem;
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 1rem;
-  background: #f2f2f2;
-  border-radius: 6px;
-  font-size: 12px;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-2) 0 var(--space-4);
 }
 
-.sheet-header h1 {
-  font-size: 18px;
+.sheet-back {
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.sheet-hint {
+  flex: 1;
+  min-width: 200px;
+  color: var(--text-muted);
+}
+
+.sheet-head h1 {
   margin: 0;
-  color: #111;
+  font-size: var(--text-xl);
 }
 
-.sheet-header p {
-  margin: 2px 0 10px;
-  font-size: 11px;
-  color: #444;
+.sheet-meta {
+  margin: var(--space-1) 0 0;
+  color: var(--text-muted);
 }
 
-/* Do NOT set break-inside: avoid here. A class taller than one page (e.g. GS
-   with 29 entries) can't satisfy it, so the browser strands the whole section
-   on a fresh page and leaves a large gap under the sheet header. Instead we let
-   the table flow across pages and keep rows/header intact below. */
+.sheet-legend {
+  margin-top: var(--space-3);
+}
+
+/* -- class sections ---------------------------------------------------------- */
+
 .sheet-class {
-  break-inside: auto;
+  margin-top: var(--space-5);
 }
 
-/* Header colour and zebra tint come from per-series config (SheetController's
-   class_style), passed in as --class-color / --class-tint. Any class without
-   config falls back to the neutral defaults here. */
-.sheet-class h2 {
-  font-size: calc(13px * var(--row-scale));
-  margin: 10px 0 3px;
-  padding: calc(2px * var(--row-scale)) calc(6px * var(--row-scale));
-  background: var(--class-color, #1a1a1a);
+/* Class band: same vocabulary as the recap's class rows — the class colour is
+   data, the name is always printed on it, and the block carries a hairline so
+   a near-black class doesn't dissolve into the dark ground (Hairline Rule). */
+.sheet-band {
+  margin: 0;
+  padding: 5px 12px;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: 0;
   color: #fff;
-  /* Keep the class header attached to the start of its table across a page
-     break, so it never sits orphaned at the bottom of a page. */
-  break-after: avoid;
-  /* Force the header fill to appear in the printed/exported PDF. */
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
+  background: var(--class-color, var(--surface-2));
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
-/* Repeat the column header on every printed page of a table that spans pages. */
-.sheet thead {
-  display: table-header-group;
+/* Class colours are user-configured — compute readable ink instead of assuming
+   a dark fill. Falls back to white where relative color syntax is unsupported. */
+@supports (color: oklch(from red l c h)) {
+  .sheet-band {
+    color: oklch(from var(--class-color, #26272e) calc((0.65 - l) * infinity) 0 0);
+  }
 }
 
-/* Alternating entry tint, a light version of the class colour so text stays
-   legible and print stays clean. Each entry is its own tbody (main row + form
-   strip), so the tint alternates per entry and covers both rows.
-   print-color-adjust keeps it in the PDF. */
-.sheet tbody:nth-of-type(even) td {
-  background: var(--class-tint, rgba(0, 0, 0, 0.045));
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
+/* Wide tables scroll inside their own container — the page never scrolls
+   horizontally. */
+.sheet-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
 }
+
+/* -- table ------------------------------------------------------------------- */
 
 .sheet table {
   width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
+  min-width: 760px;
   margin: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
 }
 
-/* Everything centers except the two prose columns (team, drivers). */
 .sheet th,
 .sheet td {
-  border: 0.5px solid #999;
-  padding: calc(2px * var(--row-scale)) calc(4px * var(--row-scale));
+  box-sizing: border-box;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
   text-align: center;
   vertical-align: middle;
   overflow: hidden;
+}
+
+.sheet thead th {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-strong);
 }
 
 .sheet th.col-team,
@@ -106,26 +119,13 @@
   text-align: left;
 }
 
-.sheet thead th {
-  background: #e8e8e8;
-  font-size: calc(9px * var(--row-scale));
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-/* An entry (tbody: main row + form strip) never splits across printed pages. */
-.sheet tbody {
-  break-inside: avoid;
-}
-
-.sheet tbody tr {
-  break-inside: avoid;
+/* The container border closes the section; a final row divider would double it. */
+.sheet tbody:last-of-type tr:last-child td {
+  border-bottom: none;
 }
 
 .col-num {
-  width: 4.5%;
-  font-weight: 700;
-  font-size: calc(12px * var(--row-scale));
+  width: 5%;
 }
 
 .col-team {
@@ -133,79 +133,161 @@
 }
 
 .col-mfr {
-  width: 10%;
+  width: 8%;
 }
 
 .col-drivers {
-  width: 20%;
+  width: 21%;
 }
 
 .col-q {
-  width: 5%;
+  width: 6%;
 }
 
 .col-prior {
-  width: 7.5%;
+  width: 9%;
 }
 
 .col-champ {
-  width: 13%;
+  width: 11%;
 }
 
 .col-photo {
   width: 20%;
-  padding: calc(1px * var(--row-scale));
+  padding-top: 2px;
+  padding-bottom: 2px;
 }
 
-.col-photo img {
-  max-width: 100%;
-  max-height: calc(0.42in * var(--row-scale));
-  object-fit: contain;
-  display: inline-block;
-  vertical-align: middle;
+/* Alternating entry tint, the class colour mixed into the ground so it holds in
+   both themes. Zebra is a redundant aid — the form strip already separates
+   entries — so it stays quiet. */
+.sheet tbody:nth-of-type(even) td {
+  background: color-mix(in oklab, var(--class-color, var(--text-muted)) 8%, var(--bg));
+}
+
+/* -- cells ------------------------------------------------------------------- */
+
+.sheet td.col-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-base);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* Keyboard path into the team-sheets modal: the car number is a real button on
+   linked rows, visually just the number (activation bubbles to the row). */
+.sheet-carlink {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sheet td.col-team {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.sheet td.col-q {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .sheet-mfr-logo {
-  max-height: calc(0.3in * var(--row-scale));
+  max-height: 28px;
   max-width: 100%;
   object-fit: contain;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
+  vertical-align: middle;
 }
 
 .sheet-mfr-name {
-  font-size: calc(8.5px * var(--row-scale));
-  color: #333;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* Wordmark logos are routinely dark-on-transparent; on the dark ground they
+   vanish, so they sit on a small light chip (theme-scoped, like index.css). */
+:root[data-theme='dark'] .sheet-mfr-logo {
+  background: #fff;
+  border-radius: var(--radius-sm);
+  padding: 2px 5px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .sheet-mfr-logo {
+    background: #fff;
+    border-radius: var(--radius-sm);
+    padding: 2px 5px;
+  }
 }
 
 .sheet-driver {
   display: flex;
   align-items: center;
-  gap: calc(4px * var(--row-scale));
+  gap: 6px;
+  padding: 1px 0;
 }
 
-/* Flags print at a fixed small size regardless of theme. */
 .sheet-driver .fi {
-  width: calc(13px * var(--row-scale));
-  height: calc(10px * var(--row-scale));
+  width: 15px;
+  height: 11px;
   flex: 0 0 auto;
-  border: 0.5px solid #ccc;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--border-strong);
 }
 
-/* Season form strip: an even grid under the entry's main row, one column per
-   round the class contested (template set inline from the round count) —
-   round header (R1 DAY) over raw start→finish in class. Equal columns span
-   the full row width and align vertically across every entry of the class. */
-/* The position row is a subtle neutral band, set apart from the team row above
-   it regardless of the entry's zebra tint (hence the tbody specificity, which
-   beats the nth-of-type tint rule). */
+.drv-rating {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.col-photo img {
+  max-width: 100%;
+  max-height: 44px;
+  object-fit: contain;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Prior-year cell: editable in place; auto-filled values are flagged in the
+   info colour until the broadcaster overrides them. */
+.sheet .editable {
+  cursor: text;
+}
+
+.sheet .editable:hover {
+  background: var(--accent-tint);
+}
+
+.prior-auto {
+  color: var(--info);
+}
+
+/* Rows with a team-sheets deep-link (screen only; print is unaffected). */
+.row-linked {
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .row-linked:hover td {
+    background: color-mix(in oklab, var(--class-color, var(--text-muted)) 16%, var(--bg));
+    transition: background var(--t-fast) var(--ease-out);
+  }
+}
+
+/* -- season form strip ------------------------------------------------------- */
+
+/* An even grid under the entry's main row, one column per round the class
+   contested (template set inline from the round count). Uniform band across
+   every entry, set apart from the zebra above it (hence the tbody in the
+   selector, which outranks the nth-of-type tint). */
 .sheet tbody .form-row td {
   padding: 0;
-  background: #eef0f2;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
+  background: var(--surface);
 }
 
 .form-strip {
@@ -213,135 +295,49 @@
 }
 
 .form-round {
+  min-width: 0;
   text-align: center;
-  padding: calc(2px * var(--row-scale)) calc(3px * var(--row-scale)) calc(3px * var(--row-scale));
+  padding: 4px 6px 6px;
 }
 
-/* Faint inner dividers for column spacing — lighter than the sheet's #999 grid
-   so they read as gentle separators against the band, not hard rules. */
 .form-round + .form-round {
-  border-left: 0.5px solid #dcdfe3;
+  border-left: 1px solid var(--border);
 }
 
 .form-round-hd {
-  font-size: calc(8px * var(--row-scale));
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  color: #555;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
 }
 
+/* Cells reuse the recap's .race-line result vocabulary (season.css): win/top-3/
+   top-5 tints, the inverted DNF chip, amber P for pole. */
 .form-round-val {
-  font-size: calc(11px * var(--row-scale));
   display: flex;
   justify-content: center;
-  gap: calc(8px * var(--row-scale));
-  margin-top: 1px;
+  gap: 6px;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .form-race {
   display: inline-flex;
   align-items: center;
-  gap: 1px;
+  gap: 3px;
+  min-width: 0;
 }
 
 .form-race-label {
-  color: #777;
-  font-size: calc(7.5px * var(--row-scale));
-  margin-right: 2px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
 }
 
-.form-start {
-  color: #444;
-}
-
-.form-arrow {
-  color: #999;
-  margin: 0 1px;
-}
-
-/* Finish position, colour-coded by in-class result so the season form reads at
-   a glance. A chip (not just coloured text) keeps the podium metals legible on
-   white; print-color-adjust forces the fills into the exported PDF. */
-.form-finish {
-  display: inline-block;
-  min-width: 1.15em;
-  padding: 0 calc(3px * var(--row-scale));
-  border-radius: calc(3px * var(--row-scale));
-  font-weight: 700;
-  color: #111;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-.pos-p1 {
-  background: #edc531;
-} /* gold */
-
-.pos-p2 {
-  background: #c4c8cc;
-} /* silver */
-
-.pos-p3 {
-  background: #d08c4f;
-} /* bronze */
-
-.pos-p4 {
-  background: #4a90d9;
-  color: #fff;
-} /* blue: 4–5 */
-
-.pos-p6 {
-  background: #9366cc;
-  color: #fff;
-} /* purple: 6–10 */
-
-.pos-p11 {
-  background: #a6d4ec;
-} /* light blue: 11–20 */
-
-.pos-p21 {
-  background: #cdb595;
-} /* light brown: 21+ classified */
-
-.pos-out {
-  background: #1a1a1a;
-  color: #fff;
-} /* DNS / DQ / DNF */
-
-.sheet-badge {
-  display: inline-block;
-  margin-left: calc(4px * var(--row-scale));
-  padding: 0 calc(3px * var(--row-scale));
-  border: 1px solid #111;
-  border-radius: 2px;
-  font-size: calc(7.5px * var(--row-scale));
-  font-weight: 700;
-}
-
-/* Rows with a team-sheets page deep-link (screen only; print is unaffected). */
-.row-linked {
-  cursor: pointer;
-}
-
-@media (hover: hover) {
-  .row-linked:hover td {
-    background: var(--class-tint, rgba(0, 0, 0, 0.045));
-  }
-
-  .row-linked:hover td:first-child {
-    box-shadow: inset 2px 0 0 var(--class-color, #1a1a1a);
-  }
-}
-
-.editable:focus {
-  outline: 2px solid #4a90d9;
-  background: #eef5fc;
-}
-
-/* Auto-passed prior-year values: visually flagged on screen, plain in print. */
-.prior-auto {
-  color: #2456a6;
-}
+/* ============================================================================
+   Print: the compact light US-Letter sheet. The token overrides force the
+   light palette even when the screen is in dark mode, so "Save as PDF" always
+   produces the same deliverable.
+   ========================================================================== */
 
 @page {
   size: letter;
@@ -354,12 +350,156 @@
   }
 
   .sheet {
-    padding: 0;
+    /* Light-theme literals (from index.css), scoped so descendants inherit. */
+    --bg: #fff;
+    --surface: #eef0f2;
+    --surface-2: #e8e8e8;
+    --border: #c9ccd3;
+    --border-strong: #9aa0ab;
+    --ink: #111;
+    --text: #26242c;
+    --text-muted: #55585f;
+    --accent-ink: #8f5e12;
+    --accent-tint: transparent;
+    --info: #2456a6;
+    --res-win: #bfeccd;
+    --res-top3: #f7dce9;
+    --res-top5: #e2dcf8;
+    --res-dnf-bg: #25262c;
+    --res-dnf-ink: #e6e8eb;
+    color-scheme: light;
+
+    /* Row + content scale: every size that drives print row height is base ×
+       this factor, so the whole sheet grows proportionally from one knob. */
+    --row-scale: 1.25;
+
     max-width: none;
+    padding: 0;
+    background: #fff;
+    color: #111;
+    font-size: calc(9.5px * var(--row-scale));
+    line-height: 1.25;
   }
 
-  .editable:focus {
-    outline: none;
+  /* Force every fill (bands, zebra, result chips, flags) into the PDF. */
+  .sheet,
+  .sheet * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .sheet-head h1 {
+    font-size: 18px;
+  }
+
+  .sheet-meta {
+    margin: 2px 0 10px;
+    font-size: 11px;
+  }
+
+  /* Do NOT set break-inside: avoid on the section. A class taller than one
+     page (e.g. GS with 29 entries) can't satisfy it, so the browser strands
+     the whole section on a fresh page. Let the table flow across pages and
+     keep rows/header intact below. */
+  .sheet-class {
+    margin-top: 0;
+    break-inside: auto;
+  }
+
+  .sheet-band {
+    font-size: calc(13px * var(--row-scale));
+    margin: 10px 0 0;
+    padding: calc(2px * var(--row-scale)) calc(6px * var(--row-scale));
+    border: none;
+    border-radius: 0;
+    /* Keep the class band attached to the start of its table across a page
+       break, so it never sits orphaned at the bottom of a page. */
+    break-after: avoid;
+  }
+
+  .sheet-scroll {
+    overflow: visible;
+    border: none;
+    border-radius: 0;
+  }
+
+  .sheet table {
+    min-width: 0;
+  }
+
+  /* The full cell grid reads better on paper than screen's row dividers. */
+  .sheet th,
+  .sheet td {
+    border: 0.5px solid #999;
+    padding: calc(2px * var(--row-scale)) calc(4px * var(--row-scale));
+  }
+
+  .sheet tbody:last-of-type tr:last-child td {
+    border-bottom: 0.5px solid #999;
+  }
+
+  /* Repeat the column header on every printed page of a spanning table. */
+  .sheet thead {
+    display: table-header-group;
+  }
+
+  .sheet thead th {
+    font-size: calc(9px * var(--row-scale));
+  }
+
+  /* An entry (tbody: main row + form strip) never splits across pages. */
+  .sheet tbody {
+    break-inside: avoid;
+  }
+
+  .sheet tbody tr {
+    break-inside: avoid;
+  }
+
+  .sheet td.col-num {
+    font-size: calc(12px * var(--row-scale));
+  }
+
+  .sheet-mfr-logo {
+    max-height: calc(0.3in * var(--row-scale));
     background: none;
+    padding: 0;
+  }
+
+  .sheet-mfr-name {
+    font-size: calc(8.5px * var(--row-scale));
+  }
+
+  .sheet-driver .fi {
+    width: calc(13px * var(--row-scale));
+    height: calc(10px * var(--row-scale));
+  }
+
+  .col-photo img {
+    max-height: calc(0.42in * var(--row-scale));
+  }
+
+  .sheet .editable:focus {
+    outline: none;
+    box-shadow: none;
+    background: none;
+  }
+
+  .form-round {
+    padding: calc(2px * var(--row-scale)) calc(3px * var(--row-scale)) calc(3px * var(--row-scale));
+  }
+
+  .form-round-hd {
+    font-size: calc(8px * var(--row-scale));
+  }
+
+  .form-round-val {
+    font-size: calc(11px * var(--row-scale));
+    gap: calc(8px * var(--row-scale));
+    margin-top: 1px;
+  }
+
+  .form-race-label {
+    font-size: calc(7.5px * var(--row-scale));
   }
 }
