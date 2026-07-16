@@ -4,8 +4,9 @@ Event-preparation tool for motorsports broadcasters: import results, standings,
 entry lists, and car photos; generate broadcast reference documents as PDFs.
 
 **Status:** Phases 1–3 delivered — multi-series importers (results/standings/grid
-JSON, grid CSV, entry-list PDF) with staging + review, bulk car images,
-manufacturer logos, and the pit-lane entry-list sheet with one-click PDF export.
+JSON, grid CSV, entry-list PDF, championship-points PDF) with staging + review,
+bulk car images, manufacturer logos, and the pit-lane entry-list sheet with
+one-click PDF export.
 The browse UI was rebuilt (2026-07-15) into a series directory + season hub with
 a season recap and five sub-pages, on a documented design system
 ([PRODUCT.md](PRODUCT.md) / [DESIGN.md](DESIGN.md)). Phase 4 (single-container
@@ -15,13 +16,18 @@ for the full plan, domain model, and phase roadmap.
 ## What it does today
 
 - **Import** timing-provider results, standings (team/driver/Michelin Endurance
-  Cup championships), and starting-grid JSON, plus entry-list PDFs and
-  starting-grid CSVs — across multiple series (IMSA, Mustang Challenge), staged
-  and reviewed before touching the database. Uploads choose a **format** (parser
-  family = provider × medium, e.g. `IMSA_JSON`/`IMSA_PDF`/`IMSA_CSV`); the
-  default auto-detects JSON and PDF. A grid CSV carries no event/session
-  metadata, so review attaches it to an existing event and session (race
-  number), and it keeps the per-car qualifying time.
+  Cup championships), and starting-grid JSON, plus entry-list PDFs, starting-grid
+  CSVs, and championship-points PDFs — across multiple series (IMSA, Mustang
+  Challenge), staged and reviewed before touching the database. Uploads choose a
+  **format** (parser family = provider × medium, e.g. `IMSA_JSON`/`IMSA_PDF`/
+  `IMSA_CSV`/`IMSA_POINTS_PDF`); the default auto-detects JSON and entry-list
+  PDFs. A grid CSV carries no event/session metadata, so review attaches it to an
+  existing event and session (race number), and it keeps the per-car qualifying
+  time. A **points PDF** covers the series that publish no standings JSON: one
+  sheet holds every championship, so an upload stages one batch each (see
+  [parser/POINTS_SCHEMA.md](parser/POINTS_SCHEMA.md)). Where a standings JSON
+  exists, import that instead — it splits pole from fastest-lap points, which the
+  sheet prints added together.
 - **Browse** from a series directory into a **season hub**: the hub sets a season
   context (year switcher; class filter chips persisted in the URL, so a filtered
   view is bookmarkable) and opens on four live widgets — latest/next round,
@@ -51,13 +57,14 @@ for the full plan, domain model, and phase roadmap.
 - **Backend** — Java 21, Spring Boot 3, Flyway, PostgreSQL (`backend/`)
 - **Frontend** — React + TypeScript, Vite (`frontend/`)
 - **Database** — PostgreSQL 16 via Docker Compose
-- **Entry-list parser** — Python sidecar (`parser/`), invoked by the backend
-  to turn entry-list PDFs into JSON (see `parser/SCHEMA.md`)
+- **PDF parsers** — Python sidecars (`parser/`), invoked by the backend to turn
+  entry-list PDFs (`parser/SCHEMA.md`) and championship-points PDFs
+  (`parser/POINTS_SCHEMA.md`) into JSON
 
 ## Running locally
 
 Prerequisites: JDK 21, Node 20+, Docker, Python 3.10+ with
-`pip install pdfplumber` (for entry-list PDF imports), and Chrome/Chromium
+`pip install pdfplumber` (for the PDF importers), and Chrome/Chromium
 (only for exporting a sheet to PDF).
 
 ```bash
@@ -93,7 +100,8 @@ frontend/   React UI (Vite)
               src/index.css            design tokens (see DESIGN.md)
               src/pages/season/        the season hub + its sub-pages
               src/pages/SheetPage.tsx  the print-first pit-lane sheet
-parser/     Python entry-list PDF -> JSON sidecar (see parser/SCHEMA.md)
+parser/     Python PDF -> JSON sidecars: entry lists (SCHEMA.md) and
+              championship points (POINTS_SCHEMA.md)
 docker-compose.yml
 PLAN.md     build plan / roadmap
 PRODUCT.md  who it's for, design principles, anti-references
