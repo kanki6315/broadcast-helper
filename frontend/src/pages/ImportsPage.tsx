@@ -69,7 +69,11 @@ function initTarget(r: ImportReview): TargetState {
     // A metadata-less file must attach to an existing event; force a choice.
     eventId: g?.eventId ?? (r.needsSession ? '' : 'new'),
     classCode: g?.classCode ?? '',
-    kind: g?.kind ?? '',
+    // The guess derives the kind from the title's last word, which is garbage
+    // for a title the shape wasn't built for ("(OVERALL)", "TROPHY)"). Keep it
+    // only if it names a real kind: a select holding a value with no matching
+    // option renders blank while still committing the garbage behind it.
+    kind: CHAMPIONSHIP_KINDS.some(([v]) => v === g?.kind) ? (g?.kind as string) : '',
     isCup: g?.isCup ?? false,
     familyName: g?.familyName ?? '',
     seasonYear: g?.seasonYear != null ? String(g.seasonYear) : '',
@@ -111,6 +115,18 @@ const SESSION_TYPES: [string, string][] = [
   ['RACE', 'Race'],
   ['QUALIFYING', 'Qualifying'],
   ['PRACTICE', 'Practice'],
+]
+
+// What a championship ranks. Closed on purpose: this was a free-text box, and a
+// "DRIVER" typo silently created a second award group alongside "DRIVERS".
+// These three are what the code actually distinguishes — nothing branches on
+// any other value. A sheet's own wording can differ (Mustang Challenge prints
+// "Entrants" for what IWSC calls "Teams", a PACCA Dealer Trophy is a Teams
+// championship); the reviewer maps it to the kind here at import.
+const CHAMPIONSHIP_KINDS: [string, string][] = [
+  ['DRIVERS', 'Drivers'],
+  ['TEAMS', 'Teams'],
+  ['MANUFACTURERS', 'Manufacturers'],
 ]
 
 // Kinds that attach to an event (vs. a championship) and so pick an event target.
@@ -216,6 +232,9 @@ export default function ImportsPage() {
     const t = targets[b.id]
     if (!t || unresolvedClasses(b.id).length > 0) return false
     if (needsYear(b, reviews[b.id]) && !validYear(t.seasonYear)) return false
+    // Kind has no safe default — it decides how the standings are ranked and
+    // matched — and the guess leaves it unset for a title it can't read.
+    if (reviews[b.id]?.kind === 'STANDINGS' && !t.kind) return false
     // A metadata-less file commits against a chosen existing event (which
     // implies the series); other kinds need the series chosen.
     if (reviews[b.id]?.needsSession) return typeof t.eventId === 'number'
@@ -240,7 +259,11 @@ export default function ImportsPage() {
       body.sessionOrdinal = t.sessionOrdinal
     }
     if (review.kind === 'STANDINGS') {
-      body.classCode = t.classCode
+      // Blank is the answer for a championship with no class of its own (an
+      // overall or a teams/dealer one), so send it as null rather than "" — the
+      // class check treats a blank string as a class named "", which nothing
+      // matches.
+      body.classCode = t.classCode.trim() || null
       body.kind = t.kind
       body.isCup = t.isCup
       body.familyName = t.familyName.trim() || null
@@ -451,20 +474,26 @@ export default function ImportsPage() {
                               <span className="target-label">Championship</span>
                               <input
                                 className="target-narrow"
-                                title="Class"
-                                placeholder="Class"
+                                title="Class — leave blank for a championship that has no class of its own (an overall or a teams/dealer one)"
+                                placeholder="Class (blank = all)"
                                 value={t.classCode}
                                 disabled={busy}
                                 onChange={(e) => patch(b.id, { classCode: e.target.value })}
                               />
-                              <input
+                              <select
                                 className="target-narrow"
                                 title="Kind"
-                                placeholder="Kind"
                                 value={t.kind}
                                 disabled={busy}
-                                onChange={(e) => patch(b.id, { kind: e.target.value.toUpperCase() })}
-                              />
+                                onChange={(e) => patch(b.id, { kind: e.target.value })}
+                              >
+                                <option value="">choose…</option>
+                                {CHAMPIONSHIP_KINDS.map(([value, label]) => (
+                                  <option key={value} value={value}>
+                                    {label}
+                                  </option>
+                                ))}
+                              </select>
                               <label className="target-checkbox">
                                 <input
                                   type="checkbox"
@@ -517,13 +546,13 @@ export default function ImportsPage() {
                           <button
                             disabled={busy || !canCommit(b)}
                             title={
-                              review.needsSession
-                                ? typeof t.eventId !== 'number'
-                                  ? 'Choose an event first'
-                                  : undefined
-                                : !seriesChosen(t)
+                              review.needsSession && typeof t.eventId !== 'number'
+                                ? 'Choose an event first'
+                                : !review.needsSession && !seriesChosen(t)
                                   ? 'Choose a series first'
-                                  : undefined
+                                  : review.kind === 'STANDINGS' && !t.kind
+                                    ? 'Choose what the championship ranks first'
+                                    : undefined
                             }
                             onClick={() => commit(b)}
                           >

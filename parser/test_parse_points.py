@@ -154,3 +154,111 @@ def test_a_row_that_fails_its_checksum_raises(mc, monkeypatch):
     monkeypatch.setattr(p, "_cell_values", corrupt)
     with pytest.raises(ValueError, match="cells sum to"):
         p.parse(MC)
+
+
+# --- Carrera Cup Asia (ruled grid, FLQ/Race/FL sub-columns) -------------------
+
+PACCA = SAMPLES / "2026_PACCA_Points_R8.pdf"
+
+
+@pytest.fixture(scope="module")
+def pacca():
+    if not PACCA.exists():
+        pytest.skip("PACCA sample PDF not present")
+    return p.parse(PACCA)
+
+
+def test_pacca_every_row_readds_to_its_printed_total(pacca):
+    # Same hard gate as the IMSA path, but over decimal points (half points for
+    # shortened races: 12.5, 108.5) — so compare with a float tolerance.
+    for champ in pacca["championships"]:
+        for row in champ["classification"]:
+            assert abs(sum(s["total_points"] for s in row["points_by_session"])
+                       - row["total_points"]) < 1e-6, (
+                f"{champ['championship']['main_title']} #{row['position']} {row['key']}"
+            )
+
+
+def test_pacca_one_championship_per_page(pacca):
+    titles = [c["championship"]["main_title"] for c in pacca["championships"]]
+    assert [t[t.rindex("(") + 1:-1] for t in titles] == [
+        "Overall", "Pro-Am", "Am", "Masters", "Porsche Dealer Trophy",
+    ]
+    # The season leads the title ("2026 Porsche ..."), which beats the PDF's
+    # creation date as the year source.
+    assert all(c["championship"]["year"] == "2026" for c in pacca["championships"])
+
+
+def test_pacca_rounds_and_events(pacca):
+    sessions = pacca["championships"][0]["championship"]["sessions"]
+    assert [s["session_name"] for s in sessions] == [f"Round {i}" for i in range(1, 14)]
+    # Sepang carries three rounds; every other event two.
+    assert [s["event_name"] for s in sessions] == (
+        ["Shanghai"] * 2 + ["Zhuhai"] * 2 + ["Fuji"] * 2 + ["Bangsaen"] * 2
+        + ["Sepang"] * 3 + ["Marina Bay"] * 2
+    )
+
+
+def test_pacca_splits_pole_and_fastest_lap(pacca):
+    # FLQ (pole, in a one-make cup) and FL are separate columns on this sheet,
+    # so nothing lands in the IMSA-PDF catch-all bonus_points.
+    overall = _one(pacca, "(Overall)")
+    amand = _row(overall, 1)
+    assert amand["key"] == "Marcus AMAND"
+    assert amand["total_points"] == 179
+    r7 = amand["points_by_session"][6]
+    assert (r7["race_points"], r7["pole_points"], r7["fastest_lap_points"]) == (25, 1, 1)
+    assert all(
+        s["bonus_points"] == 0
+        for c in pacca["championships"] for r in c["classification"] for s in r["points_by_session"]
+    )
+
+
+def test_pacca_flq_scores_even_when_the_race_is_a_dsq(pacca):
+    # WANG Zhongwei takes pole for Round 5 then is disqualified from the race:
+    # the FLQ point still counts (his printed total re-adds only if it does).
+    wang = _row(_one(pacca, "(Pro-Am)"), 1)
+    r5 = wang["points_by_session"][4]
+    assert (r5["pole_points"], r5["race_points"], r5["status"]) == (2, 0, "disqualified")
+
+
+def test_pacca_sentinels(pacca):
+    lu = next(r for r in _one(pacca, "(Pro-Am)")["classification"] if r["key"] == "LU Wei")
+    statuses = [s["status"] for s in lu["points_by_session"]]
+    assert statuses[:8] == ["", "did_not_finish", "did_not_finish", "",
+                            "not_classified", "did_not_finish", "did_not_race", "did_not_race"]
+    # Rounds 9-13 haven't run: blank cells stay "", not a DNP.
+    assert statuses[8:] == [""] * 5
+
+
+def test_pacca_tied_positions_share_a_merged_cell(pacca):
+    # 14th is a two-way tie on 20 points and the sheet resumes at 15 (dense
+    # numbering); the position glyph itself can land on either row or neither.
+    overall = _one(pacca, "(Overall)")
+    by_pos = {}
+    for r in overall["classification"]:
+        by_pos.setdefault(r["position"], []).append(r["key"])
+    assert sorted(by_pos[14]) == ["Henry KWONG", "XIE An"]
+    assert by_pos[15] == ["LU Wei"]
+    # The scoreless tail is a four-way tie for last.
+    assert sorted(by_pos[25]) == ["Andy TAN", "Dominic TJIA", "Douglas KHOO", "Francis TJIA"]
+
+
+def test_pacca_team_sheet_keys_on_the_team_name(pacca):
+    # No car-number column on the Dealer Trophy page, so the name is both key
+    # and team — with the '#' eligibility marker stripped off.
+    teams = _one(pacca, "(Porsche Dealer Trophy)")
+    row = _row(teams, 1)
+    assert (row["key"], row["team"]) == ("BWT Shanghai Yonda", "BWT Shanghai Yonda")
+    assert not any(r["key"].endswith("#") for r in teams["classification"])
+    # 82 points apiece is a genuine tie for 5th.
+    assert sorted(r["key"] for r in teams["classification"] if r["position"] == 5) == [
+        "Porsche Centre Adelaide", "Porsche Vietnam",
+    ]
+
+
+def test_pacca_decimal_points_survive(pacca):
+    giltrap = _row(_one(pacca, "(Overall)"), 2)
+    assert giltrap["key"] == "Marco GILTRAP"
+    assert giltrap["total_points"] == 108.5
+    assert giltrap["points_by_session"][0]["race_points"] == 4.5

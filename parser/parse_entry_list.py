@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""Parse an IMSA entry-list PDF into the entries.json contract.
+"""Parse an entry-list PDF into the entries.json contract.
 
 This is the isolated PDF-parsing sidecar described in PLAN.md §4: its only job
 is `entry-list.pdf -> entries.json`. The Java app invokes it as a subprocess at
 ingest time and owns everything downstream (mapping to entry/lineup/driver,
 dedup, persistence). The two communicate only via the JSON documented in
 SCHEMA.md, so this tool stays swappable and testable in isolation.
+
+Two source layouts are recognized, sniffed from the page itself:
+  * IMSA (pro and challenge series) — class section headers, multi-driver cells.
+  * Porsche Carrera Cup Asia (PACCA) — a two-up ruled grid, one driver per car,
+    the class printed on the driver line. The PACCA sheet is the standard the
+    one-make cups share; other series' PDFs vary by timing provider.
 
 Usage:
     python parse_entry_list.py INPUT.pdf [-o OUTPUT.json] [--series IWSC] [--strict]
@@ -44,6 +50,26 @@ TBD_RE = re.compile(r"^(?:\([A-Z?]\)\s+)?TBD$", re.IGNORECASE)
 CAR_NO_RE = re.compile(r"^\d{1,3}$")
 
 VALID_RATINGS = {"P", "G", "S", "B"}
+
+# --- PACCA (Carrera Cup Asia) patterns ---------------------------------------
+
+# Team line: name, an optional '#' (the legend's "Porsche Dealer Trophy" entry
+# marker), then the team's 3-letter nationality. "610 Racing CHN" /
+# "Porsche Own Retail 69 Team # CHN".
+PACCA_TEAM_RE = re.compile(r"^(?P<team>.+?)\s*(?P<dealer>#)?\s+(?P<nat>[A-Z]{3})$")
+# Driver line: name, an optional '*' (the legend's "Non series registered"),
+# the cup class, then nationality. "LI Kerong* Pro-Am USA" /
+# "Adrian D SILVA Masters MAS". Pro-Am is tried before Pro so it can't be split.
+PACCA_DRIVER_RE = re.compile(
+    r"^(?P<name>.+?)\s*(?P<star>\*)?\s+(?P<cls>Pro-Am|Masters|Pro|Am)\s+(?P<nat>[A-Z]{3})$"
+)
+# Cup classes rank Pro > Pro-Am > Am > Masters regardless of which car number
+# happens to appear first, so the order is fixed rather than first-appearance.
+PACCA_CLASS_ORDER = {"PRO": 1, "PRO-AM": 2, "AM": 3, "MASTERS": 4}
+# "3 – 5 July 2026" (same month) and "31 July – 2 August 2026" (cross-month).
+PACCA_DATES_RE = re.compile(
+    r"(\d{1,2})\s*(?:([A-Za-z]+)\s*)?[-–]\s*(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})"
+)
 
 # Small raster icons the challenge-series lists render next to a driver/entry,
 # explained by the printed legend. Keyed by the md5 of the image XObject's raw
@@ -295,10 +321,141 @@ def parse_event_header(page) -> dict:
 
 def detect_series(path: Path) -> str | None:
     name = path.name.upper()
-    for code in ("IWSC", "IMPC", "VPRC", "MX5", "MC"):
+    for code in ("PACCA", "IWSC", "IMPC", "VPRC", "MX5", "MC"):
         if code in name:
             return code
     return None
+
+
+# --- PACCA (Carrera Cup Asia) layout -----------------------------------------
+
+def is_pacca_table(data: list[list]) -> bool:
+    """The PACCA sheet is a two-up ruled grid whose header row reads
+    "Comp. No." | "Team Name Cls Nat. / Driver" twice over."""
+    if not data or len(data[0]) < 2:
+        return False
+    first = " ".join((data[0][0] or "").split())
+    second = " ".join((data[0][1] or "").split())
+    return first.startswith("Comp.") and second.startswith("Team Name")
+
+
+def is_points_table(data: list[list]) -> bool:
+    """A championship-points grid ("Pos. | ... | Total | ..."), not an entry list.
+
+    Worth recognizing explicitly: this parser reads a row's first cell as the car
+    number, and on a points sheet that cell is the finishing position (1, 2, 3
+    ...) with a real car number beside it — so every row would parse as a
+    plausible entry. The IMSA points sheets are unruled and yield no tables at
+    all, which is why the loader's "no entries -> this may be a points PDF" guard
+    was enough; the PACCA sheet IS ruled, so it would sail through and stage
+    dozens of fabricated entries. Yielding nothing here fires that same guard.
+    """
+    if not data or not data[0]:
+        return False
+    header = [" ".join((c or "").split()) for c in data[0]]
+    return header[0] == "Pos." and "Total" in header
+
+
+def parse_pacca_event_header(page) -> dict:
+    """Event metadata from the lines above the grid: series title, round,
+    "Circuit, Country", and a "3 – 5 July 2026" date range."""
+    lines = [l.strip() for l in (page.extract_text() or "").split("\n") if l.strip()]
+    event: dict = {}
+    round_line = next((l for l in lines[:6] if re.match(r"^Round\b", l)), None)
+    circuit_line = next((l for l in lines[:6] if "," in l), None)
+    if circuit_line:
+        circuit, _, location = circuit_line.partition(",")
+        event["circuit"] = circuit.strip()
+        event["location"] = location.strip()
+    if round_line:
+        event["name"] = round_line + (f" – {event['circuit']}" if event.get("circuit") else "")
+    elif lines:
+        event["name"] = lines[0]
+
+    dm = PACCA_DATES_RE.search(" ".join(lines[:6]))
+    if dm:
+        sd, sm, ed, em, yr = dm.groups()
+        smn = MONTHS.get((sm or em).lower())
+        emn = MONTHS.get(em.lower())
+        if smn and emn:
+            event["start_date"] = f"{yr}-{smn:02d}-{int(sd):02d}"
+            event["end_date"] = f"{yr}-{emn:02d}-{int(ed):02d}"
+    return event
+
+
+def parse_pacca_entry(car_number: str, cell: str | None) -> dict:
+    """One grid cell -> one entry: a team line then a single driver line."""
+    lines = [l.strip() for l in (cell or "").split("\n") if l.strip()]
+    team = sponsor = team_nat = None
+    dealer_trophy = False
+    drivers: list[dict] = []
+
+    if len(lines) >= 2:
+        tm = PACCA_TEAM_RE.match(" ".join(lines[:-1]))
+        if tm:
+            team = tm.group("team")
+            dealer_trophy = tm.group("dealer") is not None
+            team_nat = tm.group("nat")
+        dm = PACCA_DRIVER_RE.match(lines[-1])
+        if dm:
+            drivers.append({
+                "order": 1,
+                "rating": None,
+                "name": dm.group("name").strip(),
+                "nationality": dm.group("nat"),
+                "hometown": None,
+                "markers": ["non_series"] if dm.group("star") else [],
+                "is_tbd": False,
+            })
+    if team is None or not drivers:
+        # Keep whatever didn't match visible; the loader fails loud on it.
+        team = team or (lines[0] if lines else None)
+        if not drivers:
+            drivers.append({
+                "order": 1, "rating": None,
+                "name": lines[-1] if lines else "", "nationality": None,
+                "hometown": None, "markers": [], "is_tbd": False, "unparsed": True,
+            })
+        cls = None
+    else:
+        cls = dm.group("cls")
+
+    return {
+        "class_name": cls,
+        "class_code": cls.upper() if cls else None,
+        "class_order": PACCA_CLASS_ORDER.get(cls.upper()) if cls else None,
+        "car_number": car_number,
+        "team": team,
+        "sponsor": sponsor,
+        "team_nationality": team_nat,
+        "bronze_cup": False,
+        "dealer_trophy": dealer_trophy,
+        "car_type": None,
+        "tire": None,
+        "engine": None,
+        "fuel": None,
+        "drivers": drivers,
+    }
+
+
+def parse_pacca(pdf, pdf_path: Path, series: str | None) -> dict:
+    """The whole PACCA document: every page's grid, two entries per row."""
+    event = parse_pacca_event_header(pdf.pages[0])
+    entries: list[dict] = []
+    for page in pdf.pages:
+        for table in page.find_tables():
+            data = table.extract()
+            if not is_pacca_table(data):
+                continue
+            for row in data[1:]:
+                for no_col in range(0, len(row) - 1, 2):
+                    number = (row[no_col] or "").strip()
+                    if CAR_NO_RE.match(number):
+                        entries.append(parse_pacca_entry(number, row[no_col + 1]))
+
+    event["series"] = series or detect_series(pdf_path) or "PACCA"
+    event["source_file"] = pdf_path.name
+    return {"event": event, "entries": entries}
 
 
 # --- main parse -------------------------------------------------------------
@@ -313,11 +470,17 @@ def parse(pdf_path: Path, series: str | None) -> dict:
     class_order: dict[str, int] = {}
 
     with pdfplumber.open(str(pdf_path)) as pdf:
+        first_tables = pdf.pages[0].find_tables()
+        if first_tables and is_pacca_table(first_tables[0].extract()):
+            return parse_pacca(pdf, pdf_path, series)
+
         event = parse_event_header(pdf.pages[0])
         for page in pdf.pages:
             page_icons = small_icons(page)
             for table in page.find_tables():
                 data = table.extract()
+                if is_points_table(data):
+                    continue
                 for ri, row in enumerate(data):
                     first = (row[0] or "").strip()
                     header = first.split("\n")[0]
@@ -359,7 +522,9 @@ def parse(pdf_path: Path, series: str | None) -> dict:
                             "car_number": first,
                             "team": team,
                             "sponsor": sponsor,
+                            "team_nationality": None,
                             "bronze_cup": bronze_cup,
+                            "dealer_trophy": False,
                             "car_type": join_wrapped(row[3] if len(row) > 3 else None),
                             "tire": join_wrapped(row[4] if len(row) > 4 else None),
                             "engine": join_wrapped(row[5] if len(row) > 5 else None),

@@ -1,13 +1,23 @@
 #!/usr/bin/env python3
-"""Parse an IMSA championship-points PDF into the points.json contract.
+"""Parse a championship-points PDF into the points.json contract.
 
 Sibling of parse_entry_list.py and the same sidecar shape: PDF in, JSON out, the
 Java loader owns persistence. Some series publish a standings JSON and some only
 publish this PDF; where the JSON exists, import that instead — it splits pole and
-fastest-lap points, which the PDF cannot (see `bonus_points` in POINTS_SCHEMA.md).
+fastest-lap points, which the IMSA PDF cannot (see `bonus_points` in
+POINTS_SCHEMA.md).
 
 One PDF holds every championship for the series, so this emits a list and the
 loader stages one import batch per championship.
+
+Two source layouts are recognized, sniffed page by page:
+  * IMSA — rotated column headers, no table rules; the geometry-driven path
+    below.
+  * Porsche Carrera Cup Asia (PACCA) — a fully ruled Excel-exported grid, one
+    championship per page, each round split into FLQ / Race / FL sub-columns.
+    Unlike the IMSA sheet, this one DOES split its bonuses: FLQ (fastest lap in
+    qualifying — pole, in a one-make cup) lands in pole_points and FL (race
+    fastest lap) in fastest_lap_points.
 
 Why this is geometry-driven rather than text-driven:
 
@@ -73,6 +83,34 @@ SENTINEL_STATUS = {
     "/": "did_not_race",      # DNP — did not participate
     "*": "not_classified",    # DNS — did not start
 }
+
+# --- PACCA (Carrera Cup Asia) ruled grid --------------------------------------
+
+# The PACCA sheet spells its sentinels out. '-' is the DNP analogue and 'DNS'
+# keeps the IMSA mapping; DNF and DSQ are new — both took part, so the season
+# view correctly counts their round as contested.
+PACCA_SENTINEL_STATUS = {
+    "-": "did_not_race",
+    "DNS": "not_classified",
+    "DNF": "did_not_finish",
+    "DSQ": "disqualified",
+}
+
+# Sub-column label -> points bucket. FLQ (fastest lap in qualifying — pole, in a
+# one-make cup) still scores when the race ends DNF/DSQ, so every numeric cell
+# counts regardless of the Race cell's sentinel.
+PACCA_BUCKETS = {"Race": "race", "FLQ": "pole", "FL": "fastest_lap"}
+
+_PACCA_NUM_RE = re.compile(r"^\d+(?:\.\d+)?$")
+
+
+def _pacca_num(raw: str) -> float:
+    return float(raw)
+
+
+def _emit(x: float):
+    """Points as printed: ints where integral, so 25 stays 25 and 12.5 stays 12.5."""
+    return int(x) if x == int(x) else x
 
 
 def _rotated_headers(page):
@@ -311,6 +349,142 @@ def _points_for(row, sessions):
     return out, running
 
 
+def _parse_ruled_page(page, pno):
+    """PACCA-style ruled grid -> (title, title_year, sessions, [(row, points)]).
+
+    Returns None if the page is not such a grid (the IMSA path handles it
+    instead). One page is one championship: a header block of event / date /
+    "Round N" / sub-label rows over the points columns, then one row per
+    competitor. Driver pages split each round into FLQ+Race+FL; the team page
+    has one column per round.
+    """
+    tables = page.find_tables()
+    if not tables:
+        return None
+    data = tables[0].extract()
+    if not data or not data[0]:
+        return None
+    header = [" ".join((c or "").split()) for c in data[0]]
+    if header[0] != "Pos." or "Total" not in header:
+        return None
+    total_idx = header.index("Total")
+    name_idx = next((i for i, h in enumerate(header[:total_idx])
+                     if h.upper() in ("DRIVER", "TEAM")), None)
+    if name_idx is None:
+        return None
+    is_team_sheet = header[name_idx].upper() == "TEAM"
+
+    title = (page.extract_text() or "").split("\n")[0].strip()
+    ym = re.match(r"(20\d\d)\b", title)
+    title_year = ym.group(1) if ym else None
+
+    # Header rows: the "Round N" row anchors everything; a row of FLQ/Race/FL
+    # sub-labels directly under it is present on driver pages, absent on the
+    # team page (where each round is a single Race column).
+    def norm(row, i):
+        return " ".join((row[i] or "").split()) if i < len(row) else ""
+
+    round_ri = next((ri for ri, row in enumerate(data)
+                     if any(re.fullmatch(r"Round \d+", norm(row, i))
+                            for i in range(total_idx + 1, len(header)))), None)
+    if round_ri is None:
+        return None
+    sub = data[round_ri + 1] if round_ri + 1 < len(data) else []
+    has_sub = any(norm(sub, i) in PACCA_BUCKETS for i in range(total_idx + 1, len(header)))
+
+    # Event names span their round columns; forward-fill from the span starts.
+    event = None
+    rounds = []  # [{name, event, cols: [(bucket, col_index), ...]}]
+    for i in range(total_idx + 1, len(header)):
+        if norm(data[0], i):
+            event = norm(data[0], i)
+        label = norm(data[round_ri], i)
+        if re.fullmatch(r"Round \d+", label):
+            rounds.append({"name": label, "event": event, "cols": []})
+        if not rounds:
+            continue
+        sub_label = norm(sub, i) if has_sub else "Race"
+        if sub_label not in PACCA_BUCKETS:
+            raise ValueError(f"page {pno}: unknown sub-column {sub_label!r} under {rounds[-1]['name']}")
+        rounds[-1]["cols"].append((PACCA_BUCKETS[sub_label], i))
+
+    sessions = [{"session_index": n, "event_name": r["event"], "session_name": r["name"],
+                 } for n, r in enumerate(rounds, 1)]
+
+    out = []
+    prev_pos = prev_total = None
+    for raw in data[round_ri + (2 if has_sub else 1):]:
+        cells = [" ".join((c or "").split()) for c in raw]
+        name = cells[name_idx] if name_idx < len(cells) else ""
+        total_raw = cells[total_idx] if total_idx < len(cells) else ""
+        if not name or not _PACCA_NUM_RE.match(total_raw):
+            continue
+        total = _pacca_num(total_raw)
+
+        # Tied competitors share one merged position cell, whose glyph can land
+        # on any of its rows (or between two rulings and on none). Numbering is
+        # dense — the sheet prints 14, 14, 15 — so a blank cell is the previous
+        # row's position on equal points and the next position otherwise.
+        pos_raw = cells[0]
+        if pos_raw.isdigit():
+            position = int(pos_raw)
+        elif prev_pos is not None:
+            position = prev_pos if total == prev_total else prev_pos + 1
+        else:
+            raise ValueError(f"page {pno}: first row {name!r} has no printed position")
+        prev_pos, prev_total = position, total
+
+        points = []
+        running = 0.0
+        for n, r in enumerate(rounds, 1):
+            vals = {"race": 0.0, "pole": 0.0, "fastest_lap": 0.0}
+            status = ""
+            for bucket, col in r["cols"]:
+                v = cells[col] if col < len(cells) else ""
+                if not v:
+                    continue
+                if _PACCA_NUM_RE.match(v):
+                    vals[bucket] += _pacca_num(v)
+                elif v in PACCA_SENTINEL_STATUS:
+                    # The Race cell carries the session's fate; a '-' in a bonus
+                    # column is just an empty cell.
+                    if bucket == "race":
+                        status = PACCA_SENTINEL_STATUS[v]
+                else:
+                    raise ValueError(f"page {pno}: unreadable cell {v!r} in {r['name']!r} for {name!r}")
+            round_total = sum(vals.values())
+            running += round_total
+            points.append({
+                "session_index": n,
+                "total_points": _emit(round_total),
+                "race_points": _emit(vals["race"]),
+                "bonus_points": 0,
+                "pole_points": _emit(vals["pole"]),
+                "fastest_lap_points": _emit(vals["fastest_lap"]),
+                "penalty_points": 0,
+                "status": status,
+            })
+        if abs(running - total) > 1e-6:
+            raise ValueError(
+                f"page {pno}: {title} #{position} {name!r} "
+                f"cells sum to {_emit(running)} but the sheet prints {_emit(total)}"
+            )
+
+        # The team sheet has no car-number column, so the team's own name is the
+        # key; its trailing '#' is the entry list's Dealer Trophy marker, not
+        # part of the name. Driver pages key on the driver, like the IMSA sheet.
+        name = re.sub(r"\s*#$", "", name)
+        out.append(({
+            "position": position,
+            "car_number": None,
+            "name": name,
+            "total": _emit(total),
+            "key": name,
+            "team": name if is_team_sheet else "",
+        }, points))
+    return title, title_year, sessions, out
+
+
 def _year_of(pdf, override):
     if override:
         return str(override)
@@ -327,6 +501,18 @@ def parse(path: Path, year: int | None = None) -> dict:
     pdf = pdfplumber.open(path)
     by_title = {}
     for pno, page in enumerate(pdf.pages, 1):
+        ruled = _parse_ruled_page(page, pno)
+        if ruled is not None:
+            title, title_year, sessions, rows = ruled
+            if not title:
+                continue
+            entry = by_title.setdefault(
+                title, {"sessions": sessions, "rows": [], "year": title_year})
+            if [s["session_name"] for s in entry["sessions"]] != [s["session_name"] for s in sessions]:
+                raise ValueError(f"page {pno}: column layout differs from earlier {title!r} page")
+            entry["rows"].extend(rows)
+            continue
+
         cols = _columns(page)
         if not cols:
             continue  # not a standings grid
@@ -354,9 +540,13 @@ def parse(path: Path, year: int | None = None) -> dict:
         for row, points in entry["rows"]:
             # Match how the standings JSON keys rows: a Teams sheet keys on the
             # car number and carries the team as the name; a Drivers sheet keys
-            # on the driver's name and leaves the name blank.
-            key = row["car_number"] if row["car_number"] else row["name"]
-            team = row["name"] if row["car_number"] else ""
+            # on the driver's name and leaves the name blank. The ruled path
+            # precomputes both (its team sheet has no car-number column).
+            if "key" in row:
+                key, team = row["key"], row["team"]
+            else:
+                key = row["car_number"] if row["car_number"] else row["name"]
+                team = row["name"] if row["car_number"] else ""
             classification.append({
                 "position": row["position"],
                 "key": key,
@@ -371,7 +561,9 @@ def parse(path: Path, year: int | None = None) -> dict:
                 "name": title,
                 "main_title": title,
                 "sub_title": "",
-                "year": _year_of(pdf, year),
+                # A PACCA title leads with its season ("2026 Porsche ..."),
+                # which beats guessing from the PDF's creation date.
+                "year": str(year) if year else entry.get("year") or _year_of(pdf, None),
                 "sessions": [
                     {k: s[k] for k in ("session_index", "event_name", "session_name")}
                     for s in entry["sessions"]
