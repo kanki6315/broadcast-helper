@@ -1,0 +1,228 @@
+/* ⌘K search palette — same instrument-panel material as the driver modal. */
+
+.sp {
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow-modal);
+  width: min(560px, calc(100vw - 32px));
+  /* Top-anchored like every command palette — results grow downward. */
+  margin: 12vh auto auto;
+}
+
+.sp::backdrop {
+  background: oklch(10% 0.01 277 / 52%);
+}
+
+.sp[open] {
+  animation: sp-in var(--t-med) var(--ease-out);
+}
+
+.sp[open]::backdrop {
+  animation: sp-fade var(--t-med) var(--ease-out);
+}
+
+@keyframes sp-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.99);
+  }
+}
+
+@keyframes sp-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sp[open],
+  .sp[open]::backdrop {
+    animation: none;
+  }
+}
+
+.sp-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sp-icon {
+  color: var(--text-muted);
+  flex: none;
+}
+
+.sp-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  font-size: var(--text-base);
+  color: var(--ink);
+  padding: 2px 0;
+}
+
+/* The palette frame IS the focus context; a ring around the bare input would
+ * double-border the top row. */
+.sp-input:focus,
+.sp-input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.sp-kbd,
+.sp-hints kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 5px;
+  line-height: 1.6;
+}
+
+.sp-results {
+  max-height: min(340px, 48vh);
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.sp-hint-empty {
+  margin: 0;
+  padding: var(--space-4) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.sp-skel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2);
+}
+
+/* Group headers: caption-sized, sentence case — never a tracked eyebrow. */
+.sp-group {
+  margin: 0;
+  padding: var(--space-2) 10px 2px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.sp-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Selection is amber (the Selection-Is-Amber rule) — a tint wash, and roving
+ * focus stays on the input so no double ring. */
+.sp-item.active {
+  background: var(--accent-tint);
+}
+
+.sp-flag {
+  flex: none;
+  width: 15px;
+  border-radius: 2px;
+  /* background-COLOR, not the shorthand: the shorthand would erase the
+   * flag-icons background-image. An unknown nationality (or a team row)
+   * keeps the neutral slot so names align down the list. */
+  background-color: var(--surface-2);
+}
+
+.sp-name {
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  flex: none;
+}
+
+.sp-rating {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.sp-ctx {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.sp-ctx .sp-car {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.sp-hints {
+  display: flex;
+  gap: var(--space-4);
+  padding: 6px 14px;
+  border-top: 1px solid var(--border);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.sp-hints span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* -- topbar trigger (lives in App chrome, styled here with the palette) ------ */
+
+.search-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 5px 10px;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    color var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out);
+}
+
+.search-trigger:hover {
+  color: var(--ink);
+  border-color: var(--border-strong);
+}
+
+.search-trigger .sp-kbd {
+  background: var(--bg);
+}
+
+@media (max-width: 640px) {
+  .search-trigger .search-trigger-label,
+  .search-trigger .sp-kbd {
+    display: none;
+  }
+}

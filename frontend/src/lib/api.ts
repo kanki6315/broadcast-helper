@@ -226,6 +226,121 @@ export interface ReferenceTable {
   classes: RefClass[]
 }
 
+/* -- driver profile ------------------------------------------------------- */
+
+export interface DriverSearchHit {
+  id: number
+  name: string
+  country: string | null
+  rating: string | null
+  carNumber: string | null
+  teamName: string | null
+  className: string | null
+  year: number | null
+  seriesName: string | null
+}
+
+export interface DriverChampMatrix {
+  championshipId: number
+  title: string
+  className: string | null
+  seriesName: string
+  year: number
+  seasonId: number
+  position: number
+  totalPoints: number
+  carNumber: string | null
+  teamName: string | null
+  rounds: RecapRound[]
+  cells: Record<number, RecapRace[]>
+  pointsByRound: Record<number, number>
+}
+
+export interface DriverProfile {
+  id: number
+  name: string
+  country: string | null
+  hometown: string | null
+  dateOfBirth: string | null
+  placeOfBirth: string | null
+  pronunciation: string | null
+  notes: string | null
+  photoVersion: number | null
+  rating: string | null
+  carNumber: string | null
+  teamName: string | null
+  className: string | null
+  year: number | null
+  seriesName: string | null
+  championships: DriverChampMatrix[]
+}
+
+/* -- team profile ----------------------------------------------------------- */
+
+export interface TeamSearchHit {
+  teamName: string
+  carNumbers: string | null
+  classNames: string | null
+  year: number | null
+  seriesName: string | null
+}
+
+export interface SearchResults {
+  drivers: DriverSearchHit[]
+  teams: TeamSearchHit[]
+}
+
+export interface TeamRosterDriver {
+  driverId: number | null
+  name: string
+  rating: string | null
+  isTbd: boolean
+}
+
+export interface TeamRosterCar {
+  entryId: number
+  carNumber: string
+  className: string
+  classColor: string
+  vehicle: string | null
+  imageVersion: number | null
+  drivers: TeamRosterDriver[]
+}
+
+export interface TeamRosterSeason {
+  seasonId: number
+  year: number
+  seriesName: string
+  eventName: string
+  cars: TeamRosterCar[]
+}
+
+export interface TeamChampEntry {
+  carNumber: string
+  position: number
+  totalPoints: number
+  cells: Record<number, RecapRace[]>
+  pointsByRound: Record<number, number>
+}
+
+export interface TeamChampMatrix {
+  championshipId: number
+  title: string
+  className: string | null
+  seriesName: string
+  year: number
+  seasonId: number
+  rounds: RecapRound[]
+  entries: TeamChampEntry[]
+}
+
+export interface TeamProfile {
+  name: string
+  notes: string | null
+  roster: TeamRosterSeason[]
+  championships: TeamChampMatrix[]
+}
+
 export async function getJson<T>(url: string): Promise<T> {
   const r = await fetch(url)
   if (!r.ok) throw new Error(`Backend returned ${r.status}`)

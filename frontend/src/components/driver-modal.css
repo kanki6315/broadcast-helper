@@ -1,0 +1,644 @@
+/* Driver info modal — token layer (index.css), recap result vocabulary
+ * (season.css .race-line). Native <dialog>, so no z-index management. */
+
+.dm {
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow-modal);
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(88vh, calc(100vh - 32px));
+}
+
+.dm::backdrop {
+  background: oklch(10% 0.01 277 / 52%);
+}
+
+.dm[open] {
+  animation: dm-in var(--t-med) var(--ease-out);
+}
+
+.dm[open]::backdrop {
+  animation: dm-fade var(--t-med) var(--ease-out);
+}
+
+@keyframes dm-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+@keyframes dm-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* index.css's reduced-motion kill switch doesn't reach ::backdrop. */
+@media (prefers-reduced-motion: reduce) {
+  .dm[open],
+  .dm[open]::backdrop {
+    animation: none;
+  }
+}
+
+.dm-body {
+  display: flex;
+  flex-direction: column;
+  max-height: inherit;
+}
+
+.dm-pad {
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.dm-pad-x {
+  padding: 0 var(--space-5);
+}
+
+/* -- header ---------------------------------------------------------------- */
+
+.dm-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-5) var(--space-4);
+}
+
+.dm-photo {
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  flex: none;
+}
+
+.dm-id {
+  flex: 1;
+  min-width: 0;
+}
+
+.dm-name {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.dm-name .fi {
+  font-size: var(--text-base);
+  border-radius: 2px;
+  flex: none;
+}
+
+/* Rating is data (identity), not selection — quiet bordered mark, no amber. */
+.dm-rating {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-muted);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 0 5px;
+  line-height: 1.5;
+  flex: none;
+}
+
+.dm-pron {
+  margin: 2px 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.dm-seat {
+  margin: 4px 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Car numbers anywhere in the modal: mono, bold, tabular (the Tabular Rule). */
+.dm-car {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.dm-close {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--text-base);
+  line-height: 1;
+  padding: var(--space-2);
+  margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) 0 0;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+.dm-close:hover {
+  color: var(--ink);
+  background: var(--surface);
+}
+
+/* -- bio strip --------------------------------------------------------------- */
+
+.dm-bio {
+  padding: 0 var(--space-5) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.dm-bio-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.dm-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  margin: 0;
+  flex: 1;
+}
+
+.dm-fact dt {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.dm-fact dd {
+  margin: 1px 0 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.dm-edit {
+  flex: none;
+}
+
+.dm-quiet {
+  margin: var(--space-2) 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* -- bio edit form ------------------------------------------------------------- */
+
+.dm-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3) var(--space-4);
+}
+
+.dm-form label > span,
+.dm-form-photo > span {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.dm-form input[type='text'],
+.dm-form input[type='date'] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text);
+}
+
+.dm-form-photo {
+  grid-column: 1 / -1;
+}
+
+.dm-form-photo-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.dm-file {
+  position: relative;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.dm-file input[type='file'] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.dm-form-hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.dm-form-error {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.dm-form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+/* -- scrolling content (championships + notes) --------------------------------- */
+
+.dm-scroll {
+  overflow-y: auto;
+  padding: var(--space-4) 0 var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* -- championship matrix --------------------------------------------------------- */
+
+.dm-champ {
+  padding: 0 var(--space-5);
+}
+
+.dm-champ-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.dm-champ-head h3 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-champ-pos {
+  flex: none;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.dm-champ-pos b {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.dm-matrix-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.dm-matrix {
+  width: auto;
+  min-width: 100%;
+  margin: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.dm-matrix th,
+.dm-matrix td {
+  box-sizing: border-box;
+  padding: 3px 8px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.dm-matrix tbody tr:last-child th,
+.dm-matrix tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.dm-matrix thead th {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-strong);
+  line-height: 1.15;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  min-width: 64px;
+}
+
+.dm-matrix thead th .venue {
+  display: block;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: var(--text-xs);
+  color: var(--text);
+}
+
+.dm-matrix thead th .rd {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* Row labels pin to the scrollport so "Result"/"Pts" survive a scroll. */
+.dm-matrix .dm-mx-rowhead {
+  position: sticky;
+  left: 0;
+  text-align: left;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg);
+  min-width: 56px;
+}
+
+.dm-matrix thead .dm-mx-rowhead {
+  background: var(--surface);
+}
+
+.dm-mx-cell {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  padding: 2px 6px;
+}
+
+.dm-mx-pts {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+/* -- team roster (current cars & crews) ------------------------------------------ */
+
+.dm-roster {
+  padding: 0 var(--space-5);
+}
+
+/* First content block in the team modal sits directly under the header. */
+.dm-scroll-team {
+  padding-top: var(--space-2);
+}
+
+.dm-roster-head {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.dm-roster-asof {
+  font-weight: 400;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.dm-roster-car {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+.dm-roster-car:last-child {
+  border-bottom: 1px solid var(--border);
+}
+
+.dm-roster-livery {
+  height: 30px;
+  width: 64px;
+  object-fit: contain;
+  flex: none;
+}
+
+.dm-roster-no {
+  min-width: 2.6em;
+  text-align: right;
+  flex: none;
+}
+
+.dm-roster-car .class-tag {
+  flex: none;
+}
+
+.dm-roster-crew {
+  flex: 1;
+  min-width: 0;
+}
+
+.dm-roster-rating {
+  color: var(--text-muted);
+}
+
+.dm-roster-vehicle {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+/* -- team matrix: per-car row labels ------------------------------------------------ */
+
+.dm-mx-carhead .dm-car {
+  display: block;
+  font-size: var(--text-sm);
+  line-height: 1.2;
+}
+
+.dm-mx-standing {
+  display: block;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+
+/* The Pts row belongs to the car above it — pull it tight and let the border
+ * below separate car groups. */
+.dm-mx-ptsrow .dm-mx-rowhead,
+.dm-mx-ptsrow .dm-mx-pts {
+  padding-top: 0;
+}
+
+/* -- notes -------------------------------------------------------------------------- */
+
+.dm-notes {
+  padding: 0 var(--space-5);
+}
+
+.dm-notes-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.dm-notes-head h3 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+  flex: 1;
+}
+
+.dm-notes-status {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity var(--t-med) var(--ease-out);
+}
+
+.dm-notes-status.show {
+  opacity: 1;
+}
+
+.dm-notes-status.error {
+  color: var(--error);
+}
+
+.dm-notes textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 96px;
+  resize: vertical;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+/* -- skeleton ------------------------------------------------------------------------- */
+
+.dm-skel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  margin-bottom: var(--space-2);
+}
+
+.dm-skel-photo {
+  width: 84px;
+  height: 84px;
+  flex: none;
+}
+
+.dm-skel-name {
+  height: 1.5rem;
+  flex: 1;
+}
+
+.dm-pad > .skeleton {
+  width: 100%;
+}
+
+.dm-pad > .dm-skel-wide {
+  height: 4rem;
+}
+
+/* -- shared: driver-name link in tables ------------------------------------------------ */
+
+/* A driver name that opens the modal. Inherits the cell's type; underline on
+ * hover keeps the affordance in the app's link grammar without turning data
+ * tables amber. */
+.drv-link {
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: inherit;
+  border-radius: var(--radius-sm);
+}
+
+.drv-link:hover {
+  text-decoration: underline;
+  color: var(--accent-ink);
+}
+
+/* -- narrow screens ---------------------------------------------------------------------- */
+
+@media (max-width: 560px) {
+  .dm {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .dm-head {
+    padding: var(--space-4) var(--space-4) var(--space-3);
+  }
+
+  .dm-photo {
+    width: 64px;
+    height: 64px;
+  }
+
+  .dm-bio,
+  .dm-champ,
+  .dm-notes {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+
+  .dm-facts {
+    gap: var(--space-2) var(--space-4);
+  }
+
+  .dm-form {
+    grid-template-columns: 1fr;
+  }
+
+  .dm-bio-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

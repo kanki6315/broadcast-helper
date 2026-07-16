@@ -7,8 +7,42 @@ import {
   type ResultRow,
   type SessionResults,
 } from '../../lib/api'
+import { useInfoModal } from '../../components/infoModal'
 import { useSeason } from './SeasonLayout'
 import { venueOf } from './venue'
+
+function TeamLink({ name }: { name: string | null }) {
+  const { openTeam } = useInfoModal()
+  if (!name) return null
+  return (
+    <button type="button" className="drv-link" onClick={() => openTeam(name)}>
+      {name}
+    </button>
+  )
+}
+
+/** The backend joins crew names with ", " — split them back into modal links.
+ * TBD seats stay plain text. */
+function DriverLinks({ names }: { names: string | null }) {
+  const { openDriverByName } = useInfoModal()
+  if (!names) return null
+  return (
+    <>
+      {names.split(', ').map((name, i) => (
+        <span key={`${name}-${i}`}>
+          {i > 0 && ', '}
+          {name === 'TBD' ? (
+            name
+          ) : (
+            <button type="button" className="drv-link" onClick={() => openDriverByName(name)}>
+              {name}
+            </button>
+          )}
+        </span>
+      ))}
+    </>
+  )
+}
 
 function ClassCell({ className }: { className: string | null }) {
   const { classColor } = useSeason()
@@ -62,10 +96,10 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
               <ClassCell className={r.className} />
               <td className="car-no">{r.carNumber}</td>
               <td className="name-cell" title={r.teamName ?? undefined}>
-                {r.teamName}
+                <TeamLink name={r.teamName} />
               </td>
               <td className="name-cell soak" style={{ maxWidth: 320 }} title={r.drivers ?? undefined}>
-                {r.drivers}
+                <DriverLinks names={r.drivers} />
               </td>
               <td className="name-cell" style={{ maxWidth: 200 }} title={r.vehicle ?? undefined}>
                 {r.vehicle}
@@ -121,7 +155,7 @@ function GridTable({ rows }: { rows: GridRow[] }) {
               <ClassCell className={r.className} />
               <td className="car-no">{r.carNumber}</td>
               <td className="name-cell soak" title={r.teamName ?? undefined}>
-                {r.teamName}
+                <TeamLink name={r.teamName} />
               </td>
               {hasTimes && <td className="num-cell">{r.qualifyingTime ?? ''}</td>}
             </tr>
