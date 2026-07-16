@@ -44,18 +44,16 @@ export function finishText(r: FormRace): string {
   return '·'
 }
 
-// Colour bracket for the finish position (see .pos-* in sheet.css): gold/silver/
-// bronze for the podium, then widening bands, black for any non-result.
-export function finishBucket(r: FormRace): string {
-  if (isNonResult(r)) return 'pos-out'
+// Result tier for a race cell — the app-wide .race-line vocabulary (the
+// --res-* tokens): win / top-3 / top-5 tints, plain for anything else
+// classified, and the inverted DNF chip for any non-result.
+export function finishTier(r: FormRace): string {
+  if (isNonResult(r)) return 'res-dnf'
   const p = r.finish as number
-  if (p === 1) return 'pos-p1'
-  if (p === 2) return 'pos-p2'
-  if (p === 3) return 'pos-p3'
-  if (p <= 5) return 'pos-p4'
-  if (p <= 10) return 'pos-p6'
-  if (p <= 20) return 'pos-p11'
-  return 'pos-p21'
+  if (p === 1) return 'res-win'
+  if (p <= 3) return 'res-top3'
+  if (p <= 5) return 'res-top5'
+  return ''
 }
 
 // One race's cell text: start → finish (in class). Start is absent when no grid

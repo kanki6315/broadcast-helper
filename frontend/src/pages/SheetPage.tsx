@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react'
 import 'flag-icons/css/flag-icons.min.css'
 import './sheet.css'
 import { flagCode } from '../lib/countries'
-import { finishBucket, finishText, type FormRace } from '../lib/raceForm'
+import { finishText, finishTier, statusAbbr, type FormRace } from '../lib/raceForm'
 import TeamSheetsModal, { prefetchTeamSheets } from '../components/TeamSheetsModal'
 
 interface SheetDriver {
@@ -36,14 +36,6 @@ interface SheetClass {
   entries: SheetEntry[]
 }
 
-/** Light translucent tint of the class colour, for zebra rows. */
-function tint(hex: string, alpha: number): string {
-  const h = hex.replace('#', '')
-  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
-  const n = parseInt(full, 16)
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`
-}
-
 interface FormRound {
   ordinal: number
   venue: string
@@ -65,12 +57,50 @@ interface Sheet {
   classes: SheetClass[]
 }
 
+/** One race in the form strip, in the recap's .race-line vocabulary. */
+function StripRace({ race, showLabel }: { race: FormRace; showLabel: boolean }) {
+  const abbr = statusAbbr(race.status)
+  // DNS and not-yet-run races are quiet marks, same as the recap — the loud
+  // inverted chip is reserved for retirements/disqualifications.
+  const quiet = abbr === 'DNS' || (race.finish == null && abbr === '')
+  const start =
+    race.start == null ? null : race.start === 1 ? (
+      <span className="pole" title="Started from pole">
+        P
+      </span>
+    ) : (
+      race.start
+    )
+  return (
+    <span className="form-race">
+      {showLabel && <span className="form-race-label">R{race.raceOrdinal}</span>}
+      {quiet ? (
+        <span className="race-line muted">{finishText(race)}</span>
+      ) : (
+        <span className={`race-line ${finishTier(race)}`.trim()}>
+          {start != null ? (
+            <>
+              {start}/{finishText(race)}
+            </>
+          ) : (
+            finishText(race)
+          )}
+        </span>
+      )}
+    </span>
+  )
+}
+
 export default function SheetPage({ eventId }: { eventId: number }) {
   const [sheet, setSheet] = useState<Sheet | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [teamSheet, setTeamSheet] = useState<{ page: number; title: string } | null>(null)
 
   useEffect(() => {
+    // Reset before fetching: a stale error (or sheet) from a previous eventId
+    // must not outlive the navigation that replaced it.
+    setSheet(null)
+    setError(null)
     void fetch(`/api/events/${eventId}/sheet`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Backend returned ${r.status}`))))
       .then(setSheet)
@@ -107,27 +137,65 @@ export default function SheetPage({ eventId }: { eventId: number }) {
     })
   }
 
-  if (error) return <p className="error">{error}</p>
-  if (!sheet) return <p>Loading…</p>
+  if (error) {
+    return (
+      <div className="sheet">
+        <div className="error-panel">{error}</div>
+      </div>
+    )
+  }
+  if (!sheet) {
+    return (
+      <div className="sheet">
+        <div className="skeleton-block" aria-label="Loading sheet">
+          <span className="skeleton" />
+          <span className="skeleton" />
+          <span className="skeleton" />
+          <span className="skeleton" />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="sheet">
-      <div className="sheet-toolbar no-print">
-        <span>
-          Prior-year cells are editable — click, type, and they save automatically. Print with the
-          button (choose “Save as PDF”).
+      <div className="sheet-topbar no-print">
+        <a className="sheet-back" href={`#/events/${eventId}`}>
+          ← Event
+        </a>
+        <span className="sheet-hint">
+          Prior-year cells are editable — click, type, and they save automatically.
         </span>
-        <button onClick={() => window.print()}>Print / Save PDF</button>
+        <button className="btn" onClick={() => window.print()}>
+          Print / Save PDF
+        </button>
       </div>
 
-      <header className="sheet-header">
+      <header className="sheet-head">
         <h1>{sheet.eventName}</h1>
-        <p>
+        <p className="sheet-meta">
           {sheet.seriesName} {sheet.year}
-          {sheet.roundOrdinal && <> — Round {sheet.roundOrdinal}</>}
-          {sheet.circuitName && <> — {sheet.circuitName}</>}
-          {sheet.eventDate && <> — {sheet.eventDate}</>}
+          {sheet.roundOrdinal != null && <> · Round {sheet.roundOrdinal}</>}
+          {sheet.circuitName && <> · {sheet.circuitName}</>}
+          {sheet.eventDate && <> · {sheet.eventDate}</>}
         </p>
+        <div className="legend sheet-legend no-print" aria-label="Form strip colours">
+          <span className="l-win">
+            <i /> Win
+          </span>
+          <span className="l-top3">
+            <i /> Top 3
+          </span>
+          <span className="l-top5">
+            <i /> Top 5
+          </span>
+          <span className="l-dnf">
+            <i /> DNF
+          </span>
+          <span className="l-note">start/finish in class</span>
+          <span className="l-pole">P = pole</span>
+          <span>· = no result</span>
+        </div>
       </header>
 
       {sheet.classes.map((cls) => {
@@ -137,137 +205,148 @@ export default function SheetPage({ eventId }: { eventId: number }) {
           cls.entries.some((e) => (e.form[rnd.ordinal] ?? []).length > 0),
         )
         return (
-        <section
-          key={cls.className}
-          className="sheet-class"
-          data-class={cls.className}
-          style={
-            {
-              '--class-color': cls.color,
-              '--class-tint': tint(cls.color, 0.07),
-            } as CSSProperties
-          }
-        >
-          <h2>{cls.className}</h2>
-          <table>
-            <thead>
-              <tr>
-                <th className="col-num">#</th>
-                <th className="col-team">Team</th>
-                <th className="col-mfr">Mfr</th>
-                <th className="col-drivers">Drivers</th>
-                <th className="col-q">Start Pos</th>
-                <th className="col-prior">{sheet.priorYearLabel}</th>
-                <th className="col-champ">{sheet.year} Champ</th>
-                <th className="col-photo"></th>
-              </tr>
-            </thead>
-            {/* One tbody per entry: keeps the main row and its form strip
-                zebra-tinted and page-broken as a unit. */}
-            {cls.entries.map((e) => (
-              <tbody
-                key={e.entryId}
-                className={teamSheetsUrl && e.teamSheetPage != null ? 'row-linked' : undefined}
-                title={teamSheetsUrl && e.teamSheetPage != null ? 'Open team sheets' : undefined}
-                onClick={(ev) => openTeamSheet(ev, e)}
-              >
-                <tr>
-                  <td className="col-num">{e.carNumber}</td>
-                  <td className="col-team">
-                    {e.teamName}
-                    {e.isGuest && <span className="sheet-badge">GUEST</span>}
-                  </td>
-                  <td className="col-mfr">
-                    {e.manufacturerLogoVersion != null ? (
-                      <img
-                        className="sheet-mfr-logo"
-                        src={`/api/manufacturer-logos/${encodeURIComponent(
-                          (e.manufacturer ?? '').toLowerCase(),
-                        )}/data?v=${e.manufacturerLogoVersion}`}
-                        alt={e.manufacturer ?? ''}
-                      />
-                    ) : (
-                      e.manufacturer && <span className="sheet-mfr-name">{e.manufacturer}</span>
-                    )}
-                  </td>
-                  <td className="col-drivers">
-                    {e.drivers.map((d, i) => {
-                      const flag = flagCode(d.nationality)
-                      return (
-                        <div key={i} className="sheet-driver">
-                          {flag && <span className={`fi fi-${flag}`} title={d.nationality ?? ''} />}
-                          <span>
-                            {d.rating ? `(${d.rating}) ` : d.isTbd ? '(?) ' : ''}
-                            {d.name}
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </td>
-                  <td className="col-q">{e.qualifying}</td>
-                  <td
-                    className={e.priorYearAuto ? 'col-prior editable prior-auto' : 'col-prior editable'}
-                    title={e.priorYearAuto ? 'Auto from last year (same car & team) — click to override' : undefined}
-                    contentEditable
-                    suppressContentEditableWarning
-                    onBlur={(ev) =>
-                      saveNote(e.entryId, ev.currentTarget.textContent ?? '', e.priorYearNote ?? '')
-                    }
-                  >
-                    {e.priorYearNote}
-                  </td>
-                  <td className="col-champ">{e.championship}</td>
-                  <td className="col-photo">
-                    {e.imageVersion != null && (
-                      <img src={`/api/entries/${e.entryId}/image?variant=sheet&v=${e.imageVersion}`} alt="" />
-                    )}
-                  </td>
-                </tr>
-                {classRounds.length > 0 && Object.keys(e.form).length > 0 && (
-                  <tr className="form-row">
-                    <td colSpan={8}>
-                      <div
-                        className="form-strip"
-                        style={{ gridTemplateColumns: `repeat(${classRounds.length}, minmax(0, 1fr))` }}
-                      >
-                        {classRounds.map((rnd) => {
-                          const races = e.form[rnd.ordinal] ?? []
-                          return (
-                            <div key={rnd.ordinal} className="form-round">
-                              <div className="form-round-hd">
-                                R{rnd.ordinal} {rnd.venue}
-                              </div>
-                              <div className="form-round-val">
-                                {races.length === 0
-                                  ? '—'
-                                  : races.map((r) => (
-                                      <span key={r.raceOrdinal} className="form-race">
-                                        {rnd.raceCount > 1 && (
-                                          <span className="form-race-label">R{r.raceOrdinal}</span>
-                                        )}
-                                        {r.start != null && (
-                                          <>
-                                            <span className="form-start">{r.start}</span>
-                                            <span className="form-arrow">→</span>
-                                          </>
-                                        )}
-                                        <span className={`form-finish ${finishBucket(r)}`}>
-                                          {finishText(r)}
-                                        </span>
-                                      </span>
-                                    ))}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </td>
+          <section
+            key={cls.className}
+            className="sheet-class"
+            data-class={cls.className}
+            style={{ '--class-color': cls.color } as CSSProperties}
+          >
+            <h2 className="sheet-band">{cls.className}</h2>
+            <div className="sheet-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th className="col-num">#</th>
+                    <th className="col-team">Team</th>
+                    <th className="col-mfr">Mfr</th>
+                    <th className="col-drivers">Drivers</th>
+                    <th className="col-q">Start</th>
+                    <th className="col-prior">{sheet.priorYearLabel}</th>
+                    <th className="col-champ">{sheet.year} champ</th>
+                    <th className="col-photo"></th>
                   </tr>
-                )}
-              </tbody>
-            ))}
-          </table>
-        </section>
+                </thead>
+                {/* One tbody per entry: keeps the main row and its form strip
+                    zebra-tinted and page-broken as a unit. */}
+                {cls.entries.map((e) => {
+                  const linked = teamSheetsUrl != null && e.teamSheetPage != null
+                  return (
+                    <tbody
+                      key={e.entryId}
+                      className={linked ? 'row-linked' : undefined}
+                      title={linked ? 'Open team sheets' : undefined}
+                      onClick={(ev) => openTeamSheet(ev, e)}
+                    >
+                      <tr>
+                        <td className="col-num">
+                          {linked ? (
+                            // Activation bubbles to the row's onClick; the
+                            // button exists for keyboard reach and AT naming.
+                            <button
+                              type="button"
+                              className="sheet-carlink"
+                              aria-label={`Open team sheet for #${e.carNumber} ${e.teamName}`}
+                            >
+                              {e.carNumber}
+                            </button>
+                          ) : (
+                            e.carNumber
+                          )}
+                        </td>
+                        <td className="col-team">
+                          {e.teamName}
+                          {e.isGuest && <span className="badge">GUEST</span>}
+                        </td>
+                        <td className="col-mfr">
+                          {e.manufacturerLogoVersion != null ? (
+                            <img
+                              className="sheet-mfr-logo"
+                              src={`/api/manufacturer-logos/${encodeURIComponent(
+                                (e.manufacturer ?? '').toLowerCase(),
+                              )}/data?v=${e.manufacturerLogoVersion}`}
+                              alt={e.manufacturer ?? ''}
+                            />
+                          ) : (
+                            e.manufacturer && <span className="sheet-mfr-name">{e.manufacturer}</span>
+                          )}
+                        </td>
+                        <td className="col-drivers">
+                          {e.drivers.map((d, i) => {
+                            const flag = flagCode(d.nationality)
+                            return (
+                              <div key={i} className="sheet-driver">
+                                {flag && <span className={`fi fi-${flag}`} title={d.nationality ?? ''} />}
+                                <span>
+                                  {d.rating ? (
+                                    <span className="drv-rating">({d.rating}) </span>
+                                  ) : d.isTbd ? (
+                                    <span className="drv-rating">(?) </span>
+                                  ) : null}
+                                  {d.name}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </td>
+                        <td className="col-q">{e.qualifying}</td>
+                        <td
+                          className={e.priorYearAuto ? 'col-prior editable prior-auto' : 'col-prior editable'}
+                          title={e.priorYearAuto ? 'Auto from last year (same car & team) — click to override' : undefined}
+                          contentEditable
+                          suppressContentEditableWarning
+                          onBlur={(ev) =>
+                            saveNote(e.entryId, ev.currentTarget.textContent ?? '', e.priorYearNote ?? '')
+                          }
+                        >
+                          {e.priorYearNote}
+                        </td>
+                        <td className="col-champ">{e.championship}</td>
+                        <td className="col-photo">
+                          {e.imageVersion != null && (
+                            <img src={`/api/entries/${e.entryId}/image?variant=sheet&v=${e.imageVersion}`} alt="" />
+                          )}
+                        </td>
+                      </tr>
+                      {classRounds.length > 0 && Object.keys(e.form).length > 0 && (
+                        <tr className="form-row">
+                          <td colSpan={8}>
+                            <div
+                              className="form-strip"
+                              style={{ gridTemplateColumns: `repeat(${classRounds.length}, minmax(0, 1fr))` }}
+                            >
+                              {classRounds.map((rnd) => {
+                                const races = e.form[rnd.ordinal] ?? []
+                                return (
+                                  <div key={rnd.ordinal} className="form-round">
+                                    <div className="form-round-hd">
+                                      R{rnd.ordinal} {rnd.venue}
+                                    </div>
+                                    <div className="form-round-val">
+                                      {races.length === 0 ? (
+                                        <span className="race-line muted">—</span>
+                                      ) : (
+                                        races.map((r) => (
+                                          <StripRace
+                                            key={r.raceOrdinal}
+                                            race={r}
+                                            showLabel={rnd.raceCount > 1}
+                                          />
+                                        ))
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  )
+                })}
+              </table>
+            </div>
+          </section>
         )
       })}
 
