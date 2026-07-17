@@ -12,6 +12,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -48,6 +49,36 @@ class IRacingParserTest {
             assertNotNull(in, "missing season-sessions fixture");
             return mapper.readTree(in);
         }
+    }
+
+    @Test
+    void parsesTeamEntriesWithTheirCrewNotTheTeamName() throws IOException {
+        JsonNode root;
+        try (InputStream in = getClass()
+                .getResourceAsStream("/fixtures/iracing/subsession-longbeach-team-2025.json")) {
+            assertNotNull(in, "missing team-race fixture");
+            root = mapper.readTree(in);
+        }
+        RaceResultsImport race = IRacingParser.parseSessions(root).stream()
+                .filter(s -> "Race".equals(s.sessionType()))
+                .findFirst().orElseThrow();
+
+        // A team entry: the row's team is the team name; its drivers are the crew
+        // from driver_results, NOT the team name split into first/surname.
+        RaceResultsImport.Row winner = race.rows().get(0);
+        assertEquals("91", winner.number());
+        assertEquals("Porsche Coanda $91", winner.team());
+        assertEquals(2, winner.drivers().size());
+
+        List<String> crew = winner.drivers().stream()
+                .map(d -> (d.firstName() + " " + d.surname()).trim())
+                .toList();
+        assertEquals(List.of("Charlie Collins", "Elvis Rankin"), crew);
+        assertEquals("GB", winner.drivers().get(0).country());
+        assertEquals(1, winner.drivers().get(0).seatOrder());
+        assertEquals(2, winner.drivers().get(1).seatOrder());
+        // The bug this guards: the team name must never become a "driver".
+        assertNotEquals("$91", winner.drivers().get(0).surname());
     }
 
     @Test
