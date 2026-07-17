@@ -117,39 +117,68 @@ public class ImportService {
                 "league-" + leagueId + "-season-" + seasonId + "-standings.json");
     }
 
-    /** Outcome of a bulk season import: what was found, what staged, what didn't. */
-    public record SeasonImport(int roundsWithResults, int roundsStaged,
-                               List<BatchSummary> batches, List<RoundFailure> failures) {
+    /**
+     * Outcome of staging several subsessions at once (a whole season, or a
+     * hand-picked list). Resilient by design, so it reports both sides: how many
+     * were requested, how many staged, every batch produced, and each subsession
+     * that failed.
+     */
+    public record IRacingImport(int requested, int staged,
+                                List<BatchSummary> batches, List<Failure> failures) {
     }
 
-    public record RoundFailure(long subsessionId, String track, String reason) {
+    public record Failure(long subsessionId, String track, String reason) {
     }
 
     /**
      * Stages every round of a league season that has results, in schedule order.
-     * Each round is fetched and staged on its own — a round that fails (a missing
-     * result, a transient API error) is recorded and skipped, not fatal, so one
-     * bad round doesn't discard the rest. Staging only: nothing is committed, and
-     * a season's worth of rounds is a lot of batches to review, so this is for
+     * Staging only, and a season is a lot of batches to review, so this is for
      * when importing a whole season at once is genuinely wanted.
      */
-    public SeasonImport stageSeasonFromIRacing(long leagueId, long seasonId) {
+    public IRacingImport stageSeasonFromIRacing(long leagueId, long seasonId) {
         List<IRacingParser.LeagueRound> rounds = listSeasonRounds(leagueId, seasonId).stream()
                 .filter(IRacingParser.LeagueRound::hasResults)
                 .toList();
         List<BatchSummary> batches = new ArrayList<>();
-        List<RoundFailure> failures = new ArrayList<>();
+        List<Failure> failures = new ArrayList<>();
         int staged = 0;
         for (IRacingParser.LeagueRound round : rounds) {
-            try {
-                batches.addAll(stageFromIRacing(round.subsessionId()));
+            if (tryStage(round.subsessionId(), round.trackName(), batches, failures)) {
                 staged++;
-            } catch (RuntimeException e) {
-                String reason = e instanceof ResponseStatusException rse ? rse.getReason() : e.getMessage();
-                failures.add(new RoundFailure(round.subsessionId(), round.trackName(), reason));
             }
         }
-        return new SeasonImport(rounds.size(), staged, batches, failures);
+        return new IRacingImport(rounds.size(), staged, batches, failures);
+    }
+
+    /**
+     * Stages a hand-picked list of subsessions — the "these five races are my
+     * season" case, where the subsessions aren't a league-season enumeration.
+     * Same resilience as a bulk season import: one bad id doesn't sink the rest.
+     */
+    public IRacingImport stageSubsessionsFromIRacing(List<Long> subsessionIds) {
+        List<BatchSummary> batches = new ArrayList<>();
+        List<Failure> failures = new ArrayList<>();
+        int staged = 0;
+        for (Long id : subsessionIds) {
+            if (tryStage(id, null, batches, failures)) {
+                staged++;
+            }
+        }
+        return new IRacingImport(subsessionIds.size(), staged, batches, failures);
+    }
+
+    /** Stages one subsession, folding a failure into the report rather than
+     *  throwing — so a batch of imports survives a single bad one. */
+    private boolean tryStage(long subsessionId, String trackHint,
+                             List<BatchSummary> batches, List<Failure> failures) {
+        try {
+            batches.addAll(stageFromIRacing(subsessionId));
+            return true;
+        } catch (RuntimeException e) {
+            String reason = e instanceof ResponseStatusException rse ? rse.getReason() : e.getMessage();
+            failures.add(new Failure(subsessionId, trackHint, reason));
+            return false;
+        }
     }
 
     /** The season's display name from /league/seasons, for titling the standings.

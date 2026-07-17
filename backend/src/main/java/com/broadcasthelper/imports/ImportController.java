@@ -76,9 +76,23 @@ public class ImportController {
      *  to review at once. Resilient: a round that fails is reported, not fatal. */
     @PostMapping("/iracing/league/{leagueId}/season/{seasonId}/import")
     @ResponseStatus(HttpStatus.CREATED)
-    public ImportService.SeasonImport fetchIRacingSeason(
+    public ImportService.IRacingImport fetchIRacingSeason(
             @PathVariable long leagueId, @PathVariable long seasonId) {
         return imports.stageSeasonFromIRacing(leagueId, seasonId);
+    }
+
+    public record SubsessionIds(List<Long> subsessionIds) {
+    }
+
+    /** Stages a hand-picked list of subsessions (a season assembled by hand).
+     *  Resilient: a bad id is reported, not fatal. Needs credentials; 503 without. */
+    @PostMapping("/iracing/subsessions")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ImportService.IRacingImport fetchIRacingSubsessions(@RequestBody SubsessionIds body) {
+        if (body == null || body.subsessionIds() == null || body.subsessionIds().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No subsession ids given");
+        }
+        return imports.stageSubsessionsFromIRacing(body.subsessionIds());
     }
 
     @GetMapping
