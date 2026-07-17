@@ -81,6 +81,18 @@ public class ImportService {
                 "subsession-" + subsessionId + ".json");
     }
 
+    /**
+     * The rounds of a league season, so a caller can point at a season and import
+     * a round by its subsession id (via {@link #stageFromIRacing}) without knowing
+     * ids up front. Read-only — this stages nothing.
+     */
+    public List<IRacingParser.LeagueRound> listSeasonRounds(long leagueId, long seasonId) {
+        JsonNode payload = iracing.get("/league/season_sessions", java.util.Map.of(
+                "league_id", String.valueOf(leagueId),
+                "season_id", String.valueOf(seasonId)));
+        return IRacingParser.parseSeasonRounds(payload);
+    }
+
     private List<BatchSummary> persist(List<Staged> staged, ImportFormat format, String filename) {
         List<BatchSummary> out = new ArrayList<>();
         for (Staged s : staged) {

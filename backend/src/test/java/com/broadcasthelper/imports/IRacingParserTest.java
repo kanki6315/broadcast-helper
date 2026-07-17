@@ -42,6 +42,39 @@ class IRacingParserTest {
                 .orElseThrow(() -> new AssertionError("no session named " + name));
     }
 
+    private JsonNode seasonSessionsFixture() throws IOException {
+        try (InputStream in = getClass()
+                .getResourceAsStream("/fixtures/iracing/league-season-sessions-6004-114713.json")) {
+            assertNotNull(in, "missing season-sessions fixture");
+            return mapper.readTree(in);
+        }
+    }
+
+    @Test
+    void parsesLeagueSeasonRoundsOldestFirst() throws IOException {
+        List<IRacingParser.LeagueRound> rounds =
+                IRacingParser.parseSeasonRounds(seasonSessionsFixture());
+
+        assertEquals(7, rounds.size());
+
+        // Oldest first: the 2025 Porsche Esports Supercup opened at Daytona — the
+        // very subsession the fetch path is proven against.
+        IRacingParser.LeagueRound opener = rounds.get(0);
+        assertEquals(74553295L, opener.subsessionId());
+        assertEquals("Daytona International Speedway", opener.trackName());
+        assertTrue(opener.hasResults());
+        assertEquals(2025, opener.launchAt().getYear());
+
+        // Strictly ascending by launch time — the schedule order a broadcaster reads.
+        for (int i = 1; i < rounds.size(); i++) {
+            assertTrue(!rounds.get(i).launchAt().isBefore(rounds.get(i - 1).launchAt()),
+                    "rounds must be oldest-first");
+        }
+
+        // Every round here has been run, so each subsession id is importable.
+        assertTrue(rounds.stream().allMatch(IRacingParser.LeagueRound::hasResults));
+    }
+
     @Test
     void detectsEventResult() throws IOException {
         assertTrue(IRacingParser.looksLikeEventResult(fixture()));

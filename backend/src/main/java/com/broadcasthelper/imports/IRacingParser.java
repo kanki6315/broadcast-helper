@@ -160,6 +160,53 @@ public final class IRacingParser {
         return out;
     }
 
+    // ------------------------------------------------------ league navigation
+
+    /**
+     * One scheduled round of a league season: the subsession to import, plus
+     * enough to recognise it (date, track, winner) without opening it.
+     */
+    public record LeagueRound(
+            long subsessionId,
+            OffsetDateTime launchAt,
+            String trackName,
+            String winnerName,
+            boolean hasResults,
+            int entryCount
+    ) {
+    }
+
+    /**
+     * The rounds of a /league/season_sessions payload, oldest first. A scheduled
+     * round with no results yet (hasResults false) is still listed — it carries a
+     * subsession id but importing it would find nothing, so the caller decides.
+     */
+    public static List<LeagueRound> parseSeasonRounds(JsonNode root) {
+        List<LeagueRound> rounds = new ArrayList<>();
+        for (JsonNode s : root.path("sessions")) {
+            long subsessionId = s.path("subsession_id").asLong(-1);
+            if (subsessionId < 0) {
+                continue; // a slot with no subsession is nothing to import
+            }
+            String launch = text(s, "launch_at");
+            rounds.add(new LeagueRound(
+                    subsessionId,
+                    launch == null ? null : OffsetDateTime.parse(launch),
+                    text(s.path("track"), "track_name"),
+                    text(s, "winner_name"),
+                    s.path("has_results").asBoolean(false),
+                    s.path("entry_count").asInt(0)
+            ));
+        }
+        rounds.sort((a, b) -> {
+            if (a.launchAt() == null || b.launchAt() == null) {
+                return 0;
+            }
+            return a.launchAt().compareTo(b.launchAt());
+        });
+        return rounds;
+    }
+
     private static List<RaceResultsImport.Row> resultRows(JsonNode data, JsonNode sim) {
         List<JsonNode> finishers = new ArrayList<>();
         for (JsonNode r : sim.path("results")) {

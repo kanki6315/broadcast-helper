@@ -54,6 +54,15 @@ public class ImportController {
         return imports.stageFromIRacing(subsessionId);
     }
 
+    /** A league season's rounds, newest last — each carries the subsession id to
+     *  import via {@link #fetchIRacing}. Lets a caller point at a season and pick
+     *  a round without knowing subsession ids. */
+    @GetMapping("/iracing/league/{leagueId}/season/{seasonId}/rounds")
+    public List<IRacingParser.LeagueRound> leagueSeasonRounds(
+            @PathVariable long leagueId, @PathVariable long seasonId) {
+        return imports.listSeasonRounds(leagueId, seasonId);
+    }
+
     @GetMapping
     public List<ImportService.BatchSummary> list() {
         return imports.list();
