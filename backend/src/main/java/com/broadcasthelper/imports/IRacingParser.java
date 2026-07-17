@@ -276,16 +276,39 @@ public final class IRacingParser {
                     lapTime(bestLap),
                     positiveOrNull(r.path("best_lap_num").asInt(-1)),
                     null, // no trap speed; kph needs a track length the payload lacks
-                    1,    // solo league: one seat per entry
+                    1,    // which seat set the fastest lap isn't in the payload
                     null, // pit stops are in /data/results/event_log, not here
-                    List.of(driverRow(data, r))
+                    driverRows(data, r)
             ));
         }
         return rows;
     }
 
-    private static RaceResultsImport.DriverRow driverRow(JsonNode data, JsonNode r) {
-        String name = text(r, "display_name");
+    /**
+     * The crew of one result entry. A team entry names the team in its own
+     * display_name and carries the real drivers — each with its own cust_id — in
+     * driver_results; a solo entry has no driver_results and is its own driver
+     * (it carries a cust_id directly). A team shell with no recorded crew yields
+     * no drivers rather than mistaking the team name for one.
+     */
+    private static List<RaceResultsImport.DriverRow> driverRows(JsonNode data, JsonNode entry) {
+        JsonNode crew = entry.path("driver_results");
+        if (crew.isArray() && crew.size() > 0) {
+            List<RaceResultsImport.DriverRow> out = new ArrayList<>();
+            int seat = 1;
+            for (JsonNode d : crew) {
+                out.add(driverRow(data, d, seat++));
+            }
+            return out;
+        }
+        if (entry.has("cust_id")) {
+            return List.of(driverRow(data, entry, 1));
+        }
+        return List.of();
+    }
+
+    private static RaceResultsImport.DriverRow driverRow(JsonNode data, JsonNode driver, int seat) {
+        String name = text(driver, "display_name");
         String first = "";
         String surname = name == null ? "" : name;
         if (name != null) {
@@ -299,12 +322,12 @@ public final class IRacingParser {
             }
         }
         return new RaceResultsImport.DriverRow(
-                1,
+                seat,
                 first,
                 surname,
-                licence(data, r),
+                licence(data, driver),
                 null, // no hometown in the result payload
-                text(r, "country_code")
+                text(driver, "country_code")
         );
     }
 
