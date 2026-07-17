@@ -266,7 +266,7 @@ only as state responses.
   light, 30%/25% in dark): active segment buttons and theme-toggle thumbs —
   the "pressed instrument key" cue.
 - **Modal** (`--shadow-modal`: `0 4px 12px` + `0 12px 40px+`): overlays only
-  (team-sheets PDF modal).
+  (team-sheets PDF modal, driver/team info modals, the starting-grid modal).
 - **Focus ring** (`--focus-ring`: 2px bg gap + 2px amber): every
   `:focus-visible`, no exceptions.
 
@@ -322,6 +322,33 @@ the pill — never the page.
   the inline class marker in tables and widgets.
 - **Round chip** (`.round-chip`): venue code over "Rd n"; active = amber
   border + `--accent-tint` fill.
+- **Car filter chip** (`.rc-car-chip`, race-control log): mono tabular number,
+  outline at rest; active = amber border + `--accent-tint`. Same active
+  vocabulary as the round chip, one tier smaller.
+
+### Results Page (`frontend/src/pages/season/ResultsPage.tsx`)
+The event's results, one session at a time. Round chips pick the event; a
+**session tablist** (the `.seg` control, roving arrow keys) switches
+qualifying ⇄ race and hides when there's only one session. The classification
+is a Data Grid whose column set follows the session and is computed from the
+whole session, never the class-filtered rows — flipping a class chip never
+reshapes the table. Supporting surfaces:
+- **Starting-grid modal** (`StartingGridModal`, `.sg`): the grid as a grid —
+  pole front-left, cars staggered odd-left / even-right behind a "Start line",
+  qualifying time under each. Native `<dialog>` on the token layer; a class
+  filter *lifts* its cars onto `--bg` rather than removing slots (a grid is a
+  fact about the whole field). One file below 560px.
+- **Stewards' notes** (`.session-notes`): a `--surface` panel above the table,
+  one verbatim note per line, with the report mark as a quiet pill only when
+  it isn't "Official". Cars a note names carry a small amber `.note-flag` in
+  the car cell's right-padding gutter (never shifts the tabular digits), the
+  note text on hover.
+- **Race control** (`.race-control`): a quiet disclosure below the table for
+  the flag/RC-message stream. Flag periods are labeled chips (green
+  `--res-win` / amber `--accent-tint` tints, colour always paired with the
+  flag name + lap + duration); the message log scrolls inside its own bordered
+  `--radius-md` box, filterable by car via `.rc-car-chip`. Lazy-fetched on
+  first open.
 
 ### Inputs / Fields
 `--bg` background, `--border-strong` 1px stroke, radius 6px, 6px 10px padding.

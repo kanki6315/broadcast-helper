@@ -486,6 +486,46 @@ display size.)
   table with class bands" is the open IA question); empty future rounds eat ~35%
   of horizontal scroll (narrowing them per-grid would break cross-grid column
   alignment, so it needs a parent-level pass).
+- **Results page rebuild — ✅ DONE (2026-07-17).** The Results sub-page stacked
+  qualifying, the starting grid, and race classification end to end (~10 screens
+  for a full field). Now one **ARIA tablist per session** (`?session=` in the URL),
+  the grid in a **side-by-side modal** (`StartingGridModal`: pole up front, cars
+  staggered as they line up), and the classification's columns computed from the
+  whole session rather than the class-filtered rows, so flipping a class chip
+  never reshapes the table or renames a header. Two data fixes rode along:
+  **(a) qualifying best lap** — an IMSA "Qualifying Practice by Best Lap" file
+  spells an entry's lap as `time`/`lap`/`kph` where a race file uses
+  `fastest_lap_time`/`_number`/`_kph`; `parseRaceResults` read only the race
+  spelling, so every qualifying entry stored a null best lap. Both spellings are
+  read now (`firstText`/`firstInt`/`firstDouble`, race wins), and a
+  **"Fastest lap by"** column exposes `fastest_lap_driver_seat` (the driver
+  credited with the car's best lap — on a both-drivers-run-it qualifying session
+  not always who qualified it, so it's labeled precisely; the true qualifying
+  driver lives in the grid file and is deferred). **(b) class gap** — computed
+  client-side, qualifying only (every qualifying gap is plain seconds off one
+  leader, so exact subtraction; a race mixes those with lap-count gaps that carry
+  no time). Existing committed sessions needed a re-import to backfill.
+- **Session context on the Results page — ✅ DONE (2026-07-17).** Two facts the
+  data already held but nothing read. **Stewards' notes:** `race_session.report_mark`
+  / `report_message` (V2 columns, populated since Phase 1) now surface as a per-
+  session notes panel (mark pill only when ≠ Official), with the cars each note
+  names marked on their result rows (`browse/ReportNotes` extracts numbers from the
+  head before the first ` - `, exact-then-zeros-stripped match). **Flags / race
+  control:** a new import kind **FLAGS** (`FlagsAnalysisWithRCMessages` JSON =
+  `session` + `flags`; `FlagsImport`/`parseFlags`; `session_flag` V24, verbatim
+  TEXT times, `seq` = source order) mirrors the RACE_RESULTS stage→review→commit
+  path and refreshes the session notes via the same COALESCE upsert (the flags
+  report is generated later, so its notes are usually richer). A **"Race control"**
+  disclosure on the session tab shows flag-period chips (GF/FCY/FF with lap +
+  duration) and a scrollable RC-message log, lazy-fetched via
+  `GET /api/sessions/{id}/flags` (`hasFlags` on the results payload gates it). RC
+  messages link to cars (`browse/RcCars`: numbers only where they follow
+  `Car`/`Cars`, never bare cross-references or turn/lap/article numbers), computed
+  at read time — never stored, so the heuristic can change without a re-import —
+  driving a car filter on the log. **Still dropped from the results JSON:** the
+  session-level `fastest_lap` block (overall pole + driver). **Not parsed:** a
+  qualifying-results CSV (`IMSA_CSV` recognizes only grid CSVs) — matters for the
+  older VP Racing CSV-only events.
 - **Hosting — the active next block (see Phase 4a below).** Deploy + auth +
   multi-user/sharing + the S3 image migration. Elevated to the priority because
   it's the substrate the deferred notes dashboard needs, and it unblocks sharing

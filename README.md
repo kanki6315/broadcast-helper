@@ -4,12 +4,14 @@ Event-preparation tool for motorsports broadcasters: import results, standings,
 entry lists, and car photos; generate broadcast reference documents as PDFs.
 
 **Status:** Phases 1–3 delivered — multi-series importers (results/standings/grid
-JSON, grid CSV, entry-list PDF, championship-points PDF) with staging + review,
-bulk car images, manufacturer logos, and the pit-lane entry-list sheet with
-one-click PDF export.
+JSON, grid CSV, entry-list PDF, championship-points PDF, flags/RC-message JSON)
+with staging + review, bulk car images, manufacturer logos, and the pit-lane
+entry-list sheet with one-click PDF export.
 The browse UI was rebuilt (2026-07-15) into a series directory + season hub with
 a season recap and five sub-pages, on a documented design system
-([PRODUCT.md](PRODUCT.md) / [DESIGN.md](DESIGN.md)). Phase 4 (single-container
+([PRODUCT.md](PRODUCT.md) / [DESIGN.md](DESIGN.md)); the Results sub-page was then
+rebuilt (2026-07-17) around session tabs, a side-by-side starting-grid modal,
+stewards' notes, and a race-control panel. Phase 4 (single-container
 hosting + Google login) is code-complete pending deploy. See [PLAN.md](PLAN.md)
 for the full plan, domain model, and phase roadmap.
 
@@ -17,17 +19,21 @@ for the full plan, domain model, and phase roadmap.
 
 - **Import** timing-provider results, standings (team/driver/Michelin Endurance
   Cup championships), and starting-grid JSON, plus entry-list PDFs, starting-grid
-  CSVs, and championship-points PDFs — across multiple series (IMSA, Mustang
-  Challenge), staged and reviewed before touching the database. Uploads choose a
-  **format** (parser family = provider × medium, e.g. `IMSA_JSON`/`IMSA_PDF`/
-  `IMSA_CSV`/`IMSA_POINTS_PDF`); the default auto-detects JSON and entry-list
-  PDFs. A grid CSV carries no event/session metadata, so review attaches it to an
-  existing event and session (race number), and it keeps the per-car qualifying
-  time. A **points PDF** covers the series that publish no standings JSON: one
-  sheet holds every championship, so an upload stages one batch each (see
+  CSVs, championship-points PDFs, and flags/RC-message JSON — across multiple
+  series (IMSA, Mustang Challenge), staged and reviewed before touching the
+  database. Uploads choose a **format** (parser family = provider × medium, e.g.
+  `IMSA_JSON`/`IMSA_PDF`/`IMSA_CSV`/`IMSA_POINTS_PDF`); the default auto-detects
+  JSON (results, grid, standings, and flags) and entry-list PDFs. A grid CSV
+  carries no event/session metadata, so review attaches it to an existing event
+  and session (race number), and it keeps the per-car qualifying time. A **points
+  PDF** covers the series that publish no standings JSON: one sheet holds every
+  championship, so an upload stages one batch each (see
   [parser/POINTS_SCHEMA.md](parser/POINTS_SCHEMA.md)). Where a standings JSON
   exists, import that instead — it splits pole from fastest-lap points, which the
-  sheet prints added together.
+  sheet prints added together. A **flags file** (`FlagsAnalysisWithRCMessages`
+  JSON) carries the session's flag periods and race-control messages, and also a
+  fuller copy of the stewards' report than the results file — committing one
+  refreshes the session notes.
 - **Browse** from a series directory into a **season hub**: the hub sets a season
   context (year switcher; class filter chips persisted in the URL, so a filtered
   view is bookmarkable) and opens on four live widgets — latest/next round,
@@ -37,9 +43,11 @@ for the full plan, domain model, and phase roadmap.
   championship and the Michelin Endurance Cup — each with its own round
   numbering — and between Teams and Drivers. Five sub-pages hang off the hub:
   **Schedule**, **Standings** (points per round, each round a column),
-  **Results** (pick a round → qualifying/grid + race classification), **Entries**
-  (driver lineups per car per round, rotations highlighted, skipped rounds
-  blank), and **Photos**.
+  **Results** (pick a round, then tab between qualifying and race; the starting
+  grid opens as a side-by-side modal, stewards' notes sit above the table with
+  the affected cars marked, and a race-control panel lists the flag periods and
+  message log — filterable by car), **Entries** (driver lineups per car per
+  round, rotations highlighted, skipped rounds blank), and **Photos**.
 - **Manage** car photos (matched per season by car number) and manufacturer
   logos (matched by name).
 - **Generate** the pit-lane entry-list sheet per event: drivers with flags and
