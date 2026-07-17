@@ -1,6 +1,9 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    # Matches the hosted database's major version (18.x). A prod pg_dump only
+    # restores into the same or a newer server, so a local seed from prod fails
+    # on anything older.
+    image: postgres:18-alpine
     container_name: broadcast-helper-db
     environment:
       POSTGRES_DB: broadcast_helper
@@ -9,7 +12,11 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # postgres:18+ expects a single mount at /var/lib/postgresql and puts the
+      # cluster in a versioned subdirectory; mounting .../data directly makes the
+      # image refuse to start. (Changing this is a wipe: the old 16 volume's
+      # layout is not readable here.)
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U broadcast -d broadcast_helper"]
       interval: 5s
