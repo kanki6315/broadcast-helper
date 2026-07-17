@@ -266,7 +266,8 @@ only as state responses.
   light, 30%/25% in dark): active segment buttons and theme-toggle thumbs —
   the "pressed instrument key" cue.
 - **Modal** (`--shadow-modal`: `0 4px 12px` + `0 12px 40px+`): overlays only
-  (team-sheets PDF modal, driver/team info modals, the starting-grid modal).
+  (team-sheets PDF modal, driver/team info modals, the starting-grid modal, the
+  import modals).
 - **Focus ring** (`--focus-ring`: 2px bg gap + 2px amber): every
   `:focus-visible`, no exceptions.
 
@@ -349,6 +350,24 @@ reshapes the table. Supporting surfaces:
   flag name + lap + duration); the message log scrolls inside its own bordered
   `--radius-md` box, filterable by car via `.rc-car-chip`. Lazy-fetched on
   first open.
+
+### Import modals (`.uf` / `.ir` / `.cis`)
+The Imports page opens two native-`<dialog>` modals on the token layer, siblings
+of the search palette (`.sp`) and starting-grid modal (`.sg`): **`UploadFilesModal`
+(`.uf`)** — a dashed drag-and-drop dropzone (empty-state vocabulary; drag-over
+lifts to the amber accent), a per-file staged queue with a `ImportStatusIcon`
+glyph per row, and **`IRacingImportModal` (`.ir`)**. Both pin their target with
+the shared **`SeriesEventPicker`** — two typeahead comboboxes (series, then
+events filtered to it) built on the `.sp` search grammar (`role="combobox"`,
+`aria-activedescendant`, arrow-key roving); its results render **in normal flow,
+not `position:absolute`**, so the dialog's own overflow never clips them. After
+staging, both hand off to the shared **`ConfirmImportStep` (`.cis`)**: event
+group cards holding draggable session rows. **Drag feedback is a border/background
+token change only — no transform or motion** — so it survives `prefers-reduced-motion`
+untouched; every draggable row carries a keyboard-and-touch **"Move to…"
+`<select>`** as the equivalent control (WCAG 2.5.7). Selection is amber
+(`--accent-tint`), never a class colour. A round-ordinal preview lists the
+season's events with `Rd n` chips, new ones in ink and existing ones muted.
 
 ### Inputs / Fields
 `--bg` background, `--border-strong` 1px stroke, radius 6px, 6px 10px padding.

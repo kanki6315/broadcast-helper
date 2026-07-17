@@ -459,9 +459,45 @@ display size.)
   low-value here (a roster is season-wide with no team/class; the standings'
   base-vs-adjustment split is the practical points breakdown). Credentials live
   in a gitignored `application-local.yml` (the `local` Spring profile, bootRun
-  only) locally and env vars in prod. **Next slice on this seam:** grouping a
-  round's staged batches in the review table so it commits to one event in a
-  click, instead of create-then-attach per batch.
+  only) locally and env vars in prod.
+- **Drag-and-drop upload modal + series/event pinning — ✅ DONE (2026-07-17).**
+  The bare file input on the imports page is replaced by `UploadFilesModal`:
+  drag-and-drop (plus browse/paste), a per-file staged queue, and a shared
+  **`SeriesEventPicker`** typeahead that pins one series + event as the batch's
+  target so the staged rows land pre-filled. The same picker is an optional
+  "Pin to" section in the iRacing modal (there the batches carry their own
+  metadata, so pinning is a convenience, not required). It owns the
+  `/api/series` + `/api/events` fetch, filters events to the chosen series, and
+  supports creating a new series inline.
+- **Confirm-and-commit grouping (`commit-group`) — ✅ DONE (2026-07-17).** After
+  staging, both import modals (the file-upload `UploadFilesModal` and the
+  `IRacingImportModal`) hand off to a shared **`ConfirmImportStep`**: proposed
+  event cards, each holding its sessions, that the user drags between events
+  (with a keyboard-accessible **"Move to…"** `<select>` as the equivalent
+  control), renames, or attaches to an existing event. A **round-ordinal
+  preview** merges the season's existing events with the proposed ones by date,
+  showing the Rd numbers the commit-time renumber will produce — so a mid-season
+  backfill's numbering is visible before commit. Confirming commits the whole
+  batch through **`POST /api/imports/commit-group`**: **one transaction per event
+  group**, so a subsession's sibling batches (results + grid) resolve **one**
+  event and converge on one `race_session` — which single-batch `commit` can't
+  guarantee (it attaches to a chosen eventId or creates a new event per batch).
+  A group failure rolls back that group alone (its batches stay STAGED); standings
+  batches commit individually (they hang off a championship, not an event).
+  `ImportTarget` gains an **`eventName` override** so two rounds at the same track
+  — iRacing names both after the bare circuit — are de-collided (the UI suffixes
+  the date) before they hit `UNIQUE(season_id, name)`; the backend pre-checks the
+  name and fails the group with an actionable message otherwise. The orchestrator
+  reuses the existing `commit*` methods and `renumberSeasonRounds` unchanged (a
+  `TransactionTemplate`, not `@Transactional`, spans the per-group transactions;
+  the self-call to `commit` joins the template's transaction). Items that still
+  need per-batch review — unrecognized classes, a metadata-less grid needing a
+  session, a standings row with no championship kind — are set aside and left
+  STAGED, seeded into the table below with the committed series/event. The review
+  table remains the fallback for fixing anything after the fact. Shared frontend
+  bits were extracted for reuse: `lib/useSeriesEvents` (the series/events fetch),
+  `lib/importGroups` (filename→round grouping + kind labels), and
+  `ImportStatusIcon`.
 - **Still ahead:** design the automated prior-year-at-this-track feature,
   including change context (manufacturer, lineup, team) alongside the raw result.
   The **grid rundown sheet** (grid-order sheet with storyline fields) is
