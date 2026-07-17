@@ -1,0 +1,429 @@
+/* Upload-files modal — token layer (index.css), sibling of the iRacing modal
+ * (.ir) and the search palette (.sp). Native <dialog>: no z-index management,
+ * Escape + backdrop close. Opened from the Imports page.
+ *
+ * The batch is grouped: one series + one event pinned up top, then a drop
+ * target, then the queued files listed under that shared context. */
+
+.uf {
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow-modal);
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(90vh, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.uf::backdrop {
+  background: oklch(10% 0.01 277 / 52%);
+}
+
+.uf[open] {
+  animation: uf-in var(--t-med) var(--ease-out);
+}
+
+.uf[open]::backdrop {
+  animation: uf-fade var(--t-med) var(--ease-out);
+}
+
+@keyframes uf-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+@keyframes uf-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .uf[open],
+  .uf[open]::backdrop {
+    animation: none;
+  }
+}
+
+/* ---- chrome ---- */
+
+.uf-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.uf-title {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.uf-sub {
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.uf-close {
+  border: none;
+  background: none;
+  font-size: var(--text-base);
+  line-height: 1;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.uf-close:hover {
+  color: var(--ink);
+}
+
+.uf-body {
+  overflow-y: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.uf-error {
+  margin: 0;
+}
+
+/* ---- dropzone ---- */
+
+.uf-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4);
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text-muted);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+}
+
+.uf-drop:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.uf-drop.dragging {
+  border-color: var(--accent);
+  border-style: solid;
+  background: var(--accent-tint);
+  color: var(--ink);
+}
+
+.uf-drop:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.uf-drop-icon {
+  color: var(--text-muted);
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.uf-drop:hover .uf-drop-icon,
+.uf-drop.dragging .uf-drop-icon {
+  color: var(--accent);
+}
+
+.uf-drop-lead {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.uf-drop-lead .uf-drop-browse {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.uf-drop-types {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.uf-file-input {
+  display: none;
+}
+
+/* ---- format disclosure ---- */
+
+.uf-format {
+  font-size: var(--text-xs);
+}
+
+.uf-format > summary {
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 0;
+  width: max-content;
+}
+
+.uf-format > summary::-webkit-details-marker {
+  display: none;
+}
+
+.uf-format > summary::before {
+  content: '›';
+  display: inline-block;
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.uf-format[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.uf-format > summary:hover {
+  color: var(--ink);
+}
+
+.uf-format-body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.uf-format-body select {
+  font-size: var(--text-sm);
+}
+
+.uf-format-note {
+  color: var(--text-muted);
+}
+
+/* ---- file queue, grouped under series + event ---- */
+
+.uf-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.uf-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 7px 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.uf-group-series {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.uf-group-sep {
+  color: var(--text-muted);
+}
+
+.uf-group-event {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.uf-group-count {
+  margin-left: auto;
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.uf-files {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.uf-file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+}
+
+.uf-file-status {
+  flex: none;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+}
+
+.uf-file-status.queued {
+  color: var(--text-muted);
+}
+.uf-file-status.uploading {
+  color: var(--accent-ink);
+}
+.uf-file-status.staged {
+  color: var(--success);
+}
+.uf-file-status.error {
+  color: var(--error);
+}
+
+/* the uploading ring spins; reduced-motion swaps to a steady dot below */
+.uf-spin {
+  animation: uf-spin 0.8s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes uf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.uf-file-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.uf-file-name {
+  font-size: var(--text-sm);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.uf-file-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.uf-file-meta.err {
+  color: var(--error);
+}
+
+.uf-file-kinds {
+  flex: none;
+  display: inline-flex;
+  gap: 4px;
+}
+
+.uf-kind-tag {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.uf-file-remove {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.uf-file-remove:hover {
+  color: var(--ink);
+}
+
+/* ---- footer ---- */
+
+.uf-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  flex-wrap: wrap;
+}
+
+.uf-foot-note {
+  margin-right: auto;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.uf-foot-note strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.uf-foot-note.done {
+  color: var(--success);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .uf-spin {
+    animation: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .uf-foot .btn,
+  .uf-foot .btn-primary {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+@media print {
+  .uf {
+    display: none !important;
+  }
+}

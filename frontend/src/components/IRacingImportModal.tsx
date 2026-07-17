@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './iracing-import-modal.css'
+import SeriesEventPicker, { type EventOption, type Series } from './SeriesEventPicker'
 
 /**
  * The one place iRacing imports start. Two ways in — a hand-picked list of
@@ -88,10 +89,18 @@ export default function IRacingImportModal({
   onStaged,
 }: {
   onClose: () => void
-  onStaged: () => void
+  /** Hands the staged batch ids back with the pinned target (series may be null
+   *  when nothing is pinned) so the review table lands pre-filled. */
+  onStaged: (batchIds: number[], seriesId: number | null, eventId: number | null) => void | Promise<void>
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [mode, setMode] = useState<Mode>('subsession')
+
+  // Optional pin: stage these imports straight onto one series + event.
+  const [seriesId, setSeriesId] = useState<number | null>(null)
+  const [seriesObj, setSeriesObj] = useState<Series | null>(null)
+  const [eventId, setEventId] = useState<number | null>(null)
+  const [eventObj, setEventObj] = useState<EventOption | null>(null)
 
   const [idsText, setIdsText] = useState('')
   const [leagueId, setLeagueId] = useState('')
@@ -135,8 +144,9 @@ export default function IRacingImportModal({
         setError(body?.message ?? `Request failed (${res.status})`)
         return
       }
-      setResult(body as IRacingImport)
-      onStaged()
+      const imported = body as IRacingImport
+      setResult(imported)
+      await onStaged(imported.batches.map((b) => b.id), seriesId, eventId)
     } catch {
       setError('Could not reach the server.')
     } finally {
@@ -243,9 +253,37 @@ export default function IRacingImportModal({
 
       <div className="ir-body">
         {result ? (
-          <ResultView result={result} groups={groups} onImportMore={reset} onDone={onClose} />
+          <ResultView
+            result={result}
+            groups={groups}
+            pin={seriesObj ? { seriesName: seriesObj.name, eventName: eventObj?.name ?? null } : null}
+            onImportMore={reset}
+            onDone={onClose}
+          />
         ) : (
           <>
+            <div className="ir-pin">
+              <div className="ir-pin-head">
+                <span className="ir-pin-title">Pin to</span>
+                <span className="ir-pin-note">optional — otherwise each import places itself</span>
+              </div>
+              <SeriesEventPicker
+                idPrefix="ir"
+                seriesId={seriesId}
+                eventId={eventId}
+                autoLabel="Each round places itself"
+                onSeriesChange={(id, s) => {
+                  setSeriesId(id)
+                  setSeriesObj(s)
+                }}
+                onEventChange={(id, ev) => {
+                  setEventId(id)
+                  setEventObj(ev)
+                }}
+                onError={setError}
+              />
+            </div>
+
             <div className="ir-modes" role="tablist" aria-label="Import source">
               <button
                 type="button"
@@ -428,11 +466,13 @@ export default function IRacingImportModal({
 function ResultView({
   result,
   groups,
+  pin,
   onImportMore,
   onDone,
 }: {
   result: IRacingImport
   groups: { name: string; sub: string; batches: StagedBatch[] }[]
+  pin: { seriesName: string; eventName: string | null } | null
   onImportMore: () => void
   onDone: () => void
 }) {
@@ -443,6 +483,13 @@ function ResultView({
         {result.requested === 1 ? ' subsession' : ' subsessions'} — {result.batches.length} batch
         {result.batches.length === 1 ? '' : 'es'}.
       </p>
+
+      {pin && (
+        <p className="ir-result-pin">
+          Pinned to <strong>{pin.seriesName}</strong>
+          {pin.eventName ? <> · {pin.eventName}</> : ' — each round places itself'}
+        </p>
+      )}
 
       {groups.length > 0 && (
         <ul className="ir-groups">

@@ -1,5 +1,6 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import IRacingImportModal from '../components/IRacingImportModal'
+import UploadFilesModal from '../components/UploadFilesModal'
 
 interface ImportBatch {
   id: number
@@ -103,16 +104,6 @@ const KIND_LABEL: Record<string, string> = {
   FLAGS: 'Flags / race control',
 }
 
-// Upload formats: which parser family reads the file. AUTO covers the
-// historical JSON/PDF detection; CSVs must be chosen explicitly.
-// Only the formats Auto-detect can't reach on its own: a grid CSV looks like any
-// other CSV, and a points PDF looks like any other PDF until Python opens it.
-const FORMAT_OPTIONS: [string, string][] = [
-  ['AUTO', 'Auto-detect'],
-  ['IMSA_CSV', 'IMSA — Grid CSV'],
-  ['IMSA_POINTS_PDF', 'IMSA — Championship points PDF'],
-]
-
 const SESSION_TYPES: [string, string][] = [
   ['RACE', 'Race'],
   ['QUALIFYING', 'Qualifying'],
@@ -140,11 +131,14 @@ export default function ImportsPage() {
   const [targets, setTargets] = useState<Record<number, TargetState>>({})
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [format, setFormat] = useState('AUTO')
   const [iracingOpen, setIracingOpen] = useState(false)
-  const fileInput = useRef<HTMLInputElement>(null)
+  const [uploadOpen, setUploadOpen] = useState(false)
 
-  async function loadBatches() {
+  // A seed pins the just-staged batches to the series + event chosen in the
+  // upload modal, so those rows land pre-targeted (their own guess still fills
+  // session/kind/class). Applied only to batches new this load — in-progress
+  // edits are never overwritten.
+  async function loadBatches(seed?: { ids: Set<number>; seriesId: number; eventId: number | null }) {
     const res = await fetch('/api/imports')
     if (!res.ok) return
     const list: ImportBatch[] = await res.json()
@@ -163,7 +157,13 @@ export default function ImportsPage() {
       for (const [id, review] of entries) {
         if (!review) continue
         nextReviews[id] = review
-        if (!(id in nextTargets)) nextTargets[id] = initTarget(review) // keep in-progress edits
+        if (!(id in nextTargets)) {
+          let t = initTarget(review) // keep in-progress edits
+          if (seed?.ids.has(id)) {
+            t = { ...t, seriesId: seed.seriesId, ...(seed.eventId != null ? { eventId: seed.eventId } : {}) }
+          }
+          nextTargets[id] = t
+        }
       }
       return nextTargets
     })
@@ -174,22 +174,15 @@ export default function ImportsPage() {
     void loadBatches()
   }, [])
 
-  async function uploadFiles(files: FileList) {
-    setBusy(true)
-    setError(null)
-    for (const file of Array.from(files)) {
-      const form = new FormData()
-      form.append('file', file)
-      form.append('format', format)
-      const res = await fetch('/api/imports', { method: 'POST', body: form })
-      if (!res.ok) {
-        const body = await res.json().catch(() => null)
-        setError(`${file.name}: ${body?.message ?? `upload failed (${res.status})`}`)
-      }
+  // A modal stages batches and hands their ids back with the series + event it
+  // pinned; refresh the table, seeding those rows. A null series means no pin
+  // (the iRacing modal allows it) — just refresh, each batch reviewed fresh.
+  async function onBatchesStaged(batchIds: number[], seriesId: number | null, eventId: number | null) {
+    if (seriesId === null) {
+      await loadBatches()
+      return
     }
-    if (fileInput.current) fileInput.current.value = ''
-    await loadBatches()
-    setBusy(false)
+    await loadBatches({ ids: new Set(batchIds), seriesId, eventId })
   }
 
   function patch(id: number, change: Partial<TargetState>) {
@@ -304,34 +297,22 @@ export default function ImportsPage() {
         championship — pre-filled with a best guess) and commit. One file can stage several batches:
         an iRacing subsession carries qualifying, every race, and each race's grid.
       </p>
-      <label className="target-row">
-        <span className="target-label">Format</span>
-        <select value={format} disabled={busy} onChange={(e) => setFormat(e.target.value)}>
-          {FORMAT_OPTIONS.map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <input
-        ref={fileInput}
-        type="file"
-        accept=".json,.pdf,.csv,application/json,application/pdf,text/csv"
-        multiple
-        disabled={busy}
-        onChange={(e) => e.target.files && uploadFiles(e.target.files)}
-      />
-      <div className="import-iracing-row">
+      <div className="import-actions">
+        <button type="button" className="btn btn-primary" disabled={busy} onClick={() => setUploadOpen(true)}>
+          Upload files
+        </button>
         <span className="import-or">or</span>
-        <button type="button" className="btn-primary" disabled={busy} onClick={() => setIracingOpen(true)}>
+        <button type="button" className="btn" disabled={busy} onClick={() => setIracingOpen(true)}>
           Fetch from iRacing
         </button>
         <span className="muted">pull results, grids, and standings straight from the Data API.</span>
       </div>
       {error && <p className="error">{error}</p>}
+      {uploadOpen && (
+        <UploadFilesModal onClose={() => setUploadOpen(false)} onStaged={onBatchesStaged} />
+      )}
       {iracingOpen && (
-        <IRacingImportModal onClose={() => setIracingOpen(false)} onStaged={loadBatches} />
+        <IRacingImportModal onClose={() => setIracingOpen(false)} onStaged={onBatchesStaged} />
       )}
 
       {batches.length === 0 ? (

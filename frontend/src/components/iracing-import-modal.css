@@ -97,6 +97,48 @@
   gap: var(--space-4);
 }
 
+/* ---- optional pin (series + event, shared SeriesEventPicker) ---- */
+
+.ir-pin {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.ir-pin-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.ir-pin-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ir-pin-note {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.ir-result-pin {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.ir-result-pin strong {
+  color: var(--ink);
+}
+
 /* ---- mode toggle (segmented, matches .seg vocabulary) ---- */
 
 .ir-modes {
