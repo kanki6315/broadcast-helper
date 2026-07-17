@@ -93,6 +93,56 @@ public class ImportService {
         return IRacingParser.parseSeasonRounds(payload);
     }
 
+    /**
+     * Stages a league season's driver standings — the championship table a single
+     * result file can't produce. The reviewer confirms class / kind / season year
+     * on commit, the same as a points-PDF standings import. Season totals only:
+     * the API gives no per-round breakdown, so the rows carry a total and nothing
+     * per session.
+     */
+    public List<BatchSummary> stageStandingsFromIRacing(long leagueId, long seasonId) {
+        JsonNode standings = iracing.get("/league/season_standings", java.util.Map.of(
+                "league_id", String.valueOf(leagueId),
+                "season_id", String.valueOf(seasonId)));
+        String seasonName = seasonName(leagueId, seasonId);
+        String year = leadingYear(seasonName);
+        StandingsImport imp = IRacingParser.parseSeasonStandings(standings, seasonName, year);
+        if (imp.rows().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "No driver standings found for league " + leagueId + " season " + seasonId);
+        }
+        Staged staged = new Staged("STANDINGS", imp,
+                "%s — %d competitors".formatted(imp.name(), imp.rows().size()));
+        return persist(List.of(staged), ImportFormat.IRACING_JSON,
+                "league-" + leagueId + "-season-" + seasonId + "-standings.json");
+    }
+
+    /** The season's display name from /league/seasons, for titling the standings.
+     *  Falls back to a generic label if the season isn't listed. */
+    private String seasonName(long leagueId, long seasonId) {
+        JsonNode seasons = iracing.get("/league/seasons", java.util.Map.of(
+                "league_id", String.valueOf(leagueId)));
+        for (JsonNode s : seasons.path("seasons")) {
+            if (s.path("season_id").asLong() == seasonId) {
+                String name = s.path("season_name").asText("");
+                if (!name.isBlank()) {
+                    return name.trim();
+                }
+            }
+        }
+        return "League " + leagueId + " season " + seasonId;
+    }
+
+    /** A leading four-digit year ("2025 Porsche…" -> "2025"), else null — the
+     *  reviewer confirms the season year regardless. */
+    private static String leadingYear(String name) {
+        if (name == null) {
+            return null;
+        }
+        var m = java.util.regex.Pattern.compile("^\\s*(\\d{4})\\b").matcher(name);
+        return m.find() ? m.group(1) : null;
+    }
+
     private List<BatchSummary> persist(List<Staged> staged, ImportFormat format, String filename) {
         List<BatchSummary> out = new ArrayList<>();
         for (Staged s : staged) {

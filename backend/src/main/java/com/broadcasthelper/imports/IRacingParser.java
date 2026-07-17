@@ -207,6 +207,32 @@ public final class IRacingParser {
         return rounds;
     }
 
+    /**
+     * A league season's driver championship. The Data API gives season totals
+     * only — base points plus adjustments, no per-round split — so each row's
+     * per-session breakdown is empty; the standings commit path tolerates that.
+     * The competitor is the driver (a solo league), keyed by cust_id so a rename
+     * doesn't fork the row.
+     */
+    public static StandingsImport parseSeasonStandings(JsonNode root, String seasonName, String year) {
+        List<StandingsImport.Row> rows = new ArrayList<>();
+        for (JsonNode d : root.path("standings").path("driver_standings")) {
+            JsonNode driver = d.path("driver");
+            rows.add(new StandingsImport.Row(
+                    d.path("position").asInt(),
+                    String.valueOf(driver.path("cust_id").asLong()),
+                    text(driver, "display_name"),
+                    d.path("total_points").asDouble(),
+                    null,
+                    null,
+                    List.of()
+            ));
+        }
+        rows.sort((a, b) -> Integer.compare(a.position(), b.position()));
+        // No per-round session list either — the endpoint names no rounds.
+        return new StandingsImport(seasonName, seasonName, null, year, List.of(), rows);
+    }
+
     private static List<RaceResultsImport.Row> resultRows(JsonNode data, JsonNode sim) {
         List<JsonNode> finishers = new ArrayList<>();
         for (JsonNode r : sim.path("results")) {

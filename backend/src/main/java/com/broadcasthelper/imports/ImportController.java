@@ -63,6 +63,15 @@ public class ImportController {
         return imports.listSeasonRounds(leagueId, seasonId);
     }
 
+    /** Stages a league season's driver standings for review (season totals only —
+     *  the API gives no per-round breakdown). Needs credentials; 503 without. */
+    @PostMapping("/iracing/league/{leagueId}/season/{seasonId}/standings")
+    @ResponseStatus(HttpStatus.CREATED)
+    public List<ImportService.BatchSummary> fetchIRacingStandings(
+            @PathVariable long leagueId, @PathVariable long seasonId) {
+        return imports.stageStandingsFromIRacing(leagueId, seasonId);
+    }
+
     @GetMapping
     public List<ImportService.BatchSummary> list() {
         return imports.list();

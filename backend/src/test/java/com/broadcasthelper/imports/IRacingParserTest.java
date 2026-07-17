@@ -51,6 +51,34 @@ class IRacingParserTest {
     }
 
     @Test
+    void parsesSeasonDriverStandings() throws IOException {
+        JsonNode root;
+        try (InputStream in = getClass()
+                .getResourceAsStream("/fixtures/iracing/league-season-standings-6004-114713.json")) {
+            assertNotNull(in, "missing standings fixture");
+            root = mapper.readTree(in);
+        }
+        StandingsImport st = IRacingParser.parseSeasonStandings(root, "2025 Porsche Esports Supercup", "2025");
+
+        assertEquals("2025 Porsche Esports Supercup", st.name());
+        assertEquals("2025", st.year());
+        assertTrue(st.sessions().isEmpty(), "the endpoint names no rounds");
+        assertEquals(30, st.rows().size());
+
+        StandingsImport.Row leader = st.rows().get(0);
+        assertEquals(1, leader.position());
+        assertEquals("Cooper Webster", leader.team());
+        assertEquals("161668", leader.key()); // cust_id, stable across a rename
+        assertEquals(379.0, leader.totalPoints()); // total = base 389 + adjustment -10
+        assertTrue(leader.pointsBySession().isEmpty(), "no per-round breakdown from this endpoint");
+
+        // Rows come out in championship order.
+        for (int i = 1; i < st.rows().size(); i++) {
+            assertTrue(st.rows().get(i).position() >= st.rows().get(i - 1).position());
+        }
+    }
+
+    @Test
     void parsesLeagueSeasonRoundsOldestFirst() throws IOException {
         List<IRacingParser.LeagueRound> rounds =
                 IRacingParser.parseSeasonRounds(seasonSessionsFixture());
