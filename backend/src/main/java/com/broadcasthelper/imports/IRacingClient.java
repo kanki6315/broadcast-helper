@@ -10,6 +10,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -22,23 +23,19 @@ import java.util.Map;
 /**
  * Fetches payloads from the iRacing Data API.
  *
- * WIP — NEVER RUN AGAINST THE REAL IRACING SERVICE. Every test covering this
- * class talks to a stub (IRacingClientHttpTest), because no client secret was
- * available when it was written. The request shapes come from iRacing's docs and
- * a community implementation, not from a response iRacing actually sent us. Take
- * nothing here as confirmed until it has completed one live fetch.
+ * Proven against the live service on 2025 Daytona subsession 74553295: it
+ * authenticates, follows the signed link, and its batches come back byte-for-byte
+ * identical to that round's exported file. The unit tests still run against a stub
+ * (IRacingClientHttpTest) — including the two things the first live call caught
+ * that the stub originally missed: the signed link must be fetched as a URI, not a
+ * String template (its %2F-encoded AWS signature is otherwise corrupted), and the
+ * signed-link payload is the result object unwrapped, without the exported file's
+ * {"type":"event_result","data":{...}} envelope (IRacingParser handles both).
  *
- * When the client secret arrives, before trusting this in anger:
- *   1. Set IRACING_CLIENT_ID / _CLIENT_SECRET / _USERNAME / _PASSWORD.
- *   2. POST /api/imports/iracing/74553295 — the 2025 Daytona round whose exported
- *      file is the parser's fixture. The batches it stages must match the ones
- *      that file produces, which are known good.
- *   3. Only then point it at anything unknown.
- *
- * Get that wrong quietly and it costs more than a stack trace: iRacing rate-limits
- * the token endpoint hard and locks the client out after repeated failures, and
- * the client id cannot be replaced (issuance has been paused since 2025). So fail
- * loudly and stop, rather than retrying into a lockout.
+ * Handle with care regardless: iRacing rate-limits the token endpoint hard and
+ * locks the client out after repeated failures, and the client id cannot be
+ * replaced (issuance has been paused since 2025). On an auth failure, fail loudly
+ * and stop — never retry into a lockout.
  *
  * Authentication uses the password_limited grant, which is iRacing's extension
  * for headless clients acting for a handful of pre-registered users. It is the
@@ -135,8 +132,13 @@ public class IRacingClient {
             first = false;
         }
 
+        // Pass a URI, not a String: RestClient.uri(String) treats its argument as
+        // a URI template and re-encodes it. The query values here are already
+        // percent-encoded, and the signed link below carries an AWS pre-signed
+        // signature whose X-Amz-Credential contains %2F — template expansion
+        // mangles both. URI.create hands the URL over verbatim.
         JsonNode response = http.get()
-                .uri(url.toString())
+                .uri(URI.create(url.toString()))
                 .header("Authorization", "Bearer " + accessToken())
                 .retrieve()
                 .body(JsonNode.class);
@@ -148,7 +150,7 @@ public class IRacingClient {
         if (!link.isTextual()) {
             return response;
         }
-        JsonNode payload = http.get().uri(link.asText()).retrieve().body(JsonNode.class);
+        JsonNode payload = http.get().uri(URI.create(link.asText())).retrieve().body(JsonNode.class);
         if (payload == null) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Empty payload from iRacing signed link for " + path);

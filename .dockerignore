@@ -8,6 +8,10 @@
 .gitignore
 **/.impeccable
 **/*.log
+# Never let a machine-local secrets file into an image built locally (the server
+# builds from git where it doesn't exist, but a local `docker build` would copy it).
+**/application-local.yml
+**/application-local.yaml
 PLAN.md
 docs
 docker-compose.yml

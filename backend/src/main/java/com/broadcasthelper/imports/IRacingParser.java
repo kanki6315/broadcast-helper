@@ -43,8 +43,22 @@ public final class IRacingParser {
     }
 
     public static boolean looksLikeEventResult(JsonNode root) {
-        return "event_result".equals(root.path("type").asText())
-               && root.path("data").has("session_results");
+        return resultData(root).has("session_results");
+    }
+
+    /**
+     * The result object, whichever way it arrived. A file exported from iRacing's
+     * site wraps it as {"type":"event_result","data":{...}}; the Data API's
+     * signed-link payload is that same object unwrapped, with session_results at
+     * the top level. Both are supported so the upload and fetch paths share this
+     * parser — return the data envelope when present, otherwise the root itself.
+     */
+    private static JsonNode resultData(JsonNode root) {
+        JsonNode data = root.path("data");
+        if (data.isObject() && data.has("session_results")) {
+            return data;
+        }
+        return root;
     }
 
     /**
@@ -55,7 +69,7 @@ public final class IRacingParser {
      * ordinal) stays the stable key the domain matches on.
      */
     public static List<RaceResultsImport> parseSessions(JsonNode root) {
-        JsonNode data = root.path("data");
+        JsonNode data = resultData(root);
         List<RaceResultsImport> out = new ArrayList<>();
         int raceOrdinal = 0;
         for (JsonNode sim : data.path("session_results")) {
@@ -99,7 +113,7 @@ public final class IRacingParser {
      * order reproduces it.
      */
     public static List<GridImport> parseGrids(JsonNode root) {
-        JsonNode data = root.path("data");
+        JsonNode data = resultData(root);
         List<GridImport> out = new ArrayList<>();
         int raceOrdinal = 0;
         for (JsonNode sim : data.path("session_results")) {

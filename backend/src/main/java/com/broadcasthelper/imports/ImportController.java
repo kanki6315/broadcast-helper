@@ -44,9 +44,9 @@ public class ImportController {
      * uploading its exported file produces, without the export. The subsession id
      * is the number in the result's URL on iRacing's site.
      *
-     * WIP: the fetch half of this has never reached the real iRacing service — see
-     * IRacingClient. Uploading the exported file is the proven path meanwhile, and
-     * needs no credentials. Without them this answers 503.
+     * Needs credentials (see application-local.yml / IRacingClient); without them
+     * it answers 503, and uploading the exported file remains a credential-free
+     * alternative.
      */
     @PostMapping("/iracing/{subsessionId}")
     @ResponseStatus(HttpStatus.CREATED)

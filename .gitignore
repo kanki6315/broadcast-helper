@@ -4,6 +4,12 @@
 .vscode/
 .env
 
+# Machine-local Spring config — holds real iRacing credentials, loaded by the
+# `local` profile (bootRun only). Must never be committed; the server builds from
+# git, so its absence there is what keeps the secret out of the jar.
+application-local.yml
+application-local.yaml
+
 # Python
 __pycache__/
 *.pyc

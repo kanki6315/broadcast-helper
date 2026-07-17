@@ -54,6 +54,31 @@ class IRacingParserTest {
         }
     }
 
+    /**
+     * The Data API returns the result object unwrapped — session_results at the
+     * top level, no {"type":"event_result","data":{...}} envelope, which the
+     * exported file adds. Unwrapping the fixture the same way must parse to the
+     * exact same sessions, so the fetch and upload paths stay interchangeable.
+     */
+    @Test
+    void parsesTheUnwrappedApiShapeIdenticallyToTheExportedFile() throws IOException {
+        JsonNode wrapped = fixture();
+        JsonNode bare = wrapped.get("data"); // what the signed-link payload looks like
+
+        assertTrue(IRacingParser.looksLikeEventResult(bare));
+        assertEquals(
+                IRacingParser.parseSessions(wrapped).stream().map(RaceResultsImport::sessionName).toList(),
+                IRacingParser.parseSessions(bare).stream().map(RaceResultsImport::sessionName).toList());
+        assertEquals(IRacingParser.parseGrids(wrapped).size(), IRacingParser.parseGrids(bare).size());
+
+        RaceResultsImport wrappedFeature = IRacingParser.parseSessions(wrapped).stream()
+                .filter(s -> "Feature".equals(s.sessionName())).findFirst().orElseThrow();
+        RaceResultsImport bareFeature = IRacingParser.parseSessions(bare).stream()
+                .filter(s -> "Feature".equals(s.sessionName())).findFirst().orElseThrow();
+        assertEquals(wrappedFeature.rows().get(0).team(), bareFeature.rows().get(0).team());
+        assertEquals(wrappedFeature.circuitName(), bareFeature.circuitName());
+    }
+
     @Test
     void keepsScoringSessionsAndDropsPracticeAndWarmup() throws IOException {
         List<RaceResultsImport> sessions = IRacingParser.parseSessions(fixture());

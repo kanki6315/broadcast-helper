@@ -37,6 +37,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class IRacingClientHttpTest {
 
+    /**
+     * A realistic S3 pre-signed query: X-Amz-Credential carries %2F-encoded
+     * slashes that a URI-template expansion would corrupt. The real service
+     * rejected exactly this with AuthorizationQueryParametersError; the stub now
+     * reproduces it so the fix (fetch the link as a URI, verbatim) stays fixed.
+     */
+    private static final String PRESIGNED_QUERY =
+            "X-Amz-Algorithm=AWS4-HMAC-SHA256"
+            + "&X-Amz-Credential=AKIAEXAMPLE%2F20250201%2Fus-east-1%2Fs3%2Faws4_request"
+            + "&X-Amz-Date=20250201T000000Z&X-Amz-Signature=abc123";
+
     private HttpServer server;
     private String baseUrl;
 
@@ -45,6 +56,8 @@ class IRacingClientHttpTest {
     /** Authorization headers seen on data + signed-link requests, in order. */
     private final List<String> dataAuthHeaders = new CopyOnWriteArrayList<>();
     private final List<String> linkAuthHeaders = new CopyOnWriteArrayList<>();
+    /** The raw (still-encoded) query string the signed-link request arrived with. */
+    private volatile String signedLinkRawQuery;
 
     /** Swapped per test to drive the token endpoint's behaviour. */
     private volatile TokenResponder tokenResponder;
@@ -73,7 +86,7 @@ class IRacingClientHttpTest {
         // The Data API answers with a pointer to the payload, not the payload.
         server.createContext("/data/results/get", exchange -> {
             dataAuthHeaders.add(String.valueOf(exchange.getRequestHeaders().getFirst("Authorization")));
-            send(exchange, 200, "{\"link\":\"" + baseUrl + "/signed/result\"}");
+            send(exchange, 200, "{\"link\":\"" + baseUrl + "/signed/result?" + PRESIGNED_QUERY + "\"}");
         });
         // A few endpoints answer inline instead; both shapes must work.
         server.createContext("/data/inline/get", exchange -> {
@@ -82,6 +95,7 @@ class IRacingClientHttpTest {
         });
         server.createContext("/signed/result", exchange -> {
             linkAuthHeaders.add(String.valueOf(exchange.getRequestHeaders().getFirst("Authorization")));
+            signedLinkRawQuery = exchange.getRequestURI().getRawQuery();
             // Shaped like the real thing (envelope + session_results), so the
             // assertion that the parser accepts a fetched payload means something.
             send(exchange, 200, "{\"type\":\"event_result\",\"data\":{\"subsession_id\":74553295,"
@@ -127,6 +141,18 @@ class IRacingClientHttpTest {
         assertEquals(74553295, payload.path("data").path("subsession_id").asInt());
         assertTrue(IRacingParser.looksLikeEventResult(payload),
                 "a fetched payload must be exactly what the parser reads from a file");
+    }
+
+    @Test
+    void fetchesThePreSignedLinkVerbatimWithoutReEncodingIt() {
+        client().fetchResult(74553295);
+
+        // The %2F sequences in X-Amz-Credential must arrive exactly as sent —
+        // decoding them to '/' or double-encoding to %252F breaks the S3
+        // signature. Passing the link as a String let RestClient template-expand
+        // and corrupt it; the real service answered AuthorizationQueryParametersError.
+        assertEquals(PRESIGNED_QUERY, signedLinkRawQuery);
+        assertTrue(signedLinkRawQuery.contains("%2F"), signedLinkRawQuery);
     }
 
     @Test

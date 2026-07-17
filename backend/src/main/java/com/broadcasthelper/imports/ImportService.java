@@ -71,11 +71,9 @@ public class ImportService {
 
     /**
      * Stages a subsession fetched from the Data API instead of uploaded. The
-     * payload is the same either way, so this shares the upload's parser and
+     * fetched payload is the exported file's result object minus its envelope, so
+     * once IRacingParser has unwrapped it this shares the upload's parser and
      * review flow entirely — only where the bytes came from differs.
-     *
-     * WIP: only the fetch is unproven (see IRacingClient); everything downstream
-     * of it here is the same code the file upload already exercises.
      */
     public List<BatchSummary> stageFromIRacing(long subsessionId) {
         JsonNode payload = iracing.fetchResult(subsessionId);
@@ -154,13 +152,19 @@ public class ImportService {
         return stageIRacingResult(root);
     }
 
-    /** Stages a parsed subsession payload, whether uploaded or fetched from the
-     *  Data API — the two are identical (see IRacingClient.fetchResult). */
+    /** Stages a parsed subsession payload, whether uploaded (wrapped in an
+     *  "event_result" envelope) or fetched from the Data API (the same object
+     *  unwrapped). IRacingParser accepts both shapes. */
     List<Staged> stageIRacingResult(JsonNode root) {
         if (!IRacingParser.looksLikeEventResult(root)) {
+            // Name the actual top-level fields — if the payload shape shifts again,
+            // this says how, instead of leaving the next reader to guess.
+            List<String> keys = new ArrayList<>();
+            root.fieldNames().forEachRemaining(keys::add);
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Not an iRacing subsession result: expected an \"event_result\" envelope"
-                    + " with session_results");
+                    "Not an iRacing subsession result: expected session_results (in an "
+                    + "\"event_result\" envelope or at the top level), but the payload's top-level "
+                    + "fields were " + keys);
         }
         List<Staged> out = new ArrayList<>();
         for (RaceResultsImport session : IRacingParser.parseSessions(root)) {
