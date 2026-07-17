@@ -30,7 +30,7 @@ public class SecurityConfig {
 
     // Static SPA shell + the endpoints the login flow itself needs.
     private static final String[] PUBLIC = {
-            "/", "/index.html", "/favicon.ico", "/vite.svg", "/assets/**",
+            "/", "/index.html", "/favicon.svg", "/assets/**",
             "/api/me", "/oauth2/**", "/login/**", "/error"
     };
 
