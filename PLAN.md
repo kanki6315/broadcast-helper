@@ -184,7 +184,9 @@ which concretely realizes the `(series, file-kind)` plugin model above. `AUTO`
 stays the default and resolves to a concrete family; `import_batch.format`
 records which parser ran. Document-kind detection lives inside each family. One
 upload can stage **several** batches — a points PDF holds every championship of
-the series. Full detail in Phase 3.
+the series. A later family, `IRACING_JSON`, reads iRacing subsessions from an
+exported file *or* the live Data API (same payload either way) and adds a
+fetch-driven import UI alongside upload. Full detail in Phase 3.
 
 Real sample files for each format to be provided by the user when the
 importer is built — parsers are written against real files, not assumptions.
@@ -419,6 +421,47 @@ display size.)
   Chosen explicitly: AUTO can't distinguish two IMSA PDFs without opening them.
   See §4 for why the parser reads geometry rather than text, and
   parser/POINTS_SCHEMA.md for the contract.
+- **iRacing Data API (`IRACING_JSON`) — ✅ DONE (2026-07-17).** For sim-racing
+  leagues (first user: the Porsche TAG Heuer Esports Supercup), where the source
+  is iRacing's own API rather than a timing provider. One parser, two sources: an
+  iRacing subsession export and the Data API's `/results/get` return the *same*
+  result object — the exported file wraps it `{"type":"event_result","data":…}`,
+  the API returns it unwrapped with `session_results` at the top level, and
+  `IRacingParser` accepts both (`looksLikeEventResult`/`resultData`). Auto-detect
+  routes the uploaded file with no format hint. One subsession is a whole meeting,
+  so it stages **several** batches — qualifying, then each race in order, plus a
+  grid per race; practice/warmup are dropped. Heat formats fall out for free
+  (Sachsenring: five heats + consolation + feature). Times/gaps are
+  ten-thousandths of a second (`-1` = none); a qualifier who set no lap is
+  classified "No Time", not retired; the feature grid is imported verbatim
+  (it's a reverse-of-heat grid, never derivable). Solo-league mapping: one seat
+  per entry, `team` = driver, licence class only (the safety rating has no home).
+  `sessionStart` is shifted into the JVM zone so the payload's UTC survives the
+  timestamptz column; a track with no layout reports config_name `"N/A"`, dropped.
+
+  Live fetch (`IRacingClient`, proven against subsession 74553295 — its batches
+  are byte-identical to the exported file): the `password_limited` OAuth2 grant,
+  which bypasses 2FA and needs no browser redirect (legacy read-only auth was
+  retired 2025-12; the client id is scarce — issuance is paused). Both secrets
+  are SHA-256+base64 masked before they leave the process. Data endpoints answer
+  with a short-lived (~15 min) signed S3 link — `results/get` under `link`,
+  `roster` under a wrapped `data_url` — fetched **as a URI** (a String is URI-
+  template-expanded and corrupts the `%2F` in the AWS signature) and parsed **as
+  bytes** (S3 serves the roster as octet-stream). Endpoints: subsession →
+  results+grids; `league/season_sessions` → round enumeration; `season_standings`
+  → StandingsImport (season totals only, no per-round split); bulk-import a whole
+  season, or a hand-picked list of subsessions — both resilient, one bad
+  subsession reported not fatal. The **Import-from-iRacing modal** on the imports
+  page is the UI for all of it (subsession list or league season → grouped result
+  → the normal review + commit). Committing N rounds to one series lands them as
+  N events under one season — a season assembled from individual races. Roster →
+  entry list and points-system decomposition were evaluated and dropped as
+  low-value here (a roster is season-wide with no team/class; the standings'
+  base-vs-adjustment split is the practical points breakdown). Credentials live
+  in a gitignored `application-local.yml` (the `local` Spring profile, bootRun
+  only) locally and env vars in prod. **Next slice on this seam:** grouping a
+  round's staged batches in the review table so it commits to one event in a
+  click, instead of create-then-attach per batch.
 - **Still ahead:** design the automated prior-year-at-this-track feature,
   including change context (manufacturer, lineup, team) alongside the raw result.
   The **grid rundown sheet** (grid-order sheet with storyline fields) is
