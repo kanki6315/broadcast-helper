@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
+import IRacingImportModal from '../components/IRacingImportModal'
 
 interface ImportBatch {
   id: number
@@ -140,6 +141,7 @@ export default function ImportsPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [format, setFormat] = useState('AUTO')
+  const [iracingOpen, setIracingOpen] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
 
   async function loadBatches() {
@@ -320,7 +322,17 @@ export default function ImportsPage() {
         disabled={busy}
         onChange={(e) => e.target.files && uploadFiles(e.target.files)}
       />
+      <div className="import-iracing-row">
+        <span className="import-or">or</span>
+        <button type="button" className="btn-primary" disabled={busy} onClick={() => setIracingOpen(true)}>
+          Fetch from iRacing
+        </button>
+        <span className="muted">pull results, grids, and standings straight from the Data API.</span>
+      </div>
       {error && <p className="error">{error}</p>}
+      {iracingOpen && (
+        <IRacingImportModal onClose={() => setIracingOpen(false)} onStaged={loadBatches} />
+      )}
 
       {batches.length === 0 ? (
         <p>No imports yet.</p>

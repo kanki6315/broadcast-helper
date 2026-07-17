@@ -44,14 +44,55 @@ public class ImportController {
      * uploading its exported file produces, without the export. The subsession id
      * is the number in the result's URL on iRacing's site.
      *
-     * WIP: the fetch half of this has never reached the real iRacing service — see
-     * IRacingClient. Uploading the exported file is the proven path meanwhile, and
-     * needs no credentials. Without them this answers 503.
+     * Needs credentials (see application-local.yml / IRacingClient); without them
+     * it answers 503, and uploading the exported file remains a credential-free
+     * alternative.
      */
     @PostMapping("/iracing/{subsessionId}")
     @ResponseStatus(HttpStatus.CREATED)
     public List<ImportService.BatchSummary> fetchIRacing(@PathVariable long subsessionId) {
         return imports.stageFromIRacing(subsessionId);
+    }
+
+    /** A league season's rounds, newest last — each carries the subsession id to
+     *  import via {@link #fetchIRacing}. Lets a caller point at a season and pick
+     *  a round without knowing subsession ids. */
+    @GetMapping("/iracing/league/{leagueId}/season/{seasonId}/rounds")
+    public List<IRacingParser.LeagueRound> leagueSeasonRounds(
+            @PathVariable long leagueId, @PathVariable long seasonId) {
+        return imports.listSeasonRounds(leagueId, seasonId);
+    }
+
+    /** Stages a league season's driver standings for review (season totals only —
+     *  the API gives no per-round breakdown). Needs credentials; 503 without. */
+    @PostMapping("/iracing/league/{leagueId}/season/{seasonId}/standings")
+    @ResponseStatus(HttpStatus.CREATED)
+    public List<ImportService.BatchSummary> fetchIRacingStandings(
+            @PathVariable long leagueId, @PathVariable long seasonId) {
+        return imports.stageStandingsFromIRacing(leagueId, seasonId);
+    }
+
+    /** Stages every round of a league season that has results — a lot of batches
+     *  to review at once. Resilient: a round that fails is reported, not fatal. */
+    @PostMapping("/iracing/league/{leagueId}/season/{seasonId}/import")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ImportService.IRacingImport fetchIRacingSeason(
+            @PathVariable long leagueId, @PathVariable long seasonId) {
+        return imports.stageSeasonFromIRacing(leagueId, seasonId);
+    }
+
+    public record SubsessionIds(List<Long> subsessionIds) {
+    }
+
+    /** Stages a hand-picked list of subsessions (a season assembled by hand).
+     *  Resilient: a bad id is reported, not fatal. Needs credentials; 503 without. */
+    @PostMapping("/iracing/subsessions")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ImportService.IRacingImport fetchIRacingSubsessions(@RequestBody SubsessionIds body) {
+        if (body == null || body.subsessionIds() == null || body.subsessionIds().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "No subsession ids given");
+        }
+        return imports.stageSubsessionsFromIRacing(body.subsessionIds());
     }
 
     @GetMapping

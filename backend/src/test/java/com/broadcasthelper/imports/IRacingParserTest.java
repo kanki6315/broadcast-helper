@@ -42,6 +42,86 @@ class IRacingParserTest {
                 .orElseThrow(() -> new AssertionError("no session named " + name));
     }
 
+    private JsonNode seasonSessionsFixture() throws IOException {
+        try (InputStream in = getClass()
+                .getResourceAsStream("/fixtures/iracing/league-season-sessions-6004-114713.json")) {
+            assertNotNull(in, "missing season-sessions fixture");
+            return mapper.readTree(in);
+        }
+    }
+
+    @Test
+    void dropsTheNaConfigFromATrackWithNoLayout() {
+        // A track with a real layout keeps it...
+        assertEquals("Daytona International Speedway Road Course",
+                IRacingParser.circuitName(track("Daytona International Speedway", "Road Course")));
+        // ...but "N/A" (Sachsenring) is a sentinel for "no layout", not a name.
+        assertEquals("Sachsenring", IRacingParser.circuitName(track("Sachsenring", "N/A")));
+        assertEquals("Sachsenring", IRacingParser.circuitName(track("Sachsenring", "n/a")));
+        assertEquals("Sachsenring", IRacingParser.circuitName(track("Sachsenring", null)));
+    }
+
+    private JsonNode track(String trackName, String configName) {
+        var track = mapper.createObjectNode().put("track_name", trackName);
+        if (configName != null) {
+            track.put("config_name", configName);
+        }
+        return mapper.createObjectNode().set("track", track);
+    }
+
+    @Test
+    void parsesSeasonDriverStandings() throws IOException {
+        JsonNode root;
+        try (InputStream in = getClass()
+                .getResourceAsStream("/fixtures/iracing/league-season-standings-6004-114713.json")) {
+            assertNotNull(in, "missing standings fixture");
+            root = mapper.readTree(in);
+        }
+        StandingsImport st = IRacingParser.parseSeasonStandings(root, "2025 Porsche Esports Supercup", "2025");
+
+        assertEquals("2025 Porsche Esports Supercup", st.name());
+        assertEquals("2025", st.year());
+        assertTrue(st.sessions().isEmpty(), "the endpoint names no rounds");
+        assertEquals(30, st.rows().size());
+
+        StandingsImport.Row leader = st.rows().get(0);
+        assertEquals(1, leader.position());
+        assertEquals("Cooper Webster", leader.team());
+        assertEquals("161668", leader.key()); // cust_id, stable across a rename
+        assertEquals(379.0, leader.totalPoints()); // total = base 389 + adjustment -10
+        assertTrue(leader.pointsBySession().isEmpty(), "no per-round breakdown from this endpoint");
+
+        // Rows come out in championship order.
+        for (int i = 1; i < st.rows().size(); i++) {
+            assertTrue(st.rows().get(i).position() >= st.rows().get(i - 1).position());
+        }
+    }
+
+    @Test
+    void parsesLeagueSeasonRoundsOldestFirst() throws IOException {
+        List<IRacingParser.LeagueRound> rounds =
+                IRacingParser.parseSeasonRounds(seasonSessionsFixture());
+
+        assertEquals(7, rounds.size());
+
+        // Oldest first: the 2025 Porsche Esports Supercup opened at Daytona — the
+        // very subsession the fetch path is proven against.
+        IRacingParser.LeagueRound opener = rounds.get(0);
+        assertEquals(74553295L, opener.subsessionId());
+        assertEquals("Daytona International Speedway", opener.trackName());
+        assertTrue(opener.hasResults());
+        assertEquals(2025, opener.launchAt().getYear());
+
+        // Strictly ascending by launch time — the schedule order a broadcaster reads.
+        for (int i = 1; i < rounds.size(); i++) {
+            assertTrue(!rounds.get(i).launchAt().isBefore(rounds.get(i - 1).launchAt()),
+                    "rounds must be oldest-first");
+        }
+
+        // Every round here has been run, so each subsession id is importable.
+        assertTrue(rounds.stream().allMatch(IRacingParser.LeagueRound::hasResults));
+    }
+
     @Test
     void detectsEventResult() throws IOException {
         assertTrue(IRacingParser.looksLikeEventResult(fixture()));
@@ -52,6 +132,31 @@ class IRacingParserTest {
         try (InputStream in = getClass().getResourceAsStream("/fixtures/imsa/race-wgi-2026.json")) {
             assertFalse(IRacingParser.looksLikeEventResult(mapper.readTree(in)));
         }
+    }
+
+    /**
+     * The Data API returns the result object unwrapped — session_results at the
+     * top level, no {"type":"event_result","data":{...}} envelope, which the
+     * exported file adds. Unwrapping the fixture the same way must parse to the
+     * exact same sessions, so the fetch and upload paths stay interchangeable.
+     */
+    @Test
+    void parsesTheUnwrappedApiShapeIdenticallyToTheExportedFile() throws IOException {
+        JsonNode wrapped = fixture();
+        JsonNode bare = wrapped.get("data"); // what the signed-link payload looks like
+
+        assertTrue(IRacingParser.looksLikeEventResult(bare));
+        assertEquals(
+                IRacingParser.parseSessions(wrapped).stream().map(RaceResultsImport::sessionName).toList(),
+                IRacingParser.parseSessions(bare).stream().map(RaceResultsImport::sessionName).toList());
+        assertEquals(IRacingParser.parseGrids(wrapped).size(), IRacingParser.parseGrids(bare).size());
+
+        RaceResultsImport wrappedFeature = IRacingParser.parseSessions(wrapped).stream()
+                .filter(s -> "Feature".equals(s.sessionName())).findFirst().orElseThrow();
+        RaceResultsImport bareFeature = IRacingParser.parseSessions(bare).stream()
+                .filter(s -> "Feature".equals(s.sessionName())).findFirst().orElseThrow();
+        assertEquals(wrappedFeature.rows().get(0).team(), bareFeature.rows().get(0).team());
+        assertEquals(wrappedFeature.circuitName(), bareFeature.circuitName());
     }
 
     @Test

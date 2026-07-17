@@ -71,16 +71,140 @@ public class ImportService {
 
     /**
      * Stages a subsession fetched from the Data API instead of uploaded. The
-     * payload is the same either way, so this shares the upload's parser and
+     * fetched payload is the exported file's result object minus its envelope, so
+     * once IRacingParser has unwrapped it this shares the upload's parser and
      * review flow entirely — only where the bytes came from differs.
-     *
-     * WIP: only the fetch is unproven (see IRacingClient); everything downstream
-     * of it here is the same code the file upload already exercises.
      */
     public List<BatchSummary> stageFromIRacing(long subsessionId) {
         JsonNode payload = iracing.fetchResult(subsessionId);
         return persist(stageIRacingResult(payload), ImportFormat.IRACING_JSON,
                 "subsession-" + subsessionId + ".json");
+    }
+
+    /**
+     * The rounds of a league season, so a caller can point at a season and import
+     * a round by its subsession id (via {@link #stageFromIRacing}) without knowing
+     * ids up front. Read-only — this stages nothing.
+     */
+    public List<IRacingParser.LeagueRound> listSeasonRounds(long leagueId, long seasonId) {
+        JsonNode payload = iracing.get("/league/season_sessions", java.util.Map.of(
+                "league_id", String.valueOf(leagueId),
+                "season_id", String.valueOf(seasonId)));
+        return IRacingParser.parseSeasonRounds(payload);
+    }
+
+    /**
+     * Stages a league season's driver standings — the championship table a single
+     * result file can't produce. The reviewer confirms class / kind / season year
+     * on commit, the same as a points-PDF standings import. Season totals only:
+     * the API gives no per-round breakdown, so the rows carry a total and nothing
+     * per session.
+     */
+    public List<BatchSummary> stageStandingsFromIRacing(long leagueId, long seasonId) {
+        JsonNode standings = iracing.get("/league/season_standings", java.util.Map.of(
+                "league_id", String.valueOf(leagueId),
+                "season_id", String.valueOf(seasonId)));
+        String seasonName = seasonName(leagueId, seasonId);
+        String year = leadingYear(seasonName);
+        StandingsImport imp = IRacingParser.parseSeasonStandings(standings, seasonName, year);
+        if (imp.rows().isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "No driver standings found for league " + leagueId + " season " + seasonId);
+        }
+        Staged staged = new Staged("STANDINGS", imp,
+                "%s — %d competitors".formatted(imp.name(), imp.rows().size()));
+        return persist(List.of(staged), ImportFormat.IRACING_JSON,
+                "league-" + leagueId + "-season-" + seasonId + "-standings.json");
+    }
+
+    /**
+     * Outcome of staging several subsessions at once (a whole season, or a
+     * hand-picked list). Resilient by design, so it reports both sides: how many
+     * were requested, how many staged, every batch produced, and each subsession
+     * that failed.
+     */
+    public record IRacingImport(int requested, int staged,
+                                List<BatchSummary> batches, List<Failure> failures) {
+    }
+
+    public record Failure(long subsessionId, String track, String reason) {
+    }
+
+    /**
+     * Stages every round of a league season that has results, in schedule order.
+     * Staging only, and a season is a lot of batches to review, so this is for
+     * when importing a whole season at once is genuinely wanted.
+     */
+    public IRacingImport stageSeasonFromIRacing(long leagueId, long seasonId) {
+        List<IRacingParser.LeagueRound> rounds = listSeasonRounds(leagueId, seasonId).stream()
+                .filter(IRacingParser.LeagueRound::hasResults)
+                .toList();
+        List<BatchSummary> batches = new ArrayList<>();
+        List<Failure> failures = new ArrayList<>();
+        int staged = 0;
+        for (IRacingParser.LeagueRound round : rounds) {
+            if (tryStage(round.subsessionId(), round.trackName(), batches, failures)) {
+                staged++;
+            }
+        }
+        return new IRacingImport(rounds.size(), staged, batches, failures);
+    }
+
+    /**
+     * Stages a hand-picked list of subsessions — the "these five races are my
+     * season" case, where the subsessions aren't a league-season enumeration.
+     * Same resilience as a bulk season import: one bad id doesn't sink the rest.
+     */
+    public IRacingImport stageSubsessionsFromIRacing(List<Long> subsessionIds) {
+        List<BatchSummary> batches = new ArrayList<>();
+        List<Failure> failures = new ArrayList<>();
+        int staged = 0;
+        for (Long id : subsessionIds) {
+            if (tryStage(id, null, batches, failures)) {
+                staged++;
+            }
+        }
+        return new IRacingImport(subsessionIds.size(), staged, batches, failures);
+    }
+
+    /** Stages one subsession, folding a failure into the report rather than
+     *  throwing — so a batch of imports survives a single bad one. */
+    private boolean tryStage(long subsessionId, String trackHint,
+                             List<BatchSummary> batches, List<Failure> failures) {
+        try {
+            batches.addAll(stageFromIRacing(subsessionId));
+            return true;
+        } catch (RuntimeException e) {
+            String reason = e instanceof ResponseStatusException rse ? rse.getReason() : e.getMessage();
+            failures.add(new Failure(subsessionId, trackHint, reason));
+            return false;
+        }
+    }
+
+    /** The season's display name from /league/seasons, for titling the standings.
+     *  Falls back to a generic label if the season isn't listed. */
+    private String seasonName(long leagueId, long seasonId) {
+        JsonNode seasons = iracing.get("/league/seasons", java.util.Map.of(
+                "league_id", String.valueOf(leagueId)));
+        for (JsonNode s : seasons.path("seasons")) {
+            if (s.path("season_id").asLong() == seasonId) {
+                String name = s.path("season_name").asText("");
+                if (!name.isBlank()) {
+                    return name.trim();
+                }
+            }
+        }
+        return "League " + leagueId + " season " + seasonId;
+    }
+
+    /** A leading four-digit year ("2025 Porsche…" -> "2025"), else null — the
+     *  reviewer confirms the season year regardless. */
+    private static String leadingYear(String name) {
+        if (name == null) {
+            return null;
+        }
+        var m = java.util.regex.Pattern.compile("^\\s*(\\d{4})\\b").matcher(name);
+        return m.find() ? m.group(1) : null;
     }
 
     private List<BatchSummary> persist(List<Staged> staged, ImportFormat format, String filename) {
@@ -154,13 +278,19 @@ public class ImportService {
         return stageIRacingResult(root);
     }
 
-    /** Stages a parsed subsession payload, whether uploaded or fetched from the
-     *  Data API — the two are identical (see IRacingClient.fetchResult). */
+    /** Stages a parsed subsession payload, whether uploaded (wrapped in an
+     *  "event_result" envelope) or fetched from the Data API (the same object
+     *  unwrapped). IRacingParser accepts both shapes. */
     List<Staged> stageIRacingResult(JsonNode root) {
         if (!IRacingParser.looksLikeEventResult(root)) {
+            // Name the actual top-level fields — if the payload shape shifts again,
+            // this says how, instead of leaving the next reader to guess.
+            List<String> keys = new ArrayList<>();
+            root.fieldNames().forEachRemaining(keys::add);
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Not an iRacing subsession result: expected an \"event_result\" envelope"
-                    + " with session_results");
+                    "Not an iRacing subsession result: expected session_results (in an "
+                    + "\"event_result\" envelope or at the top level), but the payload's top-level "
+                    + "fields were " + keys);
         }
         List<Staged> out = new ArrayList<>();
         for (RaceResultsImport session : IRacingParser.parseSessions(root)) {

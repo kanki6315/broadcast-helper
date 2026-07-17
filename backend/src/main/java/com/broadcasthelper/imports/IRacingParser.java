@@ -43,8 +43,22 @@ public final class IRacingParser {
     }
 
     public static boolean looksLikeEventResult(JsonNode root) {
-        return "event_result".equals(root.path("type").asText())
-               && root.path("data").has("session_results");
+        return resultData(root).has("session_results");
+    }
+
+    /**
+     * The result object, whichever way it arrived. A file exported from iRacing's
+     * site wraps it as {"type":"event_result","data":{...}}; the Data API's
+     * signed-link payload is that same object unwrapped, with session_results at
+     * the top level. Both are supported so the upload and fetch paths share this
+     * parser — return the data envelope when present, otherwise the root itself.
+     */
+    private static JsonNode resultData(JsonNode root) {
+        JsonNode data = root.path("data");
+        if (data.isObject() && data.has("session_results")) {
+            return data;
+        }
+        return root;
     }
 
     /**
@@ -55,7 +69,7 @@ public final class IRacingParser {
      * ordinal) stays the stable key the domain matches on.
      */
     public static List<RaceResultsImport> parseSessions(JsonNode root) {
-        JsonNode data = root.path("data");
+        JsonNode data = resultData(root);
         List<RaceResultsImport> out = new ArrayList<>();
         int raceOrdinal = 0;
         for (JsonNode sim : data.path("session_results")) {
@@ -99,7 +113,7 @@ public final class IRacingParser {
      * order reproduces it.
      */
     public static List<GridImport> parseGrids(JsonNode root) {
-        JsonNode data = root.path("data");
+        JsonNode data = resultData(root);
         List<GridImport> out = new ArrayList<>();
         int raceOrdinal = 0;
         for (JsonNode sim : data.path("session_results")) {
@@ -144,6 +158,79 @@ public final class IRacingParser {
             ));
         }
         return out;
+    }
+
+    // ------------------------------------------------------ league navigation
+
+    /**
+     * One scheduled round of a league season: the subsession to import, plus
+     * enough to recognise it (date, track, winner) without opening it.
+     */
+    public record LeagueRound(
+            long subsessionId,
+            OffsetDateTime launchAt,
+            String trackName,
+            String winnerName,
+            boolean hasResults,
+            int entryCount
+    ) {
+    }
+
+    /**
+     * The rounds of a /league/season_sessions payload, oldest first. A scheduled
+     * round with no results yet (hasResults false) is still listed — it carries a
+     * subsession id but importing it would find nothing, so the caller decides.
+     */
+    public static List<LeagueRound> parseSeasonRounds(JsonNode root) {
+        List<LeagueRound> rounds = new ArrayList<>();
+        for (JsonNode s : root.path("sessions")) {
+            long subsessionId = s.path("subsession_id").asLong(-1);
+            if (subsessionId < 0) {
+                continue; // a slot with no subsession is nothing to import
+            }
+            String launch = text(s, "launch_at");
+            rounds.add(new LeagueRound(
+                    subsessionId,
+                    launch == null ? null : OffsetDateTime.parse(launch),
+                    text(s.path("track"), "track_name"),
+                    text(s, "winner_name"),
+                    s.path("has_results").asBoolean(false),
+                    s.path("entry_count").asInt(0)
+            ));
+        }
+        rounds.sort((a, b) -> {
+            if (a.launchAt() == null || b.launchAt() == null) {
+                return 0;
+            }
+            return a.launchAt().compareTo(b.launchAt());
+        });
+        return rounds;
+    }
+
+    /**
+     * A league season's driver championship. The Data API gives season totals
+     * only — base points plus adjustments, no per-round split — so each row's
+     * per-session breakdown is empty; the standings commit path tolerates that.
+     * The competitor is the driver (a solo league), keyed by cust_id so a rename
+     * doesn't fork the row.
+     */
+    public static StandingsImport parseSeasonStandings(JsonNode root, String seasonName, String year) {
+        List<StandingsImport.Row> rows = new ArrayList<>();
+        for (JsonNode d : root.path("standings").path("driver_standings")) {
+            JsonNode driver = d.path("driver");
+            rows.add(new StandingsImport.Row(
+                    d.path("position").asInt(),
+                    String.valueOf(driver.path("cust_id").asLong()),
+                    text(driver, "display_name"),
+                    d.path("total_points").asDouble(),
+                    null,
+                    null,
+                    List.of()
+            ));
+        }
+        rows.sort((a, b) -> Integer.compare(a.position(), b.position()));
+        // No per-round session list either — the endpoint names no rounds.
+        return new StandingsImport(seasonName, seasonName, null, year, List.of(), rows);
     }
 
     private static List<RaceResultsImport.Row> resultRows(JsonNode data, JsonNode sim) {
@@ -328,15 +415,23 @@ public final class IRacingParser {
         return circuitName(data);
     }
 
-    /** "Daytona International Speedway Road Course" — the config is part of the circuit. */
-    private static String circuitName(JsonNode data) {
+    /**
+     * "Daytona International Speedway Road Course" — the config is part of the
+     * circuit. A track with no separate layout reports config_name "N/A" (seen at
+     * Sachsenring), which must be dropped rather than tacked on as "Sachsenring
+     * N/A". Package-private for a targeted test of that.
+     */
+    static String circuitName(JsonNode data) {
         JsonNode track = data.path("track");
         String name = text(track, "track_name");
         String config = text(track, "config_name");
         if (name == null) {
             return null;
         }
-        return config == null ? name : name + " " + config;
+        if (config == null || config.equalsIgnoreCase("N/A")) {
+            return name;
+        }
+        return name + " " + config;
     }
 
     /**

@@ -37,3 +37,12 @@ dependencies {
 tasks.named('test') {
 	useJUnitPlatform()
 }
+
+// Local dev only: run bootRun under the `local` Spring profile so it loads the
+// gitignored src/main/resources/application-local.yml (iRacing credentials).
+// Scoped to bootRun deliberately — the container runs `java -jar` (see Dockerfile),
+// so production never activates this profile, and `test` doesn't either (its
+// stub-based tests assert the unconfigured path).
+tasks.named('bootRun') {
+	systemProperty 'spring.profiles.active', 'local'
+}
