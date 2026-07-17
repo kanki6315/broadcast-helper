@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import './upload-files-modal.css'
-import SeriesEventPicker, { type EventOption, type Series } from './SeriesEventPicker'
+import SeriesEventPicker from './SeriesEventPicker'
+import ImportStatusIcon, { type ImportIconState } from './ImportStatusIcon'
+import ConfirmImportStep from './ConfirmImportStep'
+import type { EventOption, Series } from '../lib/useSeriesEvents'
 
 /**
  * The file-upload entry point for the Imports page. Pins one series + event as
@@ -49,45 +52,29 @@ const KIND_LABEL: Record<string, string> = {
 
 const ACCEPT = '.json,.pdf,.csv,application/json,application/pdf,text/csv'
 
-function StatusIcon({ status }: { status: FileStatus }) {
-  if (status === 'staged') {
-    return (
-      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
-        <path d="M3 8 L6 11 L12 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    )
-  }
-  if (status === 'error') {
-    return (
-      <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
-        <path d="M4 4 L11 11 M11 4 L4 11" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      </svg>
-    )
-  }
-  if (status === 'uploading') {
-    return (
-      <svg className="uf-spin" width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
-        <circle cx="7.5" cy="7.5" r="5.5" stroke="currentColor" strokeWidth="1.6" strokeOpacity="0.25" />
-        <path d="M7.5 2 A5.5 5.5 0 0 1 13 7.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      </svg>
-    )
-  }
-  // queued — a quiet dot
-  return (
-    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
-      <circle cx="7.5" cy="7.5" r="2.5" fill="currentColor" />
-    </svg>
-  )
+const FILE_ICON_STATE: Record<FileStatus, ImportIconState> = {
+  queued: 'idle',
+  uploading: 'busy',
+  staged: 'ok',
+  error: 'error',
 }
 
 export default function UploadFilesModal({
   onClose,
   onStaged,
+  onCommitted,
 }: {
   onClose: () => void
   /** Hands staged batch ids to the page with the pinned target so the review
    *  table lands pre-filled. eventId is null when the batch isn't pinned. */
   onStaged: (batchIds: number[], seriesId: number | null, eventId: number | null) => void | Promise<void>
+  /** After the confirm step commits, refresh the table and seed any leftovers. */
+  onCommitted: (r: {
+    committedIds: number[]
+    leftoverIds: number[]
+    seriesId: number | null
+    eventId: number | null
+  }) => void | Promise<void>
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -103,6 +90,8 @@ export default function UploadFilesModal({
   const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // After staging, the modal hands off to the confirm-and-commit step.
+  const [confirmIds, setConfirmIds] = useState<number[] | null>(null)
 
   useEffect(() => {
     const d = dialogRef.current
@@ -161,7 +150,12 @@ export default function UploadFilesModal({
       }
     }
     setBusy(false)
-    if (staged.length > 0) await onStaged(staged, seriesId, eventId)
+    if (staged.length > 0) {
+      // Seed the table (so an abandoned confirm still leaves rows), then hand off
+      // to the confirm-and-commit step.
+      await onStaged(staged, seriesId, eventId)
+      setConfirmIds(staged)
+    }
   }
 
   function onDrop(e: React.DragEvent) {
@@ -211,18 +205,29 @@ export default function UploadFilesModal({
       </header>
 
       <div className="uf-body">
-        {error && (
-          <p className="error-panel uf-error" role="alert">
-            {error}
-          </p>
-        )}
+        {confirmIds ? (
+          <ConfirmImportStep
+            batchIds={confirmIds}
+            pinnedSeriesId={seriesId}
+            pinnedEventId={eventId}
+            onCommitted={onCommitted}
+            onBack={() => setConfirmIds(null)}
+            onDone={onClose}
+          />
+        ) : (
+          <>
+            {error && (
+              <p className="error-panel uf-error" role="alert">
+                {error}
+              </p>
+            )}
 
-        <SeriesEventPicker
-          idPrefix="uf"
-          required
-          seriesId={seriesId}
-          eventId={eventId}
-          autoLabel="Each file places itself"
+            <SeriesEventPicker
+              idPrefix="uf"
+              required
+              seriesId={seriesId}
+              eventId={eventId}
+              autoLabel="Each file places itself"
           onSeriesChange={(id, s) => {
             setSeriesId(id)
             setSeriesObj(s)
@@ -308,7 +313,7 @@ export default function UploadFilesModal({
               {queue.map((it) => (
                 <li key={it.localId} className="uf-file">
                   <span className={`uf-file-status ${it.status}`} aria-hidden="true">
-                    <StatusIcon status={it.status} />
+                    <ImportStatusIcon state={FILE_ICON_STATE[it.status]} />
                   </span>
                   <span className="uf-file-main">
                     <span className="uf-file-name">{it.file.name}</span>
@@ -346,8 +351,11 @@ export default function UploadFilesModal({
             </ul>
           </div>
         )}
+          </>
+        )}
       </div>
 
+      {!confirmIds && (
       <footer className="uf-foot">
         {allDone && stagedItems.length > 0 ? (
           <p className="uf-foot-note done">
@@ -374,6 +382,7 @@ export default function UploadFilesModal({
               : 'Stage files'}
         </button>
       </footer>
+      )}
     </dialog>
   )
 }

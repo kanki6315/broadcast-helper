@@ -185,6 +185,21 @@ export default function ImportsPage() {
     await loadBatches({ ids: new Set(batchIds), seriesId, eventId })
   }
 
+  // The confirm step committed a batch as grouped events; refresh the table so
+  // the committed rows update and any leftovers land seeded with the series/event.
+  async function onBatchesCommitted(r: {
+    committedIds: number[]
+    leftoverIds: number[]
+    seriesId: number | null
+    eventId: number | null
+  }) {
+    if (r.seriesId === null || r.leftoverIds.length === 0) {
+      await loadBatches()
+      return
+    }
+    await loadBatches({ ids: new Set(r.leftoverIds), seriesId: r.seriesId, eventId: r.eventId })
+  }
+
   function patch(id: number, change: Partial<TargetState>) {
     setTargets((t) => ({ ...t, [id]: { ...t[id], ...change } }))
   }
@@ -309,10 +324,18 @@ export default function ImportsPage() {
       </div>
       {error && <p className="error">{error}</p>}
       {uploadOpen && (
-        <UploadFilesModal onClose={() => setUploadOpen(false)} onStaged={onBatchesStaged} />
+        <UploadFilesModal
+          onClose={() => setUploadOpen(false)}
+          onStaged={onBatchesStaged}
+          onCommitted={onBatchesCommitted}
+        />
       )}
       {iracingOpen && (
-        <IRacingImportModal onClose={() => setIracingOpen(false)} onStaged={onBatchesStaged} />
+        <IRacingImportModal
+          onClose={() => setIracingOpen(false)}
+          onStaged={onBatchesStaged}
+          onCommitted={onBatchesCommitted}
+        />
       )}
 
       {batches.length === 0 ? (

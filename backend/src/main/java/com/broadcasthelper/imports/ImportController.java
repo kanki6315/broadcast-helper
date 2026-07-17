@@ -128,6 +128,14 @@ public class ImportController {
         return imports.commit(id, target);
     }
 
+    /** Confirm-and-commit a staged batch as grouped events in one call: sibling
+     *  batches share their resolved event, and a whole season commits with its
+     *  round ordinals renumbered by date. One bad group fails alone. */
+    @PostMapping("/commit-group")
+    public ImportService.GroupCommitResult commitGroup(@RequestBody ImportService.GroupCommitRequest request) {
+        return imports.commitGroup(request);
+    }
+
     @PostMapping("/{id}/discard")
     public ImportService.BatchSummary discard(@PathVariable long id) {
         imports.discard(id);

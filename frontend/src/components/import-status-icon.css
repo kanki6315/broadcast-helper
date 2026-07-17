@@ -1,0 +1,18 @@
+/* Spinner for the busy state of ImportStatusIcon. Reduced motion holds it
+ * still (the surrounding "…" copy still signals progress). */
+.isi-spin {
+  animation: isi-spin 0.8s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes isi-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .isi-spin {
+    animation: none;
+  }
+}

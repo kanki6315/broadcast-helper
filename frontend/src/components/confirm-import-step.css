@@ -1,0 +1,352 @@
+/* Confirm-and-commit step, embedded in the upload and iRacing modal bodies.
+ * Token layer (index.css). Drag feedback is a border/background token change
+ * only — no motion — so it holds under prefers-reduced-motion. */
+
+.cis {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.cis-skel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.cis-skel .skeleton {
+  height: 2.4lh;
+}
+
+.cis-error {
+  margin: 0;
+}
+
+.cis-intro {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.cis-intro strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.cis-series-need {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in oklab, var(--accent) 50%, transparent);
+  border-radius: var(--radius-md);
+  background: var(--accent-tint);
+}
+
+.cis-need-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* ---- event groups ---- */
+
+.cis-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.cis-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  overflow: hidden;
+  transition:
+    border-color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+.cis-group.attach {
+  background: var(--surface);
+}
+
+.cis-group.drop-active {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+
+.cis-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-wrap: wrap;
+}
+
+.cis-group-name {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+}
+
+.cis-group-name:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.cis-group-name.attached {
+  border-color: transparent;
+  background: none;
+  padding: 4px 0;
+}
+
+.cis-group-date {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cis-tag {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+}
+
+.cis-attach {
+  font-size: var(--text-xs);
+  max-width: 12rem;
+}
+
+/* ---- draggable session items ---- */
+
+.cis-items {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cis-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  cursor: grab;
+}
+
+.cis-item:active {
+  cursor: grabbing;
+}
+
+.cis-item.plain {
+  cursor: default;
+}
+
+.cis-grip {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: -2px;
+  cursor: grab;
+  user-select: none;
+}
+
+.cis-item-status {
+  flex: none;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+}
+.cis-item-status.idle {
+  color: var(--text-muted);
+}
+.cis-item-status.busy {
+  color: var(--accent-ink);
+}
+.cis-item-status.ok {
+  color: var(--success);
+}
+.cis-item-status.error {
+  color: var(--error);
+}
+.cis-item-status.skip {
+  color: var(--text-muted);
+}
+
+.cis-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cis-item-label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cis-item-batches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.cis-batch {
+  white-space: nowrap;
+}
+
+.cis-move {
+  flex: none;
+}
+
+.cis-move select {
+  font-size: var(--text-xs);
+  max-width: 10rem;
+}
+
+/* ---- round-ordinal preview ---- */
+
+.cis-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.cis-preview-title {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.cis-preview-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cis-preview-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 2px 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.cis-preview-row.new {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.cis-rd {
+  flex: none;
+  width: 3.2rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.cis-preview-row.new .cis-rd {
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.cis-preview-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- standings section ---- */
+
+.cis-standings {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.cis-standings-title {
+  display: block;
+  padding: 6px 10px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.cis-leftover {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ---- footer actions ---- */
+
+.cis-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.cis-foot-note {
+  margin-right: auto;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.cis-foot-note.ok {
+  color: var(--success);
+}
+
+.cis-foot-note.err {
+  color: var(--error);
+}
+
+@media (max-width: 480px) {
+  .cis-foot .btn,
+  .cis-foot .btn-primary {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}

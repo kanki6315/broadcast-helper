@@ -6,7 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
@@ -14,6 +16,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -29,17 +32,20 @@ public class ImportService {
     private final JdbcClient db;
     private final ObjectMapper json;
     private final IRacingClient iracing;
+    private final TransactionTemplate txTemplate;
     private final String parserPython;
     private final String parserScript;
     private final String pointsParserScript;
 
     public ImportService(JdbcClient db, ObjectMapper json, IRacingClient iracing,
+                         PlatformTransactionManager txManager,
                          @org.springframework.beans.factory.annotation.Value("${broadcast-helper.entry-list-parser.python:python3}") String parserPython,
                          @org.springframework.beans.factory.annotation.Value("${broadcast-helper.entry-list-parser.script:../parser/parse_entry_list.py}") String parserScript,
                          @org.springframework.beans.factory.annotation.Value("${broadcast-helper.points-parser.script:../parser/parse_points.py}") String pointsParserScript) {
         this.db = db;
         this.json = json;
         this.iracing = iracing;
+        this.txTemplate = new TransactionTemplate(txManager);
         this.parserPython = parserPython;
         this.parserScript = parserScript;
         this.pointsParserScript = pointsParserScript;
@@ -811,6 +817,7 @@ public class ImportService {
     public record ImportTarget(
             Long seriesId, String newSeriesName,   // pick an existing series, or create one
             Long eventId,                          // results/entry-list: attach to this event, or null = new
+            String eventName,                      // when creating an event, overrides the payload's name
             String classCode, String kind, Boolean isCup, String familyName, // standings championship
             Integer seasonYear,                    // standings: overrides the year the payload claims
             String sessionType, Integer sessionOrdinal, // for files with no session metadata (grid CSVs)
@@ -819,6 +826,18 @@ public class ImportService {
         Map<String, String> mapping() {
             return classMapping == null ? Map.of() : classMapping;
         }
+    }
+
+    /**
+     * The name a newly created event takes: the reviewer's override wins, else the
+     * payload's own name. Lets two same-track rounds (iRacing names both after the
+     * bare circuit) be de-collided before they hit the UNIQUE(season_id, name)
+     * constraint.
+     */
+    static String chosenEventName(ImportTarget target, String payloadName) {
+        return target.eventName() != null && !target.eventName().isBlank()
+                ? target.eventName().trim()
+                : payloadName;
     }
 
     @Transactional
@@ -849,6 +868,229 @@ public class ImportService {
         return get(id);
     }
 
+    // ---------------------------------------------------------- group commit
+
+    /**
+     * Confirm-and-commit a whole staged batch as grouped events. Each proposed
+     * event's batches (a subsession's results + grid, a weekend's entry list +
+     * results, …) commit together so the sibling batches share one resolved event
+     * — which single-batch {@link #commit} can't guarantee, since it either
+     * attaches to a chosen eventId or creates a brand-new event per batch.
+     *
+     * eventId null on a {@link ProposedEvent} means "create it"; the group's first
+     * event-kind batch supplies the circuit/date, and the reviewer-chosen name
+     * de-collides two same-track rounds before they hit UNIQUE(season_id, name).
+     * Standings batches carry a null eventKey and commit on their own.
+     */
+    public record ProposedEvent(String key, Long eventId, String name, String eventDate) {
+    }
+
+    public record GroupBatch(long batchId, String eventKey, ImportTarget target) {
+    }
+
+    public record GroupCommitRequest(List<ProposedEvent> events, List<GroupBatch> batches) {
+    }
+
+    public record BatchResult(long batchId, String status, String message, Long eventId) {
+    }
+
+    public record GroupCommitResult(int committed, int failed, List<BatchResult> results) {
+    }
+
+    /**
+     * Not {@code @Transactional}: it spans one transaction per event group (via
+     * {@link #txTemplate}) so one bad group rolls back alone while the rest of the
+     * season still commits. The self-call to {@link #commit} joins the template's
+     * transaction (proxy self-invocation, so its own {@code @Transactional} is a
+     * no-op — exactly what we want here).
+     */
+    public GroupCommitResult commitGroup(GroupCommitRequest req) {
+        Map<String, ProposedEvent> byKey = validateGroupRequest(req);
+        Map<String, List<GroupBatch>> grouped = groupByEventKey(req.batches());
+
+        List<BatchResult> results = new ArrayList<>();
+        // Standings and any other keyless batches: each its own transaction.
+        for (GroupBatch gb : grouped.getOrDefault(null, List.of())) {
+            results.add(commitOneInTx(gb, null));
+        }
+        // Event groups: all the group's batches in one transaction, event resolved once.
+        for (Map.Entry<String, List<GroupBatch>> e : grouped.entrySet()) {
+            if (e.getKey() == null) {
+                continue;
+            }
+            results.addAll(commitEventGroup(byKey.get(e.getKey()), e.getValue()));
+        }
+
+        int committed = (int) results.stream().filter(r -> "COMMITTED".equals(r.status())).count();
+        return new GroupCommitResult(committed, results.size() - committed, results);
+    }
+
+    /** Commit one group's batches in a single transaction; roll the whole group
+     *  back (batches stay STAGED) on any failure, reporting it per batch. */
+    private List<BatchResult> commitEventGroup(ProposedEvent pe, List<GroupBatch> batches) {
+        try {
+            long eventId = txTemplate.execute(status -> {
+                long resolved = pe.eventId() != null ? attachEventId(pe.eventId()) : createGroupEvent(pe, batches);
+                for (GroupBatch gb : batches) {
+                    commit(gb.batchId(), withEvent(gb.target(), resolved, pe.name()));
+                }
+                return resolved;
+            });
+            List<BatchResult> ok = new ArrayList<>();
+            for (GroupBatch gb : batches) {
+                ok.add(new BatchResult(gb.batchId(), "COMMITTED", null, eventId));
+            }
+            return ok;
+        } catch (RuntimeException ex) {
+            String msg = messageOf(ex);
+            List<BatchResult> failed = new ArrayList<>();
+            for (GroupBatch gb : batches) {
+                failed.add(new BatchResult(gb.batchId(), "FAILED", msg, null));
+            }
+            return failed;
+        }
+    }
+
+    /** A keyless (standings) batch in its own transaction. */
+    private BatchResult commitOneInTx(GroupBatch gb, Long eventId) {
+        try {
+            txTemplate.executeWithoutResult(status -> commit(gb.batchId(), gb.target()));
+            return new BatchResult(gb.batchId(), "COMMITTED", null, eventId);
+        } catch (RuntimeException ex) {
+            return new BatchResult(gb.batchId(), "FAILED", messageOf(ex), null);
+        }
+    }
+
+    /** Confirm an attach-target event exists, returning its id. */
+    private long attachEventId(long eventId) {
+        Optional<Long> found = db.sql("SELECT id FROM event WHERE id = :id").param("id", eventId)
+                .query(Long.class).optional();
+        return found.orElseThrow(() -> new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "Chosen event no longer exists"));
+    }
+
+    /** Create the group's event from its first event-kind batch's circuit/date and
+     *  the reviewer-chosen name, then renumber the season's rounds by date. */
+    private long createGroupEvent(ProposedEvent pe, List<GroupBatch> batches) {
+        if (pe.name() == null || pe.name().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "New event needs a name");
+        }
+        GroupBatch first = batches.get(0);
+        EventMeta meta = eventMetaFromBatch(first.batchId());
+        if (meta.date() == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "This import has no date, so it can't create the event \"" + pe.name() + "\"");
+        }
+        long seriesId = resolveSeriesId(first.target());
+        long seasonId = findOrCreateSeason(seriesId, meta.date().getYear());
+        boolean nameTaken = db.sql("SELECT 1 FROM event WHERE season_id = :s AND name = :n")
+                .param("s", seasonId).param("n", pe.name().trim())
+                .query(Integer.class).optional().isPresent();
+        if (nameTaken) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "An event named \"" + pe.name().trim() + "\" already exists this season — "
+                            + "rename it or attach to the existing event");
+        }
+        long eventId = createEvent(seasonId, pe.name().trim(), meta.circuit(),
+                meta.lengthM(), meta.country(), meta.date());
+        renumberSeasonRounds(seasonId);
+        return eventId;
+    }
+
+    private record EventMeta(String defaultName, String circuit, Double lengthM, String country, LocalDate date) {
+    }
+
+    /** Circuit/date metadata read from an event-kind batch's stored payload. */
+    private EventMeta eventMetaFromBatch(long batchId) {
+        BatchSummary batch = get(batchId);
+        String payload = payloadJson(batchId);
+        try {
+            return switch (batch.kind()) {
+                case "RACE_RESULTS" -> {
+                    RaceResultsImport i = json.readValue(payload, RaceResultsImport.class);
+                    yield new EventMeta(i.eventName(), i.circuitName(), i.circuitLengthM(), i.circuitCountry(),
+                            i.sessionStart() != null ? i.sessionStart().toLocalDate() : null);
+                }
+                case "GRID" -> {
+                    GridImport i = json.readValue(payload, GridImport.class);
+                    yield new EventMeta(i.eventName(), i.circuitName(), i.circuitLengthM(), i.circuitCountry(),
+                            i.sessionStart() != null ? i.sessionStart().toLocalDate() : null);
+                }
+                case "FLAGS" -> {
+                    FlagsImport i = json.readValue(payload, FlagsImport.class);
+                    yield new EventMeta(i.eventName(), i.circuitName(), i.circuitLengthM(), i.circuitCountry(),
+                            i.sessionStart() != null ? i.sessionStart().toLocalDate() : null);
+                }
+                case "ENTRY_LIST" -> {
+                    EntryListImport i = json.readValue(payload, EntryListImport.class);
+                    LocalDate d = i.event().endDate() != null ? i.event().endDate() : i.event().startDate();
+                    yield new EventMeta(i.event().name(), i.event().circuit(), null, null, d);
+                }
+                default -> throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "Batch " + batchId + " (" + batch.kind() + ") can't anchor an event group");
+            };
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("Stored payload no longer parses", ex);
+        }
+    }
+
+    /** A copy of the target pinned to a resolved event (so commit attaches rather
+     *  than creating), carrying the chosen name through for good measure. */
+    private static ImportTarget withEvent(ImportTarget t, long eventId, String eventName) {
+        return new ImportTarget(t.seriesId(), t.newSeriesName(), eventId, eventName,
+                t.classCode(), t.kind(), t.isCup(), t.familyName(), t.seasonYear(),
+                t.sessionType(), t.sessionOrdinal(), t.classMapping());
+    }
+
+    private static String messageOf(RuntimeException ex) {
+        if (ex instanceof ResponseStatusException rse && rse.getReason() != null) {
+            return rse.getReason();
+        }
+        return ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
+    }
+
+    /** Structural validation (frontend-contract errors → 400). Returns the
+     *  key→event map. Per-season name/state issues surface per-group at commit. */
+    static Map<String, ProposedEvent> validateGroupRequest(GroupCommitRequest req) {
+        if (req == null || req.events() == null || req.batches() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Empty group-commit request");
+        }
+        Map<String, ProposedEvent> byKey = new LinkedHashMap<>();
+        Map<String, Long> createNames = new java.util.HashMap<>();
+        for (ProposedEvent pe : req.events()) {
+            if (pe.key() == null || byKey.put(pe.key(), pe) != null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Duplicate or missing event key");
+            }
+            if (pe.eventId() == null) {
+                if (pe.name() == null || pe.name().isBlank()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A new event needs a name");
+                }
+                // Two create-groups with the same name would collide on commit.
+                if (createNames.merge(pe.name().trim().toLowerCase(), 1L, Long::sum) > 1) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Two new events share the name \"" + pe.name().trim() + "\"");
+                }
+            }
+        }
+        for (GroupBatch gb : req.batches()) {
+            if (gb.eventKey() != null && !byKey.containsKey(gb.eventKey())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Batch " + gb.batchId() + " references unknown event key \"" + gb.eventKey() + "\"");
+            }
+        }
+        return byKey;
+    }
+
+    /** Partition batches by eventKey, order-preserving; keyless (standings) under
+     *  the null key. */
+    static Map<String, List<GroupBatch>> groupByEventKey(List<GroupBatch> batches) {
+        Map<String, List<GroupBatch>> grouped = new LinkedHashMap<>();
+        for (GroupBatch gb : batches) {
+            grouped.computeIfAbsent(gb.eventKey(), k -> new ArrayList<>()).add(gb);
+        }
+        return grouped;
+    }
+
     /** The chosen series: an existing id, or a new series created from a typed name. */
     private long resolveSeriesId(ImportTarget target) {
         if (target.seriesId() != null) {
@@ -871,7 +1113,7 @@ public class ImportService {
         // own rows don't seed it (see canonicalizeClass).
         List<String> knownClasses = seasonEntryClasses(seasonId);
         long eventId = target.eventId() != null ? target.eventId()
-                : createEvent(seasonId, imp.eventName(), imp.circuitName(),
+                : createEvent(seasonId, chosenEventName(target, imp.eventName()), imp.circuitName(),
                 imp.circuitLengthM(), imp.circuitCountry(), imp.sessionStart().toLocalDate());
         renumberSeasonRounds(seasonId);
         Map<String, String> mapping = target.mapping();
@@ -936,7 +1178,7 @@ public class ImportService {
         long seriesId = resolveSeriesId(target);
         long seasonId = findOrCreateSeason(seriesId, imp.sessionStart().getYear());
         long eventId = target.eventId() != null ? target.eventId()
-                : createEvent(seasonId, imp.eventName(), imp.circuitName(),
+                : createEvent(seasonId, chosenEventName(target, imp.eventName()), imp.circuitName(),
                 imp.circuitLengthM(), imp.circuitCountry(), imp.sessionStart().toLocalDate());
         renumberSeasonRounds(seasonId);
 
@@ -979,7 +1221,7 @@ public class ImportService {
             long seriesId = resolveSeriesId(target);
             seasonId = findOrCreateSeason(seriesId, imp.sessionStart().getYear());
             eventId = target.eventId() != null ? target.eventId()
-                    : createEvent(seasonId, imp.eventName(), imp.circuitName(),
+                    : createEvent(seasonId, chosenEventName(target, imp.eventName()), imp.circuitName(),
                     imp.circuitLengthM(), imp.circuitCountry(), imp.sessionStart().toLocalDate());
             renumberSeasonRounds(seasonId);
             sessionType = normalizeSessionType(imp.sessionType(), imp.sessionName());
@@ -1145,7 +1387,8 @@ public class ImportService {
 
         LocalDate eventDate = imp.event().endDate() != null ? imp.event().endDate() : imp.event().startDate();
         long eventId = target.eventId() != null ? target.eventId()
-                : createEvent(seasonId, imp.event().name(), imp.event().circuit(), null, null, eventDate);
+                : createEvent(seasonId, chosenEventName(target, imp.event().name()), imp.event().circuit(),
+                null, null, eventDate);
         renumberSeasonRounds(seasonId);
 
         for (EntryListImport.Entry e : imp.entries()) {

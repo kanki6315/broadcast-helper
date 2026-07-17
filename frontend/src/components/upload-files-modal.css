@@ -309,18 +309,6 @@
   color: var(--error);
 }
 
-/* the uploading ring spins; reduced-motion swaps to a steady dot below */
-.uf-spin {
-  animation: uf-spin 0.8s linear infinite;
-  transform-origin: center;
-}
-
-@keyframes uf-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .uf-file-main {
   display: flex;
   flex-direction: column;
@@ -406,12 +394,6 @@
 
 .uf-foot-note.done {
   color: var(--success);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .uf-spin {
-    animation: none;
-  }
 }
 
 @media (max-width: 480px) {

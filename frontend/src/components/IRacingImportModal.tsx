@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './iracing-import-modal.css'
-import SeriesEventPicker, { type EventOption, type Series } from './SeriesEventPicker'
+import SeriesEventPicker from './SeriesEventPicker'
+import ConfirmImportStep from './ConfirmImportStep'
 
 /**
  * The one place iRacing imports start. Two ways in — a hand-picked list of
@@ -49,28 +50,6 @@ function cleanReason(reason: string | null): string {
   return head || reason
 }
 
-// "subsession-80968360.json" → 80968360, for grouping batches by their round.
-function subsessionOf(filename: string): string {
-  return filename.replace(/^subsession-/, '').replace(/\.json$/, '')
-}
-
-// The circuit / championship name a batch summary leads with, before the " — ".
-function groupName(summary: string | null): string {
-  return summary?.split(' — ')[0] ?? 'Import'
-}
-
-// The half of the summary after the circuit — "Qualifying, 30 classified entries".
-function batchDetail(summary: string | null): string {
-  const i = summary?.indexOf(' — ') ?? -1
-  return i >= 0 ? (summary as string).slice(i + 3) : (summary ?? '')
-}
-
-const KIND_LABEL: Record<string, string> = {
-  RACE_RESULTS: 'Results',
-  GRID: 'Grid',
-  STANDINGS: 'Standings',
-}
-
 function parseIds(text: string): number[] {
   const ids = (text.match(/\d+/g) ?? []).map(Number)
   return [...new Set(ids)]
@@ -87,20 +66,26 @@ function formatDate(iso: string | null): string {
 export default function IRacingImportModal({
   onClose,
   onStaged,
+  onCommitted,
 }: {
   onClose: () => void
   /** Hands the staged batch ids back with the pinned target (series may be null
    *  when nothing is pinned) so the review table lands pre-filled. */
   onStaged: (batchIds: number[], seriesId: number | null, eventId: number | null) => void | Promise<void>
+  /** After the confirm step commits, refresh the table and seed any leftovers. */
+  onCommitted: (r: {
+    committedIds: number[]
+    leftoverIds: number[]
+    seriesId: number | null
+    eventId: number | null
+  }) => void | Promise<void>
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [mode, setMode] = useState<Mode>('subsession')
 
   // Optional pin: stage these imports straight onto one series + event.
   const [seriesId, setSeriesId] = useState<number | null>(null)
-  const [seriesObj, setSeriesObj] = useState<Series | null>(null)
   const [eventId, setEventId] = useState<number | null>(null)
-  const [eventObj, setEventObj] = useState<EventOption | null>(null)
 
   const [idsText, setIdsText] = useState('')
   const [leagueId, setLeagueId] = useState('')
@@ -121,18 +106,6 @@ export default function IRacingImportModal({
 
   const ids = useMemo(() => parseIds(idsText), [idsText])
   const leaguePair = leagueId.trim() && seasonId.trim()
-
-  // Batches grouped by their subsession, in first-seen order — the season's shape.
-  const groups = useMemo(() => {
-    if (!result) return []
-    const map = new Map<string, { name: string; sub: string; batches: StagedBatch[] }>()
-    for (const b of result.batches) {
-      const sub = subsessionOf(b.filename)
-      if (!map.has(b.filename)) map.set(b.filename, { name: groupName(b.summary), sub, batches: [] })
-      map.get(b.filename)!.batches.push(b)
-    }
-    return [...map.values()]
-  }, [result])
 
   async function run(action: string, req: () => Promise<Response>) {
     setBusy(action)
@@ -253,13 +226,29 @@ export default function IRacingImportModal({
 
       <div className="ir-body">
         {result ? (
-          <ResultView
-            result={result}
-            groups={groups}
-            pin={seriesObj ? { seriesName: seriesObj.name, eventName: eventObj?.name ?? null } : null}
-            onImportMore={reset}
-            onDone={onClose}
-          />
+          <>
+            {result.failures.length > 0 && (
+              <div className="ir-failures" role="alert">
+                <p className="ir-failures-head">{result.failures.length} couldn’t be imported</p>
+                <ul>
+                  {result.failures.map((f) => (
+                    <li key={f.subsessionId}>
+                      <span className="num">#{f.subsessionId}</span>
+                      {f.track ? ` ${f.track}` : ''} — {cleanReason(f.reason)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <ConfirmImportStep
+              batchIds={result.batches.map((b) => b.id)}
+              pinnedSeriesId={seriesId}
+              pinnedEventId={eventId}
+              onCommitted={onCommitted}
+              onBack={reset}
+              onDone={onClose}
+            />
+          </>
         ) : (
           <>
             <div className="ir-pin">
@@ -272,14 +261,8 @@ export default function IRacingImportModal({
                 seriesId={seriesId}
                 eventId={eventId}
                 autoLabel="Each round places itself"
-                onSeriesChange={(id, s) => {
-                  setSeriesId(id)
-                  setSeriesObj(s)
-                }}
-                onEventChange={(id, ev) => {
-                  setEventId(id)
-                  setEventObj(ev)
-                }}
+                onSeriesChange={(id) => setSeriesId(id)}
+                onEventChange={(id) => setEventId(id)}
                 onError={setError}
               />
             </div>
@@ -460,85 +443,5 @@ export default function IRacingImportModal({
         )}
       </div>
     </dialog>
-  )
-}
-
-function ResultView({
-  result,
-  groups,
-  pin,
-  onImportMore,
-  onDone,
-}: {
-  result: IRacingImport
-  groups: { name: string; sub: string; batches: StagedBatch[] }[]
-  pin: { seriesName: string; eventName: string | null } | null
-  onImportMore: () => void
-  onDone: () => void
-}) {
-  return (
-    <div className="ir-result">
-      <p className="ir-result-line">
-        Staged <strong>{result.staged}</strong> of {result.requested}
-        {result.requested === 1 ? ' subsession' : ' subsessions'} — {result.batches.length} batch
-        {result.batches.length === 1 ? '' : 'es'}.
-      </p>
-
-      {pin && (
-        <p className="ir-result-pin">
-          Pinned to <strong>{pin.seriesName}</strong>
-          {pin.eventName ? <> · {pin.eventName}</> : ' — each round places itself'}
-        </p>
-      )}
-
-      {groups.length > 0 && (
-        <ul className="ir-groups">
-          {groups.map((g) => (
-            <li key={g.sub} className="ir-group">
-              <div className="ir-group-head">
-                <span className="ir-group-name">{g.name}</span>
-                <span className="ir-group-sub num">#{g.sub}</span>
-              </div>
-              <ul className="ir-group-batches">
-                {g.batches.map((b) => (
-                  <li key={b.id} className="ir-batch">
-                    <span className="ir-batch-kind">{KIND_LABEL[b.kind] ?? b.kind}</span>
-                    <span className="ir-batch-detail">{batchDetail(b.summary)}</span>
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {result.failures.length > 0 && (
-        <div className="ir-failures" role="alert">
-          <p className="ir-failures-head">
-            {result.failures.length} couldn’t be imported
-          </p>
-          <ul>
-            {result.failures.map((f) => (
-              <li key={f.subsessionId}>
-                <span className="num">#{f.subsessionId}</span>
-                {f.track ? ` ${f.track}` : ''} — {cleanReason(f.reason)}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <p className="ir-result-note">
-        Staged rounds are listed below — confirm the series and event for each, then commit.
-      </p>
-      <div className="ir-actions">
-        <button type="button" className="btn" onClick={onImportMore}>
-          Import more
-        </button>
-        <button type="button" className="btn-primary" onClick={onDone}>
-          Done
-        </button>
-      </div>
-    </div>
   )
 }

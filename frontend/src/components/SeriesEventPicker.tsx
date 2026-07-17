@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import './series-event-picker.css'
+import { useSeriesEvents, type EventOption, type Series } from '../lib/useSeriesEvents'
+import { formatEventDate } from '../lib/importGroups'
 
 /**
  * A series + event typeahead pair, shared by the file-upload and iRacing import
@@ -7,64 +9,10 @@ import './series-event-picker.css'
  * pre-targeted in the review table. The event list is filtered to the chosen
  * series; a leading "auto" row leaves each import to place its own event.
  *
- * Owns the series/events fetch and the create-series flow. Controlled: the host
- * holds seriesId/eventId and receives the resolved objects through the change
- * callbacks (so it can display the pin and seed the review without its own
- * lookup).
+ * Controlled: the host holds seriesId/eventId and receives the resolved objects
+ * through the change callbacks (so it can display the pin and seed the review
+ * without its own lookup). The series/events fetch lives in useSeriesEvents.
  */
-
-export interface Series {
-  id: number
-  name: string
-  abbreviation: string | null
-  aliases: string[]
-}
-
-export interface EventOption {
-  id: number
-  name: string
-  circuitName: string | null
-  eventDate: string | null
-  year: number
-  seriesName: string
-}
-
-function formatEventDate(iso: string | null, year: number): string {
-  if (!iso) return String(year)
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime())
-    ? String(year)
-    : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
-/** Loads the series and events lists once; both are small enough to filter
- *  client-side. Returns null while loading so fields can show a skeleton. */
-function useSeriesEvents(onError?: (msg: string) => void) {
-  const [allSeries, setAllSeries] = useState<Series[] | null>(null)
-  const [allEvents, setAllEvents] = useState<EventOption[] | null>(null)
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const [sRes, eRes] = await Promise.all([fetch('/api/series'), fetch('/api/events')])
-        setAllSeries(sRes.ok ? ((await sRes.json()) as Series[]) : [])
-        setAllEvents(eRes.ok ? ((await eRes.json()) as EventOption[]) : [])
-      } catch {
-        setAllSeries([])
-        setAllEvents([])
-        onError?.('Could not load series and events.')
-      }
-    })()
-    // onError identity is irrelevant; fetch once on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  function addSeries(s: Series) {
-    setAllSeries((prev) => [...(prev ?? []), s].sort((a, b) => a.name.localeCompare(b.name)))
-  }
-
-  return { allSeries, allEvents, addSeries }
-}
 
 interface ComboOption {
   key: string
