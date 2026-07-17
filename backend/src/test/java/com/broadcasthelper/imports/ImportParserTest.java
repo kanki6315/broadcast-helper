@@ -159,6 +159,64 @@ class ImportParserTest {
     }
 
     @Test
+    void detectsFlagsFile() throws IOException {
+        JsonNode flags = fixture("flags-ctmp-race-2026.json");
+        assertTrue(ImportParser.looksLikeFlags(flags));
+        // A flags file must not be mistaken for results or a grid, nor vice versa.
+        assertTrue(!ImportParser.looksLikeRaceResults(flags));
+        assertTrue(!ImportParser.looksLikeGrid(flags));
+        assertTrue(!ImportParser.looksLikeFlags(fixture("race-wgi-2026.json")));
+    }
+
+    @Test
+    void parsesFlagsFile() throws IOException {
+        FlagsImport imp = ImportParser.parseFlags(fixture("flags-ctmp-race-2026.json"));
+        assertEquals("IMSA WeatherTech SportsCar Championship", imp.championshipName());
+        assertEquals("Chevrolet Grand Prix", imp.eventName());
+        assertEquals("Race", imp.sessionType());
+        assertEquals(1, imp.sessionOrdinal());
+        assertEquals(7, imp.rows().size());
+
+        FlagsImport.FlagRow greenFlag = imp.rows().get(1);
+        assertEquals("GF", greenFlag.recType());
+        assertEquals("GREEN FLAG", greenFlag.flag());
+        assertEquals(1, greenFlag.lap());
+        assertEquals("14:10.647", greenFlag.flagTime());
+
+        FlagsImport.FlagRow penalty = imp.rows().get(2);
+        assertEquals("RCMessage", penalty.recType());
+        assertEquals("Car 11 Penalty - Track Limits - Warning", penalty.message());
+        assertNull(penalty.flag());
+
+        FlagsImport.FlagRow chequered = imp.rows().get(5);
+        assertEquals("FF", chequered.recType());
+        assertEquals(127, chequered.lap());
+
+        // Header notes ride along so a commit can refresh the session's.
+        assertEquals("Car #11, #16, #66, #68 & #70 - Some lap times invalidated due to track limits",
+                imp.reportMessage());
+    }
+
+    @Test
+    void qualifyingBestLapReadsTimeAndLapFields() throws IOException {
+        // A "Qualifying Practice by Best Lap" file spells the entry's best lap as
+        // time / lap / kph, not the race's fastest_lap_* — the parser must read
+        // both spellings or every qualifying lap stores null (it used to).
+        RaceResultsImport quali =
+                ImportParser.parseRaceResults(mustangFixture("results-midohio-qualifying-2026.json"));
+        RaceResultsImport.Row pole = quali.rows().get(0);
+        assertEquals("42", pole.number());
+        assertEquals("1:47.054", pole.fastestLapTime());
+        assertEquals(6, pole.fastestLapNumber());
+        assertEquals(122.2, pole.fastestLapKph());
+
+        // Races keep reading fastest_lap_*; the fallback never fires for them.
+        RaceResultsImport race = ImportParser.parseRaceResults(fixture("race-wgi-2026.json"));
+        assertTrue(race.rows().stream().anyMatch(r -> r.fastestLapTime() != null));
+        assertTrue(race.rows().stream().anyMatch(r -> r.fastestLapNumber() != null));
+    }
+
+    @Test
     void parsesGtpTeamsStandings() throws IOException {
         StandingsImport imp = ImportParser.parseStandings(fixture("standings-gtp-teams-2026.json"));
         assertEquals("IMSA WeatherTech SportsCar Championship GTP Teams", imp.mainTitle());

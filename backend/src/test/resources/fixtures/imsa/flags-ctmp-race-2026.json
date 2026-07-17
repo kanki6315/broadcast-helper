@@ -1,0 +1,106 @@
+{
+  "session": {
+    "championship_name": "IMSA WeatherTech SportsCar Championship",
+    "event_name": "Chevrolet Grand Prix",
+    "session_name": "Race",
+    "report_mark": "",
+    "revised_mark": "",
+    "report_message": "Car #11, #16, #66, #68 & #70 - Some lap times invalidated due to track limits",
+    "session_type": "Race",
+    "session_date": "12/07/2026 02:05",
+    "creation_date": "12/07/2026 04:51:07",
+    "circuit": {
+      "name": "Canadian Tire Motorsport Park",
+      "length": 3957.367,
+      "country": "Canada"
+    },
+    "weather": {
+      "air_temperature": "",
+      "track_temperature": "",
+      "track_status": "Dry"
+    },
+    "finalize_type": {
+      "type": "By Time",
+      "time_in_seconds": 9600
+    }
+  },
+  "flags": [
+    {
+      "time": "14:05:35.677",
+      "elapsed": "",
+      "rec_type": "RCMessage",
+      "flag": "",
+      "sector": "",
+      "message": "GREEN FLAG",
+      "flag_time": "-",
+      "accum_time": "-",
+      "lap": 0
+    },
+    {
+      "time": "14:05:36.376",
+      "elapsed": "-",
+      "rec_type": "GF",
+      "flag": "GREEN FLAG",
+      "sector": "",
+      "message": "",
+      "flag_time": "14:10.647",
+      "accum_time": "14:10.647",
+      "lap": 1
+    },
+    {
+      "time": "14:16:44.365",
+      "elapsed": "11:07.989",
+      "rec_type": "RCMessage",
+      "flag": "",
+      "sector": "",
+      "message": "Car 11 Penalty - Track Limits - Warning",
+      "flag_time": "-",
+      "accum_time": "-",
+      "lap": 0
+    },
+    {
+      "time": "14:19:47.023",
+      "elapsed": "14:10.647",
+      "rec_type": "FCY",
+      "flag": "FULL COURSE YELLOW",
+      "sector": "",
+      "message": "",
+      "flag_time": "5:08.974",
+      "accum_time": "5:08.974",
+      "lap": 12
+    },
+    {
+      "time": "14:24:55.997",
+      "elapsed": "19:19.621",
+      "rec_type": "GF",
+      "flag": "GREEN FLAG",
+      "sector": "",
+      "message": "",
+      "flag_time": "21:39.209",
+      "accum_time": "35:49.856",
+      "lap": 14
+    },
+    {
+      "time": "16:45:47.984",
+      "elapsed": "2:40:11.607",
+      "rec_type": "FF",
+      "flag": "CHEQUERED FLAG",
+      "sector": "",
+      "message": "",
+      "flag_time": "-",
+      "accum_time": "-",
+      "lap": 127
+    },
+    {
+      "time": "16:47:21.146",
+      "elapsed": "2:41:44.770",
+      "rec_type": "RCMessage",
+      "flag": "",
+      "sector": "",
+      "message": "IMPOUND CARS: 43, 04, 99, 52",
+      "flag_time": "-",
+      "accum_time": "-",
+      "lap": 0
+    }
+  ]
+}

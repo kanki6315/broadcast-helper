@@ -150,12 +150,17 @@ export interface ResultRow {
   className: string | null
   teamName: string | null
   drivers: string | null
+  /** Crew member who set this entry's fastest lap of the session. NOT the
+   *  qualifying driver — see the backend record for why the two differ. */
+  fastestLapDriver: string | null
   vehicle: string | null
   status: string | null
   laps: number | null
   elapsedTime: string | null
   gapFirst: string | null
   fastestLapTime: string | null
+  /** Lap the fastest lap was set on. */
+  fastestLapNumber: number | null
   pitStops: number | null
 }
 
@@ -168,12 +173,39 @@ export interface GridRow {
   qualifyingTime: string | null
 }
 
+/** One stewards' note line, tagged with the car numbers it names (may be empty). */
+export interface SessionNote {
+  text: string
+  carNumbers: string[]
+}
+
 export interface SessionResults {
   sessionId: number
   sessionType: 'QUALIFYING' | 'RACE'
   name: string
+  /** 'Official' | 'Provisional' | 'Unofficial' | null — the report's status. */
+  reportMark: string | null
+  notes: SessionNote[]
+  /** True when a flags/RC-message stream was imported for this session. */
+  hasFlags: boolean
   results: ResultRow[]
   grid: GridRow[]
+}
+
+/** One record of a session's flag/RC-message stream, in source order. */
+export interface FlagRecord {
+  seq: number
+  wallTime: string | null
+  elapsed: string | null
+  /** 'GF' | 'FCY' | 'FF' | 'RCMessage' | future provider values verbatim. */
+  recType: string
+  flag: string | null
+  message: string | null
+  flagTime: string | null
+  accumTime: string | null
+  lap: number | null
+  /** Car numbers the message names, extracted server-side (empty for flag records). */
+  carNumbers: string[]
 }
 
 export interface EventResults {

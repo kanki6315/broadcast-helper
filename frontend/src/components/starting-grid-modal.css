@@ -1,0 +1,230 @@
+/* Starting-grid modal — token layer (index.css), class-tag vocabulary
+ * (season.css). Native <dialog>, so no z-index management. Opened from the
+ * race tab of the results page. */
+
+.sg {
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow-modal);
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(88vh, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sg::backdrop {
+  background: oklch(10% 0.01 277 / 52%);
+}
+
+.sg[open] {
+  animation: sg-in var(--t-med) var(--ease-out);
+}
+
+.sg[open]::backdrop {
+  animation: sg-fade var(--t-med) var(--ease-out);
+}
+
+@keyframes sg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+@keyframes sg-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sg[open],
+  .sg[open]::backdrop {
+    animation: none;
+  }
+}
+
+/* ---- chrome ---- */
+
+.sg-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.sg-title {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.sg-sub {
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.sg-close {
+  border: none;
+  background: none;
+  font-size: var(--text-base);
+  line-height: 1;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.sg-close:hover {
+  color: var(--ink);
+}
+
+.sg-close:active {
+  color: var(--text-muted);
+}
+
+.sg-scroll {
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-4) var(--space-5);
+}
+
+/* ---- the track ---- */
+
+/* Where the field is pointed. A grid drawn without it is just two columns of
+ * cars — which end is the front is the whole point of the diagram. */
+.sg-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.sg-line::before,
+.sg-line::after {
+  content: '';
+  flex: 1;
+  border-top: 1px dashed var(--border-strong);
+}
+
+.sg-slots {
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  /* The right file is translated down half a slot, so the last one hangs past
+   * the list's own box — reserve the room it lands in. */
+  padding: 0 0 var(--sg-stagger);
+  --sg-stagger: 22px;
+}
+
+.sg-slot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  min-width: 0;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out);
+}
+
+/* The stagger: even positions sit half a slot back, as they do on the road.
+ * Transform, not margin — a margin would push its whole grid row down. */
+.sg-slot:nth-child(even) {
+  transform: translateY(var(--sg-stagger));
+}
+
+/* Filtered-in cars lift onto --bg, the same way an active .seg-btn does. The
+ * rest keep full-contrast text: they are context, not noise. */
+.sg-slot.on {
+  background: var(--bg);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-raise);
+}
+
+.sg-pos {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: var(--text-base);
+  color: var(--text-muted);
+  min-width: 2ch;
+  text-align: right;
+}
+
+.sg-slot.on .sg-pos {
+  color: var(--ink);
+}
+
+.sg-car {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sg-car-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sg-no {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: var(--text-sm);
+  color: var(--ink);
+}
+
+.sg-team {
+  font-size: var(--text-xs);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sg-time {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* Phones: one file, no stagger — a 2-up grid at 375px crushes the team names,
+ * and the running order is the fact that has to survive. */
+@media (max-width: 560px) {
+  .sg-slots {
+    grid-template-columns: 1fr;
+    padding-bottom: 0;
+  }
+
+  .sg-slot:nth-child(even) {
+    transform: none;
+  }
+}
+
+@media print {
+  .sg {
+    display: none !important;
+  }
+}
