@@ -262,10 +262,15 @@ public class ImportService {
             GridImport parsed = ImportParser.parseGrid(root);
             return new Staged("GRID", parsed, "%s — %s starting grid, %d cars".formatted(
                     parsed.eventName(), parsed.sessionName(), parsed.rows().size()));
+        } else if (ImportParser.looksLikeFlags(root)) {
+            FlagsImport parsed = ImportParser.parseFlags(root);
+            return new Staged("FLAGS", parsed, "%s — %s, %d flag records".formatted(
+                    parsed.eventName(), parsed.sessionName(), parsed.rows().size()));
         }
         throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "Unrecognized file format: expected a results file (session + classification), "
-                + "a starting grid (session + grid), or a standings file (championship + classification)");
+                + "a starting grid (session + grid), a flags report (session + flags), "
+                + "or a standings file (championship + classification)");
     }
 
     /** The IMSA CSV family. Today it recognizes one document kind: the starting
@@ -456,6 +461,7 @@ public class ImportService {
             switch (batch.kind()) {
                 case "ENTRY_LIST" -> guess = guessEntryList(json.readValue(payload, EntryListImport.class));
                 case "RACE_RESULTS" -> guess = guessRaceResults(json.readValue(payload, RaceResultsImport.class));
+                case "FLAGS" -> guess = guessFlags(json.readValue(payload, FlagsImport.class));
                 case "GRID" -> {
                     GridImport imp = json.readValue(payload, GridImport.class);
                     guess = guessGrid(imp);
@@ -504,6 +510,19 @@ public class ImportService {
     }
 
     private TargetGuess guessRaceResults(RaceResultsImport imp) {
+        Integer year = imp.sessionStart() != null ? imp.sessionStart().getYear() : null;
+        Optional<Long> seriesId = findSeriesByName(imp.championshipName());
+        LocalDate date = imp.sessionStart() != null ? imp.sessionStart().toLocalDate() : null;
+        Long eventGuess = seriesId.flatMap(sid -> year == null ? Optional.<Long>empty()
+                : findSeasonId(sid, year)).flatMap(sn -> findMatchingEvent(sn, imp.circuitName(), date))
+                .orElse(null);
+        return new TargetGuess(seriesId.orElse(null), seriesId.map(this::seriesName).orElse(null), year,
+                eventGuess, imp.eventName(), imp.circuitName(),
+                date != null ? date.toString() : null, null, null, null, null);
+    }
+
+    /** Same event resolution as results: the flags file shares the session header. */
+    private TargetGuess guessFlags(FlagsImport imp) {
         Integer year = imp.sessionStart() != null ? imp.sessionStart().getYear() : null;
         Optional<Long> seriesId = findSeriesByName(imp.championshipName());
         LocalDate date = imp.sessionStart() != null ? imp.sessionStart().toLocalDate() : null;
@@ -686,6 +705,7 @@ public class ImportService {
             switch (batch.kind()) {
                 case "RACE_RESULTS" -> commitRaceResults(json.readValue(payload, RaceResultsImport.class), target);
                 case "GRID" -> commitGrid(json.readValue(payload, GridImport.class), target);
+                case "FLAGS" -> commitFlags(json.readValue(payload, FlagsImport.class), target);
                 case "STANDINGS" -> commitStandings(json.readValue(payload, StandingsImport.class), target);
                 case "ENTRY_LIST" -> commitEntryList(json.readValue(payload, EntryListImport.class), target);
                 default -> throw new IllegalStateException("Unknown batch kind " + batch.kind());
@@ -767,6 +787,53 @@ public class ImportService {
                     .param("flKph", row.fastestLapKph())
                     .param("flSeat", row.fastestLapDriverSeat())
                     .param("pitStops", row.pitStops())
+                    .update();
+        }
+    }
+
+    /**
+     * Flags/RC-message stream for one session. No entries or classes are touched
+     * — the stream hangs off the session alone. The header's report_mark/message
+     * ride through findOrCreateRaceSession, whose COALESCE upsert lets this
+     * (later-generated) file refresh the stewards' notes without a null wiping
+     * what a results file already stored.
+     */
+    private void commitFlags(FlagsImport imp, ImportTarget target) {
+        if (imp.sessionStart() == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Flags file has no session date; cannot determine the season");
+        }
+        long seriesId = resolveSeriesId(target);
+        long seasonId = findOrCreateSeason(seriesId, imp.sessionStart().getYear());
+        long eventId = target.eventId() != null ? target.eventId()
+                : createEvent(seasonId, imp.eventName(), imp.circuitName(),
+                imp.circuitLengthM(), imp.circuitCountry(), imp.sessionStart().toLocalDate());
+        renumberSeasonRounds(seasonId);
+
+        String sessionType = normalizeSessionType(imp.sessionType(), imp.sessionName());
+        long sessionId = findOrCreateRaceSession(eventId, sessionType, imp.sessionOrdinal(),
+                imp.sessionName(), imp.sessionStart(), imp.reportMark(), imp.reportMessage());
+        db.sql("DELETE FROM session_flag WHERE session_id = :sessionId").param("sessionId", sessionId).update();
+
+        List<FlagsImport.FlagRow> rows = imp.rows();
+        for (int seq = 0; seq < rows.size(); seq++) {
+            FlagsImport.FlagRow row = rows.get(seq);
+            db.sql("""
+                            INSERT INTO session_flag (session_id, seq, wall_time, elapsed, rec_type,
+                                                      flag, message, flag_time, accum_time, lap)
+                            VALUES (:sessionId, :seq, :wallTime, :elapsed, :recType,
+                                    :flag, :message, :flagTime, :accumTime, :lap)
+                            """)
+                    .param("sessionId", sessionId)
+                    .param("seq", seq)
+                    .param("wallTime", row.wallTime())
+                    .param("elapsed", row.elapsed())
+                    .param("recType", row.recType() != null ? row.recType() : "")
+                    .param("flag", row.flag())
+                    .param("message", row.message())
+                    .param("flagTime", row.flagTime())
+                    .param("accumTime", row.accumTime())
+                    .param("lap", row.lap())
                     .update();
         }
     }

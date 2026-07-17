@@ -99,6 +99,7 @@ const KIND_LABEL: Record<string, string> = {
   ENTRY_LIST: 'Entry list',
   STANDINGS: 'Standings',
   GRID: 'Starting grid',
+  FLAGS: 'Flags / race control',
 }
 
 // Upload formats: which parser family reads the file. AUTO covers the
@@ -130,7 +131,7 @@ const CHAMPIONSHIP_KINDS: [string, string][] = [
 ]
 
 // Kinds that attach to an event (vs. a championship) and so pick an event target.
-const EVENT_KINDS = ['RACE_RESULTS', 'ENTRY_LIST', 'GRID']
+const EVENT_KINDS = ['RACE_RESULTS', 'ENTRY_LIST', 'GRID', 'FLAGS']
 
 export default function ImportsPage() {
   const [batches, setBatches] = useState<ImportBatch[]>([])

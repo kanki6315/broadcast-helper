@@ -736,24 +736,238 @@ td.lineup-changed {
   color: var(--ink);
 }
 
-.session-block {
-  margin: var(--space-5) 0;
+/* Session tabs, plus whatever that session can open. The tabs sit directly on
+ * the table they govern, so the round chips above stay the only other picker
+ * competing for the eye. */
+.session-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
 }
 
-.session-block h3 {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-lg);
+/* Empty when a single-session event has no grid — don't leave its margins
+ * behind as a phantom gap above the table. */
+.session-bar:empty {
+  display: none;
 }
 
-.session-block h4 {
-  margin: var(--space-3) 0 var(--space-2);
-  font-size: var(--text-sm);
-  color: var(--text-muted);
+/* Holds the right edge whether or not the tablist is there to push it. */
+.session-bar > .btn {
+  margin-left: auto;
 }
 
 .status-dnf {
   color: var(--error);
   font-weight: 600;
+}
+
+/* ==== stewards' notes ==== */
+
+/* Same bones as .error-panel, but neutral: these are facts to know, not a
+ * failure to fix. Sits between the session tabs and the table it annotates. */
+.session-notes {
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  margin: 0 0 var(--space-3);
+}
+
+.session-notes-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.session-notes-head h3 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Non-Official status rides as a quiet pill; Official shows nothing. */
+.report-mark {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--accent-ink);
+  border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 0 6px;
+}
+
+.session-notes ul {
+  margin: 0;
+  padding-left: 1.1em;
+}
+
+.session-notes li {
+  color: var(--text);
+  /* Long car lists (20+ numbers on a line) wrap; keep the wrapped lines airy. */
+  line-height: 1.5;
+}
+
+/* The affected row's marker lives in the car cell's right padding gutter, so
+ * the right-aligned digits never move — column alignment is the product. */
+.grid-table .car-no {
+  position: relative;
+}
+
+/* ==== race control ==== */
+
+.race-control {
+  margin: 0 0 var(--space-5);
+}
+
+/* A quiet disclosure, not a primary action: the log is reference depth. */
+.rc-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  border: none;
+  background: none;
+  padding: 2px 0;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.rc-toggle:hover {
+  color: var(--ink);
+}
+
+.rc-chevron {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.rc-body {
+  margin-top: var(--space-2);
+}
+
+/* Flag periods as labeled chips — the colour never stands alone. Tints reuse
+ * the result-tier and selection tokens, so they hold up in both themes. */
+.rc-periods {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+}
+
+.rc-period {
+  padding: 2px 10px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: var(--text-sm);
+}
+
+.rc-period b {
+  font-weight: 600;
+}
+
+.rc-gf {
+  background: var(--res-win);
+}
+
+.rc-fcy {
+  background: var(--accent-tint);
+}
+
+.rc-red {
+  background: var(--error-tint);
+}
+
+/* Car filter for the log — same active vocabulary as .round-chip: amber border
+ * + tint when selected. Numbers are mono like every car number in the app. */
+.rc-cars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-2);
+}
+
+.rc-car-chip {
+  padding: 1px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+  color: var(--text);
+  transition:
+    border-color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+/* "All cars" is a label, not a number. */
+.rc-car-chip:first-child {
+  font-family: inherit;
+}
+
+.rc-car-chip:hover {
+  border-color: var(--accent);
+}
+
+.rc-car-chip.active {
+  border-color: var(--accent);
+  background: var(--accent-tint);
+  color: var(--ink);
+}
+
+/* The chronological message log: contained scroll, hairline dividers. */
+.rc-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.rc-log li {
+  display: flex;
+  gap: var(--space-3);
+  padding: 3px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+.rc-log li:last-child {
+  border-bottom: none;
+}
+
+.rc-time {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  min-width: 11ch;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.rc-msg {
+  color: var(--text);
+}
+
+.note-flag {
+  position: absolute;
+  right: 0;
+  top: 2px;
+  font-size: 0.6rem;
+  line-height: 1;
+  color: var(--accent-ink);
+  cursor: help;
 }
 
 /* class code chip used inline in results tables */

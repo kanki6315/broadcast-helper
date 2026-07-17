@@ -416,18 +416,30 @@ public class SeasonViewController {
     /* Event session results                                                */
     /* ------------------------------------------------------------------ */
 
+    /** {@code fastestLapDriver} is the crew member who set this entry's fastest lap of the
+     *  session, resolved from the seat the timing provider reports. Null when the provider
+     *  names no seat (seat 0).
+     *  <p>
+     *  It is NOT the qualifying driver, even on a qualifying session. IMSA runs "Qualifying
+     *  Practice by Best Lap", both drivers run it, and the provider's own grid file names a
+     *  different driver for half the team cars (CTMP car 26: grid says Grisham qualified it,
+     *  this seat says Greenemeier was fastest). The qualifying driver of record is published
+     *  separately, as QUALIFYING_DRIVER on the grid CSV — which the grid parser currently
+     *  drops, so it reaches neither the database nor here. Don't relabel this field as
+     *  "qualified by" without importing that column first. */
     public record ResultRow(Integer posOverall, Integer posInClass, String carNumber, String className,
-                            String teamName, String drivers, String vehicle, String status,
-                            Integer laps, String elapsedTime, String gapFirst, String fastestLapTime,
-                            Integer pitStops) {
+                            String teamName, String drivers, String fastestLapDriver, String vehicle,
+                            String status, Integer laps, String elapsedTime, String gapFirst,
+                            String fastestLapTime, Integer fastestLapNumber, Integer pitStops) {
     }
 
     public record GridRow(Integer posOverall, Integer posInClass, String carNumber, String className,
                           String teamName, String qualifyingTime) {
     }
 
-    public record SessionResults(long sessionId, String sessionType, String name, List<ResultRow> results,
-                                 List<GridRow> grid) {
+    public record SessionResults(long sessionId, String sessionType, String name, String reportMark,
+                                 List<ReportNotes.SessionNote> notes, boolean hasFlags,
+                                 List<ResultRow> results, List<GridRow> grid) {
     }
 
     public record EventResults(long eventId, String eventName, String circuitName, LocalDate eventDate,
@@ -456,28 +468,35 @@ public class SeasonViewController {
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such event"));
 
-        record Session(long id, String type, String name, int ordinal) {
+        record Session(long id, String type, String name, int ordinal, String reportMark,
+                       String reportMessage, boolean hasFlags) {
         }
         List<Session> sessions = db.sql("""
-                        SELECT id, session_type, name, ordinal
-                        FROM race_session
-                        WHERE event_id = :id AND session_type IN ('QUALIFYING', 'RACE')
-                        ORDER BY CASE session_type WHEN 'QUALIFYING' THEN 0 ELSE 1 END, ordinal
+                        SELECT rs.id, rs.session_type, rs.name, rs.ordinal, rs.report_mark, rs.report_message,
+                               EXISTS (SELECT 1 FROM session_flag f WHERE f.session_id = rs.id) AS has_flags
+                        FROM race_session rs
+                        WHERE rs.event_id = :id AND rs.session_type IN ('QUALIFYING', 'RACE')
+                        ORDER BY CASE rs.session_type WHEN 'QUALIFYING' THEN 0 ELSE 1 END, rs.ordinal
                         """)
                 .param("id", id)
                 .query((rs, i) -> new Session(rs.getLong("id"), rs.getString("session_type"),
-                        rs.getString("name"), rs.getInt("ordinal")))
+                        rs.getString("name"), rs.getInt("ordinal"), rs.getString("report_mark"),
+                        rs.getString("report_message"), rs.getBoolean("has_flags")))
                 .list();
 
         for (Session s : sessions) {
             List<ResultRow> results = db.sql("""
                             SELECT r.position_overall, r.position_in_class, en.car_number, en.class_name,
                                    en.team_name, en.vehicle, r.status, r.laps, r.elapsed_time, r.gap_first,
-                                   r.fastest_lap_time, r.pit_stops,
+                                   r.fastest_lap_time, r.fastest_lap_number, r.pit_stops,
                                    (SELECT string_agg(COALESCE(d.first_name || ' ' || d.surname, 'TBD'),
                                                       ', ' ORDER BY da.seat_order)
                                     FROM driver_assignment da LEFT JOIN driver d ON d.id = da.driver_id
-                                    WHERE da.entry_id = en.id) AS drivers
+                                    WHERE da.entry_id = en.id) AS drivers,
+                                   (SELECT d.first_name || ' ' || d.surname
+                                    FROM driver_assignment da JOIN driver d ON d.id = da.driver_id
+                                    WHERE da.entry_id = en.id
+                                      AND da.seat_order = r.fastest_lap_driver_seat) AS fastest_lap_driver
                             FROM result r
                                      JOIN entry en ON en.id = r.entry_id
                             WHERE r.session_id = :sessionId
@@ -487,9 +506,11 @@ public class SeasonViewController {
                     .query((rs, i) -> new ResultRow(rs.getObject("position_overall", Integer.class),
                             rs.getObject("position_in_class", Integer.class), rs.getString("car_number"),
                             rs.getString("class_name"), rs.getString("team_name"), rs.getString("drivers"),
-                            rs.getString("vehicle"), rs.getString("status"),
-                            rs.getObject("laps", Integer.class), rs.getString("elapsed_time"),
-                            rs.getString("gap_first"), rs.getString("fastest_lap_time"),
+                            rs.getString("fastest_lap_driver"), rs.getString("vehicle"),
+                            rs.getString("status"), rs.getObject("laps", Integer.class),
+                            rs.getString("elapsed_time"), rs.getString("gap_first"),
+                            rs.getString("fastest_lap_time"),
+                            rs.getObject("fastest_lap_number", Integer.class),
                             rs.getObject("pit_stops", Integer.class)))
                     .list();
 
@@ -508,10 +529,37 @@ public class SeasonViewController {
                             rs.getString("qualifying_time")))
                     .list();
 
-            header.sessions().add(new SessionResults(s.id(), s.type(), s.name(), results, grid));
+            header.sessions().add(new SessionResults(s.id(), s.type(), s.name(), s.reportMark(),
+                    ReportNotes.parse(s.reportMessage()), s.hasFlags(), results, grid));
         }
 
         return header;
+    }
+
+    /** {@code carNumbers} is derived from the message at read time (RcCars),
+     *  never stored — the extraction heuristic can improve without a re-import. */
+    public record FlagRecord(int seq, String wallTime, String elapsed, String recType, String flag,
+                             String message, String flagTime, String accumTime, Integer lap,
+                             List<String> carNumbers) {
+    }
+
+    /** The session's flag/RC-message stream in source order — its own endpoint,
+     *  fetched when the race-control panel opens, so the (much hotter) results
+     *  payload doesn't carry ~70 extra rows per race. */
+    @GetMapping("/sessions/{id}/flags")
+    public List<FlagRecord> sessionFlags(@PathVariable long id) {
+        return db.sql("""
+                        SELECT seq, wall_time, elapsed, rec_type, flag, message, flag_time, accum_time, lap
+                        FROM session_flag
+                        WHERE session_id = :id
+                        ORDER BY seq
+                        """)
+                .param("id", id)
+                .query((rs, i) -> new FlagRecord(rs.getInt("seq"), rs.getString("wall_time"),
+                        rs.getString("elapsed"), rs.getString("rec_type"), rs.getString("flag"),
+                        rs.getString("message"), rs.getString("flag_time"), rs.getString("accum_time"),
+                        rs.getObject("lap", Integer.class), RcCars.extract(rs.getString("message"))))
+                .list();
     }
 
     private static int numericValue(String carNumber) {

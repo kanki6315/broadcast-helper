@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   getJson,
   type EventResults,
-  type GridRow,
+  type FlagRecord,
   type ResultRow,
   type SessionResults,
 } from '../../lib/api'
+import StartingGridModal from '../../components/StartingGridModal'
 import { useInfoModal } from '../../components/infoModal'
 import { useSeason } from './SeasonLayout'
 import { venueOf } from './venue'
@@ -59,61 +60,410 @@ function ClassCell({ className }: { className: string | null }) {
   )
 }
 
-function ResultsTable({ rows }: { rows: ResultRow[] }) {
-  const { classFilter } = useSeason()
-  const shown = classFilter ? rows.filter((r) => r.className === classFilter) : rows
-  if (shown.length === 0) return <p className="muted">No classified results.</p>
+/**
+ * The crew, or — under a "Fastest lap by" column — the one driver the provider
+ * credits with the car's fastest lap of the session. Where it named no seat we
+ * still print the crew rather than a dash, and say so on hover: "one of these
+ * two" is the honest answer, and silence isn't.
+ */
+function DriverCell({ row, fastestBy }: { row: ResultRow; fastestBy: boolean }) {
+  const attributed = fastestBy && row.fastestLapDriver != null
+  const names = attributed ? row.fastestLapDriver : row.drivers
   return (
-    <div
-      className="grid-scroll"
-      style={{ maxHeight: 'none' }}
-      tabIndex={0}
-      role="region"
-      aria-label="Session classification"
+    <td
+      className="name-cell soak"
+      style={{ maxWidth: 320 }}
+      title={
+        fastestBy && !attributed
+          ? `No driver credited with the fastest lap — showing the full crew: ${row.drivers ?? '—'}`
+          : (names ?? undefined)
+      }
     >
+      <DriverLinks names={names} />
+    </td>
+  )
+}
+
+/* ---- gaps ---------------------------------------------------------------- */
+
+/**
+ * A published gap as whole milliseconds. Qualifying prints the leader's own gap
+ * as "-" (zero, not missing) and everyone else's as "+1.234"; the "+M:SS.mmm"
+ * form only shows up in races, but parse it anyway so this can't silently return
+ * null if a qualifying session ever runs long enough to need it. A lap-count gap
+ * ("2 Laps") has no millisecond value at all — that's a null, not a zero.
+ */
+function gapMs(gap: string | null): number | null {
+  if (!gap) return null
+  if (gap === '-') return 0
+  const m = /^\+?(?:(\d+):)?(\d+)\.(\d{1,3})$/.exec(gap.trim())
+  if (!m) return null
+  const [, min, sec, frac] = m
+  return (Number(min ?? 0) * 60 + Number(sec)) * 1000 + Number(frac.padEnd(3, '0'))
+}
+
+/** Inverse of gapMs, in the provider's own shape so both gap columns read alike. */
+function formatGap(ms: number): string {
+  const sign = ms < 0 ? '-' : '+'
+  const t = Math.abs(ms)
+  const frac = String(t % 1000).padStart(3, '0')
+  const whole = Math.floor(t / 1000)
+  if (whole < 60) return `${sign}${whole}.${frac}`
+  return `${sign}${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}.${frac}`
+}
+
+/**
+ * Gap to the class leader, for a session whose gaps are all measured off the
+ * same overall leader — so the class gap is exact integer subtraction, never a
+ * re-timing. Returns null where either car's gap has no millisecond value,
+ * rather than guessing a number this table would be trusted on.
+ */
+function classGaps(rows: ResultRow[]): Map<ResultRow, string> {
+  const leaderMs = new Map<string, number>()
+  for (const r of rows) {
+    const ms = gapMs(r.gapFirst)
+    if (r.className == null || ms == null) continue
+    const best = leaderMs.get(r.className)
+    if (best == null || ms < best) leaderMs.set(r.className, ms)
+  }
+  const out = new Map<ResultRow, string>()
+  for (const r of rows) {
+    const ms = gapMs(r.gapFirst)
+    const lead = r.className != null ? leaderMs.get(r.className) : undefined
+    if (ms == null || lead == null) continue
+    out.set(r, ms === lead ? '-' : formatGap(ms - lead))
+  }
+  return out
+}
+
+/* ---- stewards' notes ----------------------------------------------------- */
+
+/**
+ * Map each affected result row's car number to the note texts naming it.
+ * Exact match first, then leading-zeros-stripped ("04" = "4") — the same
+ * concession the team-sheets matching makes, because the stewards and the
+ * entry list don't always agree on the zeros. A note naming a car that isn't
+ * in the session still shows in the panel; it just marks no row.
+ */
+function notesByCar(session: SessionResults): Map<string, string[]> {
+  const out = new Map<string, string[]>()
+  if (session.notes.length === 0) return out
+  const strip = (n: string) => n.replace(/^0+(?=\d)/, '')
+  const byExact = new Set<string>()
+  const byStripped = new Map<string, string>()
+  for (const r of session.results) {
+    byExact.add(r.carNumber)
+    const s = strip(r.carNumber)
+    if (!byStripped.has(s)) byStripped.set(s, r.carNumber)
+  }
+  for (const note of session.notes) {
+    for (const num of note.carNumbers) {
+      const key = byExact.has(num) ? num : byStripped.get(strip(num))
+      if (!key) continue
+      out.set(key, [...(out.get(key) ?? []), note.text])
+    }
+  }
+  return out
+}
+
+/** The stewards' notes, verbatim, one line each. The report mark rides along as
+ * a quiet pill only when it isn't "Official" — Official is the steady state, and
+ * a pill on every session would be one more thing to read past. */
+function SessionNotesPanel({ session }: { session: SessionResults }) {
+  if (session.notes.length === 0) return null
+  const mark = session.reportMark
+  return (
+    <section className="session-notes" aria-label="Stewards' notes">
+      <header className="session-notes-head">
+        <h3>Stewards&rsquo; notes</h3>
+        {mark && mark !== 'Official' && <span className="report-mark">{mark}</span>}
+      </header>
+      <ul>
+        {session.notes.map((n) => (
+          <li key={n.text}>{n.text}</li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/* ---- race control -------------------------------------------------------- */
+
+/** Provider rec_type → what the chip prints. Unknown future values fall back to
+ * the record's own flag text, never to silence. */
+const FLAG_LABEL: Record<string, string> = {
+  GF: 'Green',
+  FCY: 'Full course yellow',
+  FF: 'Chequered',
+}
+
+/**
+ * The session's flag periods and race-control log, imported from the provider's
+ * flags report. Collapsed by default — it's reference depth, not the headline —
+ * and fetched only on first open so the results payload stays light. Keyed by
+ * session at the call site, so switching tabs resets it.
+ */
+function RaceControl({ sessionId }: { sessionId: number }) {
+  const [open, setOpen] = useState(false)
+  const [flags, setFlags] = useState<FlagRecord[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [carFilter, setCarFilter] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open || flags !== null || error !== null) return
+    let cancelled = false
+    getJson<FlagRecord[]>(`/api/sessions/${sessionId}/flags`)
+      .then((f) => !cancelled && setFlags(f))
+      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : 'Failed to load'))
+    return () => {
+      cancelled = true
+    }
+  }, [open, flags, error, sessionId])
+
+  const periods = flags?.filter((f) => f.recType !== 'RCMessage') ?? []
+  const allLog = flags?.filter((f) => f.recType === 'RCMessage') ?? []
+  // Every car the stream names, in running-number order — "what happened to
+  // car 27?" is one click. Flag periods stay visible regardless of the filter:
+  // they're the race's shape, not a car's story.
+  const mentionedCars = [...new Set(allLog.flatMap((f) => f.carNumbers))].sort(
+    (a, b) => Number(a) - Number(b) || a.localeCompare(b),
+  )
+  const log = carFilter ? allLog.filter((f) => f.carNumbers.includes(carFilter)) : allLog
+
+  return (
+    <section className="race-control">
+      <button
+        type="button"
+        className="rc-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="rc-chevron" aria-hidden="true">
+          {open ? '▾' : '▸'}
+        </span>
+        Race control
+      </button>
+      {open && (
+        <div className="rc-body">
+          {error && <p className="error-panel">{error}</p>}
+          {!flags && !error && (
+            <div className="skeleton-block">
+              <span className="skeleton" />
+              <span className="skeleton" />
+            </div>
+          )}
+          {flags && (
+            <>
+              {periods.length > 0 && (
+                <ul className="rc-periods" aria-label="Flag periods">
+                  {periods.map((f) => (
+                    <li key={f.seq} className={`rc-period rc-${f.recType.toLowerCase()}`}>
+                      <b>{FLAG_LABEL[f.recType] ?? f.flag ?? f.recType}</b>
+                      {f.lap != null && f.lap > 0 && <span> · Lap {f.lap}</span>}
+                      {f.flagTime && f.flagTime !== '-' && <span> · {f.flagTime}</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {mentionedCars.length > 0 && (
+                <div className="rc-cars" role="group" aria-label="Filter messages by car">
+                  <button
+                    type="button"
+                    className={carFilter === null ? 'rc-car-chip active' : 'rc-car-chip'}
+                    aria-pressed={carFilter === null}
+                    onClick={() => setCarFilter(null)}
+                  >
+                    All cars
+                  </button>
+                  {mentionedCars.map((car) => (
+                    <button
+                      key={car}
+                      type="button"
+                      className={carFilter === car ? 'rc-car-chip active' : 'rc-car-chip'}
+                      aria-pressed={carFilter === car}
+                      onClick={() => setCarFilter(carFilter === car ? null : car)}
+                    >
+                      {car}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {log.length > 0 ? (
+                <ol className="rc-log" aria-label="Race control messages">
+                  {log.map((f) => (
+                    <li key={f.seq}>
+                      <span className="rc-time">{f.elapsed && f.elapsed !== '-' ? f.elapsed : f.wallTime}</span>
+                      <span className="rc-msg">{f.message}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="muted">
+                  {carFilter
+                    ? `No race-control messages name car ${carFilter}.`
+                    : 'No race-control messages in this session.'}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
+/** A finish that needs no comment. Everything else is the exception the Status
+ * column exists to surface, so only those carry the error mark — a wall of red
+ * "Classified" is exactly the second-guess this table must never invite. */
+function isClassified(status: string | null): boolean {
+  const s = status?.toLowerCase()
+  return s === 'classified' || s === 'running'
+}
+
+/**
+ * One session's classification. Qualifying and race are the same table with
+ * different questions asked of it, so the columns follow the session:
+ * qualifying names who put the car on the grid and calls the lap a lap;
+ * the race reports elapsed time, the crew, and its fastest lap.
+ *
+ * Columns whose data the import didn't carry are dropped rather than printed
+ * empty — an empty column is a column of doubt in a lookup tool.
+ */
+function ResultsTable({ session }: { session: SessionResults }) {
+  const { classFilter } = useSeason()
+  const isQualifying = session.sessionType === 'QUALIFYING'
+  const rows: ResultRow[] = classFilter
+    ? session.results.filter((r) => r.className === classFilter)
+    : session.results
+
+  const label = isQualifying ? 'Qualifying classification' : 'Race classification'
+  // Qualifying is a gap column and nothing else: the provider carries no
+  // elapsed time for it, and the leader's own "-" is the reference the rest of
+  // the column is read against. A race leads with its winning time instead.
+  const timeOf = (r: ResultRow) =>
+    isQualifying ? r.gapFirst : r.posOverall === 1 ? r.elapsedTime : r.gapFirst
+  // Measured against the whole session, not the filtered rows: the column set is
+  // a property of the session, and a table that changes shape — or renames a
+  // header — as you flip class chips is a table you have to re-read every time.
+  // Class gaps come from the whole session too: the class leader is the class
+  // leader whether or not the current filter is showing them.
+  const all = session.results
+  const gapInClass = classGaps(all)
+  const carNotes = notesByCar(session)
+  const has = {
+    laps: all.some((r) => r.laps != null),
+    time: all.some((r) => timeOf(r)),
+    fastest: all.some((r) => r.fastestLapTime),
+    onLap: all.some((r) => r.fastestLapNumber != null),
+    status: all.some((r) => !isClassified(r.status)),
+    // Qualifying only: an entry the provider attributed to a seat. Falls back to
+    // the full crew where it named none, so the cell is never a dead end.
+    fastestBy: all.some((r) => r.fastestLapDriver),
+    // Qualifying only. Every qualifying gap is plain seconds off the same
+    // overall pole, so the class gap is exact subtraction. A race mixes those
+    // with lap-count gaps ("9 Laps") that carry no time at all, which would
+    // leave a third of the column blank — a lap-aware race gap is its own job.
+    // Single-class sessions are excluded: the class gap just restates the
+    // overall one.
+    classGap:
+      isQualifying &&
+      new Set(all.map((r) => r.className)).size > 1 &&
+      all.some((r) => gapInClass.has(r)),
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="empty-state">
+        {session.results.length === 0
+          ? 'Nothing imported for this session yet — import a results file from the Imports tab.'
+          : `No ${classFilter} cars in this session.`}
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid-scroll" tabIndex={0} role="region" aria-label={label}>
       <table className="grid-table">
-        <caption className="sr-only">Session classification</caption>
+        <caption className="sr-only">{label}</caption>
         <thead>
           <tr>
-            <th className="num-cell">Pos</th>
-            <th className="num-cell">PIC</th>
-            <th>Class</th>
-            <th className="num-cell">#</th>
-            <th>Team</th>
-            <th className="soak">Drivers</th>
-            <th>Car</th>
-            <th className="num-cell">Laps</th>
-            <th>Time / Gap</th>
-            <th className="num-cell">Fastest</th>
-            <th>Status</th>
+            <th className="num-cell" scope="col">
+              Pos
+            </th>
+            <th className="num-cell" scope="col">
+              PIC
+            </th>
+            <th scope="col">Class</th>
+            <th className="num-cell" scope="col">
+              #
+            </th>
+            <th scope="col">Team</th>
+            <th className="soak" scope="col">
+              {isQualifying && has.fastestBy ? 'Fastest lap by' : 'Drivers'}
+            </th>
+            <th scope="col">Car</th>
+            {has.laps && (
+              <th className="num-cell" scope="col">
+                Laps
+              </th>
+            )}
+            {has.fastest && (
+              <th className="num-cell" scope="col">
+                {isQualifying ? 'Best lap' : 'Fastest'}
+              </th>
+            )}
+            {has.onLap && (
+              <th className="num-cell" scope="col">
+                On lap
+              </th>
+            )}
+            {has.time && (
+              <th className="num-cell" scope="col">
+                {isQualifying ? 'Gap' : 'Time / Gap'}
+              </th>
+            )}
+            {has.classGap && (
+              <th className="num-cell" scope="col">
+                Class gap
+              </th>
+            )}
+            {has.status && <th scope="col">Status</th>}
           </tr>
         </thead>
         <tbody>
-          {shown.map((r) => (
-            <tr key={r.carNumber + (r.posOverall ?? '')}>
+          {rows.map((r) => (
+            // Separated: car 5 in P43 and car 54 in P3 both concatenate to "543".
+            <tr key={`${r.carNumber}-${r.posOverall ?? ''}`}>
               <td className="pos-cell">{r.posOverall ?? '—'}</td>
               <td className="num-cell">{r.posInClass ?? '—'}</td>
               <ClassCell className={r.className} />
-              <td className="car-no">{r.carNumber}</td>
+              <td className="car-no">
+                {r.carNumber}
+                {carNotes.has(r.carNumber) && (
+                  <span
+                    className="note-flag"
+                    title={carNotes.get(r.carNumber)!.join('\n')}
+                    aria-label={`Stewards' note: ${carNotes.get(r.carNumber)!.join('; ')}`}
+                  >
+                    ※
+                  </span>
+                )}
+              </td>
               <td className="name-cell" title={r.teamName ?? undefined}>
                 <TeamLink name={r.teamName} />
               </td>
-              <td className="name-cell soak" style={{ maxWidth: 320 }} title={r.drivers ?? undefined}>
-                <DriverLinks names={r.drivers} />
-              </td>
+              <DriverCell row={r} fastestBy={isQualifying && has.fastestBy} />
               <td className="name-cell" style={{ maxWidth: 200 }} title={r.vehicle ?? undefined}>
                 {r.vehicle}
               </td>
-              <td className="num-cell">{r.laps ?? ''}</td>
-              <td className="num-cell">{r.posOverall === 1 ? r.elapsedTime : r.gapFirst}</td>
-              <td className="num-cell">{r.fastestLapTime ?? ''}</td>
-              <td>
-                {r.status && r.status.toLowerCase() !== 'running' ? (
-                  <span className="status-dnf">{r.status}</span>
-                ) : (
-                  r.status
-                )}
-              </td>
+              {has.laps && <td className="num-cell">{r.laps ?? ''}</td>}
+              {has.fastest && <td className="num-cell">{r.fastestLapTime ?? ''}</td>}
+              {has.onLap && <td className="num-cell back-cell">{r.fastestLapNumber ?? ''}</td>}
+              {has.time && <td className="num-cell">{timeOf(r)}</td>}
+              {has.classGap && <td className="num-cell">{gapInClass.get(r) ?? ''}</td>}
+              {has.status && (
+                <td>{isClassified(r.status) ? '' : <span className="status-dnf">{r.status}</span>}</td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -122,80 +472,19 @@ function ResultsTable({ rows }: { rows: ResultRow[] }) {
   )
 }
 
-function GridTable({ rows }: { rows: GridRow[] }) {
-  const { classFilter } = useSeason()
-  const shown = classFilter ? rows.filter((r) => r.className === classFilter) : rows
-  if (shown.length === 0) return <p className="muted">No grid imported.</p>
-  const hasTimes = shown.some((r) => r.qualifyingTime)
-  return (
-    <div
-      className="grid-scroll"
-      style={{ maxHeight: 'none' }}
-      tabIndex={0}
-      role="region"
-      aria-label="Starting grid"
-    >
-      <table className="grid-table">
-        <caption className="sr-only">Starting grid</caption>
-        <thead>
-          <tr>
-            <th className="num-cell">Pos</th>
-            <th className="num-cell">PIC</th>
-            <th>Class</th>
-            <th className="num-cell">#</th>
-            <th className="soak">Team</th>
-            {hasTimes && <th className="num-cell">Qualifying</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map((r) => (
-            <tr key={r.carNumber + (r.posOverall ?? '')}>
-              <td className="pos-cell">{r.posOverall ?? '—'}</td>
-              <td className="num-cell">{r.posInClass ?? '—'}</td>
-              <ClassCell className={r.className} />
-              <td className="car-no">{r.carNumber}</td>
-              <td className="name-cell soak" title={r.teamName ?? undefined}>
-                <TeamLink name={r.teamName} />
-              </td>
-              {hasTimes && <td className="num-cell">{r.qualifyingTime ?? ''}</td>}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function SessionBlock({ session, raceCount }: { session: SessionResults; raceCount: number }) {
-  const isRace = session.sessionType === 'RACE'
-  const title = isRace && raceCount === 1 ? 'Race' : session.name
-  return (
-    <div className="session-block">
-      <h3>{title}</h3>
-      {isRace && session.grid.length > 0 && (
-        <>
-          <h4>Starting grid</h4>
-          <GridTable rows={session.grid} />
-        </>
-      )}
-      {session.results.length > 0 && (
-        <>
-          {isRace && session.grid.length > 0 && <h4>Classification</h4>}
-          <ResultsTable rows={session.results} />
-        </>
-      )}
-      {session.results.length === 0 && session.grid.length === 0 && (
-        <p className="muted">Nothing imported for this session.</p>
-      )}
-    </div>
-  )
+/** "Qualifying" / "Race", or "Race 1" / "Race 2" where the weekend had two. */
+function sessionLabel(s: SessionResults, raceCount: number): string {
+  if (s.sessionType !== 'RACE') return 'Qualifying'
+  return raceCount === 1 ? 'Race' : s.name
 }
 
 export default function ResultsPage() {
-  const { hub } = useSeason()
+  const { hub, classFilter, classColor } = useSeason()
   const [searchParams, setSearchParams] = useSearchParams()
   const [results, setResults] = useState<EventResults | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [gridOpen, setGridOpen] = useState(false)
+  const tabsRef = useRef<HTMLDivElement>(null)
 
   // Rounds that have sessions to show, latest first pick.
   const rounds = useMemo(
@@ -220,6 +509,21 @@ export default function ResultsPage() {
     }
   }, [selected])
 
+  const sessions = results?.sessions ?? []
+  const races = sessions.filter((s) => s.sessionType === 'RACE')
+
+  // Session ids are per-event, so a `session` param carried across a round
+  // change simply doesn't match — fall through to the race, which is the
+  // headline result of any weekend that has one.
+  const sessionParam = Number(searchParams.get('session'))
+  const active =
+    sessions.find((s) => s.sessionId === sessionParam) ?? races[0] ?? sessions[0] ?? null
+
+  // The grid belongs to the race it starts; switching away closes it.
+  useEffect(() => {
+    setGridOpen(false)
+  }, [active])
+
   if (rounds.length === 0) {
     return (
       <div className="empty-state">
@@ -228,13 +532,31 @@ export default function ResultsPage() {
     )
   }
 
-  function pick(id: number) {
+  function setParam(key: string, value: string) {
     const next = new URLSearchParams(searchParams)
-    next.set('event', String(id))
+    next.set(key, value)
+    if (key === 'event') next.delete('session')
     setSearchParams(next, { replace: true })
   }
 
-  const races = results?.sessions.filter((s) => s.sessionType === 'RACE') ?? []
+  // Roving arrow keys across the tablist, per the tabs pattern: Left/Right move
+  // and select, Home/End jump to the ends.
+  function onTabKey(e: React.KeyboardEvent) {
+    const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End']
+    if (!keys.includes(e.key)) return
+    e.preventDefault()
+    const i = sessions.findIndex((s) => s.sessionId === active?.sessionId)
+    const next =
+      e.key === 'Home'
+        ? 0
+        : e.key === 'End'
+          ? sessions.length - 1
+          : (i + (e.key === 'ArrowRight' ? 1 : -1) + sessions.length) % sessions.length
+    setParam('session', String(sessions[next].sessionId))
+    tabsRef.current?.querySelectorAll('button')[next]?.focus()
+  }
+
+  const hasGrid = active?.sessionType === 'RACE' && active.grid.length > 0
 
   return (
     <div>
@@ -246,7 +568,7 @@ export default function ResultsPage() {
             className={selected?.id === e.id ? 'round-chip active' : 'round-chip'}
             aria-pressed={selected?.id === e.id}
             title={e.name}
-            onClick={() => pick(e.id)}
+            onClick={() => setParam('event', String(e.id))}
           >
             <span className="venue">{venueOf(e.name, e.circuitName)}</span>
             <span className="rd">Rd {e.roundOrdinal}</span>
@@ -271,12 +593,64 @@ export default function ResultsPage() {
               {results.eventDate ? ` · ${results.eventDate}` : ''}
             </span>
           </div>
-          {results.sessions.length === 0 ? (
-            <div className="empty-state">No qualifying or race sessions imported for this event.</div>
+          {!active ? (
+            <div className="empty-state">
+              No qualifying or race sessions imported for this event.
+            </div>
           ) : (
-            results.sessions.map((s) => (
-              <SessionBlock key={s.sessionId} session={s} raceCount={races.length} />
-            ))
+            <>
+              <div className="session-bar">
+                {/* A tablist of one is a label, not a control — the event title
+                    above already says which session this is. */}
+                {sessions.length > 1 && (
+                <div className="seg" role="tablist" aria-label="Session" ref={tabsRef}>
+                  {sessions.map((s) => {
+                    const on = s.sessionId === active.sessionId
+                    return (
+                      <button
+                        key={s.sessionId}
+                        type="button"
+                        role="tab"
+                        id={`session-tab-${s.sessionId}`}
+                        aria-selected={on}
+                        aria-controls={`session-panel-${s.sessionId}`}
+                        tabIndex={on ? 0 : -1}
+                        className={on ? 'seg-btn active' : 'seg-btn'}
+                        onKeyDown={onTabKey}
+                        onClick={() => setParam('session', String(s.sessionId))}
+                      >
+                        {sessionLabel(s, races.length)}
+                      </button>
+                    )
+                  })}
+                </div>
+                )}
+                {hasGrid && (
+                  <button type="button" className="btn" onClick={() => setGridOpen(true)}>
+                    Starting grid
+                  </button>
+                )}
+              </div>
+              <div
+                role="tabpanel"
+                id={`session-panel-${active.sessionId}`}
+                aria-labelledby={`session-tab-${active.sessionId}`}
+                tabIndex={-1}
+              >
+                <SessionNotesPanel session={active} />
+                <ResultsTable session={active} />
+                {active.hasFlags && <RaceControl key={active.sessionId} sessionId={active.sessionId} />}
+              </div>
+              {gridOpen && hasGrid && (
+                <StartingGridModal
+                  rows={active.grid}
+                  title={`${results.eventName} · ${sessionLabel(active, races.length)}`}
+                  classColor={classColor}
+                  classFilter={classFilter}
+                  onClose={() => setGridOpen(false)}
+                />
+              )}
+            </>
           )}
         </>
       )}

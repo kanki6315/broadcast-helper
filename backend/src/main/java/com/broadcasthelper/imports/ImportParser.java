@@ -47,6 +47,47 @@ public final class ImportParser {
         return root.has("session") && root.has("grid");
     }
 
+    public static boolean looksLikeFlags(JsonNode root) {
+        return root.has("session") && root.has("flags");
+    }
+
+    /** FlagsAnalysisWithRCMessages: the shared session header plus the session's
+     *  chronological flag/RC-message stream. Rows keep source order — that IS
+     *  the timeline. */
+    public static FlagsImport parseFlags(JsonNode root) {
+        JsonNode session = root.path("session");
+        JsonNode circuit = session.path("circuit");
+
+        List<FlagsImport.FlagRow> rows = new ArrayList<>();
+        for (JsonNode f : root.path("flags")) {
+            rows.add(new FlagsImport.FlagRow(
+                    text(f, "time"),
+                    text(f, "elapsed"),
+                    text(f, "rec_type"),
+                    text(f, "flag"),
+                    text(f, "message"),
+                    text(f, "flag_time"),
+                    text(f, "accum_time"),
+                    intOrNull(f, "lap")
+            ));
+        }
+
+        return new FlagsImport(
+                text(session, "championship_name"),
+                text(session, "event_name"),
+                text(session, "session_name"),
+                text(session, "session_type"),
+                sessionOrdinal(text(session, "session_name")),
+                text(session, "report_mark"),
+                text(session, "report_message"),
+                parseSessionDate(text(session, "session_date")),
+                text(circuit, "name"),
+                doubleOrNull(circuit, "length"),
+                text(circuit, "country"),
+                rows
+        );
+    }
+
     public static GridImport parseGrid(JsonNode root) {
         JsonNode session = root.path("session");
         JsonNode circuit = session.path("circuit");
@@ -252,6 +293,12 @@ public final class ImportParser {
                 ));
             }
 
+            // A race classification names each car's best lap as fastest_lap_*;
+            // a "Qualifying Practice by Best Lap" file names the same three facts
+            // as plain time / lap / kph (the lap IS the classifying lap there).
+            // Read fastest_lap_* first so races are unchanged, and fall back to
+            // the qualifying spelling — otherwise every qualifying entry stores a
+            // null best lap, which is exactly what happened.
             rows.add(new RaceResultsImport.Row(
                     c.path("position").asInt(),
                     inClass,
@@ -268,9 +315,9 @@ public final class ImportParser {
                     text(c, "elapsed_time"),
                     text(c, "gap_first"),
                     text(c, "gap_previous"),
-                    text(c, "fastest_lap_time"),
-                    intOrNull(c, "fastest_lap_number"),
-                    doubleOrNull(c, "fastest_lap_kph"),
+                    firstText(c, "fastest_lap_time", "time"),
+                    firstInt(c, "fastest_lap_number", "lap"),
+                    firstDouble(c, "fastest_lap_kph", "kph"),
                     intOrNull(c, "fastest_lap_driver_number"),
                     intOrNull(c, "pit_stops"),
                     drivers
@@ -360,6 +407,38 @@ public final class ImportParser {
     private static String text(JsonNode node, String field) {
         String value = node.path(field).asText("");
         return value.isBlank() ? null : value.trim();
+    }
+
+    /** First of {@code fields} that yields a non-blank value, else null. Used
+     *  where a race file and a qualifying file spell the same fact differently. */
+    private static String firstText(JsonNode node, String... fields) {
+        for (String field : fields) {
+            String value = text(node, field);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static Integer firstInt(JsonNode node, String... fields) {
+        for (String field : fields) {
+            Integer value = intOrNull(node, field);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static Double firstDouble(JsonNode node, String... fields) {
+        for (String field : fields) {
+            Double value = doubleOrNull(node, field);
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
     }
 
     /**
