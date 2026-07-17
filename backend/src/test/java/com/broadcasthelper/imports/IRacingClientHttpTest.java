@@ -101,6 +101,21 @@ class IRacingClientHttpTest {
             send(exchange, 200, "{\"type\":\"event_result\",\"data\":{\"subsession_id\":74553295,"
                                 + "\"session_results\":[]}}");
         });
+        // The roster shape: a wrapper carrying a second signed link under
+        // "data_url" (not "link"), whose object S3 serves as octet-stream.
+        server.createContext("/data/league/roster", exchange -> {
+            dataAuthHeaders.add(String.valueOf(exchange.getRequestHeaders().getFirst("Authorization")));
+            send(exchange, 200, "{\"roster_count\":1,\"data_url\":\"" + baseUrl + "/signed/roster\"}");
+        });
+        server.createContext("/signed/roster", exchange -> {
+            byte[] body = "{\"roster\":[{\"cust_id\":1,\"car_number\":\"01\"}]}"
+                    .getBytes(StandardCharsets.UTF_8);
+            // NOT application/json — this is exactly what tripped the first attempt.
+            exchange.getResponseHeaders().add("Content-Type", "application/octet-stream");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
 
         server.start();
         baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
@@ -153,6 +168,18 @@ class IRacingClientHttpTest {
         // and corrupt it; the real service answered AuthorizationQueryParametersError.
         assertEquals(PRESIGNED_QUERY, signedLinkRawQuery);
         assertTrue(signedLinkRawQuery.contains("%2F"), signedLinkRawQuery);
+    }
+
+    @Test
+    void followsDataUrlIndirectionAndParsesAnOctetStreamPayload() {
+        // Two things the roster endpoint does differently from results/get: the
+        // second link is under "data_url", not "link", and S3 serves it as
+        // application/octet-stream. Both broke the first live call.
+        JsonNode payload = client().get("/league/roster", Map.of("league_id", "6004"));
+
+        assertEquals(1, payload.path("roster").size());
+        assertEquals("01", payload.path("roster").get(0).path("car_number").asText(),
+                "leading-zero car numbers must survive as text");
     }
 
     @Test

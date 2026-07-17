@@ -1,6 +1,7 @@
 package com.broadcasthelper.imports;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -55,6 +56,10 @@ import java.util.Map;
 public class IRacingClient {
 
     private static final String SCOPE = "iracing.auth";
+
+    /** Stateless for reads; the signed payloads are parsed from bytes, not
+     *  content-type-negotiated, so a S3 object served as octet-stream still parses. */
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     /**
      * Renew this long before the access token actually lapses, so a request
@@ -146,14 +151,33 @@ public class IRacingClient {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Empty response from iRacing for " + path);
         }
+        // Two indirection shapes: results/get answers {"link": "..."}, while
+        // league/roster wraps a {"data_url": "..."} beside inline metadata. Both
+        // point at a short-lived (~15 min) pre-signed S3 object; follow whichever
+        // is present. No bearer token on the signed request — it is pre-signed,
+        // and sending credentials to the S3 host would hand them to a third party.
         JsonNode link = response.path("link");
+        if (!link.isTextual()) {
+            link = response.path("data_url");
+        }
         if (!link.isTextual()) {
             return response;
         }
-        JsonNode payload = http.get().uri(URI.create(link.asText())).retrieve().body(JsonNode.class);
-        if (payload == null) {
+        // Fetch the signed object as bytes and parse it directly, rather than
+        // letting RestClient content-negotiate: S3 serves the roster link as
+        // application/octet-stream, for which there is no JSON converter, even
+        // though the bytes are JSON. Bytes sidestep the content-type entirely.
+        byte[] raw = http.get().uri(URI.create(link.asText())).retrieve().body(byte[].class);
+        if (raw == null || raw.length == 0) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Empty payload from iRacing signed link for " + path);
+        }
+        JsonNode payload;
+        try {
+            payload = JSON.readTree(raw);
+        } catch (java.io.IOException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "Malformed payload from iRacing signed link for " + path);
         }
         return payload;
     }
