@@ -415,15 +415,23 @@ public final class IRacingParser {
         return circuitName(data);
     }
 
-    /** "Daytona International Speedway Road Course" — the config is part of the circuit. */
-    private static String circuitName(JsonNode data) {
+    /**
+     * "Daytona International Speedway Road Course" — the config is part of the
+     * circuit. A track with no separate layout reports config_name "N/A" (seen at
+     * Sachsenring), which must be dropped rather than tacked on as "Sachsenring
+     * N/A". Package-private for a targeted test of that.
+     */
+    static String circuitName(JsonNode data) {
         JsonNode track = data.path("track");
         String name = text(track, "track_name");
         String config = text(track, "config_name");
         if (name == null) {
             return null;
         }
-        return config == null ? name : name + " " + config;
+        if (config == null || config.equalsIgnoreCase("N/A")) {
+            return name;
+        }
+        return name + " " + config;
     }
 
     /**

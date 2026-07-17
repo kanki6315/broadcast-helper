@@ -72,6 +72,15 @@ public class ImportController {
         return imports.stageStandingsFromIRacing(leagueId, seasonId);
     }
 
+    /** Stages every round of a league season that has results — a lot of batches
+     *  to review at once. Resilient: a round that fails is reported, not fatal. */
+    @PostMapping("/iracing/league/{leagueId}/season/{seasonId}/import")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ImportService.SeasonImport fetchIRacingSeason(
+            @PathVariable long leagueId, @PathVariable long seasonId) {
+        return imports.stageSeasonFromIRacing(leagueId, seasonId);
+    }
+
     @GetMapping
     public List<ImportService.BatchSummary> list() {
         return imports.list();

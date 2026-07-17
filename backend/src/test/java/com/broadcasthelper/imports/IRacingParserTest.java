@@ -51,6 +51,25 @@ class IRacingParserTest {
     }
 
     @Test
+    void dropsTheNaConfigFromATrackWithNoLayout() {
+        // A track with a real layout keeps it...
+        assertEquals("Daytona International Speedway Road Course",
+                IRacingParser.circuitName(track("Daytona International Speedway", "Road Course")));
+        // ...but "N/A" (Sachsenring) is a sentinel for "no layout", not a name.
+        assertEquals("Sachsenring", IRacingParser.circuitName(track("Sachsenring", "N/A")));
+        assertEquals("Sachsenring", IRacingParser.circuitName(track("Sachsenring", "n/a")));
+        assertEquals("Sachsenring", IRacingParser.circuitName(track("Sachsenring", null)));
+    }
+
+    private JsonNode track(String trackName, String configName) {
+        var track = mapper.createObjectNode().put("track_name", trackName);
+        if (configName != null) {
+            track.put("config_name", configName);
+        }
+        return mapper.createObjectNode().set("track", track);
+    }
+
+    @Test
     void parsesSeasonDriverStandings() throws IOException {
         JsonNode root;
         try (InputStream in = getClass()

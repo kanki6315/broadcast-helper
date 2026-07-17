@@ -117,6 +117,41 @@ public class ImportService {
                 "league-" + leagueId + "-season-" + seasonId + "-standings.json");
     }
 
+    /** Outcome of a bulk season import: what was found, what staged, what didn't. */
+    public record SeasonImport(int roundsWithResults, int roundsStaged,
+                               List<BatchSummary> batches, List<RoundFailure> failures) {
+    }
+
+    public record RoundFailure(long subsessionId, String track, String reason) {
+    }
+
+    /**
+     * Stages every round of a league season that has results, in schedule order.
+     * Each round is fetched and staged on its own — a round that fails (a missing
+     * result, a transient API error) is recorded and skipped, not fatal, so one
+     * bad round doesn't discard the rest. Staging only: nothing is committed, and
+     * a season's worth of rounds is a lot of batches to review, so this is for
+     * when importing a whole season at once is genuinely wanted.
+     */
+    public SeasonImport stageSeasonFromIRacing(long leagueId, long seasonId) {
+        List<IRacingParser.LeagueRound> rounds = listSeasonRounds(leagueId, seasonId).stream()
+                .filter(IRacingParser.LeagueRound::hasResults)
+                .toList();
+        List<BatchSummary> batches = new ArrayList<>();
+        List<RoundFailure> failures = new ArrayList<>();
+        int staged = 0;
+        for (IRacingParser.LeagueRound round : rounds) {
+            try {
+                batches.addAll(stageFromIRacing(round.subsessionId()));
+                staged++;
+            } catch (RuntimeException e) {
+                String reason = e instanceof ResponseStatusException rse ? rse.getReason() : e.getMessage();
+                failures.add(new RoundFailure(round.subsessionId(), round.trackName(), reason));
+            }
+        }
+        return new SeasonImport(rounds.size(), staged, batches, failures);
+    }
+
     /** The season's display name from /league/seasons, for titling the standings.
      *  Falls back to a generic label if the season isn't listed. */
     private String seasonName(long leagueId, long seasonId) {
