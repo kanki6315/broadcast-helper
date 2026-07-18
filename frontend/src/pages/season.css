@@ -1373,3 +1373,107 @@ td.lineup-changed {
 .stats-table .name-cell {
   min-width: 180px;
 }
+
+/* -- sortable headers --
+ *
+ * The header label IS the button: a bare control inheriting the cell's type,
+ * so the two-row header keeps its exact metrics (row 1 stays 30px, row 2 stays
+ * 27px, and row 2's `top: 30px` offset stays true). Nothing here may change a
+ * column's intrinsic width — the active state is carried by colour, never by
+ * font-weight, because 27 headers re-measuring on click would shift the whole
+ * grid under the reader's eye. */
+/* The button spans its whole cell — negative margins cancelled by equal
+ * padding, so the header's metrics are untouched while the click target grows
+ * from the 14×18px label to the full 40×27px cell (WCAG 2.5.8 wants 24×24).
+ * It also means the whole header cell sorts, which is what people try first. */
+.stats-table .sh-sort {
+  /* A button shrink-wraps under `width: auto` even as a block, so the fill is
+   * explicit: content-box + width 100% makes the border box exactly the cell's
+   * content width plus its padding, and the negative margins seat it over the
+   * padding. (content-box is scoped to this button — the grid's th/td keep
+   * border-box, which their sticky left offsets depend on.) */
+  display: block;
+  box-sizing: content-box;
+  width: 100%;
+  margin: -4px -5px;
+  padding: 4px 5px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.stats-table .ident .sh-sort {
+  margin: -4px -10px;
+  padding: 4px 10px;
+}
+
+/* The caret anchors to the text, not the full-width button. */
+.stats-table .sh-label {
+  position: relative;
+  display: inline-block;
+}
+
+.stats-table .sh-sort:hover {
+  color: var(--ink);
+}
+
+.stats-table .sh-sort:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+/* The caret hangs off the label's right edge, out of flow. The tightest
+ * sub-head ("DNF") measures 9.3px of slack either side of its centred label,
+ * so the mark is sized to live inside that: 5px wide plus a 2px gap, clearing
+ * the next group's hairline by ~2px. Sorting a column therefore costs no
+ * width, and clearing it reclaims none. */
+.stats-table .sh-label::after {
+  content: '';
+  position: absolute;
+  left: calc(100% + 2px);
+  top: 50%;
+  width: 0;
+  height: 0;
+  margin-top: -2px;
+  border-left: 2.5px solid transparent;
+  border-right: 2.5px solid transparent;
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.stats-table .sh-asc .sh-label::after {
+  border-bottom: 4px solid currentColor;
+}
+
+.stats-table .sh-desc .sh-label::after {
+  border-top: 4px solid currentColor;
+}
+
+/* At rest a column says nothing about sorting. Hovering or focusing previews
+ * the direction the next click gives; the sorted column states it outright in
+ * the accent, which is the one thing on this table allowed to be loud. */
+.stats-table .sh-sort:hover .sh-label::after,
+.stats-table .sh-sort:focus-visible .sh-label::after {
+  opacity: 0.45;
+}
+
+.stats-table .is-sorted {
+  color: var(--ink);
+}
+
+.stats-table .is-sorted .sh-label::after {
+  opacity: 1;
+  color: var(--accent-ink);
+}
+
+/* The muted sub-head label goes ink when its column is the sorted one, so the
+ * active column is findable without hunting for a 6px triangle. */
+.stats-table .sub-head .is-sorted {
+  color: var(--ink);
+}

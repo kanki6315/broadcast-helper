@@ -359,6 +359,30 @@ narrower chips, centered values) because up to six column groups have to fit
 one screen; the ident columns keep normal padding so names don't crowd. Class
 sections use the same class band as the recap.
 
+**Every column sorts, and the affordance costs no space.** The header label
+*is* the button (`.sh-sort`, a bare control inheriting the cell's type) and it
+spans the whole cell via negative margins cancelled by equal padding — so the
+click target is the full cell (≥24×24, WCAG 2.5.8) while row 1 stays 30px, row
+2 stays 27px, and no column changes width. The direction caret is a 5×4px
+triangle absolutely positioned off the label's right edge, living in slack the
+header already had (the tightest sub-head, "DNF", carries ≥9px either side of
+its centred label). Nothing about the active state may re-measure text —
+weight stays put and only **colour** changes, because 27 headers reflowing on
+click would shift the grid under the reader.
+
+At rest a column says nothing; hover and `:focus-visible` preview the caret at
+45% to show what the next click gives; the sorted column prints it solid in
+`--accent-ink` with its label in `--ink`. Clicking cycles
+**default → opposite → off**: the third click restores the backend's composite
+ranking (wins, then podiums), which no single column reproduces, so it has to
+stay reachable. Tallies open descending ("who has the most"), text columns
+ascending. **Sorting reorders within each class section, never across** — the
+class band is a structural division, not a row property — and a format the
+driver never contested (`·`) sinks to the bottom in *both* directions, because
+"didn't enter" is not a score of zero. `aria-sort` rides on the `th`, and each
+button names its group and meaning ("Sprint — Podiums (top 3)"), which is how
+a screen reader recovers what the two-row header says spatially.
+
 ### Event Sheet (`frontend/src/pages/sheet.css`)
 The standalone per-event reference (`/sheet/:eventId`), on the same token
 layer and result vocabulary as the recap: class bands with computed ink, one
