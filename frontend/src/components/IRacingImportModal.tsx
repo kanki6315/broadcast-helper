@@ -117,7 +117,13 @@ export default function IRacingImportModal({
         setError(body?.message ?? `Request failed (${res.status})`)
         return
       }
-      const imported = body as IRacingImport
+      // The subsession/season endpoints answer with an IRacingImport
+      // ({ batches, failures }); the standings endpoint answers with a bare
+      // list of staged batches. Normalize the latter so the confirm step —
+      // which reads result.failures and result.batches — never sees undefined.
+      const imported: IRacingImport = Array.isArray(body)
+        ? { requested: body.length, staged: body.length, batches: body as StagedBatch[], failures: [] }
+        : (body as IRacingImport)
       setResult(imported)
       await onStaged(imported.batches.map((b) => b.id), seriesId, eventId)
     } catch {
