@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { getJson, type Lineups, type Recap, type ReferenceTable } from '../../lib/api'
+import { getJson, type Lineups, type Recap, type ReferenceTable, type StatsTable } from '../../lib/api'
 import { shortName } from '../../lib/names'
 import ChampionshipGrid, { fetchRecap, formatPoints, useChampSelection } from './ChampionshipGrid'
 import { useSeason } from './SeasonLayout'
@@ -369,25 +369,109 @@ function EntriesWidget({ lineups, failed }: { lineups: Lineups | null; failed: b
   )
 }
 
+function StatLeadersWidget({ stats, failed }: { stats: StatsTable | null; failed: boolean }) {
+  const { classFilter } = useSeason()
+  const { search } = useLocation()
+
+  // Wins summed across formats — the headline number; poles from qualifying
+  // results only (absent for series with no quali imported, e.g. IMSA).
+  const { winLeaders, poleLeaders } = useMemo(() => {
+    const rows = (stats?.rows ?? []).filter((r) => !classFilter || r.className === classFilter)
+    const wins = rows
+      .map((r) => ({ row: r, n: r.byFormat.reduce((s, l) => s + l.wins, 0) }))
+      .filter((x) => x.n > 0)
+      .sort((a, b) => b.n - a.n)
+      .slice(0, 3)
+    const poles = rows
+      .map((r) => ({ row: r, n: r.quali.poles }))
+      .filter((x) => x.n > 0)
+      .sort((a, b) => b.n - a.n)
+      .slice(0, 3)
+    return { winLeaders: wins, poleLeaders: poles }
+  }, [stats, classFilter])
+
+  return (
+    <div className="widget">
+      <div className="widget-head">
+        <h2>Stat leaders</h2>
+        <Link to={{ pathname: 'stats', search }}>Stats →</Link>
+      </div>
+      {failed ? (
+        <p className="widget-empty">Couldn’t load stats — try reloading.</p>
+      ) : !stats ? (
+        <div className="skeleton-block">
+          <span className="skeleton" />
+          <span className="skeleton" />
+        </div>
+      ) : winLeaders.length === 0 && poleLeaders.length === 0 ? (
+        <p className="widget-empty">
+          {classFilter ? `No ${classFilter} wins recorded yet.` : 'No wins recorded yet.'}
+        </p>
+      ) : (
+        <>
+          {winLeaders.length > 0 && (
+            <>
+              <p className="widget-mini-head">Most wins</p>
+              <div className="widget-rows">
+                {winLeaders.map(({ row, n }) => (
+                  <div key={`w-${row.driverId}-${row.className}`} className="widget-row">
+                    <ClassTag className={row.className} />
+                    <span className="grow wr-main" title={row.driverName}>
+                      {row.driverName}
+                    </span>
+                    <span className="num">{n}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {poleLeaders.length > 0 && (
+            <>
+              <p className="widget-mini-head">Most poles</p>
+              <div className="widget-rows">
+                {poleLeaders.map(({ row, n }) => (
+                  <div key={`p-${row.driverId}-${row.className}`} className="widget-row">
+                    <ClassTag className={row.className} />
+                    <span className="grow wr-main" title={row.driverName}>
+                      {row.driverName}
+                    </span>
+                    <span className="num">{n}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function HubPage() {
   const { hub } = useSeason()
   const [reference, setReference] = useState<ReferenceTable | null>(null)
   const [lineups, setLineups] = useState<Lineups | null>(null)
+  const [stats, setStats] = useState<StatsTable | null>(null)
   // A failed request must never masquerade as "nothing imported" — the widgets
   // say "couldn't load" instead of an empty state that reads as data loss.
   const [refFailed, setRefFailed] = useState(false)
   const [lineupsFailed, setLineupsFailed] = useState(false)
+  const [statsFailed, setStatsFailed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     setRefFailed(false)
     setLineupsFailed(false)
+    setStatsFailed(false)
     getJson<ReferenceTable>(`/api/seasons/${hub.id}/reference`)
       .then((r) => !cancelled && setReference(r))
       .catch(() => !cancelled && setRefFailed(true))
     getJson<Lineups>(`/api/seasons/${hub.id}/lineups`)
       .then((l) => !cancelled && setLineups(l))
       .catch(() => !cancelled && setLineupsFailed(true))
+    getJson<StatsTable>(`/api/seasons/${hub.id}/stats`)
+      .then((s) => !cancelled && setStats(s))
+      .catch(() => !cancelled && setStatsFailed(true))
     return () => {
       cancelled = true
     }
@@ -400,6 +484,7 @@ export default function HubPage() {
         <LeadersWidget />
         <LastWinnersWidget reference={reference} lineups={lineups} failed={refFailed} />
         <EntriesWidget lineups={lineups} failed={lineupsFailed} />
+        <StatLeadersWidget stats={stats} failed={statsFailed} />
       </div>
       <div className="page-title-row">
         <h2>Season recap</h2>

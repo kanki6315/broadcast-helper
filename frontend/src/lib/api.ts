@@ -307,6 +307,87 @@ export interface DriverProfile {
   championships: DriverChampMatrix[]
 }
 
+/* -- stats ------------------------------------------------------------------ */
+
+export interface FormatInfo {
+  id: number | null
+  name: string
+  ordinal: number
+}
+
+export interface FormatLine {
+  formatId: number | null
+  starts: number
+  wins: number
+  podiums: number
+  top5s: number
+  dnfs: number
+}
+
+export interface QualiLine {
+  sessions: number
+  poles: number
+  top5s: number
+}
+
+export interface DriverStatsRow {
+  driverId: number
+  driverName: string
+  className: string
+  carNumber: string | null
+  teamName: string | null
+  byFormat: FormatLine[]
+  quali: QualiLine
+}
+
+export interface StatsTable {
+  formats: FormatInfo[]
+  rows: DriverStatsRow[]
+}
+
+export interface NamedFormatLine {
+  formatId: number | null
+  formatName: string
+  starts: number
+  wins: number
+  podiums: number
+  top5s: number
+  dnfs: number
+}
+
+export interface SeasonStatLine {
+  seasonId: number
+  year: number
+  seriesName: string
+  className: string
+  byFormat: NamedFormatLine[]
+  quali: QualiLine
+}
+
+export interface SeriesStatLine {
+  seriesId: number
+  seriesName: string
+  byFormat: NamedFormatLine[]
+  quali: QualiLine
+}
+
+export interface CareerTotals {
+  starts: number
+  wins: number
+  podiums: number
+  top5s: number
+  poles: number
+  qualiTop5s: number
+  dnfs: number
+}
+
+export interface DriverStats {
+  driverId: number
+  career: CareerTotals
+  bySeries: SeriesStatLine[]
+  seasons: SeasonStatLine[]
+}
+
 /* -- team profile ----------------------------------------------------------- */
 
 export interface TeamSearchHit {

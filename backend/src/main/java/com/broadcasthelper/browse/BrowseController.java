@@ -53,7 +53,12 @@ public class BrowseController {
                              Long imageVersion) {
     }
 
-    public record EventDetail(EventSummary event, List<EventEntry> entries) {
+    public record EventSession(long id, String sessionType, String name, int ordinal,
+                               Long formatId, String formatName, String formatSource) {
+    }
+
+    public record EventDetail(EventSummary event, List<EventEntry> entries,
+                              long seriesId, List<EventSession> sessions) {
     }
 
     @GetMapping("/events/{id}")
@@ -109,7 +114,28 @@ public class BrowseController {
                             imageUploadedAt != null ? imageUploadedAt.toInstant().toEpochMilli() : null);
                 })
                 .list();
-        return new EventDetail(summary, entries);
+
+        long seriesId = db.sql("SELECT s.series_id FROM event e JOIN season s ON s.id = e.season_id WHERE e.id = :id")
+                .param("id", id)
+                .query(Long.class)
+                .single();
+        // Sessions with their race-format assignment, for the Manage-side
+        // format override (qualifying/practice carry none by design).
+        List<EventSession> sessions = db.sql("""
+                        SELECT rs.id, rs.session_type, rs.name, rs.ordinal,
+                               rs.format_id, rf.name AS format_name, rs.format_source
+                        FROM race_session rs
+                                 LEFT JOIN race_format rf ON rf.id = rs.format_id
+                        WHERE rs.event_id = :id
+                        ORDER BY CASE rs.session_type WHEN 'PRACTICE' THEN 0 WHEN 'QUALIFYING' THEN 1 ELSE 2 END,
+                                 rs.ordinal
+                        """)
+                .param("id", id)
+                .query((rs, i) -> new EventSession(rs.getLong("id"), rs.getString("session_type"),
+                        rs.getString("name"), rs.getInt("ordinal"), rs.getObject("format_id", Long.class),
+                        rs.getString("format_name"), rs.getString("format_source")))
+                .list();
+        return new EventDetail(summary, entries, seriesId, sessions);
     }
 
     public record ChampionshipSummary(long id, String title, String groupTitle, String className, String kind,

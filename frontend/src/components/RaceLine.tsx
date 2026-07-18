@@ -1,12 +1,9 @@
 import type { RecapRace } from '../lib/api'
+import { positionTier } from '../lib/raceForm'
 
 /** Finish-tier class for a recap race, in the season.css result vocabulary. */
 export function raceTier(r: RecapRace): string {
-  if (r.notFinished) return 'res-dnf'
-  if (r.finish === 1) return 'res-win'
-  if (r.finish != null && r.finish <= 3) return 'res-top3'
-  if (r.finish != null && r.finish <= 5) return 'res-top5'
-  return ''
+  return positionTier(r.finish, r.notFinished)
 }
 
 function isDns(r: RecapRace): boolean {

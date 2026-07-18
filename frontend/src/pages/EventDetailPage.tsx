@@ -29,9 +29,26 @@ interface EventEntry {
   imageVersion: number | null
 }
 
+interface EventSession {
+  id: number
+  sessionType: string
+  name: string
+  ordinal: number
+  formatId: number | null
+  formatName: string | null
+  formatSource: string
+}
+
 interface EventDetail {
   event: EventSummary
   entries: EventEntry[]
+  seriesId: number
+  sessions: EventSession[]
+}
+
+interface RaceFormatOption {
+  id: number
+  name: string
 }
 
 interface TeamSheetPageMapping {
@@ -56,6 +73,92 @@ function normalizeCar(n: string): string {
 function ordinal(n: number): string {
   const suffix = n % 100 >= 11 && n % 100 <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][n % 10] ?? 'th')
   return `${n}${suffix}`
+}
+
+/**
+ * Race sessions with their stat-format assignment. The heuristic sets these on
+ * import (AUTO); a broadcaster can pin one here (MANUAL survives re-imports)
+ * or send it back to Auto. Qualifying carries no format by design — its stats
+ * (poles, quali top-5s) are their own bucket.
+ */
+function SessionFormatsSection({
+  seriesId,
+  sessions,
+  onChanged,
+}: {
+  seriesId: number
+  sessions: EventSession[]
+  onChanged: () => void
+}) {
+  const [formats, setFormats] = useState<RaceFormatOption[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const races = sessions.filter((s) => s.sessionType === 'RACE')
+
+  useEffect(() => {
+    void fetch(`/api/series/${seriesId}/race-formats`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Backend returned ${r.status}`))))
+      .then((list: (RaceFormatOption & { sessionCount: number })[]) => setFormats(list))
+      .catch(() => setFormats([]))
+  }, [seriesId])
+
+  if (races.length === 0) return null
+
+  async function setFormat(sessionId: number, formatId: number | null) {
+    const res = await fetch(`/api/sessions/${sessionId}/format`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ formatId }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => null)
+      setError(err?.message ?? `Backend returned ${res.status}`)
+      return
+    }
+    setError(null)
+    onChanged()
+  }
+
+  return (
+    <div className="session-formats">
+      <h3>Race formats</h3>
+      {error && <p className="error">{error}</p>}
+      <table>
+        <thead>
+          <tr>
+            <th>Session</th>
+            <th>Format</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {races.map((s) => (
+            <tr key={s.id}>
+              <td>{s.name}</td>
+              <td>
+                <select
+                  // An AUTO row shows as "Auto (Sprint)" rather than a picked
+                  // value — picking a format is what pins it MANUAL.
+                  value={s.formatSource === 'MANUAL' ? (s.formatId ?? '') : ''}
+                  aria-label={`Format for ${s.name}`}
+                  onChange={(e) =>
+                    void setFormat(s.id, e.target.value === '' ? null : Number(e.target.value))
+                  }
+                >
+                  <option value="">Auto{s.formatName && s.formatSource === 'AUTO' ? ` (${s.formatName})` : ''}</option>
+                  {formats.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))}
+                </select>
+              </td>
+              <td>{s.formatSource === 'MANUAL' && <span className="badge">MANUAL</span>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
 }
 
 export default function EventDetailPage() {
@@ -87,6 +190,16 @@ export default function EventDetailPage() {
           Sheet →
         </a>
       </h2>
+      <SessionFormatsSection
+        seriesId={detail.seriesId}
+        sessions={detail.sessions}
+        onChanged={() => {
+          void fetch(`/api/events/${eventId}`)
+            .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Backend returned ${r.status}`))))
+            .then(setDetail)
+            .catch(() => {})
+        }}
+      />
       <TeamSheetsSection eventId={detail.event.id} entries={detail.entries} />
       {classes.map((cls) => (
         <div key={cls}>

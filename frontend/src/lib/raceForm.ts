@@ -44,16 +44,20 @@ export function finishText(r: FormRace): string {
   return '·'
 }
 
-// Result tier for a race cell — the app-wide .race-line vocabulary (the
-// --res-* tokens): win / top-3 / top-5 tints, plain for anything else
-// classified, and the inverted DNF chip for any non-result.
-export function finishTier(r: FormRace): string {
-  if (isNonResult(r)) return 'res-dnf'
-  const p = r.finish as number
-  if (p === 1) return 'res-win'
-  if (p <= 3) return 'res-top3'
-  if (p <= 5) return 'res-top5'
+// Result tier for a finishing position — the app-wide .race-line vocabulary
+// (the --res-* tokens): win / top-3 / top-5 tints, plain for anything else
+// classified, and the inverted DNF chip for any non-result. The single source
+// of the 1 / ≤3 / ≤5 thresholds, shared with RaceLine and the stats surfaces.
+export function positionTier(finish: number | null, nonResult: boolean): string {
+  if (nonResult) return 'res-dnf'
+  if (finish === 1) return 'res-win'
+  if (finish != null && finish <= 3) return 'res-top3'
+  if (finish != null && finish <= 5) return 'res-top5'
   return ''
+}
+
+export function finishTier(r: FormRace): string {
+  return positionTier(r.finish, isNonResult(r))
 }
 
 // One race's cell text: start → finish (in class). Start is absent when no grid

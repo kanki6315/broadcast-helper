@@ -18,12 +18,21 @@ interface ClassStylesResponse {
   unconfiguredClasses: string[]
 }
 
+interface RaceFormat {
+  id: number
+  code: string
+  name: string
+  ordinal: number
+  sessionCount: number
+}
+
 export default function SeriesPage() {
   const [series, setSeries] = useState<Series[]>([])
   const [name, setName] = useState('')
   const [abbreviation, setAbbreviation] = useState('')
   const [aliasDrafts, setAliasDrafts] = useState<Record<number, string>>({})
   const [expanded, setExpanded] = useState<number | null>(null)
+  const [formatsExpanded, setFormatsExpanded] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -123,6 +132,7 @@ export default function SeriesPage() {
               <th>Abbreviation</th>
               <th>Aliases</th>
               <th>Class colours</th>
+              <th>Race formats</th>
             </tr>
           </thead>
           <tbody>
@@ -158,12 +168,173 @@ export default function SeriesPage() {
                     </button>
                   )}
                 </td>
+                <td>
+                  {formatsExpanded === s.id ? (
+                    <RaceFormatEditor seriesId={s.id} onError={setError} />
+                  ) : (
+                    <button type="button" onClick={() => setFormatsExpanded(s.id)}>
+                      Edit…
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
     </section>
+  )
+}
+
+/**
+ * Per-series race formats: the stat buckets (Sprint, Main, Heat…) sessions are
+ * classified into. Rename feeds every stats surface live; merge is a cleanup
+ * for buckets the heuristic split that the broadcaster counts as one;
+ * auto-assign backfills events imported before formats existed.
+ */
+function RaceFormatEditor({
+  seriesId,
+  onError,
+}: {
+  seriesId: number
+  onError: (message: string | null) => void
+}) {
+  const [formats, setFormats] = useState<RaceFormat[]>([])
+  const [names, setNames] = useState<Record<number, string>>({})
+  const [newName, setNewName] = useState('')
+  const [assignNote, setAssignNote] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  async function load() {
+    try {
+      const res = await fetch(`/api/series/${seriesId}/race-formats`)
+      if (!res.ok) throw new Error(`Backend returned ${res.status}`)
+      const data: RaceFormat[] = await res.json()
+      setFormats(data)
+      setNames(Object.fromEntries(data.map((f) => [f.id, f.name])))
+      onError(null)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed to reach backend')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seriesId])
+
+  async function call(url: string, method: string, body?: unknown) {
+    const res = await fetch(url, {
+      method,
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => null)
+      onError(err?.message ?? `Backend returned ${res.status}`)
+      return false
+    }
+    onError(null)
+    return true
+  }
+
+  async function rename(f: RaceFormat) {
+    const name = (names[f.id] ?? '').trim()
+    if (!name || name === f.name) return
+    if (await call(`/api/race-formats/${f.id}`, 'PATCH', { name })) await load()
+  }
+
+  async function merge(fromId: number, intoId: number) {
+    if (await call(`/api/race-formats/${fromId}/merge`, 'POST', { intoId })) await load()
+  }
+
+  async function remove(id: number) {
+    if (await call(`/api/race-formats/${id}`, 'DELETE')) await load()
+  }
+
+  async function create() {
+    const name = newName.trim()
+    if (!name) return
+    if (await call(`/api/series/${seriesId}/race-formats`, 'POST', { name })) {
+      setNewName('')
+      await load()
+    }
+  }
+
+  async function autoAssign() {
+    setAssignNote(null)
+    const res = await fetch(`/api/series/${seriesId}/race-formats/auto-assign`, { method: 'POST' })
+    if (!res.ok) {
+      onError(`Backend returned ${res.status}`)
+      return
+    }
+    const r = (await res.json()) as { eventsProcessed: number; sessionsAssigned: number }
+    setAssignNote(`${r.sessionsAssigned} sessions assigned across ${r.eventsProcessed} events.`)
+    await load()
+  }
+
+  if (loading) return <span className="muted">Loading…</span>
+
+  return (
+    <div className="race-format-editor">
+      {formats.length === 0 && (
+        <p className="muted">No formats yet — auto-assign classifies the imported races.</p>
+      )}
+      {formats.map((f) => (
+        <div key={f.id} className="race-format-row">
+          <input
+            value={names[f.id] ?? f.name}
+            aria-label={`Rename ${f.name}`}
+            onChange={(e) => setNames((n) => ({ ...n, [f.id]: e.target.value }))}
+            onBlur={() => void rename(f)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+            }}
+          />
+          <span className="muted race-format-count">
+            {f.sessionCount} session{f.sessionCount === 1 ? '' : 's'}
+          </span>
+          <select
+            value=""
+            aria-label={`Merge ${f.name} into…`}
+            onChange={(e) => {
+              if (e.target.value) void merge(f.id, Number(e.target.value))
+            }}
+          >
+            <option value="">Merge into…</option>
+            {formats
+              .filter((x) => x.id !== f.id)
+              .map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+          </select>
+          {f.sessionCount === 0 && (
+            <button type="button" onClick={() => void remove(f.id)} aria-label={`Remove ${f.name}`}>
+              ✕
+            </button>
+          )}
+        </div>
+      ))}
+
+      <div className="race-format-add">
+        <input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="New format name…"
+        />
+        <button type="button" onClick={() => void create()} disabled={!newName.trim()}>
+          Add
+        </button>
+        <button type="button" onClick={() => void autoAssign()}>
+          Auto-assign formats
+        </button>
+      </div>
+      {assignNote && <p className="muted">{assignNote}</p>}
+    </div>
   )
 }
 

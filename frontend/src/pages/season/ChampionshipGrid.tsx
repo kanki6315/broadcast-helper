@@ -247,6 +247,19 @@ function ClassGrid({ champ, mode }: { champ: ChampionshipSummary; mode: 'recap' 
   const drivers = recap.championship.kind === 'DRIVERS'
   const color = classColor(champ.className)
 
+  // "-245 (-13)": deficit to the class leader, then the gap to the row above —
+  // the on-air question is usually "how far to the car ahead", not the leader.
+  const backText = (back: number, prevPoints: number | null, points: number) => {
+    if (back === 0) return <span className="muted">—</span>
+    const gap = prevPoints != null ? prevPoints - points : null
+    return (
+      <>
+        -{formatPoints(back)}
+        {gap != null && <span className="back-gap"> ({gap === 0 ? '0' : `-${formatPoints(gap)}`})</span>}
+      </>
+    )
+  }
+
   // Sticky identity columns need explicit offsets. Widths are border-box (see
   // season.css) so they include the 20px cell padding — the cumulated offsets
   // below are only correct because of that.
@@ -255,7 +268,8 @@ function ClassGrid({ champ, mode }: { champ: ChampionshipSummary; mode: 'recap' 
       ? [
           { key: 'pos', label: 'Pos', w: 52, cls: 'pos-cell' },
           { key: 'pts', label: 'Pts', w: 68, cls: 'num-cell' },
-          { key: 'back', label: 'Back', w: 68, cls: 'num-cell back-cell' },
+          // Wide enough for "-245 (-13)" without wrapping.
+          { key: 'back', label: 'Back', w: 112, cls: 'num-cell back-cell' },
           { key: 'car', label: '#', w: 60, cls: 'car-no' },
           {
             key: 'name',
@@ -337,8 +351,9 @@ function ClassGrid({ champ, mode }: { champ: ChampionshipSummary; mode: 'recap' 
             </span>
           </td>
         </tr>
-        {recap.rows.map((row) => {
+        {recap.rows.map((row, rowIdx) => {
           const back = leaderPoints - row.totalPoints
+          const prevPoints = rowIdx > 0 ? recap.rows[rowIdx - 1].totalPoints : null
           const name = drivers ? (row.competitorName ?? row.competitorKey) : row.teamName
           return (
             <tr key={row.competitorKey}>
@@ -360,7 +375,7 @@ function ClassGrid({ champ, mode }: { champ: ChampionshipSummary; mode: 'recap' 
                   case 'back':
                     return (
                       <td key={c.key} className={`ident ${c.cls}`} style={style}>
-                        {back === 0 ? '—' : formatPoints(back)}
+                        {backText(back, prevPoints, row.totalPoints)}
                       </td>
                     )
                   case 'car':
@@ -421,7 +436,9 @@ function ClassGrid({ champ, mode }: { champ: ChampionshipSummary; mode: 'recap' 
                   <td className="num-cell" style={{ fontWeight: 700 }}>
                     {formatPoints(row.totalPoints)}
                   </td>
-                  <td className="num-cell back-cell">{back === 0 ? '—' : formatPoints(back)}</td>
+                  <td className="num-cell back-cell">
+                    {backText(back, prevPoints, row.totalPoints)}
+                  </td>
                 </>
               )}
               <td className="grid-soak" />

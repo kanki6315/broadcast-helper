@@ -27,6 +27,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -218,6 +219,178 @@ public class DriverController {
         String needle = name.trim().toLowerCase(Locale.ROOT);
         return needle.equals(Objects.toString(row.competitorName(), "").trim().toLowerCase(Locale.ROOT))
                 || needle.equals(Objects.toString(row.competitorKey(), "").trim().toLowerCase(Locale.ROOT));
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Stats                                                                */
+    /* ------------------------------------------------------------------ */
+
+    public record NamedFormatLine(Long formatId, String formatName, int starts, int wins,
+                                  int podiums, int top5s, int dnfs) {
+    }
+
+    public record QualiLine(int sessions, int poles, int top5s) {
+    }
+
+    public record SeasonStatLine(long seasonId, int year, String seriesName, String className,
+                                 List<NamedFormatLine> byFormat, QualiLine quali) {
+    }
+
+    public record SeriesStatLine(long seriesId, String seriesName,
+                                 List<NamedFormatLine> byFormat, QualiLine quali) {
+    }
+
+    public record CareerTotals(int starts, int wins, int podiums, int top5s, int poles,
+                               int qualiTop5s, int dnfs) {
+    }
+
+    public record DriverStats(long driverId, CareerTotals career, List<SeriesStatLine> bySeries,
+                              List<SeasonStatLine> seasons) {
+    }
+
+    /**
+     * Career tallies for the driver modal, at three grains: format-agnostic
+     * career totals (formats don't merge across series), per-series all-time
+     * with the format split, and per-season lines. A win is in-class P1; poles
+     * come only from QUALIFYING session results (a reversed grid's front row is
+     * not a pole). Counts credit the driver for every crewed entry.
+     */
+    @GetMapping("/drivers/{id}/stats")
+    public DriverStats stats(@PathVariable long id) {
+        db.sql("SELECT 1 FROM driver WHERE id = :id").param("id", id).query(Integer.class)
+                .optional()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such driver"));
+
+        record RaceAgg(long seasonId, int year, long seriesId, String seriesName, String className,
+                       Long formatId, String formatName, int formatOrdinal,
+                       int starts, int wins, int podiums, int top5s, int dnfs) {
+        }
+        List<RaceAgg> raceAggs = db.sql("""
+                        SELECT s.id AS season_id, s.year, sr.id AS series_id, sr.name AS series_name,
+                               en.class_name, rs.format_id,
+                               COALESCE(rf.name, 'Unassigned') AS format_name,
+                               COALESCE(rf.ordinal, 99) AS format_ordinal,
+                               count(*) FILTER (WHERE r.position_in_class IS NOT NULL) AS starts,
+                               count(*) FILTER (WHERE r.position_in_class = 1)  AS wins,
+                               count(*) FILTER (WHERE r.position_in_class <= 3) AS podiums,
+                               count(*) FILTER (WHERE r.position_in_class <= 5) AS top5s,
+                               count(*) FILTER (WHERE r.not_finished)           AS dnfs
+                        FROM result r
+                                 JOIN race_session rs ON rs.id = r.session_id AND rs.session_type = 'RACE'
+                                 LEFT JOIN race_format rf ON rf.id = rs.format_id
+                                 JOIN event ev ON ev.id = rs.event_id
+                                 JOIN season s ON s.id = ev.season_id
+                                 JOIN series sr ON sr.id = s.series_id
+                                 JOIN entry en ON en.id = r.entry_id
+                                 JOIN driver_assignment da ON da.entry_id = en.id
+                        WHERE da.driver_id = :id
+                        GROUP BY s.id, s.year, sr.id, sr.name, en.class_name,
+                                 rs.format_id, rf.name, rf.ordinal
+                        ORDER BY s.year DESC, sr.name, en.class_name, format_ordinal
+                        """)
+                .param("id", id)
+                .query((rs, i) -> new RaceAgg(rs.getLong("season_id"), rs.getInt("year"),
+                        rs.getLong("series_id"), rs.getString("series_name"), rs.getString("class_name"),
+                        rs.getObject("format_id", Long.class), rs.getString("format_name"),
+                        rs.getInt("format_ordinal"), rs.getInt("starts"), rs.getInt("wins"),
+                        rs.getInt("podiums"), rs.getInt("top5s"), rs.getInt("dnfs")))
+                .list();
+
+        record QualiAgg(long seasonId, long seriesId, String className, int sessions, int poles, int top5s) {
+        }
+        List<QualiAgg> qualiAggs = db.sql("""
+                        SELECT s.id AS season_id, s.series_id, en.class_name,
+                               count(*) FILTER (WHERE r.position_in_class IS NOT NULL) AS sessions,
+                               count(*) FILTER (WHERE r.position_in_class = 1)  AS poles,
+                               count(*) FILTER (WHERE r.position_in_class <= 5) AS top5s
+                        FROM result r
+                                 JOIN race_session rs ON rs.id = r.session_id AND rs.session_type = 'QUALIFYING'
+                                 JOIN event ev ON ev.id = rs.event_id
+                                 JOIN season s ON s.id = ev.season_id
+                                 JOIN entry en ON en.id = r.entry_id
+                                 JOIN driver_assignment da ON da.entry_id = en.id
+                        WHERE da.driver_id = :id
+                        GROUP BY s.id, s.series_id, en.class_name
+                        """)
+                .param("id", id)
+                .query((rs, i) -> new QualiAgg(rs.getLong("season_id"), rs.getLong("series_id"),
+                        rs.getString("class_name"), rs.getInt("sessions"), rs.getInt("poles"),
+                        rs.getInt("top5s")))
+                .list();
+
+        // Per-season lines: one per season × class, formats in ordinal order.
+        record SeasonKey(long seasonId, String className) {
+        }
+        Map<SeasonKey, List<RaceAgg>> bySeasonClass = new LinkedHashMap<>();
+        for (RaceAgg a : raceAggs) {
+            bySeasonClass.computeIfAbsent(new SeasonKey(a.seasonId(), a.className()), k -> new ArrayList<>())
+                    .add(a);
+        }
+        List<SeasonStatLine> seasons = new ArrayList<>();
+        for (Map.Entry<SeasonKey, List<RaceAgg>> e : bySeasonClass.entrySet()) {
+            List<RaceAgg> aggs = e.getValue();
+            List<NamedFormatLine> lines = aggs.stream()
+                    .map(a -> new NamedFormatLine(a.formatId(), a.formatName(), a.starts(), a.wins(),
+                            a.podiums(), a.top5s(), a.dnfs()))
+                    .toList();
+            QualiLine quali = qualiAggs.stream()
+                    .filter(q -> q.seasonId() == e.getKey().seasonId()
+                                 && q.className().equals(e.getKey().className()))
+                    .findFirst()
+                    .map(q -> new QualiLine(q.sessions(), q.poles(), q.top5s()))
+                    .orElse(new QualiLine(0, 0, 0));
+            seasons.add(new SeasonStatLine(e.getKey().seasonId(), aggs.get(0).year(),
+                    aggs.get(0).seriesName(), e.getKey().className(), lines, quali));
+        }
+
+        // All-time per series: the same buckets rolled up across its seasons
+        // (formats are per-series, so they merge cleanly), classes combined.
+        record FormatKey(long seriesId, Long formatId) {
+        }
+        Map<FormatKey, int[]> seriesFormatSums = new LinkedHashMap<>();
+        Map<FormatKey, String> seriesFormatNames = new LinkedHashMap<>();
+        Map<Long, String> seriesNames = new LinkedHashMap<>();
+        for (RaceAgg a : raceAggs) {
+            FormatKey k = new FormatKey(a.seriesId(), a.formatId());
+            int[] sums = seriesFormatSums.computeIfAbsent(k, x -> new int[5]);
+            sums[0] += a.starts();
+            sums[1] += a.wins();
+            sums[2] += a.podiums();
+            sums[3] += a.top5s();
+            sums[4] += a.dnfs();
+            seriesFormatNames.putIfAbsent(k, a.formatName());
+            seriesNames.putIfAbsent(a.seriesId(), a.seriesName());
+        }
+        List<SeriesStatLine> bySeries = new ArrayList<>();
+        for (Map.Entry<Long, String> se : seriesNames.entrySet()) {
+            List<NamedFormatLine> lines = seriesFormatSums.entrySet().stream()
+                    .filter(e -> e.getKey().seriesId() == se.getKey())
+                    .map(e -> new NamedFormatLine(e.getKey().formatId(), seriesFormatNames.get(e.getKey()),
+                            e.getValue()[0], e.getValue()[1], e.getValue()[2], e.getValue()[3],
+                            e.getValue()[4]))
+                    .toList();
+            int qs = 0;
+            int qp = 0;
+            int qt = 0;
+            for (QualiAgg q : qualiAggs) {
+                if (q.seriesId() == se.getKey()) {
+                    qs += q.sessions();
+                    qp += q.poles();
+                    qt += q.top5s();
+                }
+            }
+            bySeries.add(new SeriesStatLine(se.getKey(), se.getValue(), lines, new QualiLine(qs, qp, qt)));
+        }
+
+        CareerTotals career = new CareerTotals(
+                raceAggs.stream().mapToInt(RaceAgg::starts).sum(),
+                raceAggs.stream().mapToInt(RaceAgg::wins).sum(),
+                raceAggs.stream().mapToInt(RaceAgg::podiums).sum(),
+                raceAggs.stream().mapToInt(RaceAgg::top5s).sum(),
+                qualiAggs.stream().mapToInt(QualiAgg::poles).sum(),
+                qualiAggs.stream().mapToInt(QualiAgg::top5s).sum(),
+                raceAggs.stream().mapToInt(RaceAgg::dnfs).sum());
+        return new DriverStats(id, career, bySeries, seasons);
     }
 
     /* ------------------------------------------------------------------ */

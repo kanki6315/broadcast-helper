@@ -7,6 +7,7 @@ import SeasonLayout from './pages/season/SeasonLayout'
 import HubPage from './pages/season/HubPage'
 import SchedulePage from './pages/season/SchedulePage'
 import StandingsPage from './pages/season/StandingsPage'
+import StatsPage from './pages/season/StatsPage'
 import ResultsPage from './pages/season/ResultsPage'
 import EntriesPage from './pages/season/EntriesPage'
 import PhotosPage from './pages/season/PhotosPage'
@@ -36,6 +37,7 @@ export default function App() {
               <Route index element={<HubPage />} />
               <Route path="schedule" element={<SchedulePage />} />
               <Route path="standings" element={<StandingsPage />} />
+              <Route path="stats" element={<StatsPage />} />
               <Route path="results" element={<ResultsPage />} />
               <Route path="entries" element={<EntriesPage />} />
               <Route path="photos" element={<PhotosPage />} />

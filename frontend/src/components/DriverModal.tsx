@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import 'flag-icons/css/flag-icons.min.css'
 import './driver-modal.css'
-import { getJson, type DriverChampMatrix, type DriverProfile } from '../lib/api'
+import {
+  getJson,
+  type DriverChampMatrix,
+  type DriverProfile,
+  type DriverStats,
+  type NamedFormatLine,
+  type QualiLine,
+} from '../lib/api'
 import { flagCode } from '../lib/countries'
 import { formatPoints } from '../pages/season/ChampionshipGrid'
 import { useInfoModal } from './infoModal'
@@ -33,6 +40,75 @@ function ageFrom(iso: string): number | null {
     now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())
   if (beforeBirthday) age -= 1
   return age >= 0 && age < 130 ? age : null
+}
+
+/* ------------------------------------------------------------------------- */
+/* Career stats                                                                */
+/* ------------------------------------------------------------------------- */
+
+/** "Sprint 3W 4P3 · Main 2W 2P3 · 2 poles" — a format's line only names the
+ * numbers it has; a season of zeros still shows its starts so the line reads
+ * as participation, not absence. */
+function formatSplit(byFormat: NamedFormatLine[], quali: QualiLine): string {
+  const parts = byFormat
+    .filter((l) => l.starts > 0)
+    .map((l) => {
+      const bits = [`${l.formatName}`]
+      bits.push(`${l.wins}W`)
+      if (l.podiums > 0) bits.push(`${l.podiums}P3`)
+      return bits.join(' ')
+    })
+  if (quali.poles > 0) parts.push(`${quali.poles} pole${quali.poles === 1 ? '' : 's'}`)
+  return parts.join(' · ')
+}
+
+function StatsSection({ stats }: { stats: DriverStats }) {
+  if (stats.career.starts === 0) return null
+  const chips: { label: string; value: number }[] = [
+    { label: 'Starts', value: stats.career.starts },
+    { label: 'Wins', value: stats.career.wins },
+    { label: 'Podiums', value: stats.career.podiums },
+    { label: 'Top 5s', value: stats.career.top5s },
+    { label: 'Poles', value: stats.career.poles },
+    { label: 'DNFs', value: stats.career.dnfs },
+  ]
+  // A per-series all-time line only earns its place once the series spans more
+  // than one season here; otherwise it restates the single season line below.
+  const multiSeason = new Set(
+    stats.bySeries
+      .filter((s) => stats.seasons.filter((x) => x.seriesName === s.seriesName).length > 1)
+      .map((s) => s.seriesId),
+  )
+  return (
+    <section className="dm-stats" aria-label="Career stats">
+      <dl className="dm-stat-chips">
+        {chips.map((c) => (
+          <div key={c.label} className="dm-stat-chip">
+            <dd className="num">{c.value}</dd>
+            <dt>{c.label}</dt>
+          </div>
+        ))}
+      </dl>
+      <ul className="dm-stat-lines">
+        {stats.bySeries
+          .filter((s) => multiSeason.has(s.seriesId))
+          .map((s) => (
+            <li key={`sr-${s.seriesId}`}>
+              <span className="dm-stat-when">{s.seriesName} all-time</span>
+              <span className="dm-stat-what">{formatSplit(s.byFormat, s.quali)}</span>
+            </li>
+          ))}
+        {stats.seasons.map((s) => (
+          <li key={`se-${s.seasonId}-${s.className}`}>
+            <span className="dm-stat-when">
+              {s.year} {s.seriesName}
+            </span>
+            <span className="dm-stat-what">{formatSplit(s.byFormat, s.quali)}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
 }
 
 /* ------------------------------------------------------------------------- */
@@ -270,6 +346,7 @@ export default function DriverModal({
   const dialogRef = useRef<HTMLDialogElement>(null)
   const { openTeam } = useInfoModal()
   const [profile, setProfile] = useState<DriverProfile | null>(null)
+  const [stats, setStats] = useState<DriverStats | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [reload, setReload] = useState(0)
@@ -286,6 +363,11 @@ export default function DriverModal({
     getJson<DriverProfile>(`/api/drivers/${driverId}/profile`)
       .then((p) => !cancelled && setProfile(p))
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : 'Failed to load driver'))
+    // Stats are additive: the modal renders fine without them, so a failure
+    // here stays silent rather than blocking the profile.
+    getJson<DriverStats>(`/api/drivers/${driverId}/stats`)
+      .then((s) => !cancelled && setStats(s))
+      .catch(() => {})
     return () => {
       cancelled = true
     }
@@ -443,6 +525,8 @@ export default function DriverModal({
             </section>
 
             <div className="dm-scroll">
+              {stats && <StatsSection stats={stats} />}
+
               {profile.championships.length === 0 ? (
                 <p className="dm-quiet dm-pad-x">
                   No championship standings for this driver yet — they appear once a drivers

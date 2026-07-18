@@ -39,6 +39,7 @@ const SUB_PAGES = [
   { to: '', label: 'Overview', end: true },
   { to: 'schedule', label: 'Schedule', end: false },
   { to: 'standings', label: 'Standings', end: false },
+  { to: 'stats', label: 'Stats', end: false },
   { to: 'results', label: 'Results', end: false },
   { to: 'entries', label: 'Entries', end: false },
   { to: 'photos', label: 'Photos', end: false },

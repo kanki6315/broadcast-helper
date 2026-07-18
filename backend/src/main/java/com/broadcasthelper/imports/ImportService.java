@@ -32,12 +32,14 @@ public class ImportService {
     private final JdbcClient db;
     private final ObjectMapper json;
     private final IRacingClient iracing;
+    private final com.broadcasthelper.formats.RaceFormatService raceFormats;
     private final TransactionTemplate txTemplate;
     private final String parserPython;
     private final String parserScript;
     private final String pointsParserScript;
 
     public ImportService(JdbcClient db, ObjectMapper json, IRacingClient iracing,
+                         com.broadcasthelper.formats.RaceFormatService raceFormats,
                          PlatformTransactionManager txManager,
                          @org.springframework.beans.factory.annotation.Value("${broadcast-helper.entry-list-parser.python:python3}") String parserPython,
                          @org.springframework.beans.factory.annotation.Value("${broadcast-helper.entry-list-parser.script:../parser/parse_entry_list.py}") String parserScript,
@@ -45,6 +47,7 @@ public class ImportService {
         this.db = db;
         this.json = json;
         this.iracing = iracing;
+        this.raceFormats = raceFormats;
         this.txTemplate = new TransactionTemplate(txManager);
         this.parserPython = parserPython;
         this.parserScript = parserScript;
@@ -1193,6 +1196,9 @@ public class ImportService {
                     .param("pitStops", row.pitStops())
                     .update();
         }
+        // The event's race shape may have changed (a new session appeared);
+        // recompute AUTO format assignments within the same transaction.
+        raceFormats.autoAssignEvent(eventId);
     }
 
     /**
@@ -1301,6 +1307,9 @@ public class ImportService {
                     .param("qualifyingTime", row.time())
                     .update();
         }
+        // A grid can find-or-create the session before its results arrive;
+        // keep format assignments in step with the new shape.
+        raceFormats.autoAssignEvent(eventId);
     }
 
     /** Display name for a reviewer-defined session, built so its trailing number

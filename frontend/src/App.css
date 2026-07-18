@@ -646,3 +646,33 @@ h2 small {
   gap: var(--space-1);
   margin-top: var(--space-2);
 }
+
+/* Race format editor mirrors the class-style editor's row rhythm. */
+.race-format-editor {
+  min-width: 300px;
+}
+
+.race-format-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.race-format-row input {
+  width: 9rem;
+  padding: 2px 6px;
+}
+
+.race-format-count {
+  flex: 1;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.race-format-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
