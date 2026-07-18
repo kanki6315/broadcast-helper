@@ -23,6 +23,9 @@ interface SheetEntry {
   isGuest: boolean
   drivers: SheetDriver[]
   qualifying: string | null
+  /** Short-form crew member taking the start ("H. Grisham"); null for solo
+   *  series and grids imported before attribution existed. */
+  startingDriver: string | null
   championship: string | null
   form: Record<string, FormRace[]>
   priorYearNote: string | null
@@ -305,7 +308,10 @@ export default function SheetPage({ eventId }: { eventId: number }) {
                             )
                           })}
                         </td>
-                        <td className="col-q">{e.qualifying}</td>
+                        <td className="col-q">
+                          {e.qualifying}
+                          {e.startingDriver && <span className="q-driver">{e.startingDriver}</span>}
+                        </td>
                         <td
                           className={e.priorYearAuto ? 'col-prior editable prior-auto' : 'col-prior editable'}
                           title={e.priorYearAuto ? 'Auto from last year (same car & team) — click to override' : undefined}

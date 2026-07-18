@@ -426,18 +426,20 @@ public class SeasonViewController {
      *  It is NOT the qualifying driver, even on a qualifying session. IMSA runs "Qualifying
      *  Practice by Best Lap", both drivers run it, and the provider's own grid file names a
      *  different driver for half the team cars (CTMP car 26: grid says Grisham qualified it,
-     *  this seat says Greenemeier was fastest). The qualifying driver of record is published
-     *  separately, as QUALIFYING_DRIVER on the grid CSV — which the grid parser currently
-     *  drops, so it reaches neither the database nor here. Don't relabel this field as
-     *  "qualified by" without importing that column first. */
+     *  this seat says Greenemeier was fastest). The qualifying driver of record is
+     *  {@code qualifyingDriver}: the grid file's attribution (V27), taken from the event's
+     *  lowest race grid naming one. Null for events whose grids predate the attribution
+     *  columns (re-import the grid) and for sources that never name one (iRacing). */
     public record ResultRow(Integer posOverall, Integer posInClass, String carNumber, String className,
-                            String teamName, String drivers, String fastestLapDriver, String vehicle,
+                            String teamName, String drivers, String fastestLapDriver,
+                            String qualifyingDriver, String vehicle,
                             String status, Integer laps, String elapsedTime, String gapFirst,
                             String fastestLapTime, Integer fastestLapNumber, Integer pitStops) {
     }
 
     public record GridRow(Integer posOverall, Integer posInClass, String carNumber, String className,
-                          String teamName, String qualifyingTime) {
+                          String teamName, String qualifyingTime,
+                          String startingDriver, String qualifyingDriver) {
     }
 
     public record SessionResults(long sessionId, String sessionType, String name, String reportMark,
@@ -499,17 +501,26 @@ public class SeasonViewController {
                                    (SELECT d.first_name || ' ' || d.surname
                                     FROM driver_assignment da JOIN driver d ON d.id = da.driver_id
                                     WHERE da.entry_id = en.id
-                                      AND da.seat_order = r.fastest_lap_driver_seat) AS fastest_lap_driver
+                                      AND da.seat_order = r.fastest_lap_driver_seat) AS fastest_lap_driver,
+                                   (SELECT d.first_name || ' ' || d.surname
+                                    FROM grid_position gp
+                                             JOIN race_session grs ON grs.id = gp.session_id
+                                                  AND grs.event_id = :eventId AND grs.session_type = 'RACE'
+                                             JOIN driver d ON d.id = gp.qualifying_driver_id
+                                    WHERE gp.entry_id = en.id AND gp.qualifying_driver_id IS NOT NULL
+                                    ORDER BY grs.ordinal LIMIT 1) AS qualifying_driver
                             FROM result r
                                      JOIN entry en ON en.id = r.entry_id
                             WHERE r.session_id = :sessionId
                             ORDER BY r.position_overall NULLS LAST, en.car_number
                             """)
                     .param("sessionId", s.id())
+                    .param("eventId", id)
                     .query((rs, i) -> new ResultRow(rs.getObject("position_overall", Integer.class),
                             rs.getObject("position_in_class", Integer.class), rs.getString("car_number"),
                             rs.getString("class_name"), rs.getString("team_name"), rs.getString("drivers"),
-                            rs.getString("fastest_lap_driver"), rs.getString("vehicle"),
+                            rs.getString("fastest_lap_driver"), rs.getString("qualifying_driver"),
+                            rs.getString("vehicle"),
                             rs.getString("status"), rs.getObject("laps", Integer.class),
                             rs.getString("elapsed_time"), rs.getString("gap_first"),
                             rs.getString("fastest_lap_time"),
@@ -519,9 +530,13 @@ public class SeasonViewController {
 
             List<GridRow> grid = db.sql("""
                             SELECT g.position_overall, g.position_in_class, g.qualifying_time,
-                                   en.car_number, en.class_name, en.team_name
+                                   en.car_number, en.class_name, en.team_name,
+                                   sd.first_name || ' ' || sd.surname AS starting_driver,
+                                   qd.first_name || ' ' || qd.surname AS qualifying_driver
                             FROM grid_position g
                                      JOIN entry en ON en.id = g.entry_id
+                                     LEFT JOIN driver sd ON sd.id = g.starting_driver_id
+                                     LEFT JOIN driver qd ON qd.id = g.qualifying_driver_id
                             WHERE g.session_id = :sessionId
                             ORDER BY g.position_overall NULLS LAST, en.car_number
                             """)
@@ -529,7 +544,8 @@ public class SeasonViewController {
                     .query((rs, i) -> new GridRow(rs.getObject("position_overall", Integer.class),
                             rs.getObject("position_in_class", Integer.class), rs.getString("car_number"),
                             rs.getString("class_name"), rs.getString("team_name"),
-                            rs.getString("qualifying_time")))
+                            rs.getString("qualifying_time"),
+                            rs.getString("starting_driver"), rs.getString("qualifying_driver")))
                     .list();
 
             header.sessions().add(new SessionResults(s.id(), s.type(), s.name(), s.reportMark(),

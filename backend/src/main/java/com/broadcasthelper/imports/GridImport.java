@@ -32,7 +32,13 @@ public record GridImport(
             String team,
             String vehicle,
             String manufacturer,
-            String time // qualifying time behind the slot (grid CSVs only; JSON grids carry none)
+            String time, // qualifying time behind the slot (grid CSVs only; JSON grids carry none)
+            Integer startingDriverSeat,   // 1-based seat taking the start; null when the source names none
+            Integer qualifyingDriverSeat, // 1-based seat that set the time; null when the source names none
+            // The grid's own per-car roster (JSON grids only; empty for CSV and
+            // iRacing grids). Null — not empty — when the batch was staged before
+            // these fields existed and Jackson filled them in as absent.
+            List<RaceResultsImport.DriverRow> drivers
     ) {
     }
 }

@@ -155,6 +155,9 @@ export interface ResultRow {
   /** Crew member who set this entry's fastest lap of the session. NOT the
    *  qualifying driver — see the backend record for why the two differ. */
   fastestLapDriver: string | null
+  /** Qualifying driver of record, from the grid file's attribution. Null for
+   *  grids imported before V27 (re-import to fill) and iRacing sources. */
+  qualifyingDriver: string | null
   vehicle: string | null
   status: string | null
   laps: number | null
@@ -173,6 +176,11 @@ export interface GridRow {
   className: string | null
   teamName: string | null
   qualifyingTime: string | null
+  /** Crew member taking the start, per the grid file. Null for pre-V27 grids
+   *  and sources that name no one (iRacing). */
+  startingDriver: string | null
+  /** Qualifying driver of record, per the grid file. */
+  qualifyingDriver: string | null
 }
 
 /** One stewards' note line, tagged with the car numbers it names (may be empty). */

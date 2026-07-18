@@ -210,6 +210,23 @@
   color: var(--text-muted);
 }
 
+/* Starting driver, with the qualifier appended only when they differ — the
+ * common case (same person) stays one clean line. */
+.sg-driver {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sg-qdriver {
+  margin-left: var(--space-2);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
 /* Phones: one file, no stagger — a 2-up grid at 375px crushes the team names,
  * and the running order is the fact that has to survive. */
 @media (max-width: 560px) {

@@ -69,21 +69,35 @@ function ClassCell({ className }: { className: string | null }) {
 }
 
 /**
- * The crew, or — under a "Fastest lap by" column — the one driver the provider
- * credits with the car's fastest lap of the session. Where it named no seat we
- * still print the crew rather than a dash, and say so on hover: "one of these
- * two" is the honest answer, and silence isn't.
+ * The crew, or — under an attributed column — the one driver the session
+ * credits: the qualifying driver of record (grid file) first, else the
+ * fastest-lap seat. Where neither names anyone we still print the crew rather
+ * than a dash, and say so on hover: "one of these two" is the honest answer,
+ * and silence isn't.
  */
-function DriverCell({ row, fastestBy }: { row: ResultRow; fastestBy: boolean }) {
-  const attributed = fastestBy && row.fastestLapDriver != null
-  const names = attributed ? row.fastestLapDriver : row.drivers
+function DriverCell({
+  row,
+  fastestBy,
+  qualifiedBy,
+}: {
+  row: ResultRow
+  fastestBy: boolean
+  qualifiedBy: boolean
+}) {
+  const attributed =
+    qualifiedBy && row.qualifyingDriver != null
+      ? row.qualifyingDriver
+      : fastestBy && row.fastestLapDriver != null
+        ? row.fastestLapDriver
+        : null
+  const names = attributed ?? row.drivers
   return (
     <td
       className="name-cell soak"
       style={{ maxWidth: 320 }}
       title={
-        fastestBy && !attributed
-          ? `No driver credited with the fastest lap — showing the full crew: ${row.drivers ?? '—'}`
+        (qualifiedBy || fastestBy) && !attributed
+          ? `No driver credited — showing the full crew: ${row.drivers ?? '—'}`
           : (names ?? undefined)
       }
     >
@@ -369,6 +383,9 @@ function ResultsTable({ session }: { session: SessionResults }) {
     // Qualifying only: an entry the provider attributed to a seat. Falls back to
     // the full crew where it named none, so the cell is never a dead end.
     fastestBy: all.some((r) => r.fastestLapDriver),
+    // Qualifying only: the qualifying driver of record from the grid file's
+    // attribution — the official answer, preferred over the fastest-lap seat.
+    qualifiedBy: all.some((r) => r.qualifyingDriver),
     // Qualifying only. Every qualifying gap is plain seconds off the same
     // overall pole, so the class gap is exact subtraction. A race mixes those
     // with lap-count gaps ("9 Laps") that carry no time at all, which would
@@ -390,7 +407,9 @@ function ResultsTable({ session }: { session: SessionResults }) {
   const teamInformative = all.some((r) => {
     const t = r.teamName?.trim()
     if (!t) return false
-    return t !== r.drivers?.trim() && t !== r.fastestLapDriver?.trim()
+    return (
+      t !== r.drivers?.trim() && t !== r.fastestLapDriver?.trim() && t !== r.qualifyingDriver?.trim()
+    )
   })
   const multiDriver = all.some((r) => (r.drivers ?? '').includes(', '))
   const teamPos: 'hidden' | 'before' | 'after' = !teamInformative
@@ -426,7 +445,11 @@ function ResultsTable({ session }: { session: SessionResults }) {
           </th>
           {teamPos === 'before' && <th scope="col">Team</th>}
           <th className="soak" scope="col">
-            {isQualifying && has.fastestBy ? 'Fastest lap by' : 'Drivers'}
+            {isQualifying && has.qualifiedBy
+              ? 'Qualified by'
+              : isQualifying && has.fastestBy
+                ? 'Fastest lap by'
+                : 'Drivers'}
           </th>
           {teamPos === 'after' && <th scope="col">Team</th>}
           <th scope="col">Car</th>
@@ -478,7 +501,11 @@ function ResultsTable({ session }: { session: SessionResults }) {
               )}
             </td>
             {teamPos === 'before' && <TeamCell name={r.teamName} />}
-            <DriverCell row={r} fastestBy={isQualifying && has.fastestBy} />
+            <DriverCell
+              row={r}
+              fastestBy={isQualifying && has.fastestBy}
+              qualifiedBy={isQualifying && has.qualifiedBy}
+            />
             {teamPos === 'after' && <TeamCell name={r.teamName} />}
             <td className="name-cell" style={{ maxWidth: 200 }} title={r.vehicle ?? undefined}>
               {r.vehicle}

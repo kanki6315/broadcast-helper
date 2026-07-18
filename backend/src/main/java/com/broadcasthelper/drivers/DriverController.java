@@ -253,7 +253,8 @@ public class DriverController {
      * career totals (formats don't merge across series), per-series all-time
      * with the format split, and per-season lines. A win is in-class P1; poles
      * come only from QUALIFYING session results (a reversed grid's front row is
-     * not a pole). Counts credit the driver for every crewed entry.
+     * not a pole). Race counts credit the driver for every crewed entry; quali
+     * counts credit only the qualifying driver of record.
      */
     @GetMapping("/drivers/{id}/stats")
     public DriverStats stats(@PathVariable long id) {
@@ -298,19 +299,34 @@ public class DriverController {
 
         record QualiAgg(long seasonId, long seriesId, String className, int sessions, int poles, int top5s) {
         }
+        // Quali claims go to the qualifying driver of record (grid attribution,
+        // else a solo entry's sole crew member) — same rule as the season stats,
+        // so this profile can never disagree with the leaderboards.
         List<QualiAgg> qualiAggs = db.sql("""
-                        SELECT s.id AS season_id, s.series_id, en.class_name,
-                               count(*) FILTER (WHERE r.position_in_class IS NOT NULL) AS sessions,
-                               count(*) FILTER (WHERE r.position_in_class = 1)  AS poles,
-                               count(*) FILTER (WHERE r.position_in_class <= 5) AS top5s
-                        FROM result r
-                                 JOIN race_session rs ON rs.id = r.session_id AND rs.session_type = 'QUALIFYING'
-                                 JOIN event ev ON ev.id = rs.event_id
-                                 JOIN season s ON s.id = ev.season_id
-                                 JOIN entry en ON en.id = r.entry_id
-                                 JOIN driver_assignment da ON da.entry_id = en.id
-                        WHERE da.driver_id = :id
-                        GROUP BY s.id, s.series_id, en.class_name
+                        SELECT q.season_id, q.series_id, q.class_name,
+                               count(*) FILTER (WHERE q.position_in_class IS NOT NULL) AS sessions,
+                               count(*) FILTER (WHERE q.position_in_class = 1)  AS poles,
+                               count(*) FILTER (WHERE q.position_in_class <= 5) AS top5s
+                        FROM (
+                            SELECT s.id AS season_id, s.series_id, en.class_name, r.position_in_class,
+                                   COALESCE(
+                                       (SELECT gp.qualifying_driver_id
+                                        FROM grid_position gp
+                                                 JOIN race_session grs ON grs.id = gp.session_id
+                                                      AND grs.event_id = ev.id AND grs.session_type = 'RACE'
+                                        WHERE gp.entry_id = en.id AND gp.qualifying_driver_id IS NOT NULL
+                                        ORDER BY grs.ordinal LIMIT 1),
+                                       (SELECT min(da.driver_id) FROM driver_assignment da
+                                        WHERE da.entry_id = en.id HAVING count(*) = 1)
+                                   ) AS driver_id
+                            FROM result r
+                                     JOIN race_session rs ON rs.id = r.session_id AND rs.session_type = 'QUALIFYING'
+                                     JOIN event ev ON ev.id = rs.event_id
+                                     JOIN season s ON s.id = ev.season_id
+                                     JOIN entry en ON en.id = r.entry_id
+                        ) q
+                        WHERE q.driver_id = :id
+                        GROUP BY q.season_id, q.series_id, q.class_name
                         """)
                 .param("id", id)
                 .query((rs, i) -> new QualiAgg(rs.getLong("season_id"), rs.getLong("series_id"),

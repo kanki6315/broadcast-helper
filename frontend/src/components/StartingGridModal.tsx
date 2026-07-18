@@ -33,6 +33,9 @@ export default function StartingGridModal({
   }, [])
 
   const hasTimes = rows.some((r) => r.qualifyingTime)
+  // Only grids whose file named per-seat attribution get driver lines; a solo
+  // series (iRacing) stores none and the modal stays as before.
+  const hasDrivers = rows.some((r) => r.startingDriver)
 
   return (
     <dialog
@@ -82,6 +85,16 @@ export default function StartingGridModal({
                   <span className="sg-team" title={r.teamName ?? undefined}>
                     {r.teamName ?? '—'}
                   </span>
+                  {hasDrivers && (
+                    <span className="sg-driver" title={r.startingDriver ?? undefined}>
+                      {r.startingDriver ?? '—'}
+                      {r.qualifyingDriver && r.qualifyingDriver !== r.startingDriver && (
+                        <span className="sg-qdriver" title={`Qualified by ${r.qualifyingDriver}`}>
+                          Q: {r.qualifyingDriver}
+                        </span>
+                      )}
+                    </span>
+                  )}
                   {hasTimes && <span className="sg-time">{r.qualifyingTime ?? '—'}</span>}
                 </span>
               </li>

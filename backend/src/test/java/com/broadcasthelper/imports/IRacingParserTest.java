@@ -364,5 +364,12 @@ class IRacingParserTest {
         // The heat grid is the qualifying order: pole sitter starts first.
         GridImport heat = grids.get(0);
         assertEquals("2", heat.rows().get(0).number());
+
+        // iRacing names no per-seat attribution — a solo entry's qualifier is
+        // resolved at read time as the sole crew member, never stored here.
+        assertTrue(feature.rows().stream().allMatch(r ->
+                r.startingDriverSeat() == null
+                && r.qualifyingDriverSeat() == null
+                && r.drivers().isEmpty()));
     }
 }

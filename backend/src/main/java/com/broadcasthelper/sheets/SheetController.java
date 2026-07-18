@@ -48,7 +48,8 @@ public class SheetController {
 
     public record SheetEntry(long entryId, String carNumber, String teamName, String vehicle,
                              String manufacturer, Long manufacturerLogoVersion, boolean isGuest,
-                             List<SheetDriver> drivers, String qualifying, String championship,
+                             List<SheetDriver> drivers, String qualifying, String startingDriver,
+                             String championship,
                              Map<Integer, List<FormRace>> form, String priorYearNote, boolean priorYearAuto,
                              Long imageVersion, Integer teamSheetPage) {
     }
@@ -200,6 +201,23 @@ public class SheetController {
                         """)
                 .param("id", id)
                 .query((rs, i) -> quali.putIfAbsent(rs.getLong("entry_id"), rs.getInt("pos")))
+                .list();
+
+        // Who takes the start, from the grid file's attribution (first race
+        // naming one). Short form for the sheet's dense Q column; absent for
+        // solo series (iRacing stores no attribution) and pre-V27 grids.
+        Map<Long, String> startingDriverByEntry = new HashMap<>();
+        db.sql("""
+                        SELECT DISTINCT ON (gp.entry_id) gp.entry_id, d.first_name, d.surname
+                        FROM grid_position gp
+                                 JOIN race_session rs ON rs.id = gp.session_id
+                                      AND rs.event_id = :id AND rs.session_type = 'RACE'
+                                 JOIN driver d ON d.id = gp.starting_driver_id
+                        ORDER BY gp.entry_id, rs.ordinal
+                        """)
+                .param("id", id)
+                .query((rs, i) -> startingDriverByEntry.put(rs.getLong("entry_id"),
+                        shortDriverName(rs.getString("first_name"), rs.getString("surname"))))
                 .list();
 
         // Last year's result at this venue, auto-passed when car number and team
@@ -408,6 +426,7 @@ public class SheetController {
                                     r.logoUploadedAt() != null ? r.logoUploadedAt().toInstant().toEpochMilli() : null,
                                     r.isGuest(), driversByEntry.getOrDefault(r.entryId(), List.of()),
                                     qualiPos != null ? ordinal(qualiPos) : null,
+                                    startingDriverByEntry.get(r.entryId()),
                                     champText,
                                     formByCar.getOrDefault(r.carNumber() + "|" + r.className(), Map.of()),
                                     priorText, priorAuto,
@@ -544,6 +563,18 @@ public class SheetController {
         return java.util.Arrays.stream(name.toLowerCase().replaceAll("[^a-z0-9]+", " ").split(" "))
                 .filter(t -> !t.isBlank())
                 .collect(java.util.stream.Collectors.toSet());
+    }
+
+    /** "Hannah Grisham" -> "H. Grisham": the sheet's dense columns want the
+     *  short broadcast form; a missing first name falls back to the surname. */
+    private static String shortDriverName(String firstName, String surname) {
+        if (surname == null || surname.isBlank()) {
+            return firstName;
+        }
+        if (firstName == null || firstName.isBlank()) {
+            return surname;
+        }
+        return firstName.charAt(0) + ". " + surname;
     }
 
     /** Venue abbreviations as used on broadcast sheets; falls back to a prefix. */

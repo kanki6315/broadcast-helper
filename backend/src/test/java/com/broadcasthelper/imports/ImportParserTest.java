@@ -106,6 +106,30 @@ class ImportParserTest {
     }
 
     @Test
+    void parsesGridDriverAttribution() throws IOException {
+        GridImport grid = ImportParser.parseGrid(fixture("grid-wgi-2026.json"));
+
+        // Pole car 31: seat 1 both qualified and starts; the roster carries the
+        // same per-car seat numbering as a results file.
+        GridImport.Row pole = grid.rows().get(0);
+        assertEquals(1, pole.startingDriverSeat());
+        assertEquals(1, pole.qualifyingDriverSeat());
+        RaceResultsImport.DriverRow seat1 = pole.drivers().stream()
+                .filter(d -> d.seatOrder() == 1).findFirst().orElseThrow();
+        assertEquals("Jack", seat1.firstName());
+        assertEquals("Aitken", seat1.surname());
+
+        // Car 120 names a starter (seat 3) but no qualifier — the real
+        // missing-seat case; the roster still lists all three drivers.
+        GridImport.Row car120 = grid.rows().stream()
+                .filter(r -> r.number().equals("120")).findFirst().orElseThrow();
+        assertEquals(3, car120.startingDriverSeat());
+        assertNull(car120.qualifyingDriverSeat());
+        assertEquals(List.of("Sargent", "Ilott", "Adelson"),
+                car120.drivers().stream().map(RaceResultsImport.DriverRow::surname).toList());
+    }
+
+    @Test
     void parsesMustangPerRaceGrids() throws IOException {
         GridImport race1 = ImportParser.parseGrid(mustangFixture("grid-midohio-race1-2026.json"));
         GridImport race2 = ImportParser.parseGrid(mustangFixture("grid-midohio-race2-2026.json"));
@@ -397,6 +421,30 @@ class ImportParserTest {
         assertEquals(4, gs.get(3).positionInClass());
         assertEquals(1, tcr.get(0).positionInClass());
         assertEquals(5, tcr.get(0).positionOverall());
+    }
+
+    @Test
+    void gridCsvResolvesAttributionNamesToSeats() throws IOException {
+        GridImport grid = ImportParser.parseGridCsv(csvFixture("grid-race-official.csv"));
+
+        // "Hannah Grisham" is DRIVER_1 -> seat 1 for both start and qualifying;
+        // the CSV builds no roster (full names can't split into first/surname).
+        GridImport.Row car26 = grid.rows().get(0);
+        assertEquals(1, car26.startingDriverSeat());
+        assertEquals(1, car26.qualifyingDriverSeat());
+        assertTrue(car26.drivers().isEmpty());
+
+        // "LP Montour" is DRIVER_2 on car 93 -> seat 2, not a default of 1.
+        GridImport.Row car93 = grid.rows().stream()
+                .filter(r -> r.number().equals("93")).findFirst().orElseThrow();
+        assertEquals(2, car93.startingDriverSeat());
+        assertEquals(2, car93.qualifyingDriverSeat());
+
+        // Car 5 names a starter but its QUALIFYING_DRIVER cell is blank.
+        GridImport.Row car5 = grid.rows().stream()
+                .filter(r -> r.number().equals("5")).findFirst().orElseThrow();
+        assertEquals(1, car5.startingDriverSeat());
+        assertNull(car5.qualifyingDriverSeat());
     }
 
     @Test

@@ -196,6 +196,16 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Starting driver under the grid slot — short form, quiet, only where a grid
+ * file named one (multi-driver series). */
+.sheet .q-driver {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .sheet-mfr-logo {
   max-height: 28px;
   max-width: 100%;

@@ -141,7 +141,12 @@ public final class IRacingParser {
                         text(r, "display_name"), // solo league: the driver is the entry
                         text(r, "car_name"),
                         null,
-                        null // the grid slot carries no time; qualifying holds it
+                        null, // the grid slot carries no time; qualifying holds it
+                        // iRacing names no per-seat attribution; a solo entry's
+                        // qualifier/starter is resolved at read time (sole crew member).
+                        null,
+                        null,
+                        List.of()
                 ));
             }
             out.add(new GridImport(

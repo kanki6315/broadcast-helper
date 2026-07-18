@@ -104,6 +104,21 @@ public final class ImportParser {
             }
             String className = text(g, "class");
             Integer inClass = classCounters.merge(className, 1, Integer::sum);
+            // The grid names who qualified the car and who takes the start as
+            // 1-based seat indexes into its own drivers[] roster (same per-car
+            // numbering as a results file). Seat 0 means "no seat named", the
+            // same convention as fastest_lap_driver_number.
+            List<RaceResultsImport.DriverRow> drivers = new ArrayList<>();
+            for (JsonNode d : g.path("drivers")) {
+                drivers.add(new RaceResultsImport.DriverRow(
+                        d.path("number").asInt(),
+                        text(d, "firstname"),
+                        text(d, "surname"),
+                        text(d, "license"),
+                        text(d, "hometown"),
+                        text(d, "country")
+                ));
+            }
             rows.add(new GridImport.Row(
                     g.path("position").asInt(),
                     inClass,
@@ -113,7 +128,10 @@ public final class ImportParser {
                     text(g, "team"),
                     text(g, "vehicle"),
                     text(g, "manufacturer"),
-                    null // JSON grids carry no qualifying time
+                    null, // JSON grids carry no qualifying time
+                    seatOrNull(g, "starting_driver_number"),
+                    seatOrNull(g, "qualifying_driver_number"),
+                    drivers
             ));
         }
 
@@ -142,10 +160,14 @@ public final class ImportParser {
     /**
      * Parses a published starting-grid CSV (semicolon-delimited, header
      * POSITION;CLASS;NUMBER;...;TEAM;CAR;TIME;). Real files carry a UTF-8 BOM,
-     * CRLF line endings, and a trailing semicolon per line. Driver columns are
-     * dropped — the entry list is the driver authority. The file has no session
-     * or event metadata, so all of it is null here; the reviewer supplies the
-     * event and session at commit.
+     * CRLF line endings, and a trailing semicolon per line. The
+     * STARTING_DRIVER / QUALIFYING_DRIVER names are resolved to seat indexes
+     * against the row's own DRIVER_1..6 columns (DRIVER_N = seat N); the name
+     * columns themselves build no roster — a single full-name string can't be
+     * split into first/surname without corrupting the driver identity key, so
+     * the entry list stays the driver authority and commit resolves seats
+     * through it. The file has no session or event metadata, so all of it is
+     * null here; the reviewer supplies the event and session at commit.
      */
     public static GridImport parseGridCsv(byte[] content) {
         String text = stripBom(new String(content, java.nio.charset.StandardCharsets.UTF_8));
@@ -195,7 +217,10 @@ public final class ImportParser {
                     cell(cells, header.get("TEAM")),
                     cell(cells, header.get("CAR")),
                     null,
-                    cell(cells, header.get("TIME"))
+                    cell(cells, header.get("TIME")),
+                    seatOfName(cellOrNull(cells, header.get("STARTING_DRIVER")), cells, header),
+                    seatOfName(cellOrNull(cells, header.get("QUALIFYING_DRIVER")), cells, header),
+                    List.of()
             ));
         }
 
@@ -212,6 +237,36 @@ public final class ImportParser {
         }
         String value = cells[index].trim();
         return value.isEmpty() ? null : value;
+    }
+
+    /** Like {@link #cell} but for an optional column that may be absent. */
+    private static String cellOrNull(String[] cells, Integer index) {
+        return index == null ? null : cell(cells, index);
+    }
+
+    /** A 1-based seat index; 0 or absent means "no seat named" (the same
+     *  convention the results files use for fastest_lap_driver_number). */
+    private static Integer seatOrNull(JsonNode node, String field) {
+        Integer value = intOrNull(node, field);
+        return value != null && value > 0 ? value : null;
+    }
+
+    /** Resolves a grid CSV attribution name ("Hannah Grisham") to its seat by
+     *  matching it against the row's own DRIVER_1..6 columns (DRIVER_N = seat
+     *  N), case-insensitively with whitespace collapsed. No match — a typo, or
+     *  a file without driver columns — resolves to null, never a guess. */
+    private static Integer seatOfName(String name, String[] cells, Map<String, Integer> header) {
+        if (name == null) {
+            return null;
+        }
+        String needle = name.trim().replaceAll("\\s+", " ");
+        for (int seat = 1; seat <= 6; seat++) {
+            String candidate = cellOrNull(cells, header.get("DRIVER_" + seat));
+            if (candidate != null && candidate.replaceAll("\\s+", " ").equalsIgnoreCase(needle)) {
+                return seat;
+            }
+        }
+        return null;
     }
 
     public static EntryListImport parseEntryList(JsonNode root) {

@@ -1296,20 +1296,68 @@ public class ImportService {
             String className = canonicalizeClass(row.className(), knownClasses, mapping, context);
             long entryId = upsertEntry(eventId, row.number(), className, row.team(),
                     row.vehicle(), row.manufacturer(), row.group());
+            // A batch staged before the attribution fields existed deserializes
+            // them as null; treat that like a roster-less source.
+            List<RaceResultsImport.DriverRow> roster = row.drivers() != null ? row.drivers() : List.of();
+
+            // Seat -> driver resolution needs a lineup. The entry list and
+            // results files own driver_assignment; the grid roster only seeds it
+            // when nothing else has yet (grid imported first), and those sources
+            // replace it wholesale later.
+            Map<Integer, Long> bySeat = new java.util.HashMap<>();
             db.sql("""
-                            INSERT INTO grid_position (session_id, entry_id, position_overall, position_in_class, qualifying_time)
-                            VALUES (:sessionId, :entryId, :posOverall, :posInClass, :qualifyingTime)
+                            SELECT seat_order, driver_id FROM driver_assignment
+                            WHERE entry_id = :entryId AND driver_id IS NOT NULL
+                            """)
+                    .param("entryId", entryId)
+                    .query((rs, i) -> bySeat.put(rs.getInt("seat_order"), rs.getLong("driver_id")))
+                    .list();
+            Integer assignmentCount = db.sql("SELECT count(*) FROM driver_assignment WHERE entry_id = :entryId")
+                    .param("entryId", entryId)
+                    .query(Integer.class)
+                    .single();
+            if (assignmentCount == 0 && !roster.isEmpty()) {
+                replaceDriverAssignments(entryId, roster);
+            }
+
+            db.sql("""
+                            INSERT INTO grid_position (session_id, entry_id, position_overall, position_in_class,
+                                                       qualifying_time, starting_driver_id, qualifying_driver_id)
+                            VALUES (:sessionId, :entryId, :posOverall, :posInClass,
+                                    :qualifyingTime, :startingDriverId, :qualifyingDriverId)
                             """)
                     .param("sessionId", sessionId)
                     .param("entryId", entryId)
                     .param("posOverall", row.positionOverall())
                     .param("posInClass", row.positionInClass())
                     .param("qualifyingTime", row.time())
+                    .param("startingDriverId", resolveGridDriver(row.startingDriverSeat(), roster, bySeat))
+                    .param("qualifyingDriverId", resolveGridDriver(row.qualifyingDriverSeat(), roster, bySeat))
                     .update();
         }
         // A grid can find-or-create the session before its results arrive;
         // keep format assignments in step with the new shape.
         raceFormats.autoAssignEvent(eventId);
+    }
+
+    /**
+     * Resolves a grid file's 1-based seat index to a driver id. The file's own
+     * roster defines what seat N means, so it wins over the stored lineup (which
+     * may have come from a differently ordered entry list); the stored lineup is
+     * the fallback for roster-less sources (grid CSVs). Unresolvable stays null
+     * — attribution is never guessed.
+     */
+    private Long resolveGridDriver(Integer seat, List<RaceResultsImport.DriverRow> roster,
+                                   Map<Integer, Long> bySeat) {
+        if (seat == null) {
+            return null;
+        }
+        for (RaceResultsImport.DriverRow d : roster) {
+            if (d.seatOrder() == seat && d.firstName() != null && d.surname() != null) {
+                return findOrCreateDriver(d.firstName(), d.surname(), d.country(), d.hometown());
+            }
+        }
+        return bySeat.get(seat);
     }
 
     /** Display name for a reviewer-defined session, built so its trailing number
@@ -1808,20 +1856,7 @@ public class ImportService {
 
         db.sql("DELETE FROM driver_assignment WHERE entry_id = :entryId").param("entryId", entryId).update();
         for (RaceResultsImport.DriverRow d : drivers) {
-            long driverId = db.sql("""
-                            INSERT INTO driver (first_name, surname, country, hometown)
-                            VALUES (:first, :surname, :country, :hometown)
-                            ON CONFLICT (first_name, surname) DO UPDATE
-                                SET country = COALESCE(EXCLUDED.country, driver.country),
-                                    hometown = COALESCE(EXCLUDED.hometown, driver.hometown)
-                            RETURNING id
-                            """)
-                    .param("first", d.firstName())
-                    .param("surname", d.surname())
-                    .param("country", d.country())
-                    .param("hometown", d.hometown())
-                    .query(Long.class)
-                    .single();
+            long driverId = findOrCreateDriver(d.firstName(), d.surname(), d.country(), d.hometown());
             String entryListRating = entryListRatings.get(driverId);
             db.sql("""
                             INSERT INTO driver_assignment (entry_id, driver_id, seat_order, rating, rating_source)
@@ -1834,6 +1869,25 @@ public class ImportService {
                     .param("source", entryListRating != null ? "ENTRY_LIST" : "RESULTS")
                     .update();
         }
+    }
+
+    /** The one driver identity rule: find-or-create on (first_name, surname),
+     *  never erasing known country/hometown with a source that omits them. */
+    private long findOrCreateDriver(String firstName, String surname, String country, String hometown) {
+        return db.sql("""
+                        INSERT INTO driver (first_name, surname, country, hometown)
+                        VALUES (:first, :surname, :country, :hometown)
+                        ON CONFLICT (first_name, surname) DO UPDATE
+                            SET country = COALESCE(EXCLUDED.country, driver.country),
+                                hometown = COALESCE(EXCLUDED.hometown, driver.hometown)
+                        RETURNING id
+                        """)
+                .param("first", firstName)
+                .param("surname", surname)
+                .param("country", country)
+                .param("hometown", hometown)
+                .query(Long.class)
+                .single();
     }
 
     /** Results files spell ratings out ("Platinum"); store the single letter everywhere. */

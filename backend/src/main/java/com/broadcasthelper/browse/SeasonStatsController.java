@@ -20,8 +20,9 @@ import java.util.Objects;
  * Stats tab's "All-time" toggle). Counts are in-class facts: a win is
  * {@code position_in_class = 1}. Poles come only from QUALIFYING session
  * results, never a race's starting grid — a reversed feature grid's front row
- * is not a pole. A result credits every crew member. The importers own all
- * writes.
+ * is not a pole. A race result credits every crew member; a quali claim
+ * credits only the qualifying driver of record (grid attribution, or the sole
+ * crew member of a solo entry). The importers own all writes.
  */
 @RestController
 @RequestMapping("/api")
@@ -106,19 +107,39 @@ public class SeasonStatsController {
                         rs.getInt("top5s"), rs.getInt("dnfs")))
                 .list();
 
+        // Quali claims are individual, not crew-wide: a session/pole/top-5 goes
+        // to the qualifying driver of record — the grid file's attribution
+        // (lowest race of the event that names one), or the entry's sole crew
+        // member where the source can't name one (iRacing solo entries). A
+        // multi-driver crew with no attribution credits no one; the count(*)=1
+        // fallback counts TBD seats too, so a partially named crew never
+        // collapses to a false sole qualifier.
         List<QualiAgg> qualiAggs = db.sql("""
-                        SELECT da.driver_id, en.class_name,
-                               count(*) FILTER (WHERE r.position_in_class IS NOT NULL) AS sessions,
-                               count(*) FILTER (WHERE r.position_in_class = 1)  AS poles,
-                               count(*) FILTER (WHERE r.position_in_class <= 5) AS top5s
-                        FROM result r
-                                 JOIN race_session rs ON rs.id = r.session_id AND rs.session_type = 'QUALIFYING'
-                                 JOIN event ev ON ev.id = rs.event_id
-                                 JOIN season s ON s.id = ev.season_id
-                                 JOIN entry en ON en.id = r.entry_id
-                                 JOIN driver_assignment da ON da.entry_id = en.id
-                        WHERE %s
-                        GROUP BY da.driver_id, en.class_name
+                        SELECT q.driver_id, q.class_name,
+                               count(*) FILTER (WHERE q.position_in_class IS NOT NULL) AS sessions,
+                               count(*) FILTER (WHERE q.position_in_class = 1)  AS poles,
+                               count(*) FILTER (WHERE q.position_in_class <= 5) AS top5s
+                        FROM (
+                            SELECT r.position_in_class, en.class_name,
+                                   COALESCE(
+                                       (SELECT gp.qualifying_driver_id
+                                        FROM grid_position gp
+                                                 JOIN race_session grs ON grs.id = gp.session_id
+                                                      AND grs.event_id = ev.id AND grs.session_type = 'RACE'
+                                        WHERE gp.entry_id = en.id AND gp.qualifying_driver_id IS NOT NULL
+                                        ORDER BY grs.ordinal LIMIT 1),
+                                       (SELECT min(da.driver_id) FROM driver_assignment da
+                                        WHERE da.entry_id = en.id HAVING count(*) = 1)
+                                   ) AS driver_id
+                            FROM result r
+                                     JOIN race_session rs ON rs.id = r.session_id AND rs.session_type = 'QUALIFYING'
+                                     JOIN event ev ON ev.id = rs.event_id
+                                     JOIN season s ON s.id = ev.season_id
+                                     JOIN entry en ON en.id = r.entry_id
+                            WHERE %s
+                        ) q
+                        WHERE q.driver_id IS NOT NULL
+                        GROUP BY q.driver_id, q.class_name
                         """.formatted(scopePredicate))
                 .param("id", id)
                 .query((rs, i) -> new QualiAgg(rs.getLong("driver_id"), rs.getString("class_name"),
