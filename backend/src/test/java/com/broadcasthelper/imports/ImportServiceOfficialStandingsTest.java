@@ -87,11 +87,12 @@ class ImportServiceOfficialStandingsTest {
             if (subsessionId == OPENER_SUBSESSION) {
                 return fixture("subsession-official-pesc-2020.json");
             }
-            // Any other official round: a minimal result whose one driver is Job
-            // (cust_id 119101), worth 50 a round.
+            // Any other official round: a minimal one-race result whose only
+            // driver is Job (cust_id 119101), worth 50 for the win.
             var row = MAPPER.createObjectNode()
-                    .put("cust_id", 119101).put("aggregate_champ_points", 50);
-            var sim = MAPPER.createObjectNode().put("simsession_type", 6);
+                    .put("cust_id", 119101).put("champ_points", 50);
+            var sim = MAPPER.createObjectNode()
+                    .put("simsession_type", 6).put("simsession_name", "FEATURE");
             sim.set("results", MAPPER.createArrayNode().add(row));
             var root = MAPPER.createObjectNode();
             root.set("track", MAPPER.createObjectNode().put("track_name", "Track " + subsessionId));
@@ -130,14 +131,27 @@ class ImportServiceOfficialStandingsTest {
         assertFalse(client.fetchedResults.contains(VOIDED_SUBSESSION),
                 "a voided race must not be touched by the standings walk");
 
-        // 10 official rounds, minus the one whose fetch failed: nine sessions,
-        // numbered 1..9 with no hole — a failed round is a calendar gap, not a
-        // sunk import. Zandvoort's label comes from its real result payload.
-        assertEquals(9, st.sessions().size());
+        // 10 official rounds, minus the one whose fetch failed: nine rounds —
+        // a failed round leaves a calendar gap, it does not sink the import.
+        // Rounds are counted by distinct event name, because each contributes
+        // one session per scoring sim-session: Zandvoort's real payload brings
+        // three (qualifying, heat, feature), the eight synthetic rounds one each.
+        assertEquals(9, st.sessions().stream()
+                .map(StandingsImport.SessionRef::eventName).distinct().count());
+        assertEquals(11, st.sessions().size());
         for (int i = 0; i < st.sessions().size(); i++) {
-            assertEquals(i + 1, st.sessions().get(i).sessionIndex());
+            assertEquals(i + 1, st.sessions().get(i).sessionIndex(), "indexes run 1..N with no hole");
         }
-        assertEquals("Circuit Park Zandvoort Grand Prix - 2009", st.sessions().get(0).eventName());
+
+        // A round's sessions all carry its venue as their event name — that is
+        // what the recap groups on to collapse them back into one column —
+        // while each keeps its own session name.
+        List<StandingsImport.SessionRef> zandvoort = st.sessions().subList(0, 3);
+        assertTrue(zandvoort.stream().allMatch(
+                        s -> "Circuit Park Zandvoort Grand Prix - 2009".equals(s.eventName())),
+                "the round's sessions must share one event name");
+        assertEquals(List.of("Qualifying", "Heat 1", "Feature"),
+                zandvoort.stream().map(StandingsImport.SessionRef::sessionName).toList());
 
         // Standings totals are the endpoint's authoritative figures.
         assertEquals(6, st.rows().size());
@@ -146,11 +160,15 @@ class ImportServiceOfficialStandingsTest {
         assertEquals("Sebastian Job", champion.team());
         assertEquals(659.0, champion.totalPoints());
 
-        // Job's round 1 is the real Zandvoort total (quali 6 + heat 16 +
-        // feature 50); the other scored rounds are the stub's flat 50.
-        assertEquals(9, champion.pointsBySession().size());
-        assertEquals(72.0, champion.pointsBySession().get(0).totalPoints());
-        assertEquals(50.0, champion.pointsBySession().get(1).totalPoints());
+        // Job's Zandvoort is split 6 + 16 + 50 across the round's three
+        // sessions — which still sums to the 72 iRacing scored him — and each
+        // synthetic round pays its flat 50.
+        assertEquals(11, champion.pointsBySession().size());
+        assertEquals(List.of(6.0, 16.0, 50.0), champion.pointsBySession().subList(0, 3).stream()
+                .map(StandingsImport.SessionPoints::totalPoints).toList());
+        assertEquals(72.0, champion.pointsBySession().subList(0, 3).stream()
+                .mapToDouble(StandingsImport.SessionPoints::totalPoints).sum());
+        assertEquals(50.0, champion.pointsBySession().get(3).totalPoints());
     }
 
     @Test

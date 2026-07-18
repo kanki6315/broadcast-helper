@@ -145,12 +145,18 @@ public class ImportService {
             } catch (RuntimeException e) {
                 continue;
             }
-            int idx = ++sessionIndex;
-            sessions.add(new StandingsImport.SessionRef(
-                    idx, IRacingParser.roundVenueName(result), round.trackName()));
-            IRacingParser.parseRoundLeaguePoints(result).forEach((custId, pts) ->
-                    pointsByCustSession.computeIfAbsent(custId, k -> new java.util.HashMap<>())
-                            .put(idx, pts));
+            // Each scoring sim-session of the round is its own championship
+            // session, all sharing the round's venue as their event name — the
+            // recap groups by that name and sums, so they read as one round
+            // column while keeping qualifying and each race separable.
+            String venue = IRacingParser.roundVenueName(result);
+            for (IRacingParser.RoundSession scored : IRacingParser.parseRoundLeagueSessions(result)) {
+                int idx = ++sessionIndex;
+                sessions.add(new StandingsImport.SessionRef(idx, venue, scored.sessionName()));
+                scored.pointsByCust().forEach((custId, pts) ->
+                        pointsByCustSession.computeIfAbsent(custId, k -> new java.util.HashMap<>())
+                                .put(idx, pts));
+            }
         }
 
         StandingsImport imp = IRacingParser.assembleSeasonStandings(
@@ -160,7 +166,7 @@ public class ImportService {
                     "No driver standings found for league " + leagueId + " season " + seasonId);
         }
         Staged staged = new Staged("STANDINGS", imp,
-                "%s — %d competitors, %d rounds".formatted(imp.name(), imp.rows().size(), sessions.size()));
+                "%s — %d competitors, %d rounds".formatted(imp.name(), imp.rows().size(), roundCount(imp)));
         return persist(List.of(staged), ImportFormat.IRACING_JSON,
                 "league-" + leagueId + "-season-" + seasonId + "-standings.json");
     }
@@ -197,10 +203,16 @@ public class ImportService {
         List<Staged> staged = imports.stream()
                 .map(imp -> new Staged("STANDINGS", imp,
                         "%s — %d competitors, %d rounds".formatted(
-                                imp.name(), imp.rows().size(), imp.sessions().size())))
+                                imp.name(), imp.rows().size(), roundCount(imp))))
                 .toList();
         return persist(staged, ImportFormat.IRACING_JSON,
                 "series-" + seriesId + "-season-" + seasonId + "-standings.json");
+    }
+
+    /** Rounds, not scoring sessions: a round contributes a qualifying session
+     *  and a session per race, all sharing its venue as their event name. */
+    private static long roundCount(StandingsImport imp) {
+        return imp.sessions().stream().map(StandingsImport.SessionRef::eventName).distinct().count();
     }
 
     /**
@@ -228,12 +240,17 @@ public class ImportService {
             } catch (RuntimeException e) {
                 continue;
             }
-            int idx = ++sessionIndex;
-            sessions.add(new StandingsImport.SessionRef(
-                    idx, IRacingParser.roundVenueName(result), round.trackName()));
-            IRacingParser.parseRoundChampPoints(result).forEach((custId, pts) ->
-                    pointsByCustSession.computeIfAbsent(custId, k -> new java.util.HashMap<>())
-                            .put(idx, pts));
+            // One championship session per scoring sim-session (qualifying, each
+            // heat, the feature), sharing the round's venue so the recap sums
+            // them back into a single round column. See the league walk above.
+            String venue = IRacingParser.roundVenueName(result);
+            for (IRacingParser.RoundSession scored : IRacingParser.parseRoundChampSessions(result)) {
+                int idx = ++sessionIndex;
+                sessions.add(new StandingsImport.SessionRef(idx, venue, scored.sessionName()));
+                scored.pointsByCust().forEach((custId, pts) ->
+                        pointsByCustSession.computeIfAbsent(custId, k -> new java.util.HashMap<>())
+                                .put(idx, pts));
+            }
         }
 
         // One standings table per car class. The per-round points map is shared:
