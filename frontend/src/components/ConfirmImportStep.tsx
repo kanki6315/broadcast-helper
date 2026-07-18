@@ -43,6 +43,7 @@ interface BatchListItem {
 }
 
 const EVENT_KINDS = new Set(['RACE_RESULTS', 'GRID', 'FLAGS', 'ENTRY_LIST'])
+const CHAMPIONSHIP_KINDS = new Set(['DRIVERS', 'TEAMS', 'MANUFACTURERS'])
 
 // One staged batch, enriched with its review.
 interface ConfirmBatch {
@@ -85,7 +86,14 @@ interface BatchResult {
 function excludeReason(b: ConfirmBatch): string | null {
   if (b.unknownClasses.length > 0) return 'unrecognized class'
   if (b.needsSession) return 'needs a session chosen'
-  if (b.kind === 'STANDINGS' && !b.guess?.kind) return 'championship kind unset'
+  if (b.kind === 'STANDINGS') {
+    // The guess reads kind and year from the standings title; a generically named
+    // iRacing season ("League 6004 season 99330") yields a garbage kind and no
+    // year. Send those to the review table — which has the kind picker and year
+    // input — rather than committing here, where both would 422 at commit.
+    if (!b.guess?.kind || !CHAMPIONSHIP_KINDS.has(b.guess.kind)) return 'championship kind unset'
+    if (b.guess.seasonYear == null) return 'season year unknown'
+  }
   return null
 }
 

@@ -85,11 +85,15 @@ function initTarget(r: ImportReview): TargetState {
   }
 }
 
-// A standings JSON states its season; a points PDF only infers one from the
-// sheet's creation date, which is wrong for a full season republished in
-// January. So that year is confirmed, not assumed.
-function needsYear(b: ImportBatch, r: ImportReview | undefined): boolean {
-  return r?.kind === 'STANDINGS' && b.format === 'IMSA_POINTS_PDF'
+// A standings' season year is confirmed, not assumed: a points PDF only infers
+// one from the sheet's creation date (wrong for a season republished in
+// January), and an iRacing season with a generic name ("League 6004 season
+// 99330") states none at all. So every standings batch takes a confirmed year —
+// pre-filled from the guess when it has one — which the commit requires. (Kept
+// independent of the guessed year so entering one doesn't hide the field: the
+// review refetch on year change would otherwise flip this false.)
+function needsYear(r: ImportReview | undefined): boolean {
+  return r?.kind === 'STANDINGS'
 }
 
 function validYear(value: string): boolean {
@@ -242,7 +246,7 @@ export default function ImportsPage() {
   function canCommit(b: ImportBatch): boolean {
     const t = targets[b.id]
     if (!t || unresolvedClasses(b.id).length > 0) return false
-    if (needsYear(b, reviews[b.id]) && !validYear(t.seasonYear)) return false
+    if (needsYear(reviews[b.id]) && !validYear(t.seasonYear)) return false
     // Kind has no safe default — it decides how the standings are ranked and
     // matched — and the guess leaves it unset for a title it can't read.
     if (reviews[b.id]?.kind === 'STANDINGS' && !t.kind) return false
@@ -279,7 +283,7 @@ export default function ImportsPage() {
       body.isCup = t.isCup
       body.familyName = t.familyName.trim() || null
       // Only sent where it was confirmed; otherwise the payload's own year stands.
-      body.seasonYear = needsYear(b, review) ? Number(t.seasonYear) : null
+      body.seasonYear = needsYear(review) ? Number(t.seasonYear) : null
     }
     setBusy(true)
     setError(null)
@@ -467,7 +471,7 @@ export default function ImportsPage() {
                             </label>
                           )}
 
-                          {needsYear(b, review) && (
+                          {needsYear(review) && (
                             <label className="target-row">
                               <span className="target-label">Season</span>
                               <input
