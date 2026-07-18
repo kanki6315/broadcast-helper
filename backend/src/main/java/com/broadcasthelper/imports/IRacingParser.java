@@ -228,7 +228,7 @@ public final class IRacingParser {
      * A league season's driver championship with its per-round points filled in.
      * The standings endpoint names the competitors and their season totals; the
      * per-round breakdown the recap needs is pulled from each round's own result
-     * (see {@link #parseRoundLeaguePoints}) and passed in here.
+     * (see {@link #parseRoundLeagueSessions}) and passed in here.
      *
      * The competitor is the driver (a solo league), keyed by cust_id so a rename
      * doesn't fork the row. total_points stays the endpoint's authoritative value
@@ -296,29 +296,78 @@ public final class IRacingParser {
     }
 
     /**
-     * One round's league championship points per driver, keyed by cust_id. iRacing
-     * has already scored these — league_points on each race result row — so no
-     * points formula is reinvented here; a round with more than one race sim-session
-     * (a sprint-plus-feature round) sums them. Qualifying and practice score
-     * nothing and are skipped. Team-shell rows (no cust_id) are ignored — this is
-     * the drivers championship.
+     * One scoring sim-session of a round: what it was called, and what it paid
+     * each driver. A round is a list of these — qualifying, then each race —
+     * mirroring how a published IMSA standings file splits a round into a
+     * "Qualifying" and a "Race" session rather than one lump per weekend.
      */
-    public static java.util.Map<Long, Double> parseRoundLeaguePoints(JsonNode result) {
+    public record RoundSession(String sessionName, java.util.Map<Long, Double> pointsByCust) {
+    }
+
+    /**
+     * The scoring sim-sessions of one league round, in running order.
+     * @see #roundSessions
+     */
+    public static List<RoundSession> parseRoundLeagueSessions(JsonNode result) {
+        return roundSessions(result, "league_points");
+    }
+
+    /**
+     * The scoring sim-sessions of one official-series round, in running order.
+     * @see #roundSessions
+     */
+    public static List<RoundSession> parseRoundChampSessions(JsonNode result) {
+        return roundSessions(result, "champ_points");
+    }
+
+    /**
+     * The scoring sim-sessions of one round, in running order, with the points
+     * iRacing already awarded in each. No points formula is reinvented here.
+     *
+     * Every sim-session that paid somebody is its own session, qualifying
+     * included — official series pay qualifying (10/8/6… in the Porsche
+     * Supercup) and so do some leagues, and folding that into the race figure
+     * loses a number the broadcast says out loud. It also matches the shape the
+     * rest of the importer already uses: {@code championship_session} rows
+     * sharing a round's event name, which the recap collapses back into one
+     * column by summing them, exactly as it does for an IMSA weekend.
+     *
+     * Read per sim-session rather than from the round-total field iRacing also
+     * publishes ({@code league_agg_points} / {@code aggregate_champ_points}).
+     * Those totals agree with the sum in all but one driver-round across the
+     * two Porsche Supercup seasons, where the cached total ran a point ahead of
+     * both the sum and the published standings — the per-session figures are
+     * the ones the standings are built from.
+     *
+     * A sim-session nobody scored in is not a scoring session: practice and
+     * warmup never pay, and neither does qualifying in a league that doesn't
+     * score it, so emitting a column of zeros for them would be noise. Rows
+     * with no cust_id are team shells — this is the drivers championship.
+     */
+    private static List<RoundSession> roundSessions(JsonNode result, String pointsField) {
         JsonNode data = resultData(result);
-        java.util.Map<Long, Double> byCust = new java.util.HashMap<>();
+        List<RoundSession> sessions = new ArrayList<>();
         for (JsonNode sim : data.path("session_results")) {
-            if (sim.path("simsession_type").asInt() != TYPE_RACE) {
+            int type = sim.path("simsession_type").asInt();
+            if (type == TYPE_PRACTICE) {
                 continue;
             }
+            java.util.Map<Long, Double> byCust = new java.util.HashMap<>();
+            boolean paidSomebody = false;
             for (JsonNode r : sim.path("results")) {
                 long custId = r.path("cust_id").asLong(-1);
                 if (custId <= 0) {
                     continue;
                 }
-                byCust.merge(custId, r.path("league_points").asDouble(0), Double::sum);
+                double pts = r.path(pointsField).asDouble(0);
+                byCust.merge(custId, pts, Double::sum);
+                paidSomebody |= pts != 0;
+            }
+            if (paidSomebody) {
+                sessions.add(new RoundSession(sessionName(sim), byCust));
             }
         }
-        return byCust;
+        return sessions;
     }
 
     // ------------------------------------------------- official-series seasons
@@ -399,32 +448,6 @@ public final class IRacingParser {
             return a.launchAt().compareTo(b.launchAt());
         });
         return sorted;
-    }
-
-    /**
-     * One official round's championship points per driver, keyed by cust_id.
-     * Official series score champ_points per sim-session (qualifying included),
-     * and aggregate_champ_points — the driver's round total — is repeated on
-     * every sim-session row they appear on. Taking the max per cust_id across
-     * ALL sim-sessions reads that total once, is idempotent over the repeats,
-     * and still counts a driver whose only appearance was qualifying. It is
-     * also the figure iRacing itself reconciles the season standings against
-     * (verified on PESC 2020: the per-round sums match the published totals
-     * exactly), so no points formula is reinvented here.
-     */
-    public static java.util.Map<Long, Double> parseRoundChampPoints(JsonNode result) {
-        JsonNode data = resultData(result);
-        java.util.Map<Long, Double> byCust = new java.util.HashMap<>();
-        for (JsonNode sim : data.path("session_results")) {
-            for (JsonNode r : sim.path("results")) {
-                long custId = r.path("cust_id").asLong(-1);
-                if (custId <= 0) {
-                    continue;
-                }
-                byCust.merge(custId, r.path("aggregate_champ_points").asDouble(0), Double::max);
-            }
-        }
-        return byCust;
     }
 
     /**

@@ -584,6 +584,37 @@ display size.)
   (%2F-preserving chunk URLs, no bearer to S3, non-array chunk → 502), and
   official fixtures under `fixtures/iracing/` trimmed from the real 2812 payloads
   (`season-results-2812.json` keeps the voided row and is deliberately shuffled).
+- **iRacing rounds split into their scoring sessions (both paths) — ✅ DONE
+  (2026-07-18).** Both iRacing standings paths staged one championship session
+  per *round*, holding the round's whole points figure. Every other importer
+  splits a round into its scoring sessions — a published IMSA standings file
+  lists "Daytona / Qualifying" and "Daytona / Race" as separate sessions sharing
+  an event name, which `SeasonViewController.recap` groups and sums back into one
+  round column (`pole_points` is **not** where IMSA's qualifying points live; it
+  is a bonus column, zero throughout the real file). The iRacing paths now follow
+  that convention via one shared `IRacingParser.roundSessions`: every sim-session
+  that paid somebody becomes its own session ("Qualifying", "Heat 1", "Feature"),
+  all carrying the round's venue as their event name. Practice and warmup, and
+  any session that scored nobody, contribute nothing — no columns of zeros.
+  This fixed a real bug on **each** path:
+  - **League** read only race sim-sessions, silently dropping league qualifying
+    points. The 2025 PESC league pays them: Cooper Webster's Daytona was staged
+    as 70 (heat 20 + feature 50) when iRacing scored him 78 (pole 8 + 20 + 50).
+    Per-round sums now reconcile to `base_points` for **28 of 30** drivers,
+    closing a question flagged as unvalidated when the league path was built.
+    The two exceptions are a ±5 steward correction the league baked into the
+    race payloads inconsistently with `base_points`; `total_points` stays the
+    authoritative row total, as before.
+  - **Official** read `aggregate_champ_points` (the cached round total). Across
+    both PESC seasons that agreed with the per-session sum for every driver-round
+    but one — Joshua W Anderson at Spa 2020, where the cache ran a point ahead of
+    both the sum and the published standings, so his ten columns summed to 122
+    against a correct row total of 121. Reading per-session makes all 40 rows of
+    both seasons sum exactly to their totals.
+  Verified live on both seasons and the 2025 league: 30 sessions across 10 rounds
+  for PESC 2020, collapsing to 10 recap columns with round 1 reading 72 (6+16+50).
+  **Backfill = re-import the standings** — commit replaces on (season, name), so
+  an already-imported season keeps one championship and simply gains the split.
 - **Drag-and-drop upload modal + series/event pinning — ✅ DONE (2026-07-17).**
   The bare file input on the imports page is replaced by `UploadFilesModal`:
   drag-and-drop (plus browse/paste), a per-file staged queue, and a shared

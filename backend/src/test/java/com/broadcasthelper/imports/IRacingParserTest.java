@@ -131,15 +131,40 @@ class IRacingParserTest {
     }
 
     @Test
-    void sumsPerRoundLeaguePointsByDriver() throws IOException {
-        // iRacing already scored the round; the parser just totals league_points
-        // per driver across the round's race sim-sessions (HEAT 1 + FEATURE here).
-        Map<Long, Double> pts = IRacingParser.parseRoundLeaguePoints(fixture());
+    void splitsALeagueRoundIntoItsScoringSessions() throws IOException {
+        // A round is its scoring sim-sessions, not one lump: this league pays
+        // qualifying as well as both races, and practice/warmup pay nothing so
+        // they are not sessions at all.
+        List<IRacingParser.RoundSession> scored = IRacingParser.parseRoundLeagueSessions(fixture());
 
-        assertEquals(30, pts.size());
-        // Cooper Webster won the round: 20 in the heat plus 50 in the feature.
-        assertEquals(70.0, pts.get(161668L));
-        assertEquals(58.0, pts.get(220097L));
+        assertEquals(List.of("Qualifying", "Heat 1", "Feature"),
+                scored.stream().map(IRacingParser.RoundSession::sessionName).toList());
+
+        // Cooper Webster: pole for 8, then 20 in the heat and 50 in the feature.
+        // The 8 used to be dropped — only race sim-sessions were read — leaving
+        // his round two-thirds of a session short of what iRacing scored him.
+        assertEquals(8.0, scored.get(0).pointsByCust().get(161668L));
+        assertEquals(20.0, scored.get(1).pointsByCust().get(161668L));
+        assertEquals(50.0, scored.get(2).pointsByCust().get(161668L));
+
+        double webster = scored.stream()
+                .mapToDouble(s -> s.pointsByCust().getOrDefault(161668L, 0.0)).sum();
+        assertEquals(78.0, webster, "the round total is what league_agg_points reports");
+        assertEquals(30, scored.get(2).pointsByCust().size());
+    }
+
+    @Test
+    void doesNotMakeASessionOfOneNobodyScoredIn() throws IOException {
+        // A league that doesn't score qualifying (this team race pays only the
+        // race) must not gain a column of zeros for it.
+        JsonNode teamRace;
+        try (InputStream in = getClass()
+                .getResourceAsStream("/fixtures/iracing/subsession-longbeach-team-2025.json")) {
+            assertNotNull(in, "missing team-race fixture");
+            teamRace = mapper.readTree(in);
+        }
+        assertTrue(IRacingParser.parseRoundLeagueSessions(teamRace).isEmpty(),
+                "this round scored nobody anywhere — it contributes no sessions");
     }
 
     @Test
@@ -165,11 +190,11 @@ class IRacingParserTest {
         // One scored round (Daytona) plus a future calendar slot nobody has raced:
         // the assembly fills the first and leaves the second blank, not zero.
         Map<Long, Map<Integer, Double>> byCust = new HashMap<>();
-        IRacingParser.parseRoundLeaguePoints(fixture())
+        IRacingParser.parseRoundLeagueSessions(fixture()).get(2).pointsByCust()
                 .forEach((cust, p) -> byCust.computeIfAbsent(cust, k -> new HashMap<>()).put(1, p));
         List<StandingsImport.SessionRef> sessions = List.of(
-                new StandingsImport.SessionRef(1, "Daytona International Speedway", "Round 1"),
-                new StandingsImport.SessionRef(2, "Sebring International Raceway", "Round 2"));
+                new StandingsImport.SessionRef(1, "Daytona International Speedway", "Feature"),
+                new StandingsImport.SessionRef(2, "Sebring International Raceway", "Feature"));
 
         StandingsImport st = IRacingParser.assembleSeasonStandings(
                 standings, "2025 Porsche Esports Supercup", "2025", sessions, byCust);
@@ -183,8 +208,8 @@ class IRacingParserTest {
         assertEquals(1, leader.pointsBySession().size());
         StandingsImport.SessionPoints round1 = leader.pointsBySession().get(0);
         assertEquals(1, round1.sessionIndex());
-        assertEquals(70.0, round1.totalPoints());
-        assertEquals(70.0, round1.racePoints());
+        assertEquals(50.0, round1.totalPoints()); // the feature session alone
+        assertEquals(50.0, round1.racePoints());
     }
 
     @Test
@@ -436,35 +461,39 @@ class IRacingParserTest {
     }
 
     @Test
-    void readsEachDriversRoundTotalOnceIncludingQualifyingOnlyDrivers() throws IOException {
-        // aggregate_champ_points is the round total repeated on every sim-session
-        // row; max-per-driver reads it once. The fixture keeps Rogers in
-        // qualifying only — his 68 must still arrive, because official quali
-        // scores championship points.
-        Map<Long, Double> pts = IRacingParser.parseRoundChampPoints(
+    void splitsAnOfficialRoundIntoQualifyingAndEachRace() throws IOException {
+        // Official series pay qualifying (10/8/6…), a heat, and a feature; each
+        // is its own scoring session, so the recap can show what a driver took
+        // from qualifying rather than only the weekend's lump.
+        List<IRacingParser.RoundSession> scored = IRacingParser.parseRoundChampSessions(
                 officialFixture("subsession-official-pesc-2020.json"));
 
-        assertEquals(4, pts.size());
-        assertEquals(72.0, pts.get(119101L)); // Job: quali 6 + heat 16 + feature 50
-        assertEquals(70.0, pts.get(35491L));  // Carroll
-        assertEquals(68.0, pts.get(169237L)); // Rogers, qualifying row only
-        assertEquals(59.0, pts.get(32626L));  // Østgaard
+        assertEquals(List.of("Qualifying", "Heat 1", "Feature"),
+                scored.stream().map(IRacingParser.RoundSession::sessionName).toList());
+
+        // Job's Zandvoort round: 6 + 16 + 50 = the 72 iRacing scored him.
+        assertEquals(6.0, scored.get(0).pointsByCust().get(119101L));
+        assertEquals(16.0, scored.get(1).pointsByCust().get(119101L));
+        assertEquals(50.0, scored.get(2).pointsByCust().get(119101L));
+
+        // Rogers took pole and appears in qualifying only in this fixture; his
+        // 10 still arrives, where reading only the races would have lost it.
+        assertEquals(10.0, scored.get(0).pointsByCust().get(169237L));
+        assertFalse(scored.get(2).pointsByCust().containsKey(169237L));
     }
 
     @Test
     void scoresAVoidedRoundAsNothing() throws IOException {
         // A voided race keeps its rows but zeroes every points field — belt and
         // braces under the official_session filter: even if one slipped through,
-        // it would contribute nothing.
+        // it would contribute no sessions at all, so no phantom column.
         JsonNode voided = mapper.readTree("""
-                {"session_results":[{"simsession_type":6,"results":[
+                {"session_results":[{"simsession_type":6,"simsession_name":"FEATURE","results":[
                   {"cust_id":119101,"champ_points":0,"aggregate_champ_points":0},
                   {"cust_id":120570,"champ_points":0,"aggregate_champ_points":0}]}]}
                 """);
-        Map<Long, Double> pts = IRacingParser.parseRoundChampPoints(voided);
 
-        assertEquals(0.0, pts.get(119101L));
-        assertEquals(0.0, pts.get(120570L));
+        assertTrue(IRacingParser.parseRoundChampSessions(voided).isEmpty());
     }
 
     @Test
