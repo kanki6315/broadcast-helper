@@ -48,13 +48,26 @@ public class SeasonViewController {
      *  the round's points-scoring sessions in calendar order — the standings
      *  page prints one earnings line per session, not one summed number. */
     public record RecapRound(int round, String venue, Long eventId, int raceCount,
-                             List<RecapSession> sessions) {
+                             List<RecapSession> sessions, List<RecapRaceRef> races) {
     }
 
     public record RecapSession(int sessionIndex, String name) {
     }
 
-    public record RecapRace(int race, Integer start, Integer finish, String status, boolean notFinished) {
+    /** One race the round ran, in running order. The recap tags a row's result
+     *  lines from THIS list rather than from the races that row contested, so a
+     *  driver who ran only the fourth heat is labelled "H4" and not "H". */
+    public record RecapRaceRef(int ordinal, String name) {
+    }
+
+    /** {@code name} is the race session's own name ("Heat 1", "Feature",
+     *  "Consolation"), which the recap abbreviates into a per-line tag where a
+     *  round ran more than one race. It is the RACE session's name, not the
+     *  championship calendar's: a weekend can run races the championship does
+     *  not score (Sachsenring 2025 pays four heats but runs five plus a
+     *  consolation), so the two lists genuinely differ. */
+    public record RecapRace(int race, String name, Integer start, Integer finish, String status,
+                            boolean notFinished) {
     }
 
     /** How one session paid: the components sum to {@code total} (verified for
@@ -160,6 +173,23 @@ public class SeasonViewController {
                 .list()
                 .forEach(e -> eventsByOrdinal.putIfAbsent(e.getKey(), e.getValue()));
 
+        // Every race each event ran, in running order — the list the recap tags
+        // result lines against. It is the whole weekend's races, not one
+        // competitor's, which is what makes a lone fourth-heat start read "H4".
+        Map<Long, List<RecapRaceRef>> racesByEvent = new HashMap<>();
+        db.sql("""
+                        SELECT rs.event_id, rs.ordinal, rs.name
+                        FROM race_session rs
+                                 JOIN event ev ON ev.id = rs.event_id
+                        WHERE ev.season_id = :seasonId AND rs.session_type = 'RACE'
+                        ORDER BY rs.event_id, rs.ordinal
+                        """)
+                .param("seasonId", champ.seasonId())
+                .query((rs, i) -> racesByEvent
+                        .computeIfAbsent(rs.getLong("event_id"), k -> new ArrayList<>())
+                        .add(new RecapRaceRef(rs.getInt("ordinal"), rs.getString("name"))))
+                .list();
+
         List<RecapRound> rounds = new ArrayList<>();
         Map<Long, Integer> roundByEventId = new HashMap<>();
         for (ChampRound cr : champRounds) {
@@ -168,7 +198,8 @@ public class SeasonViewController {
             rounds.add(new RecapRound(cr.round(), venue,
                     match != null ? match.id() : null,
                     match != null ? Math.max(match.raceCount(), 1) : 1,
-                    sessionsByRound.getOrDefault(cr.round(), List.of())));
+                    sessionsByRound.getOrDefault(cr.round(), List.of()),
+                    match != null ? racesByEvent.getOrDefault(match.id(), List.of()) : List.of()));
             if (match != null) {
                 roundByEventId.put(match.id(), cr.round());
             }
@@ -242,11 +273,11 @@ public class SeasonViewController {
         // driver names per entry (for DRIVERS championships, rows match entries
         // by crew member name; TEAMS match by car number).
         record Cell(long entryId, String carNumber, String team, long eventId, int raceOrdinal,
-                    Integer start, Integer finish, String status, boolean notFinished) {
+                    String raceName, Integer start, Integer finish, String status, boolean notFinished) {
         }
         List<Cell> cells = roundByEventId.isEmpty() ? List.of() : db.sql("""
                         SELECT en.id AS entry_id, en.car_number, en.team_name, ev.id AS event_id,
-                               rs.ordinal AS race_ordinal,
+                               rs.ordinal AS race_ordinal, rs.name AS race_name,
                                g.position_in_class AS start_pos, r.position_in_class AS finish_pos, r.status,
                                COALESCE(r.not_finished, false) AS not_finished
                         FROM entry en
@@ -261,6 +292,7 @@ public class SeasonViewController {
                 .param("className", champ.className())
                 .query((rs, i) -> new Cell(rs.getLong("entry_id"), rs.getString("car_number"),
                         rs.getString("team_name"), rs.getLong("event_id"), rs.getInt("race_ordinal"),
+                        rs.getString("race_name"),
                         rs.getObject("start_pos", Integer.class), rs.getObject("finish_pos", Integer.class),
                         rs.getString("status"), rs.getBoolean("not_finished")))
                 .list()
@@ -310,7 +342,8 @@ public class SeasonViewController {
                 }
                 int round = roundByEventId.get(c.eventId());
                 byRound.computeIfAbsent(round, k -> new ArrayList<>())
-                        .add(new RecapRace(c.raceOrdinal(), c.start(), c.finish(), c.status(), c.notFinished()));
+                        .add(new RecapRace(c.raceOrdinal(), c.raceName(), c.start(), c.finish(),
+                                c.status(), c.notFinished()));
                 if (driversKind && round > latestRound) {
                     latestRound = round;
                     carNumber = c.carNumber();

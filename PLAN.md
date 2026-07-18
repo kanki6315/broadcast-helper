@@ -768,6 +768,11 @@ display size.)
   numbered only where the word repeats in the round) because once blank lines
   are gone the tag is the only thing naming the session. A **Breakdown ⇄ Round
   total** toggle (`?pts=total`) collapses back to one number per round.
+  The **season recap** carries the same tags on its start→finish lines for
+  multi-race rounds (`RecapRace.name` + `RecapRound.races`; tags derived over
+  the round's whole race list so a lone fourth-heat start reads `H4`), shared
+  with the driver/team modals through `RaceLine`; `raceForm.sessionTagList` is
+  the one abbreviator behind both surfaces.
   The recap endpoint grew `RecapRound.sessions` +
   `RecapRow.sessionPoints` (per-`session_index` race/pole/FL/penalty/bonus
   components, gated to scored+contested rounds exactly like `pointsByRound`);

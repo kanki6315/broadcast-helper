@@ -14,6 +14,7 @@ import { formatPoints } from '../pages/season/ChampionshipGrid'
 import { useInfoModal } from './infoModal'
 import NotesSection from './NotesSection'
 import RaceLine from './RaceLine'
+import { raceTagsByOrdinal } from '../lib/raceForm'
 
 /* ------------------------------------------------------------------------- */
 /* Formatting helpers                                                          */
@@ -152,10 +153,13 @@ function ChampSection({ champ }: { champ: DriverChampMatrix }) {
                 </th>
                 {champ.rounds.map((r) => {
                   const races = champ.cells[r.round]
+                  const raceTags = raceTagsByOrdinal(r.races)
                   return (
                     <td key={r.round} className="dm-mx-cell">
                       {races && races.length > 0 ? (
-                        races.map((race) => <RaceLine key={race.race} r={race} />)
+                        races.map((race) => (
+                          <RaceLine key={race.race} r={race} tag={raceTags.get(race.race)} />
+                        ))
                       ) : (
                         <span className="cell-skip" title="Did not enter this round">
                           ·
