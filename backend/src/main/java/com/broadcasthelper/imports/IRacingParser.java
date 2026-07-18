@@ -248,20 +248,8 @@ public final class IRacingParser {
         for (JsonNode d : root.path("standings").path("driver_standings")) {
             JsonNode driver = d.path("driver");
             long custId = driver.path("cust_id").asLong();
-            java.util.Map<Integer, Double> perRound =
-                    pointsByCustSession.getOrDefault(custId, java.util.Map.of());
-            List<StandingsImport.SessionPoints> points = new ArrayList<>();
-            for (StandingsImport.SessionRef s : sessions) {
-                Double pts = perRound.get(s.sessionIndex());
-                if (pts == null) {
-                    continue; // the driver didn't take part in this round — leave it blank
-                }
-                // iRacing scores a single league-points figure per round; there is
-                // no pole/fastest-lap/penalty split to record (post-race penalties
-                // arrive as the standings' manual adjustments, not per session).
-                points.add(new StandingsImport.SessionPoints(
-                        s.sessionIndex(), pts, pts, 0, 0, 0, 0, "race"));
-            }
+            List<StandingsImport.SessionPoints> points = sessionPoints(
+                    sessions, pointsByCustSession.getOrDefault(custId, java.util.Map.of()));
             rows.add(new StandingsImport.Row(
                     d.path("position").asInt(),
                     String.valueOf(custId),
@@ -274,6 +262,26 @@ public final class IRacingParser {
         }
         rows.sort((a, b) -> Integer.compare(a.position(), b.position()));
         return new StandingsImport(seasonName, seasonName, null, year, sessions, rows);
+    }
+
+    /**
+     * One row's per-round breakdown, in calendar order. iRacing scores a single
+     * points figure per round; there is no pole/fastest-lap/penalty split to
+     * record (post-race corrections arrive as the standings' own totals, not per
+     * session). A round the driver has no points entry for stays blank.
+     */
+    private static List<StandingsImport.SessionPoints> sessionPoints(
+            List<StandingsImport.SessionRef> sessions, java.util.Map<Integer, Double> perRound) {
+        List<StandingsImport.SessionPoints> points = new ArrayList<>();
+        for (StandingsImport.SessionRef s : sessions) {
+            Double pts = perRound.get(s.sessionIndex());
+            if (pts == null) {
+                continue;
+            }
+            points.add(new StandingsImport.SessionPoints(
+                    s.sessionIndex(), pts, pts, 0, 0, 0, 0, "race"));
+        }
+        return points;
     }
 
     /**
@@ -311,6 +319,144 @@ public final class IRacingParser {
             }
         }
         return byCust;
+    }
+
+    // ------------------------------------------------- official-series seasons
+
+    /**
+     * One season of an official iRacing series, as /series/past_seasons
+     * describes it. season_year is the payload's own integer field — the season
+     * name carries its year as a suffix ("… - 2020 Season"), so the leading-year
+     * heuristic used for league names would find nothing here.
+     */
+    public record OfficialSeason(
+            long seasonId,
+            String seasonName,
+            int seasonYear,
+            List<CarClass> carClasses
+    ) {
+        public record CarClass(long carClassId, String name) {
+        }
+    }
+
+    /**
+     * The requested season out of a /series/past_seasons payload, or empty when
+     * the series has no such season — which is what a mismatched series/season
+     * id pair looks like, so the caller can refuse it rather than import under
+     * the wrong series.
+     */
+    public static java.util.Optional<OfficialSeason> parseOfficialSeason(JsonNode root, long seasonId) {
+        for (JsonNode s : root.path("series").path("seasons")) {
+            if (s.path("season_id").asLong(-1) != seasonId) {
+                continue;
+            }
+            List<OfficialSeason.CarClass> classes = new ArrayList<>();
+            for (JsonNode c : s.path("car_classes")) {
+                classes.add(new OfficialSeason.CarClass(
+                        c.path("car_class_id").asLong(), text(c, "name")));
+            }
+            return java.util.Optional.of(new OfficialSeason(
+                    seasonId, text(s, "season_name"), s.path("season_year").asInt(), classes));
+        }
+        return java.util.Optional.empty();
+    }
+
+    /**
+     * The OFFICIAL race subsessions of a /results/season_results payload as
+     * rounds, oldest first. Unofficial sessions are dropped everywhere — a
+     * voided race (PESC 2020's first Le Mans, abandoned and re-run months
+     * later) stays listed with official_session false and all-zero points, so
+     * keeping it would show a phantom round. race_week_num is deliberately
+     * ignored: weeks can be raceless or voided, so the round number is the
+     * position in this start-time ordering, not the week.
+     *
+     * Reuses LeagueRound so the UI's rounds preview is shared. This payload
+     * names no winner (winnerName null) and lists only completed sessions
+     * (hasResults always true).
+     */
+    public static List<LeagueRound> parseOfficialSeasonRounds(JsonNode root) {
+        java.util.Map<Long, LeagueRound> rounds = new java.util.LinkedHashMap<>();
+        for (JsonNode s : root.path("results_list")) {
+            long subsessionId = s.path("subsession_id").asLong(-1);
+            if (subsessionId < 0 || !s.path("official_session").asBoolean(false)) {
+                continue;
+            }
+            String start = text(s, "start_time");
+            rounds.putIfAbsent(subsessionId, new LeagueRound(
+                    subsessionId,
+                    start == null ? null : OffsetDateTime.parse(start),
+                    circuitName(s),
+                    null,
+                    true,
+                    s.path("num_drivers").asInt(0)
+            ));
+        }
+        List<LeagueRound> sorted = new ArrayList<>(rounds.values());
+        sorted.sort((a, b) -> {
+            if (a.launchAt() == null || b.launchAt() == null) {
+                return 0;
+            }
+            return a.launchAt().compareTo(b.launchAt());
+        });
+        return sorted;
+    }
+
+    /**
+     * One official round's championship points per driver, keyed by cust_id.
+     * Official series score champ_points per sim-session (qualifying included),
+     * and aggregate_champ_points — the driver's round total — is repeated on
+     * every sim-session row they appear on. Taking the max per cust_id across
+     * ALL sim-sessions reads that total once, is idempotent over the repeats,
+     * and still counts a driver whose only appearance was qualifying. It is
+     * also the figure iRacing itself reconciles the season standings against
+     * (verified on PESC 2020: the per-round sums match the published totals
+     * exactly), so no points formula is reinvented here.
+     */
+    public static java.util.Map<Long, Double> parseRoundChampPoints(JsonNode result) {
+        JsonNode data = resultData(result);
+        java.util.Map<Long, Double> byCust = new java.util.HashMap<>();
+        for (JsonNode sim : data.path("session_results")) {
+            for (JsonNode r : sim.path("results")) {
+                long custId = r.path("cust_id").asLong(-1);
+                if (custId <= 0) {
+                    continue;
+                }
+                byCust.merge(custId, r.path("aggregate_champ_points").asDouble(0), Double::max);
+            }
+        }
+        return byCust;
+    }
+
+    /**
+     * An official season's driver championship, from the season_driver_standings
+     * chunk rows plus the per-round points pulled from each round's result.
+     * Same assembly as {@link #assembleSeasonStandings}, but the chunk rows are
+     * flat — rank/cust_id/display_name/points at the top level, not nested
+     * under driver.* — and arrive as a bare array rather than under
+     * standings.driver_standings. points stays the endpoint's authoritative
+     * total, same as the league flow.
+     */
+    public static StandingsImport assembleOfficialStandings(
+            JsonNode chunkRows, String name, String year,
+            List<StandingsImport.SessionRef> sessions,
+            java.util.Map<Long, java.util.Map<Integer, Double>> pointsByCustSession) {
+        List<StandingsImport.Row> rows = new ArrayList<>();
+        for (JsonNode d : chunkRows) {
+            long custId = d.path("cust_id").asLong();
+            List<StandingsImport.SessionPoints> points = sessionPoints(
+                    sessions, pointsByCustSession.getOrDefault(custId, java.util.Map.of()));
+            rows.add(new StandingsImport.Row(
+                    d.path("rank").asInt(),
+                    String.valueOf(custId),
+                    text(d, "display_name"),
+                    d.path("points").asDouble(),
+                    null,
+                    null,
+                    points
+            ));
+        }
+        rows.sort((a, b) -> Integer.compare(a.position(), b.position()));
+        return new StandingsImport(name, name, null, year, sessions, rows);
     }
 
     private static List<RaceResultsImport.Row> resultRows(JsonNode data, JsonNode sim) {

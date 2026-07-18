@@ -182,6 +182,46 @@ public class IRacingClient {
         return payload;
     }
 
+    /**
+     * The concatenated rows of a chunked stats payload. The official standings
+     * endpoints answer with a third indirection shape: instead of one signed
+     * link, the payload carries a chunk_info block naming pre-signed chunk
+     * objects (base_download_url + chunk_file_names[i]), each holding a bare
+     * JSON array of rows. Like the single signed links, chunk URLs are fetched
+     * verbatim as URIs — their signatures carry %2F — and without the bearer
+     * token, which would otherwise be handed to the S3 host.
+     *
+     * A missing or empty chunk_info is an empty result set (a season with no
+     * standings), not an error.
+     */
+    public com.fasterxml.jackson.databind.node.ArrayNode fetchChunkedRows(JsonNode chunkInfo) {
+        com.fasterxml.jackson.databind.node.ArrayNode rows = JSON.createArrayNode();
+        if (chunkInfo == null || !chunkInfo.path("base_download_url").isTextual()) {
+            return rows;
+        }
+        String base = chunkInfo.path("base_download_url").asText();
+        for (JsonNode name : chunkInfo.path("chunk_file_names")) {
+            byte[] raw = http.get().uri(URI.create(base + name.asText())).retrieve().body(byte[].class);
+            if (raw == null || raw.length == 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                        "Empty chunk payload from iRacing");
+            }
+            JsonNode chunk;
+            try {
+                chunk = JSON.readTree(raw);
+            } catch (java.io.IOException e) {
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                        "Malformed chunk payload from iRacing");
+            }
+            if (!chunk.isArray()) {
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                        "Unexpected chunk payload shape from iRacing");
+            }
+            rows.addAll((com.fasterxml.jackson.databind.node.ArrayNode) chunk);
+        }
+        return rows;
+    }
+
     // ------------------------------------------------------------------ tokens
 
     /**

@@ -56,6 +56,9 @@ class IRacingClientHttpTest {
     /** Authorization headers seen on data + signed-link requests, in order. */
     private final List<String> dataAuthHeaders = new CopyOnWriteArrayList<>();
     private final List<String> linkAuthHeaders = new CopyOnWriteArrayList<>();
+    /** Authorization headers and raw queries seen on chunk requests, in order. */
+    private final List<String> chunkAuthHeaders = new CopyOnWriteArrayList<>();
+    private final List<String> chunkRawQueries = new CopyOnWriteArrayList<>();
     /** The raw (still-encoded) query string the signed-link request arrived with. */
     private volatile String signedLinkRawQuery;
 
@@ -114,6 +117,38 @@ class IRacingClientHttpTest {
             exchange.getResponseHeaders().add("Content-Type", "application/octet-stream");
             exchange.sendResponseHeaders(200, body.length);
             exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+
+        // The official standings shape: a signed link whose payload is not the
+        // data but a chunk_info block naming pre-signed chunk objects, each a
+        // bare JSON array of rows. The chunk URLs carry the same %2F-encoded
+        // signatures as any pre-signed link.
+        server.createContext("/data/stats/season_driver_standings", exchange -> {
+            dataAuthHeaders.add(String.valueOf(exchange.getRequestHeaders().getFirst("Authorization")));
+            send(exchange, 200, "{\"link\":\"" + baseUrl + "/signed/standings?" + PRESIGNED_QUERY + "\"}");
+        });
+        server.createContext("/signed/standings", exchange -> {
+            linkAuthHeaders.add(String.valueOf(exchange.getRequestHeaders().getFirst("Authorization")));
+            send(exchange, 200, "{\"success\":true,\"chunk_info\":{"
+                    + "\"num_chunks\":2,\"rows\":3,"
+                    + "\"base_download_url\":\"" + baseUrl + "/chunks/\","
+                    + "\"chunk_file_names\":[\"a.json?" + PRESIGNED_QUERY + "\","
+                    + "\"b.json?" + PRESIGNED_QUERY + "\"]}}");
+        });
+        server.createContext("/chunks/", exchange -> {
+            chunkAuthHeaders.add(String.valueOf(exchange.getRequestHeaders().getFirst("Authorization")));
+            chunkRawQueries.add(exchange.getRequestURI().getRawQuery());
+            String path = exchange.getRequestURI().getPath();
+            String body = path.endsWith("a.json")
+                    ? "[{\"rank\":1,\"cust_id\":119101,\"display_name\":\"Sebastian Job\",\"points\":659},"
+                      + "{\"rank\":2,\"cust_id\":59460,\"display_name\":\"Joshua K Rogers\",\"points\":563}]"
+                    : "[{\"rank\":3,\"cust_id\":259565,\"display_name\":\"Alejandro Sánchez\",\"points\":478}]";
+            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            // S3 serves chunk objects as octet-stream, like the roster link.
+            exchange.getResponseHeaders().add("Content-Type", "application/octet-stream");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
             exchange.close();
         });
 
@@ -180,6 +215,56 @@ class IRacingClientHttpTest {
         assertEquals(1, payload.path("roster").size());
         assertEquals("01", payload.path("roster").get(0).path("car_number").asText(),
                 "leading-zero car numbers must survive as text");
+    }
+
+    @Test
+    void concatenatesChunkedStandingsRowsInChunkOrder() {
+        IRacingClient client = client();
+        JsonNode payload = client.get("/stats/season_driver_standings",
+                Map.of("season_id", "2812", "car_class_id", "95"));
+        JsonNode rows = client.fetchChunkedRows(payload.path("chunk_info"));
+
+        assertEquals(3, rows.size());
+        assertEquals("Sebastian Job", rows.get(0).path("display_name").asText());
+        assertEquals(659, rows.get(0).path("points").asInt());
+        assertEquals("Alejandro Sánchez", rows.get(2).path("display_name").asText(),
+                "rows must arrive in chunk order — rank order depends on it");
+    }
+
+    @Test
+    void fetchesChunkUrlsVerbatimAndWithoutTheBearerToken() {
+        IRacingClient client = client();
+        JsonNode payload = client.get("/stats/season_driver_standings",
+                Map.of("season_id", "2812", "car_class_id", "95"));
+        client.fetchChunkedRows(payload.path("chunk_info"));
+
+        // Chunk objects are pre-signed like the single links: their %2F-encoded
+        // signatures must survive, and the token must not reach the S3 host.
+        assertEquals(List.of(PRESIGNED_QUERY, PRESIGNED_QUERY), chunkRawQueries);
+        assertEquals(List.of("null", "null"), chunkAuthHeaders);
+    }
+
+    @Test
+    void treatsAMissingChunkInfoAsAnEmptyResultSet() {
+        // A season with no standings answers without chunk_info; that is an
+        // empty table, not a gateway failure.
+        assertEquals(0, client().fetchChunkedRows(null).size());
+        assertEquals(0, client().fetchChunkedRows(
+                com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode()).size());
+    }
+
+    @Test
+    void rejectsAChunkThatIsNotAnArray() {
+        server.removeContext("/chunks/");
+        server.createContext("/chunks/", exchange ->
+                send(exchange, 200, "{\"error\":\"not an array\"}"));
+        IRacingClient client = client();
+        JsonNode payload = client.get("/stats/season_driver_standings",
+                Map.of("season_id", "2812", "car_class_id", "95"));
+
+        Exception e = assertThrows(Exception.class,
+                () -> client.fetchChunkedRows(payload.path("chunk_info")));
+        assertTrue(e.getMessage().contains("chunk"), e.getMessage());
     }
 
     @Test

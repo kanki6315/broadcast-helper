@@ -166,6 +166,106 @@ public class ImportService {
     }
 
     /**
+     * The OFFICIAL race rounds of an official-series season — the same read-only
+     * listing role as {@link #listSeasonRounds}, driven by /results/season_results
+     * (event_type 5 = race; race_week_num omitted so every week arrives).
+     *
+     * Only official sessions are listed, anywhere in the official flow: a voided
+     * race stays in the payload flagged unofficial with all-zero points (PESC
+     * 2020's first Le Mans, re-run months later), and surfacing it would offer a
+     * phantom round. Week numbers are not round numbers — the calendar has
+     * raceless and voided weeks — so rounds are numbered by start time.
+     */
+    public List<IRacingParser.LeagueRound> listOfficialSeasonRounds(long seasonId) {
+        JsonNode payload = iracing.get("/results/season_results", java.util.Map.of(
+                "season_id", String.valueOf(seasonId),
+                "event_type", "5"));
+        return IRacingParser.parseOfficialSeasonRounds(payload);
+    }
+
+    /**
+     * Stages an official-series season's driver standings, the official twin of
+     * {@link #stageStandingsFromIRacing}: totals from the season standings
+     * endpoint stay authoritative, and the per-round breakdown the recap needs
+     * is read from each official round's result — champ points iRacing already
+     * scored, qualifying included (verified on PESC 2020: the per-round sums
+     * reconcile to the published totals exactly). One batch per car class;
+     * PESC-style single-class seasons stage exactly one.
+     */
+    public List<BatchSummary> stageOfficialStandingsFromIRacing(long seriesId, long seasonId) {
+        List<StandingsImport> imports = buildOfficialStandings(seriesId, seasonId);
+        List<Staged> staged = imports.stream()
+                .map(imp -> new Staged("STANDINGS", imp,
+                        "%s — %d competitors, %d rounds".formatted(
+                                imp.name(), imp.rows().size(), imp.sessions().size())))
+                .toList();
+        return persist(staged, ImportFormat.IRACING_JSON,
+                "series-" + seriesId + "-season-" + seasonId + "-standings.json");
+    }
+
+    /**
+     * Everything up to persistence — package-private so the flow is testable
+     * against a stubbed {@link IRacingClient} without a database.
+     */
+    List<StandingsImport> buildOfficialStandings(long seriesId, long seasonId) {
+        JsonNode past = iracing.get("/series/past_seasons", java.util.Map.of(
+                "series_id", String.valueOf(seriesId)));
+        IRacingParser.OfficialSeason season = IRacingParser.parseOfficialSeason(past, seasonId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Series " + seriesId + " has no season " + seasonId));
+
+        // Walk the official rounds oldest-first, reading the champ points each
+        // round's result already carries. Same resilience as the league flow: a
+        // round that can't be fetched leaves a calendar gap rather than sinking
+        // the import.
+        List<StandingsImport.SessionRef> sessions = new ArrayList<>();
+        Map<Long, Map<Integer, Double>> pointsByCustSession = new java.util.HashMap<>();
+        int sessionIndex = 0;
+        for (IRacingParser.LeagueRound round : listOfficialSeasonRounds(seasonId)) {
+            JsonNode result;
+            try {
+                result = iracing.fetchResult(round.subsessionId());
+            } catch (RuntimeException e) {
+                continue;
+            }
+            int idx = ++sessionIndex;
+            sessions.add(new StandingsImport.SessionRef(
+                    idx, IRacingParser.roundVenueName(result), round.trackName()));
+            IRacingParser.parseRoundChampPoints(result).forEach((custId, pts) ->
+                    pointsByCustSession.computeIfAbsent(custId, k -> new java.util.HashMap<>())
+                            .put(idx, pts));
+        }
+
+        // One standings table per car class. The per-round points map is shared:
+        // it is keyed by cust_id season-wide, and each class's rows select their
+        // own drivers out of it.
+        List<StandingsImport> imports = new ArrayList<>();
+        boolean multiClass = season.carClasses().size() > 1;
+        for (IRacingParser.OfficialSeason.CarClass carClass : season.carClasses()) {
+            JsonNode standings = iracing.get("/stats/season_driver_standings", java.util.Map.of(
+                    "season_id", String.valueOf(seasonId),
+                    "car_class_id", String.valueOf(carClass.carClassId())));
+            JsonNode rows = iracing.fetchChunkedRows(standings.path("chunk_info"));
+            // The class name joins the batch name only when it must — it is the
+            // championship's replace key within a season, so a single-class
+            // season keeps the season name alone.
+            String name = multiClass
+                    ? season.seasonName() + " — " + carClass.name()
+                    : season.seasonName();
+            StandingsImport imp = IRacingParser.assembleOfficialStandings(
+                    rows, name, String.valueOf(season.seasonYear()), sessions, pointsByCustSession);
+            if (!imp.rows().isEmpty()) {
+                imports.add(imp);
+            }
+        }
+        if (imports.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "No driver standings found for series " + seriesId + " season " + seasonId);
+        }
+        return imports;
+    }
+
+    /**
      * Outcome of staging several subsessions at once (a whole season, or a
      * hand-picked list). Resilient by design, so it reports both sides: how many
      * were requested, how many staged, every batch produced, and each subsession

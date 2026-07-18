@@ -549,6 +549,41 @@ display size.)
   latter, so `result.failures` was undefined and the modal threw *during render*,
   blanking the whole page (there is **no error boundary** in the app, so any render
   throw is a white screen — worth adding one).
+- **Official iRacing series import (PESC 2019/2020) — ✅ DONE (2026-07-18).**
+  The first two Porsche Esports Supercup seasons ran as *official* iRacing series
+  (series 373 / season 2437 = 2019; series 409 / season 2812 = 2020), which the
+  league flow cannot address. A parallel official flow now exists:
+  `GET/POST /api/imports/iracing/series/{seriesId}/season/{seasonId}/{rounds,standings}`
+  plus a third "By official series" tab in the import modal that shares the league
+  tab's rounds preview and stages picked rounds through the existing
+  `/iracing/subsessions` endpoint — `/results/get` payloads parse identically
+  either way. **Only `official_session == true` races count anywhere**
+  (`IRacingParser.parseOfficialSeasonRounds`): PESC 2020's June Le Mans was voided
+  — it stays in `season_results` flagged unofficial with all-zero champ points and
+  was re-run in week 10 — and `race_week_num` has gaps (week 4 raceless), so
+  rounds are the official race subsessions sorted by `start_time`, never week
+  numbers. Standings mirror the league walk with the official twins of every
+  piece: season name / integer `season_year` / car classes from
+  `/series/past_seasons` (the name is year-*suffixed*, so `leadingYear` would
+  fail); totals from `/stats/season_driver_standings`, which answers in a third
+  indirection shape — a `chunk_info` block naming pre-signed chunk objects, each
+  a bare JSON row array (`IRacingClient.fetchChunkedRows`, same URI-verbatim /
+  no-bearer rules as single links); per-round points read as
+  `aggregate_champ_points` (the driver's round total, quali included, repeated on
+  every sim-session row — taken as max per `cust_id` across *all* sim-sessions so
+  a quali-only driver still scores). One STANDINGS batch per car class (name
+  suffixed with the class only when multi-class). **Verified live on both
+  seasons**: per-round sums reconcile to the published totals *exactly* for the
+  whole 2020 top 10 (Job 659) and 2019 podium (Rogers 976) — unlike league
+  standings there are no manual adjustments here, so column sums equal row totals.
+  The recap's round columns fold quali points into the round figure by design
+  (single-figure-per-round, same as the league path). Tests:
+  `ImportServiceOfficialStandingsTest` (first service-level staging test — stubbed
+  client, no DB; proves the voided round is never fetched and a failed round
+  fetch leaves a calendar gap), chunk handling in `IRacingClientHttpTest`
+  (%2F-preserving chunk URLs, no bearer to S3, non-array chunk → 502), and
+  official fixtures under `fixtures/iracing/` trimmed from the real 2812 payloads
+  (`season-results-2812.json` keeps the voided row and is deliberately shuffled).
 - **Drag-and-drop upload modal + series/event pinning — ✅ DONE (2026-07-17).**
   The bare file input on the imports page is replaced by `UploadFilesModal`:
   drag-and-drop (plus browse/paste), a per-file staged queue, and a shared
