@@ -278,17 +278,16 @@
   font-size: var(--text-xl);
 }
 
-.season-select {
+.season-year-strip {
+  flex: 0 1 auto;
+}
+
+.season-year-strip .seg-btn {
+  flex: 0 0 auto;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: var(--text-sm);
   font-weight: 600;
-  padding: 3px 8px;
-  background: var(--surface);
-  color: var(--ink);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  cursor: pointer;
+  padding: 3px 10px;
 }
 
 .season-toolbar {
@@ -1268,6 +1267,13 @@ td.lineup-changed {
 }
 
 @media (max-width: 700px) {
+  /* Keep even the longest current archive (seven seasons) visible as one strip
+   * on a phone; the desktop control retains its roomier instrument-key pitch. */
+  .season-year-strip .seg-btn {
+    padding-inline: 3px;
+    font-size: var(--text-xs);
+  }
+
   /* The sub-nav scrolls invisibly on phones; a right-edge fade signals there
    * are more pages past the fold. */
   .season-head nav.seg {
