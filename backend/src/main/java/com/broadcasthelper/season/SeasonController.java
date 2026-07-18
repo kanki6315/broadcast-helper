@@ -3,6 +3,8 @@ package com.broadcasthelper.season;
 import com.broadcasthelper.browse.BrowseController;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -14,8 +16,9 @@ import java.util.List;
 
 /**
  * The season hub: a series-season is the top of the navigation tree, gathering
- * its calendar, championships, entry lists and images in one place. Read-only;
- * the importers own all writes.
+ * its calendar, championships, entry lists and images in one place. The
+ * importers own all writes except {@link #deleteData}, which exists to undo
+ * them wholesale so a year can be reimported clean.
  */
 @RestController
 @RequestMapping("/api/seasons")
@@ -119,5 +122,34 @@ public class SeasonController {
 
         return new SeasonHub(season.id(), season.year(), season.seriesId(), season.seriesName(),
                 events, championships, entryClasses);
+    }
+
+    public record SeasonDataDeleted(int roundsDeleted, int championshipsDeleted) {
+    }
+
+    /**
+     * Wipes everything the importers created for this season — rounds with
+     * their sessions, results, grids, flags and entries, and championships
+     * with their standings — so the year can be reimported from scratch. The
+     * season row itself and its car images survive: images are uploaded by
+     * hand, not imported, and reimporting find-or-creates the same season.
+     */
+    @DeleteMapping("/{id}/data")
+    @Transactional
+    public SeasonDataDeleted deleteData(@PathVariable long id) {
+        db.sql("SELECT id FROM season WHERE id = :id")
+                .param("id", id)
+                .query(Long.class)
+                .optional()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such season"));
+
+        // championship.season_id and event.season_id have no ON DELETE, and
+        // championship.group_id blocks deleting groups first — so the order is
+        // championships (cascades sessions and standings), then their groups,
+        // then events (cascades sessions, results, grids, flags and entries).
+        int championships = db.sql("DELETE FROM championship WHERE season_id = :id").param("id", id).update();
+        db.sql("DELETE FROM championship_group WHERE season_id = :id").param("id", id).update();
+        int rounds = db.sql("DELETE FROM event WHERE season_id = :id").param("id", id).update();
+        return new SeasonDataDeleted(rounds, championships);
     }
 }

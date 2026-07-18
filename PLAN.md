@@ -366,9 +366,12 @@ no entry-list class (compared case/space-insensitively) is **flagged in the
 Imports review screen and blocks commit** until the reviewer maps it to a known
 class (`ImportService.classReview` / `canonicalizeClass`; commit takes an
 optional `classMapping`). A space/case-only difference auto-resolves; a cold
-season with no entry list yet accepts the file's classes as canon. Mappings are
-not persisted (re-imports re-ask). Migration V10 back-filled the existing IMEC
-championships to the canonical short codes.
+season with no entry list yet accepts the file's classes as canon. Reviewer
+mappings are not persisted (re-imports re-ask) — a *standing* spelling mapping
+is a per-series **class alias** (V29, Phase 4's class-rename slice), which
+canonicalizeClass consults after the reviewer's mapping and before everything
+else. Migration V10 back-filled the existing IMEC championships to the
+canonical short codes.
 **Image size variants — ✅ DONE.** Full-res stays the source of truth in
 `car_image`; on upload a ~400px-longest-side **WebP** "sheet" variant is
 generated (scrimage-webp; bundled native cwebp binaries) into a new
@@ -584,7 +587,91 @@ display size.)
   (%2F-preserving chunk URLs, no bearer to S3, non-array chunk → 502), and
   official fixtures under `fixtures/iracing/` trimmed from the real 2812 payloads
   (`season-results-2812.json` keeps the voided row and is deliberately shuffled).
-- **Drag-and-drop upload modal + series/event pinning — ✅ DONE (2026-07-17).**
+- **iRacing rounds split into their scoring sessions (both paths) — ✅ DONE
+  (2026-07-18).** Both iRacing standings paths staged one championship session
+  per *round*, holding the round's whole points figure. Every other importer
+  splits a round into its scoring sessions — a published IMSA standings file
+  lists "Daytona / Qualifying" and "Daytona / Race" as separate sessions sharing
+  an event name, which `SeasonViewController.recap` groups and sums back into one
+  round column (`pole_points` is **not** where IMSA's qualifying points live; it
+  is a bonus column, zero throughout the real file). The iRacing paths now follow
+  that convention via one shared `IRacingParser.roundSessions`: every sim-session
+  that paid somebody becomes its own session ("Qualifying", "Heat 1", "Feature"),
+  all carrying the round's venue as their event name. Practice and warmup, and
+  any session that scored nobody, contribute nothing — no columns of zeros.
+  This fixed a real bug on **each** path:
+  - **League** read only race sim-sessions, silently dropping league qualifying
+    points. The 2025 PESC league pays them: Cooper Webster's Daytona was staged
+    as 70 (heat 20 + feature 50) when iRacing scored him 78 (pole 8 + 20 + 50).
+    Per-round sums now reconcile to `base_points` for **28 of 30** drivers,
+    closing a question flagged as unvalidated when the league path was built.
+    The two exceptions are a ±5 steward correction the league baked into the
+    race payloads inconsistently with `base_points`; `total_points` stays the
+    authoritative row total, as before.
+  - **Official** read `aggregate_champ_points` (the cached round total). Across
+    both PESC seasons that agreed with the per-session sum for every driver-round
+    but one — Joshua W Anderson at Spa 2020, where the cache ran a point ahead of
+    both the sum and the published standings, so his ten columns summed to 122
+    against a correct row total of 121. Reading per-session makes all 40 rows of
+    both seasons sum exactly to their totals.
+  Verified live on both seasons and the 2025 league: 30 sessions across 10 rounds
+  for PESC 2020, collapsing to 10 recap columns with round 1 reading 72 (6+16+50).
+  **Backfill = re-import the standings** — commit replaces on (season, name), so
+  an already-imported season keeps one championship and simply gains the split.
+- **Standings adjustments stored as their own figures (V28) — ✅ DONE (2026-07-18).**
+  A league's steward correction is a season-level ruling with no round to
+  attribute it to, so it does not belong in `standings_session_points.penalty_points`
+  (which exists because a published standings JSON attributes its extras to the
+  session that earned them). V28 adds `base_points`, `positive_adjustments` and
+  `negative_adjustments` to **`standings_row`**, carried through the importer as
+  `StandingsImport.Adjustments` and surfaced on the recap row as `adjustments`.
+  The invariant is `total_points = base_points + positive + negative`, with the
+  per-round columns summing to `base_points` — so the difference between a row
+  total and its columns now has a name instead of being an unexplained gap
+  (Webster 2025: columns 389, adjustment −10, total 379). **Nullable, and null
+  means "this source reports no such thing"** rather than zero: an IMSA standings
+  JSON has no adjustment concept, and an official iRacing series carries none,
+  which is exactly why official totals reconcile to the rounds exactly where a
+  league's need not. Only the iRacing **league** path populates them today.
+  Gotcha for anything reading these back: Postgres hands a NUMERIC over as
+  BigDecimal, and `rs.getObject(col, Double.class)` throws "conversion to class
+  java.lang.Double from numeric not supported" — read `getBigDecimal` and convert
+  (this only shows up against a real database, not in the parser tests).
+  **Next on this seam — manual adjustments UI (not built):** the fields are
+  deliberately shaped so a human can set them without an import. A per-row editor
+  on the standings/recap surface would write `positive_adjustments` /
+  `negative_adjustments` and recompute `total_points` from `base_points`, letting
+  a broadcaster record a penalty a source hasn't published yet, or correct one it
+  got wrong. `standings_row.provenance` (already `imported` | `manual`) is the
+  flag for marking a hand-edited row so a re-import can decide whether to
+  preserve it — commit currently replaces the championship wholesale, so that
+  decision needs making before the editor ships.
+- **Per-series class aliases + class rename (V29) — ✅ DONE (2026-07-18).**
+  One series imported from two providers can spell its single class two ways —
+  iRacing's official-series payloads say `[L] Porsche 911` where hosted/league
+  payloads say `Hosted All Cars` (`car_class_short_name` either way), which
+  split every PESC driver's **all-time** stats row in two (season tables were
+  unaffected: one spelling per season). `class_alias` (V29: series_id, alias,
+  class_name, unique on `(series_id, lower(alias))`) is the durable fix,
+  mirroring `series_alias` for titles. `canonicalizeClass` resolves an alias
+  after the reviewer's explicit mapping but **before the bootstrap case**, so a
+  cold season imports canonical from the first file; `classReviewForSeason` /
+  `reviewStandings` consult it so an aliased spelling is never flagged
+  unknown; the entry-list commit applies it too (the entry list is the class
+  authority, but a standing rename outranks it — otherwise a re-imported entry
+  list re-seeds the retired spelling). Managed on Manage → Series → **Class
+  names** (`ClassAliasController`): alias CRUD at `/api/series/{id}/class-aliases`
+  and — the main entry point — `POST /api/series/{id}/classes/rename`
+  `{from,to}`, which renames the class across every season's entries and
+  championships in one transaction, carries the `class_style` row over (target's
+  style wins on a merge), retargets aliases pointing at the old name, and
+  records the retired spelling as an alias. Renaming onto an existing class is
+  the merge. Applied live: both PESC spellings → **Porsche 911 Cup** (2,056
+  entries, 7 championships); the all-time stats table went 135 rows → 106 and
+  the independent row-level recomputation still matches the API exactly
+  (0 discrepancies, all seasons + all-time). Re-import durability proven
+  end-to-end on a throwaway series: after a rename, re-committing the same
+  results file lands rows under the new name with nothing flagged in review.
   The bare file input on the imports page is replaced by `UploadFilesModal`:
   drag-and-drop (plus browse/paste), a per-file staged queue, and a shared
   **`SeriesEventPicker`** typeahead that pins one series + event as the batch's
@@ -680,8 +767,10 @@ display size.)
   `RecapRow.sessionPoints` (per-`session_index` race/pole/FL/penalty/bonus
   components, gated to scored+contested rounds exactly like `pointsByRound`);
   components verifiably sum to totals for every imported row. Single-session
-  rounds print the bare number and the data-driven legend disappears, so
-  iRacing-league standings are pixel-identical except right-alignment),
+  rounds print the bare number and the data-driven legend disappears, so a
+  source that scores one session per round renders as before. iRacing seasons
+  gain Q/R lines as they are **re-imported** under the session split landed
+  the same day — imports predating it keep one session per round until then),
   **Stats** (added 2026-07-18, see below), **Results** (round selector →
   quali/grid + race), **Entries** (lineup rotation per car per round),
   **Photos** (the old hub's `SeasonImages`).

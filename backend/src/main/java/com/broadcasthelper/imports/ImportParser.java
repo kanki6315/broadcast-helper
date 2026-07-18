@@ -431,6 +431,9 @@ public final class ImportParser {
                     r.path("total_points").asDouble(),
                     intOrNull(r, "net_position"),
                     doubleOrNull(r, "total_net_points"),
+                    // No adjustment concept in a published standings file: its
+                    // corrections are already folded into the session points.
+                    null,
                     points
             ));
         }

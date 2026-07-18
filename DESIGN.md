@@ -313,9 +313,10 @@ source doesn't say pole or fastest lap), error-red `−n` penalty —
 so the arithmetic sits on the table, not in a tooltip (the line's title still
 gives the session total; the cell's title the round total). Zero stays printed
 but recedes; a did-not-run session is a muted `·`; a skipped round keeps the
-single `—`. Single-session rounds print the bare number, so plain-points
-leagues look unchanged, and the legend (built from the shown data, not static)
-only decodes marks that actually appear — or vanishes entirely.
+single `—`. Single-session rounds print the bare number, so a source that
+scores one session per round looks unchanged, and the legend (built from the
+shown data, not static) only decodes marks that actually appear — or vanishes
+entirely.
 
 ### Stats Table (`.stats-table`, a Data Grid variant)
 Per-driver tallies split by race format: a **two-row header** (format group

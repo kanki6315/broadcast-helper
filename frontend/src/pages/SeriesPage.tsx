@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 interface Series {
   id: number
@@ -27,6 +27,25 @@ interface RaceFormat {
   sessionCount: number
 }
 
+interface ClassAlias {
+  id: number
+  alias: string
+  className: string
+}
+
+interface ClassAliasesResponse {
+  aliases: ClassAlias[]
+  classesInUse: string[]
+}
+
+interface SeasonSummary {
+  id: number
+  year: number
+  seriesName: string
+  roundCount: number
+  championshipCount: number
+}
+
 export default function SeriesPage() {
   const [series, setSeries] = useState<Series[]>([])
   const [name, setName] = useState('')
@@ -34,6 +53,7 @@ export default function SeriesPage() {
   const [aliasDrafts, setAliasDrafts] = useState<Record<number, string>>({})
   const [expanded, setExpanded] = useState<number | null>(null)
   const [formatsExpanded, setFormatsExpanded] = useState<number | null>(null)
+  const [classNamesExpanded, setClassNamesExpanded] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -139,7 +159,9 @@ export default function SeriesPage() {
       <p>
         Aliases map standings titles to a series when a championship publishes under its own name —
         e.g. alias <em>IMSA Michelin Endurance Cup</em> on the IMSA series. Class colours set the
-        header colour and order each class appears in on the sheet.
+        header colour and order each class appears in on the sheet. Class names rename a class
+        everywhere and keep future imports mapped, for sources that spell one class differently —
+        e.g. iRacing&apos;s <em>[L] Porsche 911</em> vs <em>Hosted All Cars</em>.
       </p>
 
       {error && <p className="error">{error}</p>}
@@ -157,6 +179,7 @@ export default function SeriesPage() {
               <th>Abbreviation</th>
               <th>Aliases</th>
               <th>Class colours</th>
+              <th>Class names</th>
               <th>Race formats</th>
             </tr>
           </thead>
@@ -224,6 +247,15 @@ export default function SeriesPage() {
                   )}
                 </td>
                 <td>
+                  {classNamesExpanded === s.id ? (
+                    <ClassAliasEditor seriesId={s.id} onError={setError} />
+                  ) : (
+                    <button type="button" onClick={() => setClassNamesExpanded(s.id)}>
+                      Edit…
+                    </button>
+                  )}
+                </td>
+                <td>
                   {formatsExpanded === s.id ? (
                     <RaceFormatEditor seriesId={s.id} onError={setError} />
                   ) : (
@@ -237,7 +269,167 @@ export default function SeriesPage() {
           </tbody>
         </table>
       )}
+
+      <SeasonDataSection onError={setError} />
     </section>
+  )
+}
+
+/**
+ * Deleting a year's imported data exists for one reason: a botched or stale
+ * import that should be redone from scratch. The wipe removes what the
+ * importers created (rounds and championships); the season row, car images and
+ * series settings stay, and reimporting reattaches to the same season.
+ */
+function SeasonDataSection({ onError }: { onError: (message: string | null) => void }) {
+  const [seasons, setSeasons] = useState<SeasonSummary[]>([])
+  const [confirming, setConfirming] = useState<SeasonSummary | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  async function load() {
+    try {
+      const res = await fetch('/api/seasons')
+      if (!res.ok) throw new Error(`Backend returned ${res.status}`)
+      setSeasons(await res.json())
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed to reach backend')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function deleteData(s: SeasonSummary) {
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/seasons/${s.id}/data`, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        onError(err?.message ?? `Backend returned ${res.status}`)
+        return
+      }
+      const r = (await res.json()) as { roundsDeleted: number; championshipsDeleted: number }
+      onError(null)
+      setNote(
+        `Deleted ${r.roundsDeleted} round${r.roundsDeleted === 1 ? '' : 's'} and ` +
+          `${r.championshipsDeleted} championship${r.championshipsDeleted === 1 ? '' : 's'} ` +
+          `for ${s.seriesName} ${s.year}. The year is ready to reimport.`,
+      )
+      await load()
+    } finally {
+      setDeleting(false)
+      setConfirming(null)
+    }
+  }
+
+  return (
+    <div className="season-data">
+      <h2>Championship years</h2>
+      <p>
+        Delete a year's imported data — rounds, results, grids, flags, entry lists and standings —
+        to reimport it from scratch. Car images and series settings are kept.
+      </p>
+      {note && <p className="season-data-note">{note}</p>}
+      {loading ? (
+        <p>Loading…</p>
+      ) : seasons.length === 0 ? (
+        <p className="muted">No imported data yet.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Year</th>
+              <th>Series</th>
+              <th>Rounds</th>
+              <th>Championships</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {seasons.map((s) => (
+              <tr key={s.id}>
+                <td>{s.year}</td>
+                <td>{s.seriesName}</td>
+                <td>{s.roundCount}</td>
+                <td>{s.championshipCount}</td>
+                <td>
+                  <button type="button" onClick={() => setConfirming(s)}>
+                    Delete data…
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {confirming && (
+        <ConfirmSeasonDelete
+          season={confirming}
+          busy={deleting}
+          onConfirm={() => void deleteData(confirming)}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function ConfirmSeasonDelete({
+  season,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  season: SeasonSummary
+  busy: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+
+  useEffect(() => {
+    const d = dialogRef.current
+    if (d && !d.open) d.showModal()
+  }, [])
+
+  return (
+    <dialog
+      className="confirm-dialog"
+      ref={dialogRef}
+      aria-label={`Delete imported data for ${season.seriesName} ${season.year}`}
+      onCancel={(e) => {
+        e.preventDefault()
+        if (!busy) onCancel()
+      }}
+      onClick={(e) => {
+        if (e.target === dialogRef.current && !busy) onCancel()
+      }}
+    >
+      <h3>
+        Delete imported data for {season.seriesName} {season.year}?
+      </h3>
+      <p>
+        This removes {season.roundCount} round{season.roundCount === 1 ? '' : 's'} and{' '}
+        {season.championshipCount} championship{season.championshipCount === 1 ? '' : 's'} — every
+        result, grid, flag, entry list and standings table for the year. Car images and series
+        settings are kept. This cannot be undone; the year has to be reimported.
+      </p>
+      <div className="confirm-dialog-actions">
+        <button type="button" onClick={onCancel} disabled={busy}>
+          Cancel
+        </button>
+        <button type="button" className="btn btn-danger" onClick={onConfirm} disabled={busy}>
+          {busy ? 'Deleting…' : 'Delete data'}
+        </button>
+      </div>
+    </dialog>
   )
 }
 
@@ -389,6 +581,177 @@ function RaceFormatEditor({
         </button>
       </div>
       {assignNote && <p className="muted">{assignNote}</p>}
+    </div>
+  )
+}
+
+/**
+ * Per-series class names: rename a class across every season (entries,
+ * championships, sheet styles) and keep future imports mapped via the recorded
+ * alias, plus direct alias management for spellings known ahead of an import.
+ */
+function ClassAliasEditor({
+  seriesId,
+  onError,
+}: {
+  seriesId: number
+  onError: (message: string | null) => void
+}) {
+  const [aliases, setAliases] = useState<ClassAlias[]>([])
+  const [classesInUse, setClassesInUse] = useState<string[]>([])
+  const [renameFrom, setRenameFrom] = useState('')
+  const [renameTo, setRenameTo] = useState('')
+  const [newAlias, setNewAlias] = useState('')
+  const [newTarget, setNewTarget] = useState('')
+  const [note, setNote] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  async function load() {
+    try {
+      const res = await fetch(`/api/series/${seriesId}/class-aliases`)
+      if (!res.ok) throw new Error(`Backend returned ${res.status}`)
+      const data: ClassAliasesResponse = await res.json()
+      setAliases(data.aliases)
+      setClassesInUse(data.classesInUse)
+      onError(null)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed to reach backend')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seriesId])
+
+  async function rename() {
+    const from = renameFrom
+    const to = renameTo.trim()
+    if (!from || !to) return
+    setNote(null)
+    const res = await fetch(`/api/series/${seriesId}/classes/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => null)
+      onError(err?.message ?? `Backend returned ${res.status}`)
+      return
+    }
+    const r = (await res.json()) as { entriesRenamed: number; championshipsRenamed: number }
+    onError(null)
+    setNote(
+      `Renamed ${r.entriesRenamed} entr${r.entriesRenamed === 1 ? 'y' : 'ies'} and ` +
+        `${r.championshipsRenamed} championship${r.championshipsRenamed === 1 ? '' : 's'} to “${to}”. ` +
+        `Future imports of “${from}” map automatically.`,
+    )
+    setRenameFrom('')
+    setRenameTo('')
+    await load()
+  }
+
+  async function addAlias() {
+    const alias = newAlias.trim()
+    const className = newTarget.trim()
+    if (!alias || !className) return
+    const res = await fetch(`/api/series/${seriesId}/class-aliases`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alias, className }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => null)
+      onError(err?.message ?? `Backend returned ${res.status}`)
+      return
+    }
+    onError(null)
+    setNewAlias('')
+    setNewTarget('')
+    await load()
+  }
+
+  async function removeAlias(a: ClassAlias) {
+    const res = await fetch(`/api/series/${seriesId}/class-aliases/${a.id}`, { method: 'DELETE' })
+    if (!res.ok && res.status !== 404) {
+      onError(`Backend returned ${res.status}`)
+      return
+    }
+    onError(null)
+    await load()
+  }
+
+  if (loading) return <span className="muted">Loading…</span>
+
+  return (
+    <div className="class-alias-editor">
+      {aliases.length === 0 && <p className="muted">No class aliases yet.</p>}
+      {aliases.map((a) => (
+        <div key={a.id} className="class-alias-row">
+          <span className="class-alias-name">{a.alias}</span>
+          <span className="muted">→</span>
+          <span className="class-alias-name">{a.className}</span>
+          <button type="button" onClick={() => void removeAlias(a)} aria-label={`Remove alias ${a.alias}`}>
+            ✕
+          </button>
+        </div>
+      ))}
+
+      <div className="class-alias-add">
+        <input
+          value={newAlias}
+          onChange={(e) => setNewAlias(e.target.value)}
+          placeholder="Source spelling…"
+          aria-label="Alias source spelling"
+        />
+        <input
+          value={newTarget}
+          onChange={(e) => setNewTarget(e.target.value)}
+          placeholder="Maps to class…"
+          aria-label="Alias target class"
+          list={`class-alias-targets-${seriesId}`}
+        />
+        <datalist id={`class-alias-targets-${seriesId}`}>
+          {classesInUse.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+        <button type="button" onClick={() => void addAlias()} disabled={!newAlias.trim() || !newTarget.trim()}>
+          Add
+        </button>
+      </div>
+
+      <div className="class-alias-rename">
+        <select
+          value={renameFrom}
+          onChange={(e) => setRenameFrom(e.target.value)}
+          aria-label="Class to rename"
+        >
+          <option value="">Rename class…</option>
+          {classesInUse.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <input
+          value={renameTo}
+          onChange={(e) => setRenameTo(e.target.value)}
+          placeholder="New name…"
+          aria-label="New class name"
+          list={`class-alias-targets-${seriesId}`}
+        />
+        <button type="button" onClick={() => void rename()} disabled={!renameFrom || !renameTo.trim()}>
+          Rename
+        </button>
+      </div>
+      <p className="muted class-alias-hint">
+        Renaming updates every season&apos;s entries and championships, and records the old spelling
+        as an alias. Renaming onto an existing class merges them.
+      </p>
+      {note && <p className="muted">{note}</p>}
     </div>
   )
 }
