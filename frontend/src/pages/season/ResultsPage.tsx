@@ -344,6 +344,19 @@ function isClassified(status: string | null): boolean {
   return s === 'classified' || s === 'running'
 }
 
+/** Positions gained from the published starting grid. A positive value is a
+ * gain (started P8, finished P5 → +3); a negative value is a loss. Missing
+ * grid/finish positions stay unknown rather than being presented as zero. */
+function positionChange(row: ResultRow, gridByCar: Map<string, number>): number | null {
+  const start = gridByCar.get(row.carNumber)
+  return start == null || row.posOverall == null ? null : start - row.posOverall
+}
+
+function formatPositionChange(change: number | null): string {
+  if (change == null) return ''
+  return change > 0 ? `+${change}` : String(change)
+}
+
 /**
  * One session's classification. Qualifying and race are the same table with
  * different questions asked of it, so the columns follow the session:
@@ -372,6 +385,9 @@ function ResultsTable({ session }: { session: SessionResults }) {
   // Class gaps come from the whole session too: the class leader is the class
   // leader whether or not the current filter is showing them.
   const all = session.results
+  const gridByCar = new Map(
+    session.grid.flatMap((g) => (g.posOverall == null ? [] : [[g.carNumber, g.posOverall] as const])),
+  )
   const gapInClass = classGaps(all)
   const carNotes = notesByCar(session)
   const has = {
@@ -380,6 +396,14 @@ function ResultsTable({ session }: { session: SessionResults }) {
     fastest: all.some((r) => r.fastestLapTime),
     onLap: all.some((r) => r.fastestLapNumber != null),
     status: all.some((r) => !isClassified(r.status)),
+    // Race-only, and only where at least one classified row has a matching
+    // published grid position. The class filter must not reshape the table.
+    positionChange:
+      !isQualifying && all.some((r) => positionChange(r, gridByCar) != null),
+    // Providers either populate the whole session or none of it. Requiring a
+    // complete race prevents a missing value from looking like a zero-stop run.
+    pitStops:
+      !isQualifying && all.length > 0 && all.every((r) => r.pitStops != null),
     // Qualifying only: an entry the provider attributed to a seat. Falls back to
     // the full crew where it named none, so the cell is never a dead end.
     fastestBy: all.some((r) => r.fastestLapDriver),
@@ -439,6 +463,16 @@ function ResultsTable({ session }: { session: SessionResults }) {
           <th className="num-cell" scope="col">
             PIC
           </th>
+          {has.positionChange && (
+            <th
+              className="num-cell"
+              scope="col"
+              aria-label="Positions gained or lost from starting grid"
+              title="Positions gained or lost from starting grid"
+            >
+              ± Pos
+            </th>
+          )}
           <th scope="col">Class</th>
           <th className="num-cell" scope="col">
             #
@@ -456,6 +490,11 @@ function ResultsTable({ session }: { session: SessionResults }) {
           {has.laps && (
             <th className="num-cell" scope="col">
               Laps
+            </th>
+          )}
+          {has.pitStops && (
+            <th className="num-cell" scope="col">
+              Pit stops
             </th>
           )}
           {has.fastest && (
@@ -487,6 +526,9 @@ function ResultsTable({ session }: { session: SessionResults }) {
           <tr key={`${r.carNumber}-${r.posOverall ?? ''}`}>
             <td className="pos-cell">{r.posOverall ?? '—'}</td>
             <td className="num-cell">{r.posInClass ?? '—'}</td>
+            {has.positionChange && (
+              <td className="num-cell">{formatPositionChange(positionChange(r, gridByCar))}</td>
+            )}
             <ClassCell className={r.className} />
             <td className="car-no">
               {r.carNumber}
@@ -511,6 +553,7 @@ function ResultsTable({ session }: { session: SessionResults }) {
               {r.vehicle}
             </td>
             {has.laps && <td className="num-cell">{r.laps ?? ''}</td>}
+            {has.pitStops && <td className="num-cell">{r.pitStops}</td>}
             {has.fastest && <td className="num-cell">{r.fastestLapTime ?? ''}</td>}
             {has.onLap && <td className="num-cell back-cell">{r.fastestLapNumber ?? ''}</td>}
             {has.time && <td className="num-cell">{timeOf(r)}</td>}
