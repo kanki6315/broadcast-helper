@@ -183,9 +183,14 @@ approximations.
   for panels; **Success** (`#067647` / `#47cd89`); **Info** (`#1758d3` /
   `#7fa8f2`). Warning has no separate hue — amber is already spoken for.
 
-### Functional — Result Tints (recap cells)
+### Functional — Result Tints (recap cells and stat counts)
 - **Win** (green tint), **Top 3** (pink tint), **Top 5** (violet tint): fills
   behind start→finish numbers, tuned per theme so default ink stays AA on top.
+  The same three tints back non-zero win / podium / top-5 **counts** on the
+  Stats table, so one vocabulary answers "how did that go?" whether the number
+  is a finishing position or a tally of them. `lib/raceForm.positionTier` owns
+  the 1 / ≤3 / ≤5 thresholds — every surface delegates to it rather than
+  restating the numbers.
 - **DNF** (**inverts against the surface in both themes**: dark chip `#25262c`
   on light, light chip `#a2a4ae` on dark — measured 15.1:1 and 7.3:1 against
   their row): a retirement is the most story-changing fact in a recap, so it
@@ -299,11 +304,26 @@ frame border. Round columns show a mono venue code over a muted "Rd n". Class se
 printed on it. Result cells stack one `.race-line` per race, tinted by finish
 tier, with the amber **P** for pole and DNS/skips as quiet muted marks.
 
+### Stats Table (`.stats-table`, a Data Grid variant)
+Per-driver tallies split by race format: a **two-row header** (format group
+name over its St / W / P3 / T5 / DNF sub-columns), a trailing Qualifying group
+(Pole / T5) only where quali data exists, and a hairline `.grp-start` opening
+each group so five-wide runs of digits stay scannable. Non-zero win, podium
+and top-5 counts wear the recap's result tints as `.stat-chip`s; zeros recede
+to `--text-muted` at reduced opacity, and a format a driver never contested
+prints "·", not 0 — never entered and finished-nowhere are different facts.
+This grid runs **denser than the standard Data Grid** (tighter cell padding,
+narrower chips, centered values) because up to six column groups have to fit
+one screen; the ident columns keep normal padding so names don't crowd. Class
+sections use the same class band as the recap.
+
 ### Event Sheet (`frontend/src/pages/sheet.css`)
 The standalone per-event reference (`/sheet/:eventId`), on the same token
 layer and result vocabulary as the recap: class bands with computed ink, one
 `tbody` per entry (main row + season form strip), zebra as the class colour
-mixed 8% into `--bg`, `.race-line` chips for start/finish. Rows deep-link to
+mixed 8% into `--bg`, `.race-line` chips for start/finish. The Start column
+carries the short-form starting driver ("H. Grisham") under the grid slot
+where a grid file named one. Rows deep-link to
 the team-sheets modal (the car number is a real button for keyboard reach);
 prior-year cells are contentEditable and save on blur. Its `@media print`
 block forces the light token values on the `.sheet` scope, so Print/Save-PDF
@@ -317,10 +337,13 @@ wordmark logos sit on a small white chip in dark mode only.
   `--surface-2`. **Disabled:** 50% opacity, `not-allowed` cursor.
 
 ### Segmented Control (`.seg` / `.seg-btn`)
-The filter vocabulary (championship/cup, teams/drivers, sub-nav): a
-`--surface` pill-box (radius 6px, 2px padding); the active segment lifts on
-`--bg` with `--shadow-raise` and ink text. Overflows scroll invisibly within
-the pill — never the page.
+The filter vocabulary (championship/cup, teams/drivers, season/all-time,
+sub-nav): a `--surface` pill-box (radius 6px, 2px padding); the active segment
+lifts on `--bg` with `--shadow-raise` and ink text. Overflows scroll invisibly
+within the pill — never the page. Used two ways: as a **one-of** switch, and on
+the Stats page as a **many-of** visibility control where each segment toggles a
+column group independently (the last visible group can't be turned off — a
+table showing nothing answers nothing).
 
 ### Chips
 - **Class filter chip** (`.class-chip`): pill outline + 10px color swatch +
@@ -339,12 +362,21 @@ The event's results, one session at a time. Round chips pick the event; a
 qualifying ⇄ race and hides when there's only one session. The classification
 is a Data Grid whose column set follows the session and is computed from the
 whole session, never the class-filtered rows — flipping a class chip never
-reshapes the table. Supporting surfaces:
+reshapes the table. On a qualifying session the driver column names the one
+driver the session credits, and its header says which claim that is:
+**"Qualified by"** where the grid file named a qualifying driver of record,
+else **"Fastest lap by"** (the timing provider's seat), else plain "Drivers".
+Where a header promises attribution but a row has none, the cell still prints
+the full crew and says so on hover — "one of these two" is honest, a dash
+isn't. Supporting surfaces:
 - **Starting-grid modal** (`StartingGridModal`, `.sg`): the grid as a grid —
   pole front-left, cars staggered odd-left / even-right behind a "Start line",
-  qualifying time under each. Native `<dialog>` on the token layer; a class
-  filter *lifts* its cars onto `--bg` rather than removing slots (a grid is a
-  fact about the whole field). One file below 560px.
+  with the team, the **starting driver**, and the qualifying time under each.
+  The qualifier appears as a second `Q:` line only when it differs from the
+  starter, so the common case stays one clean line; both lines are omitted
+  entirely for sources that name no driver. Native `<dialog>` on the token
+  layer; a class filter *lifts* its cars onto `--bg` rather than removing slots
+  (a grid is a fact about the whole field). One file below 560px.
 - **Stewards' notes** (`.session-notes`): a `--surface` panel above the table,
   one verbatim note per line, with the report mark as a quiet pill only when
   it isn't "Official". Cars a note names carry a small amber `.note-flag` in
@@ -386,7 +418,10 @@ extracts**, never icon+blurb cards: a title row with an amber-ink arrow link,
 then divider-separated rows. Aligned variants (`.widget-rows.aligned`) share
 column widths via grid so class pills, car numbers, and names sit on common
 edges; two-line rows put pill+number in a `.wr-ident` block beside
-name-over-detail.
+name-over-detail. A panel holding two short lists (the stat leaders' most wins
+and most poles) separates them with a `.widget-mini-head` — an uppercase muted
+label, not a second panel — and drops a list entirely when its data is absent
+rather than showing a row of zeros.
 
 ### Skeletons & Empty States
 Loading is `.skeleton` bars (surface-2, 1.4s opacity pulse) shaped like the

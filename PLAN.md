@@ -60,7 +60,24 @@ The model is the part that must absorb every series quirk up front. Key shapes:
   comes from: a qualifying session, *the Nth-fastest lap* of a qualifying
   session (fastest-two-laps format), a previous race's result, or
   championship order. This models multi-race / multi-quali weekends without
-  special cases.
+  special cases. A race session also carries a **RaceFormat**.
+- **RaceFormat**: what *kind* of race a session is, per series — Sprint/Main, or
+  Heat/Consolation/Feature on a rallycross-style round, or a plain Race where
+  every race is the same. It exists so results can be counted per format: a
+  sprint win and a six-car heat win are different broadcast facts. Each format
+  has a stable machine `code` (the classifier's identity) and a separately
+  renamable display `name`, so relabelling for air never disturbs
+  classification. Assignment is by the **event's session shape, not session
+  names** — the same "Heat 1" is a full-field sprint on one weekend and a
+  six-car heat on another — and is marked AUTO or MANUAL so a hand-pinned
+  session survives re-imports. Qualifying sessions carry no format; their stats
+  are their own bucket.
+- **GridPosition**: per race session per entry — the published starting slot
+  (overall and in class) with the qualifying time where the source carries one.
+  Always imported, never computed: a real grid reflects fastest-two-laps
+  carry-over and penalties. It also records **who qualified the car and who
+  takes the start**, which is what lets a pole count for one driver rather than
+  a whole crew.
 - **Entry**: a car entered in an event — car number (stored as a **string**:
   `04` ≠ `4`, `068` keeps its zero), class, team, manufacturer/model,
   `isGuest` flag, livery image. Car numbers are unique **across the event**;
@@ -70,7 +87,9 @@ The model is the part that must absorb every series quirk up front. Key shapes:
   driver's **rating (P/G/S/B) as published on that event's entry list** — the
   per-event value is the source of truth because series can issue derogations
   overriding the FIA rating for an event or season. Endurance rounds add extra
-  drivers to the same entry — assignments are per-event, not per-season.
+  drivers to the same entry — assignments are per-event, not per-season. The
+  entry list and results own the lineup and replace it wholesale; a grid import
+  only seeds it when an entry has no assignments at all.
 - **Result**: per session per entry — position (overall and in class), status
   (finished/DNF/DNS/DSQ), best lap, plus per-lap times where available (needed
   for fastest-two-laps grid splitting).
@@ -188,6 +207,36 @@ the series. A later family, `IRACING_JSON`, reads iRacing subsessions from an
 exported file *or* the live Data API (same payload either way) and adds a
 fetch-driven import UI alongside upload. Full detail in Phase 3.
 
+### Starting-grid file contract
+
+The grid formats are parsed in Java (`ImportParser.parseGrid` / `parseGridCsv`),
+not by a Python sidecar, so they have no `parser/*_SCHEMA.md`; this is the
+contract. Both name **who qualified the car and who takes the start**, in
+different shapes — the reason the loader normalizes to a seat index:
+
+- **Grid JSON** (`{session, grid[]}`, UTF-8 BOM): each slot carries `position`,
+  `number`, `class`, `team`, `vehicle`, and — the attribution — an integer
+  `starting_driver_number` and `qualifying_driver_number` plus a per-car
+  `drivers[]` roster of `{number, firstname, surname, license, hometown,
+  country}`. Those two numbers are **1-based seat indexes into that roster**,
+  the same per-car numbering a results file uses for `drivers[].number`, which
+  is what makes seats comparable across the two file kinds. `0`/absent means
+  "no seat named", the same convention as `fastest_lap_driver_number`.
+- **Grid CSV** (semicolon, BOM, CRLF, trailing `;`): header
+  `POSITION;CLASS;NUMBER;STARTING_DRIVER;QUALIFYING_DRIVER;DRIVER_1..DRIVER_6;TEAM;CAR;TIME;`.
+  Attribution is by **full name**, resolved to a seat by matching against that
+  row's own `DRIVER_1..6` (DRIVER_N = seat N). The parser deliberately builds
+  **no roster** from these columns: a single "Hannah Grisham" string cannot be
+  split into first/surname without corrupting the `(first_name, surname)` key
+  that identifies a driver, so the entry list stays the driver authority and
+  commit resolves the seat through the stored lineup.
+- **iRacing grids** carry no attribution at all (a solo league's entry *is* its
+  driver), which is why the stats fall back to an entry's sole crew member
+  rather than requiring a stored value.
+
+Only `POSITION`/`CLASS`/`NUMBER`/`TEAM`/`CAR`/`TIME` are required of a CSV — a
+file without the driver columns still imports, with null attribution.
+
 Real sample files for each format to be provided by the user when the
 importer is built — parsers are written against real files, not assumptions.
 The 2026 samples live under `backend/src/test/resources/fixtures/` (per series:
@@ -205,11 +254,16 @@ silently guess.
 2. **Season reference table** — ✅ DONE. Rows = cars, columns = rounds, each cell
    the car's **start → finish** in class (broadcaster's call over quali/finish);
    per class on the season hub. See Phase 4.
-3. **Grid rundown sheet** — generated from the imported starting grid, in grid
+3. **Per-format stats** — ✅ DONE. Per-driver wins, podiums, top-5s, DNFs and
+   poles, counted separately for each kind of race a weekend runs, for one
+   season or all-time across a series. On the hub's Stats sub-page, a stat-leader
+   widget, and the driver modal. See Phase 4.
+4. **Grid rundown sheet** — generated from the imported starting grid, in grid
    order with storyline fields (champ position, best/last, notes). Grid *data*
-   imports today; this presentation sheet is **deferred to after hosting**
+   imports today — including which driver qualified the car and which starts it —
+   so this is now purely a presentation sheet, **deferred to after hosting**
    (Phase 6). Exact contents to be specced with the user then.
-4. Free-text **notes per entry** (pit-lane intel: sponsor pronunciation, driver
+5. Free-text **notes per entry** (pit-lane intel: sponsor pronunciation, driver
    storylines) — surfaced in a **dynamic dashboard** (click an entry to load its
    notes), *not* on the generated PDF. Deferred until after hosting (Phase 4a),
    which provides the auth/multi-user substrate this shared, living content needs.
@@ -300,8 +354,10 @@ explicit `ordinal` and an `is_cup` flag (V13; `championship` now hangs off a
 group). *Moved to Phase 4:* the presentation consolidation on top of this model —
 the hub grouping each class's championship + cup(s) together, and a sheet
 **Endurance Cup points column shown only at endurance rounds** (so one sheet, two
-columns, instead of a separate cup PDF; cup rounds match the event via
-`venueAbbrev`, reliable for the 5 endurance venues).
+columns, instead of a separate cup PDF; cup rounds match the event by
+`round_ordinal` — see the recap round-matching fix in Phase 4, which replaced an
+earlier `venueAbbrev` match that collided on two rounds at similarly named
+venues).
 **Class-name normalization — ✅ DONE.**
 IMEC standings spell classes long-form ("GT Daytona PRO") while entries/results
 use short codes ("GTDPRO"). Rather than a per-series alias map, the entry list
@@ -400,8 +456,10 @@ display size.)
   `import_batch.format` (V19) records it). Document-kind detection lives inside
   each family: the JSON family keeps its `looksLike*` chain; the CSV family
   sniffs headers. `IMSA_CSV` parses the published semicolon grid CSV
-  (`ImportParser.parseGridCsv`: BOM/CRLF/trailing-`;` tolerant, driver columns
-  dropped — the entry list is the driver authority) including the **qualifying
+  (`ImportParser.parseGridCsv`: BOM/CRLF/trailing-`;` tolerant; the entry list
+  stays the driver authority, but `STARTING_DRIVER`/`QUALIFYING_DRIVER` are read
+  and resolved to seat indexes against the row's `DRIVER_1..6` — see the
+  grid-driver attribution entry in Phase 4) including the **qualifying
   time** per slot (`grid_position.qualifying_time`, V18). Because the CSV carries
   no session/event metadata, review gains `needsSession`: the reviewer picks an
   **existing event** (all-events fallback list; class review recomputed via
@@ -548,23 +606,26 @@ display size.)
   Endurance Cup** switch (the cup re-derives its *own* round numbering from
   `championship_session`, so DAY/SEB/WGI/RDA/ATL read as Rd 1–5) with Teams ⇄
   Drivers under it. Sub-pages: **Schedule**, **Standings** (points per round),
-  **Results** (round selector → quali/grid + race), **Entries** (lineup rotation
-  per car per round), **Photos** (the old hub's `SeasonImages`).
+  **Stats** (added 2026-07-18, see below), **Results** (round selector →
+  quali/grid + race), **Entries** (lineup rotation per car per round),
+  **Photos** (the old hub's `SeasonImages`).
   New read-only endpoints in `SeasonViewController`: `/championships/{id}/recap`,
   `/seasons/{id}/lineups`, `/events/{id}/results`; `/seasons/{id}` also returns
   `entryClasses` so the UI only offers classes that can answer (a `class_style`
   row with no data used to render a dead-end filter whose empty states read as
   "import failed"). `venueAbbrev` learned WRLS / CTMP / COTA / WeatherTech
-  Raceway — the cup and Mustang calendars name venues differently from the event
-  rows they must match. `StandingsDetailPage`, `SeasonsLandingPage`,
-  `SeasonHubPage` and `SeasonReferenceTable` retired; the event page, the sheet,
-  and the admin tabs are untouched.
+  Raceway — and later SPA / LMS / MUG — because the cup and Mustang calendars
+  name venues differently from the event rows they label.
+  `StandingsDetailPage`, `SeasonsLandingPage`, `SeasonHubPage` and
+  `SeasonReferenceTable` retired; the event page, the sheet, and the admin tabs
+  are untouched.
   **Known gaps** (from three `/impeccable critique` passes, snapshots in
-  `.impeccable/critique/`): no search — a ⌘K jump to car/driver/team is the top
-  candidate next; the recap is four independent tables (scroll-synced, but "one
-  table with class bands" is the open IA question); empty future rounds eat ~35%
-  of horizontal scroll (narrowing them per-grid would break cross-grid column
-  alignment, so it needs a parent-level pass).
+  `.impeccable/critique/`): the recap is four independent tables (scroll-synced,
+  but "one table with class bands" is the open IA question); empty future rounds
+  eat ~35% of horizontal scroll (narrowing them per-grid would break cross-grid
+  column alignment, so it needs a parent-level pass). *(The third gap — no
+  search — was closed by the ⌘K palette; `search/SearchController` +
+  `SearchPalette` ship a car/driver/team jump.)*
 - **Results page rebuild — ✅ DONE (2026-07-17).** The Results sub-page stacked
   qualifying, the starting grid, and race classification end to end (~10 screens
   for a full field). Now one **ARIA tablist per session** (`?session=` in the URL),
@@ -580,7 +641,9 @@ display size.)
   **"Fastest lap by"** column exposes `fastest_lap_driver_seat` (the driver
   credited with the car's best lap — on a both-drivers-run-it qualifying session
   not always who qualified it, so it's labeled precisely; the true qualifying
-  driver lives in the grid file and is deferred). **(b) class gap** — computed
+  driver lives in the grid file, imported later — see grid-driver attribution
+  below, which promotes the header to "Qualified by" where it exists).
+  **(b) class gap** — computed
   client-side, qualifying only (every qualifying gap is plain seconds off one
   leader, so exact subtraction; a race mixes those with lap-count gaps that carry
   no time). Existing committed sessions needed a re-import to backfill.
@@ -605,6 +668,83 @@ display size.)
   session-level `fastest_lap` block (overall pole + driver). **Not parsed:** a
   qualifying-results CSV (`IMSA_CSV` recognizes only grid CSVs) — matters for the
   older VP Racing CSV-only events.
+- **Recap round matching by ordinal — ✅ DONE (2026-07-17).** The recap matched
+  each championship round to its season event by `venueAbbrev`, which is not
+  unique within a season: Spa ("Circuit de Spa-Francorchamps") and Le Mans
+  ("Circuit des 24 Heures du Mans") both abbreviate to `CIR`, so the venue-keyed
+  map collapsed them, the later round overwrote the earlier one's event, and
+  Round 3 rendered as a column of "·" for every driver while its results showed
+  under Round 7. Now `SeasonViewController.recap` keys season events by
+  `round_ordinal` — unique by construction — and `venueAbbrev` supplies only the
+  column *label* (it gained SPA / LMS / MUG so the two columns also read
+  differently). The **Back column** was reworked at the same time: a leading
+  minus plus the gap to the row above in brackets ("-64 (-50)"), one `backText`
+  helper serving both the recap and Standings so they can't drift.
+- **Standings import year and kind for generic sources — ✅ DONE (2026-07-18).**
+  An iRacing league season whose name carries no year ("League 6004 season
+  99330") could not be imported at all: the guesser produced no year *and* a
+  garbage kind ("99330", parsed from the name's tail), the confirm step offered
+  no control for either, and the commit died on a 422. Two fixes. `needsYear` is
+  now true for **every** standings batch, not just `IMSA_POINTS_PDF` — a season
+  year is confirmed, never assumed — and is deliberately independent of the
+  guessed year, because the review refetch that follows entering one would
+  otherwise flip the condition false and yank the field mid-edit.
+  `ConfirmImportStep.excludeReason` now validates the guessed kind against the
+  real set (DRIVERS/TEAMS/MANUFACTURERS) and routes an unrecognized kind — or a
+  yearless standings — to the review table, which has the pickers, instead of
+  committing garbage from the modal.
+- **Per-race-format stats — ✅ DONE (2026-07-18).** Every surface was a *matrix*
+  (start→finish per round); nothing counted anything, and a naive tally would
+  have been wrong anyway: a weekend's races aren't interchangeable, so a sprint
+  win and a six-car heat win must not land in the same bucket. New per-series
+  **`race_format`** (V25: stable machine `code`, renamable display `name`,
+  ordinal) with `race_session.format_id` + `format_source` ('AUTO'|'MANUAL'),
+  RACE sessions only — QUALIFYING deliberately carries no format, its stats are
+  their own bucket. `formats/RaceFormatService.autoAssignEvent` classifies by
+  the event's **session shape, not names**: the same "Heat 1" is a full-field
+  sprint on a two-race weekend and a six-car heat on a rallycross one (PESC runs
+  both), so ≥4 races or a consolation name selects the rallycross vocabulary
+  (RX_HEAT/RX_CONSOLATION/RX_FEATURE), two differently named races give
+  SPRINT/MAIN, and same-named races collapse to one repeated RACE (Mustang's
+  "Race"/"Race 2" drift). It runs at the end of `commitRaceResults` and
+  `commitGrid`, and never overwrites a MANUAL pin. `formats/RaceFormatController`
+  is the manage surface (list/create/rename/merge/delete,
+  `PATCH /api/sessions/{id}/format`, and a
+  `POST /api/series/{id}/race-formats/auto-assign` backfill — the classifier is
+  Java, so a migration can't seed it). Reads: `browse/SeasonStatsController`
+  (`GET /api/seasons/{id}/stats` and `/api/series/{id}/stats` for all-time,
+  one shared query, rows keyed driver × class) and `GET /api/drivers/{id}/stats`
+  (career / per-series all-time / per-season grains). Surfaces: a season-hub
+  **Stats** sub-page (season ⇄ all-time toggle, per-format column toggles
+  limited to formats present in the data), a **Stat leaders** hub widget, and
+  career chips + per-season lines in the driver modal. `raceForm.positionTier`
+  became the single owner of the win/top-3/top-5 thresholds (`RaceLine`
+  delegates). **Poles come only from qualifying results** — a reversed feature
+  grid's front row is not a pole, so these counts deliberately disagree with the
+  recap's `P` start chip. Backfill: press Auto-assign once per series.
+- **Grid-driver attribution — ✅ DONE (2026-07-18).** The stats above exposed a
+  correctness hole: quali claims fanned out over `driver_assignment`, so one
+  qualifying lap became a pole for every member of an endurance crew. The grid
+  files had the answer all along and the parsers threw it away. New
+  `grid_position.qualifying_driver_id` / `starting_driver_id` (V27), FKs to
+  `driver.id` — stable across re-imports, where `driver_assignment` rows are
+  delete-and-reinserted and so must never be referenced. JSON grids carry 1-based
+  seat indexes plus a per-car `drivers[]` roster (same shape as a results file);
+  grid CSVs carry full names, resolved to seats against the row's own
+  `DRIVER_1..6` and building **no** roster, because splitting a single
+  full-name string would corrupt the `(first_name, surname)` driver identity;
+  iRacing carries nothing. `commitGrid` seeds `driver_assignment` from the grid
+  roster **only when the entry has none** (entry list and results still own the
+  lineup and replace it wholesale later), then resolves each seat to a driver id.
+  Quali stats now credit **only the qualifying driver of record**: the stored FK
+  from the event's lowest-ordinal race grid, else a sole-crew-member fallback
+  (which counts TBD seats, so a partly named crew never collapses to a false
+  qualifier), else nobody. Race wins and podiums stay crew-wide. Surfaces: the
+  starting-grid modal names each slot's starter (and the qualifier when they
+  differ), the qualifying table's driver column becomes **"Qualified by"** where
+  attribution exists (falling back to "Fastest lap by", then "Drivers"), and the
+  sheet's Start column carries the short starter name. Backfill: re-upload grid
+  files — committing a grid replaces that session's rows.
 - **Hosting — the active next block (see Phase 4a below).** Deploy + auth +
   multi-user/sharing + the S3 image migration. Elevated to the priority because
   it's the substrate the deferred notes dashboard needs, and it unblocks sharing
@@ -617,7 +757,8 @@ display size.)
 - **Championship-consolidation presentation — ✅ HUB HALF DONE (2026-07-15), sheet
   half still deferred.** The hub half shipped with the browse rebuild: the recap's
   championship ⇄ cup switch consolidates each class's championship and its cup(s)
-  behind one control, with cup rounds matched to events via `venueAbbrev`. Still
+  behind one control, with cup rounds matched to events by `round_ordinal`
+  (originally `venueAbbrev` — see the round-matching fix below). Still
   deferred: the **sheet** Endurance Cup points column shown only at endurance
   rounds — and the sheet is now legacy (PRODUCT.md scopes the PDF as a
   proof-of-concept), so this may never be worth building.
@@ -759,9 +900,18 @@ hosting lands. Spec the exact contents with the user then.
   What to surface (manufacturer, driver lineup, team) and how, if built later.
 - Grid rundown sheet contents (spec in Phase 6, after hosting).
 - Live timing providers and feed access per series (Phase 5).
-- **Lookup by search (⌘K)** — every critique pass flags it: the product's job is
-  "get to a fact without hunting", and the hub has no way to type a car number,
-  driver, or team and land on their row. Top candidate for the next feature.
+- **Race-format naming and merging policy** — formats are per-series with a
+  stable machine `code` and a renamable display `name`, so a broadcaster can call
+  the second race "Main" or "Feature" without disturbing classification. Open:
+  whether merging two formats should be sticky (today a later auto-assign can
+  re-split AUTO sessions, which is honest but can surprise), and whether a
+  format should ever span series.
+- **Quali attribution fallback order** — a pole credits the stored qualifying
+  driver, else an entry's sole crew member, else nobody. The middle rung exists
+  because iRacing files can never name a seat; the last rung means a
+  multi-driver crew with no attribution contributes to no one's pole count until
+  its grid is re-imported. Worth revisiting if the silent zero reads as a bug on
+  air rather than as honesty.
 - **Is the season recap one table or four?** Today it's one scroll-synced grid
   per class. One table with class bands as separators would kill four scroll
   positions and four header blocks, and would answer "what happened at CTMP

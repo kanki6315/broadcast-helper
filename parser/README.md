@@ -5,14 +5,19 @@ the Java loader. See PLAN.md §4 for why this task lives in Python (pdfplumber
 wins on the multi-line driver cells and italic team/sponsor split) while the rest
 of the system is Java.
 
-Both scripts sniff the source layout from the page itself: IMSA (pro and
-challenge series) and Porsche Carrera Cup Asia (PACCA). The PACCA sheets are the
-standard the one-make cups share; other series' PDFs vary by timing provider.
+The two parsing scripts sniff the source layout from the page itself: IMSA (pro
+and challenge series) and Porsche Carrera Cup Asia (PACCA). The PACCA sheets are
+the standard the one-make cups share; other series' PDFs vary by timing provider.
 
 | Script | In | Out |
 | --- | --- | --- |
 | `parse_entry_list.py` | entry-list PDF | [`entries.json`](SCHEMA.md) |
 | `parse_points.py` | championship-points PDF | [`points.json`](POINTS_SCHEMA.md) |
+| `extract_team_sheet_pages.py` | team-sheets PDF | car number → first page map |
+
+`extract_team_sheet_pages.py` is a locator, not a parser: it reads the first
+text line of each page to find which page a car's section starts on, so the
+sheet can deep-link into the PDF. See PLAN.md Phase 4.
 
 `parse_points.py` exists for the series that publish no points JSON. Where a JSON
 exists, import that instead — it splits pole from fastest-lap points, which the

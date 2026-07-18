@@ -19,14 +19,16 @@ three contexts, all of which matter:
   legibility and contrast robustness matter.
 
 The job to be done: get to a trustworthy fact fast — a driver's rating, a car's
-season form, a championship position — without hunting.
+season form, a championship position, a win or pole count — without hunting.
 
 ## Product Purpose
 
 Broadcast Helper turns raw timing-provider exports (results, standings, grids,
 entry-list and championship-points PDFs) into a browsable, broadcast-ready
 reference: championships
-grouped by family, a per-class season reference table, and a per-event sheet
+grouped by family, a per-class season reference table, per-driver counting
+stats (wins, podiums, poles — split by the kind of race, because a sprint win
+and a six-car heat win are different facts), and a per-event sheet
 with drivers, ratings, qualifying, prior-year-at-venue, championship position,
 and season form.
 

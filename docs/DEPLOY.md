@@ -43,9 +43,28 @@ Everything else (frontend, API, DB) runs fine on the native ARM image.
    | `SPRING_DATASOURCE_PASSWORD` | `${{Postgres.PGPASSWORD}}` |
 
    `PORT` is injected by Railway automatically; the app reads it (`server.port`).
-   Flyway runs the migrations (V1–V17) on first boot.
+   Flyway runs every migration in `backend/src/main/resources/db/migration/` on
+   first boot (V1–V27 at the time of writing — check the directory, not this
+   line, for the current head).
 
 4. Deploy. The app comes up on the Railway-provided URL.
+
+### After the first deploy: two backfills
+
+Both are idempotent and only needed once per series/event; the app works
+without them, it just shows less.
+
+- **Race formats.** V25 adds the tables but leaves assignments empty — the
+  classifier is Java, not SQL, so it can't run inside a migration. Press
+  **Auto-assign formats** once per series (Manage → Series → Race formats), or
+  `POST /api/series/{id}/race-formats/auto-assign`. Until then the Stats tab
+  files everything under an "Unassigned" column.
+- **Grid-driver attribution.** V27 adds the columns; they fill on import, so
+  events imported before the deploy need their **grid file re-uploaded**
+  (committing a grid replaces that session's rows, so re-importing is safe).
+  Until then multi-driver crews show no pole stats and the grid modal shows no
+  driver lines. Single-driver series are unaffected — they resolve at read
+  time from the sole crew member.
 
 ## Auth (Google login)
 

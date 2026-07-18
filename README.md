@@ -8,12 +8,16 @@ JSON, grid CSV, entry-list PDF, championship-points PDF, flags/RC-message JSON)
 with staging + review, bulk car images, manufacturer logos, and the pit-lane
 entry-list sheet with one-click PDF export.
 The browse UI was rebuilt (2026-07-15) into a series directory + season hub with
-a season recap and five sub-pages, on a documented design system
+a season recap and six sub-pages, on a documented design system
 ([PRODUCT.md](PRODUCT.md) / [DESIGN.md](DESIGN.md)); the Results sub-page was then
 rebuilt (2026-07-17) around session tabs, a side-by-side starting-grid modal,
-stewards' notes, and a race-control panel. Phase 4 (single-container
-hosting + Google login) is code-complete pending deploy. See [PLAN.md](PLAN.md)
-for the full plan, domain model, and phase roadmap.
+stewards' notes, and a race-control panel. **Per-race-format stats** landed
+2026-07-18 — wins, podiums, top-5s and poles counted separately for each kind of
+race a weekend runs (sprint vs main, heat vs feature) — together with the
+**grid-driver attribution** that makes a pole count for the driver who actually
+set the lap. Phase 4 (single-container hosting + Google login) is code-complete
+pending deploy. See [PLAN.md](PLAN.md) for the full plan, domain model, and phase
+roadmap.
 
 ## What it does today
 
@@ -25,7 +29,11 @@ for the full plan, domain model, and phase roadmap.
   `IMSA_JSON`/`IMSA_PDF`/`IMSA_CSV`/`IMSA_POINTS_PDF`); the default auto-detects
   JSON (results, grid, standings, and flags) and entry-list PDFs. A grid CSV
   carries no event/session metadata, so review attaches it to an existing event
-  and session (race number), and it keeps the per-car qualifying time. A **points
+  and session (race number), and it keeps the per-car qualifying time. Grid files
+  also name **who qualified the car and who takes the start** — the JSON as seat
+  indexes into its own per-car driver roster, the CSV as names matched against
+  its `DRIVER_1..6` columns — which is what lets a pole count for one driver
+  rather than the whole crew. A **points
   PDF** covers the series that publish no standings JSON: one sheet holds every
   championship, so an upload stages one batch each (see
   [parser/POINTS_SCHEMA.md](parser/POINTS_SCHEMA.md)). Where a standings JSON
@@ -36,20 +44,31 @@ for the full plan, domain model, and phase roadmap.
   refreshes the session notes.
 - **Browse** from a series directory into a **season hub**: the hub sets a season
   context (year switcher; class filter chips persisted in the URL, so a filtered
-  view is bookmarkable) and opens on four live widgets — latest/next round,
-  championship leaders, last winners, entry counts — over the **season recap**
-  table (rows = cars, columns = rounds, each cell the car's start → finish in
-  class, tinted by result tier). The recap switches between the WeatherTech
-  championship and the Michelin Endurance Cup — each with its own round
-  numbering — and between Teams and Drivers. Five sub-pages hang off the hub:
+  view is bookmarkable) and opens on five live widgets — latest/next round,
+  championship leaders, last winners, entry counts, stat leaders — over the
+  **season recap** table (rows = cars, columns = rounds, each cell the car's
+  start → finish in class, tinted by result tier). The recap switches between the
+  WeatherTech championship and the Michelin Endurance Cup — each with its own
+  round numbering — and between Teams and Drivers. Six sub-pages hang off the hub:
   **Schedule**, **Standings** (points per round, each round a column),
+  **Stats** (per-driver wins, podiums, top-5s, DNFs and poles, split by race
+  format, with a season / all-time toggle and per-format column toggles),
   **Results** (pick a round, then tab between qualifying and race; the starting
-  grid opens as a side-by-side modal, stewards' notes sit above the table with
-  the affected cars marked, and a race-control panel lists the flag periods and
-  message log — filterable by car), **Entries** (driver lineups per car per
-  round, rotations highlighted, skipped rounds blank), and **Photos**.
-- **Manage** car photos (matched per season by car number) and manufacturer
-  logos (matched by name).
+  grid opens as a side-by-side modal naming each car's starting driver,
+  stewards' notes sit above the table with the affected cars marked, and a
+  race-control panel lists the flag periods and message log — filterable by
+  car), **Entries** (driver lineups per car per round, rotations highlighted,
+  skipped rounds blank), and **Photos**.
+- **Count** results by **race format**. A weekend's races aren't
+  interchangeable — a sprint win and a six-car heat win are different facts — so
+  each race session is classified into a per-series format (Sprint/Main, or
+  Heat/Consolation/Feature for a rallycross-style round, or a single Race). The
+  classifier reads the event's *shape*, not session names, because the same name
+  means different things on different weekends; it runs on import and any
+  assignment can be pinned by hand in Manage, which survives re-imports.
+- **Manage** car photos (matched per season by car number), manufacturer and
+  series logos (matched by name), per-series class colours, and per-series race
+  formats (rename, merge, or reassign a session's format).
 - **Generate** the pit-lane entry-list sheet per event: drivers with flags and
   ratings, qualifying, prior-year-at-venue (auto or manual), championship
   position, car photo, and a per-round season form strip under each entry
