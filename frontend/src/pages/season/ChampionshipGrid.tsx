@@ -9,6 +9,7 @@ import {
   type RecapSessionPoints,
 } from '../../lib/api'
 import { useInfoModal } from '../../components/infoModal'
+import { raceTagsByOrdinal, sessionTagList } from '../../lib/raceForm'
 import RaceLine from '../../components/RaceLine'
 import { useSeason } from './SeasonLayout'
 
@@ -33,37 +34,11 @@ export function formatPoints(points: number): string {
 
 /* -- points breakdown ---------------------------------------------------- */
 
-/** Compact per-session tags for a multi-session round, keyed by session index.
- *
- * The tag is the session's own initial — Qualifying → Q, Heat → H, Feature → F,
- * Race/Round → R — numbered only where that word repeats inside the round. So
- * PESC's Sachsenring reads Q · H1 H2 H3 H4 · F, and the Feature keeps its name
- * instead of being flattened into "R5". Numbering is positional within the
- * round, never the source's own ordinal: Carrera Cup Asia calls Zhuhai's races
- * "Round 3"/"Round 4", but they sit under a column headed Rd 2, so they tag
- * R1/R2 and agree with the header.
- *
- * A single-session round gets no tag — the number alone reads fine. */
+/** The round's session tags keyed by session index — `sessionTagList` in the
+ * shared result vocabulary, addressed the way the points cells need it. */
 function sessionTags(sessions: RecapSession[]): Map<number, string | null> {
-  const tags = new Map<number, string | null>()
-  if (sessions.length <= 1) {
-    for (const s of sessions) tags.set(s.sessionIndex, null)
-    return tags
-  }
-  const initial = (name: string) => (/^qual/i.test(name.trim()) ? 'Q' : name.trim().charAt(0).toUpperCase())
-  const counts = new Map<string, number>()
-  for (const s of sessions) {
-    const i = initial(s.name)
-    counts.set(i, (counts.get(i) ?? 0) + 1)
-  }
-  const seen = new Map<string, number>()
-  for (const s of sessions) {
-    const i = initial(s.name)
-    const n = (seen.get(i) ?? 0) + 1
-    seen.set(i, n)
-    tags.set(s.sessionIndex, (counts.get(i) ?? 0) > 1 ? `${i}${n}` : i)
-  }
-  return tags
+  const list = sessionTagList(sessions.map((s) => s.name))
+  return new Map(sessions.map((s, i) => [s.sessionIndex, list[i]]))
 }
 
 interface PtsMark {
@@ -349,7 +324,7 @@ function PointsLegend({ f }: { f: PtsLegendFlags }) {
   )
 }
 
-function RecapLegend() {
+function RecapLegend({ tags }: { tags: Map<string, string> }) {
   return (
     <div className="legend" aria-label="Cell colours">
       <span className="l-win">
@@ -365,11 +340,42 @@ function RecapLegend() {
         <i /> DNF
       </span>
       <span className="l-note">start/finish in class</span>
+      {/* The race tags come first: they read left-to-right before the chip,
+       * and "C = consolation" is not guessable. Listed only where a round
+       * actually ran more than one race. */}
+      {[...tags].map(([letter, word]) => (
+        <span key={letter}>
+          {letter} = {word}
+        </span>
+      ))}
       <span className="l-pole">P = pole</span>
-      <span>R = retired</span>
+      {/* Superscript on the chip, so it is spelled out that way — a round of
+       * "Race 1"/"Race 2" tags R1/R2 in the same cell. */}
+      <span>
+        <sup>R</sup> = retired
+      </span>
       <span>· = no entry</span>
     </div>
   )
+}
+
+/** Session words present in the shown recaps' multi-race rounds, keyed by the
+ * tag letter — the recap legend names what it actually shows, like the points
+ * one. Empty where every round ran a single race. */
+function raceLegendTags(recaps: Recap[]): Map<string, string> {
+  const tags = new Map<string, string>()
+  for (const recap of recaps) {
+    for (const r of recap.rounds) {
+      if (r.races.length <= 1) continue
+      const byOrdinal = raceTagsByOrdinal(r.races)
+      for (const race of r.races) {
+        const letter = (byOrdinal.get(race.ordinal) ?? '').replace(/\d+$/, '')
+        const word = (race.name ?? '').trim().split(/\s+/)[0].toLowerCase()
+        if (letter && word && !tags.has(letter)) tags.set(letter, word)
+      }
+    }
+  }
+  return tags
 }
 
 export function ChampFilterBar({
@@ -488,6 +494,13 @@ function ClassGrid({
   const leaderPoints = recap.rows.length > 0 ? Math.max(...recap.rows.map((r) => r.totalPoints)) : 0
   const drivers = recap.championship.kind === 'DRIVERS'
   const color = classColor(champ.className)
+
+  // Recap mode: which race of the weekend each result line is, tagged over the
+  // round's whole race list (see raceTagsByOrdinal).
+  const raceTagsByRound = new Map<number, Map<number, string | null>>()
+  if (mode === 'recap') {
+    for (const r of rounds) raceTagsByRound.set(r.round, raceTagsByOrdinal(r.races))
+  }
 
   // Breakdown mode: per-round session tags, and the widest marks run in this
   // class — every line reserves that gutter so digits stay in one column.
@@ -718,10 +731,13 @@ function ClassGrid({
                   )
                 }
                 const races = row.cells[r.round]
+                const raceTags = raceTagsByRound.get(r.round) ?? new Map()
                 return (
                   <td key={r.round} className="race-cell">
                     {races && races.length > 0 ? (
-                      races.map((race) => <RaceLine key={race.race} r={race} />)
+                      races.map((race) => (
+                        <RaceLine key={race.race} r={race} tag={raceTags.get(race.race)} />
+                      ))
                     ) : (
                       <span className="cell-skip" title="Did not enter this round">
                         ·
@@ -754,6 +770,7 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
   const sel = useChampSelection()
   const [searchParams, setSearchParams] = useSearchParams()
   const [ptsFlags, setPtsFlags] = useState<PtsLegendFlags | null>(null)
+  const [raceTags, setRaceTags] = useState<Map<string, string>>(new Map())
 
   // Like every other selection on this page, the view lives in the URL so a
   // filtered board stays bookmarkable and survives sub-page navigation.
@@ -770,17 +787,26 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
     [sel.selected, classFilter],
   )
 
-  // The points legend decodes only the notation actually on screen — recaps
-  // are already being fetched by the class grids, so this rides the cache.
+  // Both legends decode only the notation actually on screen — recaps are
+  // already being fetched by the class grids, so this rides the cache.
   useEffect(() => {
-    if (mode !== 'points' || shown.length === 0) {
+    if (shown.length === 0) {
       setPtsFlags(null)
+      setRaceTags(new Map())
       return
     }
     let cancelled = false
     Promise.all(shown.map((c) => fetchRecap(c.id)))
-      .then((recaps) => !cancelled && setPtsFlags(ptsLegendFlags(recaps)))
-      .catch(() => !cancelled && setPtsFlags(null))
+      .then((recaps) => {
+        if (cancelled) return
+        setPtsFlags(mode === 'points' ? ptsLegendFlags(recaps) : null)
+        setRaceTags(mode === 'recap' ? raceLegendTags(recaps) : new Map())
+      })
+      .catch(() => {
+        if (cancelled) return
+        setPtsFlags(null)
+        setRaceTags(new Map())
+      })
     return () => {
       cancelled = true
     }
@@ -804,7 +830,7 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
         view={mode === 'points' && ptsFlags ? { view, setView } : null}
         legend={
           mode === 'recap' ? (
-            <RecapLegend />
+            <RecapLegend tags={raceTags} />
           ) : ptsFlags && view === 'breakdown' ? (
             <PointsLegend f={ptsFlags} />
           ) : null

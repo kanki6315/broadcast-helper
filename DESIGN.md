@@ -302,7 +302,13 @@ carry their own `border-radius` and the last row yields its divider to the
 frame border. Round columns show a mono venue code over a muted "Rd n". Class sections divide on a
 **class band** — a full-width row filled with the class color, name always
 printed on it. Result cells stack one `.race-line` per race, tinted by finish
-tier, with the amber **P** for pole and DNS/skips as quiet muted marks.
+tier, with the amber **P** for pole and DNS/skips as quiet muted marks. Where
+a round ran more than one race each line carries a muted `.race-tag` naming
+which one (`H1`, `C`, `F`) — the same notation as the standings breakdown, via
+the shared `sessionTagList`. The tag is derived across the **round's whole
+race list**, not the races that competitor contested, so a driver who ran only
+the fourth heat reads `H4` rather than `H`. It sits outside the tinted chip so
+the result tints stay the width of the numbers they back.
 
 The **standings** grid prints how each round paid, not one summed number: a
 `.pts-cell` stacks one `.pts-line` per scoring session the competitor ran,
@@ -327,10 +333,12 @@ source's own ordinal, so Carrera Cup Asia's "Round 3"/"Round 4" tag `R1`/`R2`
 under a column headed Rd 2 instead of contradicting the header.
 
 Single-session rounds print the bare number with no tag, so a source that
-scores one session per round looks unchanged. The legend is built from the
-data on screen — it names the session words actually present (`H = heat`) and
-keeps the `+`/`−` sign on every mark, which is what separates a Feature's `F`
-tag from a `+1F` fastest lap — and vanishes when there is nothing to decode.
+scores one session per round looks unchanged. **Both** legends are built from
+the data on screen: each names the session words actually present (`H = heat`,
+`C = consolation`), the points one keeps the `+`/`−` sign on every mark —
+which is what separates a Feature's `F` tag from a `+1F` fastest lap — and the
+recap one prints the retirement mark as the superscript it actually is, so it
+never reads as an `R` race tag.
 
 A **Breakdown ⇄ Round total** `.seg` toggle (URL `?pts=total`, like every
 other selection on the page) collapses the cells back to one number per round

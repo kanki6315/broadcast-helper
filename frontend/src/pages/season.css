@@ -770,6 +770,23 @@
   min-width: 52px;
 }
 
+/* A multi-race round names each line ("H1", "F") in the same muted tag as the
+ * standings breakdown. The tag sits outside the chip so the result tint stays
+ * the width of the numbers it backs, and the chip keeps its own min-width so
+ * the start/finish pairs still line up down the column. */
+.race-line-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  justify-content: flex-end;
+}
+
+.race-tag {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 .race-line.res-win {
   background: var(--res-win);
 }

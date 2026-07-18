@@ -73,6 +73,15 @@ export interface RecapRound {
   /** The round's points-scoring sessions in calendar order — the standings
    * page prints one earnings line per session, not one summed number. */
   sessions: RecapSession[]
+  /** Every race the round ran, in running order. Result lines are tagged from
+   * this list, not from the races a given competitor contested, so someone who
+   * ran only the fourth heat is labelled "H4" rather than "H". */
+  races: RecapRaceRef[]
+}
+
+export interface RecapRaceRef {
+  ordinal: number
+  name: string | null
 }
 
 export interface RecapSession {
@@ -82,6 +91,10 @@ export interface RecapSession {
 
 export interface RecapRace {
   race: number
+  /** The race session's own name ("Heat 1", "Feature"), abbreviated into a
+   * per-line tag where a round ran more than one race. Null for rounds
+   * imported before the name was carried. */
+  name: string | null
   start: number | null
   finish: number | null
   status: string | null
