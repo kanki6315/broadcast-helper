@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -30,7 +31,8 @@ public class SeriesController {
         this.db = db;
     }
 
-    public record SeriesResponse(Long id, String name, String abbreviation, List<String> aliases) {
+    public record SeriesResponse(Long id, String name, String abbreviation, List<String> aliases,
+                                 Long logoVersion) {
     }
 
     public record CreateSeriesRequest(@NotBlank String name, String abbreviation) {
@@ -42,8 +44,9 @@ public class SeriesController {
     @GetMapping
     public List<SeriesResponse> list() {
         Map<Long, List<String>> aliases = loadAliases();
+        Map<Long, Long> logoVersions = loadLogoVersions();
         return repository.findAll(Sort.by("name")).stream()
-                .map(s -> toResponse(s, aliases))
+                .map(s -> toResponse(s, aliases, logoVersions))
                 .toList();
     }
 
@@ -54,7 +57,7 @@ public class SeriesController {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "A series with that name already exists");
         }
         Series saved = repository.save(new Series(request.name().trim(), request.abbreviation()));
-        return toResponse(saved, Map.of());
+        return toResponse(saved, Map.of(), Map.of());
     }
 
     @PostMapping("/{id}/aliases")
@@ -70,7 +73,16 @@ public class SeriesController {
         } catch (DuplicateKeyException e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "That alias already exists");
         }
-        return toResponse(series, loadAliases());
+        return toResponse(series, loadAliases(), loadLogoVersions());
+    }
+
+    private Map<Long, Long> loadLogoVersions() {
+        return db.sql("SELECT series_id, uploaded_at FROM series_logo")
+                .query((rs, i) -> Map.entry(rs.getLong("series_id"),
+                        rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli()))
+                .list()
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
     private Map<Long, List<String>> loadAliases() {
@@ -83,8 +95,10 @@ public class SeriesController {
                                 java.util.stream.Collectors.toList())));
     }
 
-    private static SeriesResponse toResponse(Series series, Map<Long, List<String>> aliases) {
+    private static SeriesResponse toResponse(Series series, Map<Long, List<String>> aliases,
+                                             Map<Long, Long> logoVersions) {
         return new SeriesResponse(series.getId(), series.getName(), series.getAbbreviation(),
-                aliases.getOrDefault(series.getId(), List.of()));
+                aliases.getOrDefault(series.getId(), List.of()),
+                logoVersions.get(series.getId()));
     }
 }

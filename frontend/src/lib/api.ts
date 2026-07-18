@@ -13,6 +13,8 @@ export interface SeriesInfo {
   name: string
   abbreviation: string | null
   aliases: string[]
+  /** Epoch-millis stamp of the current series logo, or null when none uploaded. */
+  logoVersion: number | null
 }
 
 export interface ClassStyle {

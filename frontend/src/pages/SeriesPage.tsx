@@ -5,6 +5,7 @@ interface Series {
   name: string
   abbreviation: string | null
   aliases: string[]
+  logoVersion: number | null
 }
 
 interface ClassStyle {
@@ -74,6 +75,29 @@ export default function SeriesPage() {
     await loadSeries()
   }
 
+  async function uploadLogo(id: number, file: File) {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await fetch(`/api/series/${id}/logo`, { method: 'POST', body: form })
+    if (!res.ok) {
+      const body = await res.json().catch(() => null)
+      setError(body?.message ?? `Logo upload failed (${res.status})`)
+      return
+    }
+    setError(null)
+    await loadSeries()
+  }
+
+  async function removeLogo(id: number) {
+    const res = await fetch(`/api/series/${id}/logo`, { method: 'DELETE' })
+    if (!res.ok && res.status !== 404) {
+      setError(`Backend returned ${res.status}`)
+      return
+    }
+    setError(null)
+    await loadSeries()
+  }
+
   async function addAlias(id: number) {
     const alias = (aliasDrafts[id] ?? '').trim()
     if (!alias) return
@@ -128,6 +152,7 @@ export default function SeriesPage() {
         <table>
           <thead>
             <tr>
+              <th>Logo</th>
               <th>Name</th>
               <th>Abbreviation</th>
               <th>Aliases</th>
@@ -138,6 +163,36 @@ export default function SeriesPage() {
           <tbody>
             {series.map((s) => (
               <tr key={s.id}>
+                <td>
+                  <div className="series-logo-cell">
+                    {s.logoVersion != null ? (
+                      <img
+                        className="series-logo-thumb"
+                        src={`/api/series/${s.id}/logo/data?v=${s.logoVersion}`}
+                        alt={`${s.name} logo`}
+                      />
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                    <div className="series-logo-actions">
+                      <label className="series-logo-upload">
+                        {s.logoVersion != null ? 'Replace' : 'Upload'}
+                        <input
+                          type="file"
+                          accept="image/*,.svg"
+                          onChange={(e) =>
+                            e.target.files?.[0] && void uploadLogo(s.id, e.target.files[0])
+                          }
+                        />
+                      </label>
+                      {s.logoVersion != null && (
+                        <button type="button" onClick={() => void removeLogo(s.id)}>
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </td>
                 <td>{s.name}</td>
                 <td>{s.abbreviation ?? '—'}</td>
                 <td>
