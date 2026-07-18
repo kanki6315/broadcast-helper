@@ -781,7 +781,12 @@ display size.)
   source that scores one session per round renders as before. iRacing seasons
   gain Q/R lines as they are **re-imported** under the session split landed
   the same day — imports predating it keep one session per round until then),
-  **Stats** (added 2026-07-18, see below), **Results** (round selector →
+  **Stats** (added 2026-07-18, see below; every column header sorts as of the
+  same day — the label is the button and spans its cell for a 24×24 target,
+  with a 5×4px caret in slack the header already had, so the two-row header
+  keeps its exact 30/27px metrics and no column changes width. Sorts within a
+  class section, never across; never-contested `·` sinks last in both
+  directions; third click restores the backend ranking), **Results** (round selector →
   quali/grid + race), **Entries** (lineup rotation per car per round),
   **Photos** (the old hub's `SeasonImages`).
   New read-only endpoints in `SeasonViewController`: `/championships/{id}/recap`,
