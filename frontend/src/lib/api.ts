@@ -70,6 +70,14 @@ export interface RecapRound {
   venue: string
   eventId: number | null
   raceCount: number
+  /** The round's points-scoring sessions in calendar order — the standings
+   * page prints one earnings line per session, not one summed number. */
+  sessions: RecapSession[]
+}
+
+export interface RecapSession {
+  sessionIndex: number
+  name: string
 }
 
 export interface RecapRace {
@@ -80,6 +88,18 @@ export interface RecapRace {
   notFinished: boolean
 }
 
+/** How one session paid: components sum to total. contested is false for
+ * did_not_race — that session shows a skip mark, not a 0. */
+export interface RecapSessionPoints {
+  total: number
+  race: number
+  pole: number
+  fastestLap: number
+  penalty: number
+  bonus: number
+  contested: boolean
+}
+
 export interface RecapRow {
   position: number
   competitorKey: string
@@ -88,6 +108,8 @@ export interface RecapRow {
   teamName: string | null
   totalPoints: number
   pointsByRound: Record<number, number>
+  /** Keyed by RecapSession.sessionIndex; only sessions of scored, contested rounds. */
+  sessionPoints: Record<number, RecapSessionPoints>
   cells: Record<number, RecapRace[]>
 }
 

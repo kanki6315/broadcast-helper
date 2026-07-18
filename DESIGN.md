@@ -304,6 +304,19 @@ frame border. Round columns show a mono venue code over a muted "Rd n". Class se
 printed on it. Result cells stack one `.race-line` per race, tinted by finish
 tier, with the amber **P** for pole and DNS/skips as quiet muted marks.
 
+The **standings** grid prints how each round paid, not one summed number: a
+`.pts-cell` stacks one `.pts-line` per scoring session (muted `Q`/`R1` tags on
+multi-session rounds only), race points right-aligned in the digit column and
+every extra spelled out in a shared marks gutter — amber `+1P` pole, ink `+1F`
+fastest lap, a bare muted `+10` for a PDF's lumped bonus (no letter code: the
+source doesn't say pole or fastest lap), error-red `−n` penalty —
+so the arithmetic sits on the table, not in a tooltip (the line's title still
+gives the session total; the cell's title the round total). Zero stays printed
+but recedes; a did-not-run session is a muted `·`; a skipped round keeps the
+single `—`. Single-session rounds print the bare number, so plain-points
+leagues look unchanged, and the legend (built from the shown data, not static)
+only decodes marks that actually appear — or vanishes entirely.
+
 ### Stats Table (`.stats-table`, a Data Grid variant)
 Per-driver tallies split by race format: a **two-row header** (format group
 name over its St / W / P3 / T5 / DNF sub-columns), a trailing Qualifying group
