@@ -72,6 +72,31 @@ public class ImportController {
         return imports.stageStandingsFromIRacing(leagueId, seasonId);
     }
 
+    /**
+     * An official-series season's race rounds, newest last — the official twin
+     * of {@link #leagueSeasonRounds}. Only OFFICIAL sessions are listed: a
+     * voided race (PESC 2020's first Le Mans, re-run months later) stays in
+     * iRacing's payload flagged unofficial with zero points, and never appears
+     * here, so it cannot be imported as a round. The season id alone drives the
+     * lookup; the series id keeps the URL parallel to its standings sibling,
+     * which does need it.
+     */
+    @GetMapping("/iracing/series/{seriesId}/season/{seasonId}/rounds")
+    public List<IRacingParser.LeagueRound> officialSeasonRounds(
+            @PathVariable long seriesId, @PathVariable long seasonId) {
+        return imports.listOfficialSeasonRounds(seasonId);
+    }
+
+    /** Stages an official-series season's driver standings for review, with the
+     *  per-round points read from each official round's result. One batch per
+     *  car class. Needs credentials; 503 without. */
+    @PostMapping("/iracing/series/{seriesId}/season/{seasonId}/standings")
+    @ResponseStatus(HttpStatus.CREATED)
+    public List<ImportService.BatchSummary> fetchOfficialStandings(
+            @PathVariable long seriesId, @PathVariable long seasonId) {
+        return imports.stageOfficialStandingsFromIRacing(seriesId, seasonId);
+    }
+
     /** Stages every round of a league season that has results — a lot of batches
      *  to review at once. Resilient: a round that fails is reported, not fatal. */
     @PostMapping("/iracing/league/{leagueId}/season/{seasonId}/import")

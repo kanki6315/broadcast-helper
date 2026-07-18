@@ -373,4 +373,140 @@ class IRacingParserTest {
                 && r.qualifyingDriverSeat() == null
                 && r.drivers().isEmpty()));
     }
+
+    // ------------------------------------------------- official-series seasons
+    // Fixtures are trimmed real payloads from the 2020 Porsche TAG Heuer Esports
+    // Supercup (series 409, season 2812) — the season whose first Le Mans race
+    // was voided (official_session false) and re-run months later, which is the
+    // case the official-round filtering exists for.
+
+    private JsonNode officialFixture(String name) throws IOException {
+        try (InputStream in = getClass().getResourceAsStream("/fixtures/iracing/" + name)) {
+            assertNotNull(in, "missing fixture " + name);
+            return mapper.readTree(in);
+        }
+    }
+
+    @Test
+    void findsAnOfficialSeasonWithItsYearAndCarClasses() throws IOException {
+        JsonNode root = officialFixture("series-past-seasons-409.json");
+
+        IRacingParser.OfficialSeason season =
+                IRacingParser.parseOfficialSeason(root, 2812).orElseThrow();
+        assertEquals("Porsche TAG Heuer Esports Supercup - 2020 Season", season.seasonName());
+        // The year is the payload's own field — the name carries it as a suffix,
+        // where the league flow's leading-year heuristic would find nothing.
+        assertEquals(2020, season.seasonYear());
+        assertEquals(1, season.carClasses().size());
+        assertEquals(95, season.carClasses().get(0).carClassId());
+
+        // A season the series never ran is a mismatched id pair, not a match.
+        assertTrue(IRacingParser.parseOfficialSeason(root, 999999).isEmpty());
+    }
+
+    @Test
+    void listsOnlyOfficialRoundsOldestFirstIgnoringWeekNumbers() throws IOException {
+        // The fixture's rows are deliberately shuffled and include the voided
+        // June Le Mans race (week 3, official_session false).
+        List<IRacingParser.LeagueRound> rounds =
+                IRacingParser.parseOfficialSeasonRounds(officialFixture("season-results-2812.json"));
+
+        // 11 sessions in the payload; the voided one is not a round.
+        assertEquals(10, rounds.size());
+        assertTrue(rounds.stream().noneMatch(r -> r.subsessionId() == 33053142L),
+                "the voided Le Mans race must not appear as a round");
+
+        // Chronological despite the shuffled payload: the season opened at
+        // Zandvoort and closed at Monza. Week numbers play no part — the
+        // calendar has raceless and voided weeks.
+        assertEquals(32168491L, rounds.get(0).subsessionId());
+        assertEquals("Circuit Park Zandvoort Grand Prix - 2009", rounds.get(0).trackName());
+        assertEquals("Autodromo Nazionale Monza Grand Prix", rounds.get(9).trackName());
+        for (int i = 1; i < rounds.size(); i++) {
+            assertTrue(!rounds.get(i).launchAt().isBefore(rounds.get(i - 1).launchAt()),
+                    "rounds must be oldest-first");
+        }
+
+        // The re-run Le Mans (September, week 10) is a real round.
+        assertTrue(rounds.stream().anyMatch(r -> r.subsessionId() == 34799811L));
+
+        // This payload lists only completed sessions and names no winner.
+        assertTrue(rounds.stream().allMatch(IRacingParser.LeagueRound::hasResults));
+        assertEquals(40, rounds.get(0).entryCount());
+    }
+
+    @Test
+    void readsEachDriversRoundTotalOnceIncludingQualifyingOnlyDrivers() throws IOException {
+        // aggregate_champ_points is the round total repeated on every sim-session
+        // row; max-per-driver reads it once. The fixture keeps Rogers in
+        // qualifying only — his 68 must still arrive, because official quali
+        // scores championship points.
+        Map<Long, Double> pts = IRacingParser.parseRoundChampPoints(
+                officialFixture("subsession-official-pesc-2020.json"));
+
+        assertEquals(4, pts.size());
+        assertEquals(72.0, pts.get(119101L)); // Job: quali 6 + heat 16 + feature 50
+        assertEquals(70.0, pts.get(35491L));  // Carroll
+        assertEquals(68.0, pts.get(169237L)); // Rogers, qualifying row only
+        assertEquals(59.0, pts.get(32626L));  // Østgaard
+    }
+
+    @Test
+    void scoresAVoidedRoundAsNothing() throws IOException {
+        // A voided race keeps its rows but zeroes every points field — belt and
+        // braces under the official_session filter: even if one slipped through,
+        // it would contribute nothing.
+        JsonNode voided = mapper.readTree("""
+                {"session_results":[{"simsession_type":6,"results":[
+                  {"cust_id":119101,"champ_points":0,"aggregate_champ_points":0},
+                  {"cust_id":120570,"champ_points":0,"aggregate_champ_points":0}]}]}
+                """);
+        Map<Long, Double> pts = IRacingParser.parseRoundChampPoints(voided);
+
+        assertEquals(0.0, pts.get(119101L));
+        assertEquals(0.0, pts.get(120570L));
+    }
+
+    @Test
+    void assemblesOfficialStandingsFromFlatChunkRows() throws IOException {
+        // Chunk rows are flat (rank/cust_id/display_name/points at the top
+        // level), unlike the league shape nested under driver.*; two files
+        // stand in for a chunked download already concatenated by the client.
+        var rows = mapper.createArrayNode();
+        rows.addAll((com.fasterxml.jackson.databind.node.ArrayNode)
+                officialFixture("season-standings-chunk-2812-1.json"));
+        rows.addAll((com.fasterxml.jackson.databind.node.ArrayNode)
+                officialFixture("season-standings-chunk-2812-2.json"));
+
+        Map<Long, Map<Integer, Double>> byCust = new HashMap<>();
+        byCust.put(119101L, Map.of(1, 72.0));
+        List<StandingsImport.SessionRef> sessions = List.of(
+                new StandingsImport.SessionRef(1, "Circuit Park Zandvoort Grand Prix - 2009",
+                        "Circuit Park Zandvoort"),
+                new StandingsImport.SessionRef(2, "Circuit de Barcelona Catalunya Grand Prix",
+                        "Circuit de Barcelona Catalunya"));
+
+        StandingsImport st = IRacingParser.assembleOfficialStandings(
+                rows, "Porsche TAG Heuer Esports Supercup - 2020 Season", "2020",
+                sessions, byCust);
+
+        assertEquals("Porsche TAG Heuer Esports Supercup - 2020 Season", st.name());
+        assertEquals("2020", st.year());
+        assertEquals(2, st.sessions().size());
+        assertEquals(6, st.rows().size());
+
+        StandingsImport.Row champion = st.rows().get(0);
+        assertEquals(1, champion.position());
+        assertEquals("119101", champion.key()); // cust_id, stable across a rename
+        assertEquals("Sebastian Job", champion.team());
+        assertEquals(659.0, champion.totalPoints()); // the endpoint's authoritative figure
+
+        // Only the scored round appears; the round without points stays blank.
+        assertEquals(1, champion.pointsBySession().size());
+        assertEquals(72.0, champion.pointsBySession().get(0).totalPoints());
+
+        for (int i = 1; i < st.rows().size(); i++) {
+            assertTrue(st.rows().get(i).position() >= st.rows().get(i - 1).position());
+        }
+    }
 }

@@ -4,10 +4,16 @@ import SeriesEventPicker from './SeriesEventPicker'
 import ConfirmImportStep from './ConfirmImportStep'
 
 /**
- * The one place iRacing imports start. Two ways in — a hand-picked list of
- * subsession ids, or a whole league season — both landing on the same grouped
- * result so a season reads as a season, not a pile of loose batches. It stages
- * only; the staged rounds drop into the Imports table below for review + commit.
+ * The one place iRacing imports start. Three ways in — a hand-picked list of
+ * subsession ids, a whole league season, or an official-series season — all
+ * landing on the same grouped result so a season reads as a season, not a pile
+ * of loose batches. It stages only; the staged rounds drop into the Imports
+ * table below for review + commit.
+ *
+ * League and official mode share the same rounds preview and the same staging
+ * call (picked subsession ids), differing only in how the season is addressed
+ * and which standings endpoint scores it. Official rounds list only
+ * official_session races — a voided race never appears.
  */
 
 interface StagedBatch {
@@ -37,7 +43,7 @@ interface LeagueRound {
   entryCount: number
 }
 
-type Mode = 'subsession' | 'league'
+type Mode = 'subsession' | 'league' | 'official'
 
 // iRacing's error bodies arrive raw ('404 Not Found: "{ "message": "…" }"').
 // Surface the human sentence, fall back to the part before the JSON.
@@ -90,6 +96,10 @@ export default function IRacingImportModal({
   const [idsText, setIdsText] = useState('')
   const [leagueId, setLeagueId] = useState('')
   const [seasonId, setSeasonId] = useState('')
+  // Official-series ids live apart from the league pair: they are different id
+  // spaces, and a stale value carried across tabs would mislead.
+  const [officialSeriesId, setOfficialSeriesId] = useState('')
+  const [officialSeasonId, setOfficialSeasonId] = useState('')
 
   const [rounds, setRounds] = useState<LeagueRound[] | null>(null)
   const [picked, setPicked] = useState<Set<number>>(new Set())
@@ -106,6 +116,23 @@ export default function IRacingImportModal({
 
   const ids = useMemo(() => parseIds(idsText), [idsText])
   const leaguePair = leagueId.trim() && seasonId.trim()
+  const officialPair = officialSeriesId.trim() && officialSeasonId.trim()
+  // Both season modes drive the same rounds preview; only the addressing differs.
+  const seasonReady = mode === 'league' ? leaguePair : officialPair
+  const seasonBase =
+    mode === 'league'
+      ? `/api/imports/iracing/league/${leagueId.trim()}/season/${seasonId.trim()}`
+      : `/api/imports/iracing/series/${officialSeriesId.trim()}/season/${officialSeasonId.trim()}`
+
+  function switchMode(next: Mode) {
+    if (next === mode) return
+    setMode(next)
+    // Two tabs now bear a rounds preview; a list fetched for one must not
+    // survive into the other.
+    setRounds(null)
+    setPicked(new Set())
+    setError(null)
+  }
 
   async function run(action: string, req: () => Promise<Response>) {
     setBusy(action)
@@ -145,14 +172,12 @@ export default function IRacingImportModal({
   }
 
   async function listRounds() {
-    if (!leaguePair) return
+    if (!seasonReady) return
     setListing(true)
     setError(null)
     setRounds(null)
     try {
-      const res = await fetch(
-        `/api/imports/iracing/league/${leagueId.trim()}/season/${seasonId.trim()}/rounds`,
-      )
+      const res = await fetch(`${seasonBase}/rounds`)
       const body = await res.json().catch(() => null)
       if (!res.ok) {
         setError(body?.message ?? `Could not list rounds (${res.status})`)
@@ -181,13 +206,8 @@ export default function IRacingImportModal({
   }
 
   function importStandings() {
-    if (!leaguePair) return
-    void run('Fetching standings', () =>
-      fetch(
-        `/api/imports/iracing/league/${leagueId.trim()}/season/${seasonId.trim()}/standings`,
-        { method: 'POST' },
-      ),
-    )
+    if (!seasonReady) return
+    void run('Fetching standings', () => fetch(`${seasonBase}/standings`, { method: 'POST' }))
   }
 
   function togglePick(id: number) {
@@ -223,7 +243,9 @@ export default function IRacingImportModal({
       <header className="ir-head">
         <div className="ir-id">
           <h2 className="ir-title">Import from iRacing</h2>
-          <p className="ir-sub">Fetch a hand-picked set of races, or a whole league season.</p>
+          <p className="ir-sub">
+            Fetch a hand-picked set of races, a league season, or an official series season.
+          </p>
         </div>
         <button type="button" className="ir-close" aria-label="Close" onClick={onClose}>
           ✕
@@ -279,7 +301,7 @@ export default function IRacingImportModal({
                 role="tab"
                 aria-selected={mode === 'subsession'}
                 className={mode === 'subsession' ? 'ir-mode on' : 'ir-mode'}
-                onClick={() => setMode('subsession')}
+                onClick={() => switchMode('subsession')}
               >
                 By subsession
               </button>
@@ -288,9 +310,18 @@ export default function IRacingImportModal({
                 role="tab"
                 aria-selected={mode === 'league'}
                 className={mode === 'league' ? 'ir-mode on' : 'ir-mode'}
-                onClick={() => setMode('league')}
+                onClick={() => switchMode('league')}
               >
                 By league season
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === 'official'}
+                className={mode === 'official' ? 'ir-mode on' : 'ir-mode'}
+                onClick={() => switchMode('official')}
+              >
+                By official series
               </button>
             </div>
 
@@ -333,37 +364,71 @@ export default function IRacingImportModal({
             ) : (
               <div className="ir-panel">
                 <div className="ir-league-ids">
-                  <label className="ir-field">
-                    <span className="ir-field-label">League ID</span>
-                    <input
-                      className="ir-input"
-                      inputMode="numeric"
-                      placeholder="e.g. 6004"
-                      value={leagueId}
-                      disabled={!!busy}
-                      onChange={(e) => setLeagueId(e.target.value)}
-                    />
-                  </label>
-                  <label className="ir-field">
-                    <span className="ir-field-label">Season ID</span>
-                    <input
-                      className="ir-input"
-                      inputMode="numeric"
-                      placeholder="e.g. 114713"
-                      value={seasonId}
-                      disabled={!!busy}
-                      onChange={(e) => setSeasonId(e.target.value)}
-                    />
-                  </label>
+                  {mode === 'league' ? (
+                    <>
+                      <label className="ir-field">
+                        <span className="ir-field-label">League ID</span>
+                        <input
+                          className="ir-input"
+                          inputMode="numeric"
+                          placeholder="e.g. 6004"
+                          value={leagueId}
+                          disabled={!!busy}
+                          onChange={(e) => setLeagueId(e.target.value)}
+                        />
+                      </label>
+                      <label className="ir-field">
+                        <span className="ir-field-label">Season ID</span>
+                        <input
+                          className="ir-input"
+                          inputMode="numeric"
+                          placeholder="e.g. 114713"
+                          value={seasonId}
+                          disabled={!!busy}
+                          onChange={(e) => setSeasonId(e.target.value)}
+                        />
+                      </label>
+                    </>
+                  ) : (
+                    <>
+                      <label className="ir-field">
+                        <span className="ir-field-label">Series ID</span>
+                        <input
+                          className="ir-input"
+                          inputMode="numeric"
+                          placeholder="e.g. 409"
+                          value={officialSeriesId}
+                          disabled={!!busy}
+                          onChange={(e) => setOfficialSeriesId(e.target.value)}
+                        />
+                      </label>
+                      <label className="ir-field">
+                        <span className="ir-field-label">Season ID</span>
+                        <input
+                          className="ir-input"
+                          inputMode="numeric"
+                          placeholder="e.g. 2812"
+                          value={officialSeasonId}
+                          disabled={!!busy}
+                          onChange={(e) => setOfficialSeasonId(e.target.value)}
+                        />
+                      </label>
+                    </>
+                  )}
                   <button
                     type="button"
                     className="btn"
-                    disabled={!leaguePair || listing || !!busy}
+                    disabled={!seasonReady || listing || !!busy}
                     onClick={listRounds}
                   >
                     {listing ? 'Listing…' : 'List rounds'}
                   </button>
                 </div>
+                {mode === 'official' && (
+                  <p className="ir-count">
+                    Only official races are listed — voided or unofficial sessions never appear.
+                  </p>
+                )}
 
                 {listing && (
                   <ul className="ir-rounds" aria-hidden="true">

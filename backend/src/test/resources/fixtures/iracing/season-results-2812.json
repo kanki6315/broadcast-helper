@@ -1,0 +1,149 @@
+{
+ "success": true,
+ "season_id": 2812,
+ "results_list": [
+  {
+   "subsession_id": 32595224,
+   "start_time": "2020-05-23T13:45:00Z",
+   "race_week_num": 2,
+   "official_session": true,
+   "num_drivers": 37,
+   "event_type": 5,
+   "track": {
+    "config_name": "Grand Prix",
+    "track_id": 233,
+    "track_name": "Donington Park Racing Circuit"
+   }
+  },
+  {
+   "subsession_id": 33504276,
+   "start_time": "2020-07-18T13:45:00Z",
+   "race_week_num": 5,
+   "official_session": true,
+   "num_drivers": 36,
+   "event_type": 5,
+   "track": {
+    "config_name": "Grand Prix",
+    "track_id": 341,
+    "track_name": "Silverstone Circuit"
+   }
+  },
+  {
+   "subsession_id": 34477282,
+   "start_time": "2020-09-05T13:45:00Z",
+   "race_week_num": 9,
+   "official_session": true,
+   "num_drivers": 32,
+   "event_type": 5,
+   "track": {
+    "config_name": "Gesamtstrecke 24h",
+    "track_id": 252,
+    "track_name": "Nürburgring Combined"
+   }
+  },
+  {
+   "subsession_id": 33720728,
+   "start_time": "2020-08-01T13:45:00Z",
+   "race_week_num": 6,
+   "official_session": true,
+   "num_drivers": 34,
+   "event_type": 5,
+   "track": {
+    "config_name": "Full Course",
+    "track_id": 127,
+    "track_name": "Road Atlanta"
+   }
+  },
+  {
+   "subsession_id": 32168491,
+   "start_time": "2020-05-02T13:45:00Z",
+   "race_week_num": 0,
+   "official_session": true,
+   "num_drivers": 40,
+   "event_type": 5,
+   "track": {
+    "config_name": "Grand Prix - 2009",
+    "track_id": 149,
+    "track_name": "Circuit Park Zandvoort"
+   }
+  },
+  {
+   "subsession_id": 34186932,
+   "start_time": "2020-08-29T13:45:00Z",
+   "race_week_num": 8,
+   "official_session": true,
+   "num_drivers": 32,
+   "event_type": 5,
+   "track": {
+    "config_name": "Grand Prix Pits - 2010",
+    "track_id": 163,
+    "track_name": "Circuit de Spa-Francorchamps"
+   }
+  },
+  {
+   "subsession_id": 33053142,
+   "start_time": "2020-06-20T13:45:00Z",
+   "race_week_num": 3,
+   "official_session": false,
+   "num_drivers": 36,
+   "event_type": 5,
+   "track": {
+    "config_name": "24 Heures du Mans",
+    "track_id": 268,
+    "track_name": "Circuit des 24 Heures du Mans"
+   }
+  },
+  {
+   "subsession_id": 33934144,
+   "start_time": "2020-08-15T13:45:00Z",
+   "race_week_num": 7,
+   "official_session": true,
+   "num_drivers": 32,
+   "event_type": 5,
+   "track": {
+    "config_name": "Grand Prix",
+    "track_id": 145,
+    "track_name": "Brands Hatch Circuit"
+   }
+  },
+  {
+   "subsession_id": 34799811,
+   "start_time": "2020-09-26T13:45:00Z",
+   "race_week_num": 10,
+   "official_session": true,
+   "num_drivers": 30,
+   "event_type": 5,
+   "track": {
+    "config_name": "24 Heures du Mans",
+    "track_id": 268,
+    "track_name": "Circuit des 24 Heures du Mans"
+   }
+  },
+  {
+   "subsession_id": 32316399,
+   "start_time": "2020-05-09T13:45:00Z",
+   "race_week_num": 1,
+   "official_session": true,
+   "num_drivers": 39,
+   "event_type": 5,
+   "track": {
+    "config_name": "Grand Prix",
+    "track_id": 345,
+    "track_name": "Circuit de Barcelona Catalunya"
+   }
+  },
+  {
+   "subsession_id": 35014450,
+   "start_time": "2020-10-10T13:45:00Z",
+   "race_week_num": 11,
+   "official_session": true,
+   "num_drivers": 31,
+   "event_type": 5,
+   "track": {
+    "config_name": "Grand Prix",
+    "track_id": 239,
+    "track_name": "Autodromo Nazionale Monza"
+   }
+  }
+ ]
+}

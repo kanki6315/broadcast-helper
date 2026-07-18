@@ -1,0 +1,26 @@
+{
+ "success": true,
+ "series": {
+  "series_id": 409,
+  "series_name": "Porsche TAG Heuer Esports Supercup",
+  "seasons": [
+   {
+    "season_id": 2812,
+    "series_id": 409,
+    "season_name": "Porsche TAG Heuer Esports Supercup - 2020 Season",
+    "season_short_name": "2020 Season",
+    "season_year": 2020,
+    "season_quarter": 2,
+    "official": true,
+    "car_classes": [
+     {
+      "car_class_id": 95,
+      "short_name": "[L] Porsche 911",
+      "name": "[Legacy] Porsche 911 GT3 Cup",
+      "relative_speed": 51
+     }
+    ]
+   }
+  ]
+ }
+}
