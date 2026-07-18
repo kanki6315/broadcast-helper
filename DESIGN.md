@@ -404,8 +404,12 @@ The event's results, one session at a time. Round chips pick the event; a
 qualifying ⇄ race and hides when there's only one session. The classification
 is a Data Grid whose column set follows the session and is computed from the
 whole session, never the class-filtered rows — flipping a class chip never
-reshapes the table. On a qualifying session the driver column names the one
-driver the session credits, and its header says which claim that is:
+reshapes the table. Race classifications add **± Pos** beside the finish to
+show positions gained or lost from the published starting grid, and **Pit
+stops** beside laps only when every result row carries the provider's count —
+missing data is never presented as a zero-stop race. On a qualifying session
+the driver column names the one driver the session credits, and its header says
+which claim that is:
 **"Qualified by"** where the grid file named a qualifying driver of record,
 else **"Fastest lap by"** (the timing provider's seat), else plain "Drivers".
 Where a header promises attribution but a row has none, the cell still prints
