@@ -257,6 +257,13 @@ public final class IRacingParser {
                     d.path("total_points").asDouble(),
                     null,
                     null,
+                    // The league office's own corrections. Kept as reported so
+                    // the gap between a row total and its round columns has a
+                    // name rather than being an unexplained difference.
+                    new StandingsImport.Adjustments(
+                            d.path("base_points").asDouble(),
+                            d.path("positive_adjustments").asDouble(),
+                            d.path("negative_adjustments").asDouble()),
                     points
             ));
         }
@@ -474,6 +481,10 @@ public final class IRacingParser {
                     text(d, "display_name"),
                     d.path("points").asDouble(),
                     null,
+                    null,
+                    // An official series has no steward adjustments — its totals
+                    // are the raw sum of the rounds, which is why they reconcile
+                    // exactly where a league's need not.
                     null,
                     points
             ));

@@ -1543,10 +1543,13 @@ public class ImportService {
         }
 
         for (StandingsImport.Row row : imp.rows()) {
+            StandingsImport.Adjustments adj = row.adjustments();
             long rowId = db.sql("""
                             INSERT INTO standings_row (championship_id, position, competitor_key, competitor_name,
-                                                       total_points, net_position, total_net_points)
-                            VALUES (:chId, :position, :key, :name, :points, :netPosition, :netPoints)
+                                                       total_points, net_position, total_net_points,
+                                                       base_points, positive_adjustments, negative_adjustments)
+                            VALUES (:chId, :position, :key, :name, :points, :netPosition, :netPoints,
+                                    :basePoints, :posAdj, :negAdj)
                             RETURNING id
                             """)
                     .param("chId", championshipId)
@@ -1556,6 +1559,11 @@ public class ImportService {
                     .param("points", row.totalPoints())
                     .param("netPosition", row.netPosition())
                     .param("netPoints", row.totalNetPoints())
+                    // Null throughout when the source reports no adjustments,
+                    // which is not the same as reporting none.
+                    .param("basePoints", adj == null ? null : adj.basePoints())
+                    .param("posAdj", adj == null ? null : adj.positive())
+                    .param("negAdj", adj == null ? null : adj.negative())
                     .query(Long.class)
                     .single();
             for (StandingsImport.SessionPoints p : row.pointsBySession()) {

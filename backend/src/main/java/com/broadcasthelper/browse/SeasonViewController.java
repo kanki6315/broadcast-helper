@@ -53,8 +53,18 @@ public class SeasonViewController {
 
     public record RecapRow(int position, String competitorKey, String competitorName, String carNumber,
                            String teamName, double totalPoints,
+                           RecapAdjustments adjustments,
                            Map<Integer, Double> pointsByRound,
                            Map<Integer, List<RecapRace>> cells) {
+    }
+
+    /**
+     * A league's manual corrections to this competitor's season total, when its
+     * source reports them — null otherwise. This is what explains a row whose
+     * round columns don't add up to its total: the columns sum to basePoints,
+     * and the adjustments carry it the rest of the way.
+     */
+    public record RecapAdjustments(double basePoints, double positive, double negative) {
     }
 
     public record Recap(ChampInfo championship, List<RecapRound> rounds, List<RecapRow> rows) {
@@ -135,18 +145,30 @@ public class SeasonViewController {
 
         // Standings rows with per-round points. A round where every session was
         // did_not_race is omitted from the row's points map (blank, not 0).
-        record RowHeader(long rowId, int position, String key, String name, double totalPoints) {
+        record RowHeader(long rowId, int position, String key, String name, double totalPoints,
+                         RecapAdjustments adjustments) {
         }
         List<RowHeader> headers = db.sql("""
-                        SELECT id, position, competitor_key, competitor_name, total_points
+                        SELECT id, position, competitor_key, competitor_name, total_points,
+                               base_points, positive_adjustments, negative_adjustments
                         FROM standings_row
                         WHERE championship_id = :id
                         ORDER BY position, competitor_key
                         """)
                 .param("id", id)
-                .query((rs, i) -> new RowHeader(rs.getLong("id"), rs.getInt("position"),
-                        rs.getString("competitor_key"), rs.getString("competitor_name"),
-                        rs.getDouble("total_points")))
+                .query((rs, i) -> {
+                    // Only leagues report adjustments; a null base_points means
+                    // the source named none, so the total needs no explaining.
+                    // Read as BigDecimal: the driver won't hand a NUMERIC over
+                    // as a Double, and getDouble alone can't express the null.
+                    java.math.BigDecimal base = rs.getBigDecimal("base_points");
+                    return new RowHeader(rs.getLong("id"), rs.getInt("position"),
+                            rs.getString("competitor_key"), rs.getString("competitor_name"),
+                            rs.getDouble("total_points"),
+                            base == null ? null : new RecapAdjustments(base.doubleValue(),
+                                    rs.getDouble("positive_adjustments"),
+                                    rs.getDouble("negative_adjustments")));
+                })
                 .list();
 
         record SessionPoints(long rowId, int round, double points, String status) {
@@ -271,7 +293,7 @@ public class SeasonViewController {
             });
 
             rows.add(new RecapRow(h.position(), h.key(), h.name(), carNumber, teamName,
-                    h.totalPoints(), points, byRound));
+                    h.totalPoints(), h.adjustments(), points, byRound));
         }
 
         return new Recap(champ, rounds, rows);
