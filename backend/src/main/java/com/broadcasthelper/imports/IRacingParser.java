@@ -208,29 +208,102 @@ public final class IRacingParser {
     }
 
     /**
-     * A league season's driver championship. The Data API gives season totals
-     * only — base points plus adjustments, no per-round split — so each row's
-     * per-session breakdown is empty; the standings commit path tolerates that.
-     * The competitor is the driver (a solo league), keyed by cust_id so a rename
-     * doesn't fork the row.
+     * A league season's driver championship from the /league/season_standings
+     * payload alone. The endpoint gives season totals only — base points plus
+     * manual adjustments, no per-round split — so each row's per-session
+     * breakdown is empty and no rounds are named. {@link #assembleSeasonStandings}
+     * fills those in from the individual rounds' results; this thin form is the
+     * fallback for when no round results are available.
      */
     public static StandingsImport parseSeasonStandings(JsonNode root, String seasonName, String year) {
+        return assembleSeasonStandings(root, seasonName, year, List.of(), java.util.Map.of());
+    }
+
+    /**
+     * A league season's driver championship with its per-round points filled in.
+     * The standings endpoint names the competitors and their season totals; the
+     * per-round breakdown the recap needs is pulled from each round's own result
+     * (see {@link #parseRoundLeaguePoints}) and passed in here.
+     *
+     * The competitor is the driver (a solo league), keyed by cust_id so a rename
+     * doesn't fork the row. total_points stays the endpoint's authoritative value
+     * — it already folds in any manual adjustments (post-race penalties), which
+     * the per-round race points can't know about — so the row total and the
+     * per-round column sum can legitimately differ by those adjustments.
+     *
+     * @param sessions             the season's scoring rounds, oldest first
+     * @param pointsByCustSession  cust_id → (session_index → league points that round);
+     *                             a driver absent from a round's map raced no points there
+     */
+    public static StandingsImport assembleSeasonStandings(
+            JsonNode root, String seasonName, String year,
+            List<StandingsImport.SessionRef> sessions,
+            java.util.Map<Long, java.util.Map<Integer, Double>> pointsByCustSession) {
         List<StandingsImport.Row> rows = new ArrayList<>();
         for (JsonNode d : root.path("standings").path("driver_standings")) {
             JsonNode driver = d.path("driver");
+            long custId = driver.path("cust_id").asLong();
+            java.util.Map<Integer, Double> perRound =
+                    pointsByCustSession.getOrDefault(custId, java.util.Map.of());
+            List<StandingsImport.SessionPoints> points = new ArrayList<>();
+            for (StandingsImport.SessionRef s : sessions) {
+                Double pts = perRound.get(s.sessionIndex());
+                if (pts == null) {
+                    continue; // the driver didn't take part in this round — leave it blank
+                }
+                // iRacing scores a single league-points figure per round; there is
+                // no pole/fastest-lap/penalty split to record (post-race penalties
+                // arrive as the standings' manual adjustments, not per session).
+                points.add(new StandingsImport.SessionPoints(
+                        s.sessionIndex(), pts, pts, 0, 0, 0, 0, "race"));
+            }
             rows.add(new StandingsImport.Row(
                     d.path("position").asInt(),
-                    String.valueOf(driver.path("cust_id").asLong()),
+                    String.valueOf(custId),
                     text(driver, "display_name"),
                     d.path("total_points").asDouble(),
                     null,
                     null,
-                    List.of()
+                    points
             ));
         }
         rows.sort((a, b) -> Integer.compare(a.position(), b.position()));
-        // No per-round session list either — the endpoint names no rounds.
-        return new StandingsImport(seasonName, seasonName, null, year, List.of(), rows);
+        return new StandingsImport(seasonName, seasonName, null, year, sessions, rows);
+    }
+
+    /**
+     * The venue name a round should carry in the championship calendar — the same
+     * string {@link #parseSessions} names the round's event with, so the recap's
+     * venue match to that event (and thus its start→finish cells) lines up exactly.
+     */
+    public static String roundVenueName(JsonNode result) {
+        return circuitName(resultData(result));
+    }
+
+    /**
+     * One round's league championship points per driver, keyed by cust_id. iRacing
+     * has already scored these — league_points on each race result row — so no
+     * points formula is reinvented here; a round with more than one race sim-session
+     * (a sprint-plus-feature round) sums them. Qualifying and practice score
+     * nothing and are skipped. Team-shell rows (no cust_id) are ignored — this is
+     * the drivers championship.
+     */
+    public static java.util.Map<Long, Double> parseRoundLeaguePoints(JsonNode result) {
+        JsonNode data = resultData(result);
+        java.util.Map<Long, Double> byCust = new java.util.HashMap<>();
+        for (JsonNode sim : data.path("session_results")) {
+            if (sim.path("simsession_type").asInt() != TYPE_RACE) {
+                continue;
+            }
+            for (JsonNode r : sim.path("results")) {
+                long custId = r.path("cust_id").asLong(-1);
+                if (custId <= 0) {
+                    continue;
+                }
+                byCust.merge(custId, r.path("league_points").asDouble(0), Double::sum);
+            }
+        }
+        return byCust;
     }
 
     private static List<RaceResultsImport.Row> resultRows(JsonNode data, JsonNode sim) {

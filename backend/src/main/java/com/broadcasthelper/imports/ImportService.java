@@ -102,9 +102,15 @@ public class ImportService {
     /**
      * Stages a league season's driver standings — the championship table a single
      * result file can't produce. The reviewer confirms class / kind / season year
-     * on commit, the same as a points-PDF standings import. Season totals only:
-     * the API gives no per-round breakdown, so the rows carry a total and nothing
-     * per session.
+     * on commit, the same as a points-PDF standings import.
+     *
+     * The /league/season_standings endpoint gives season totals only, so this also
+     * walks the season's completed rounds and reads the per-round league points
+     * iRacing already scored on each round's result. That reconstructs the per-round
+     * breakdown the recap needs (its columns and points-per-round grid), and names
+     * each round with the same venue string the round-results import uses, so the
+     * recap's start→finish cells line up. It costs one result fetch per round — the
+     * same order as importing the season's results — so it is a deliberate action.
      */
     public List<BatchSummary> stageStandingsFromIRacing(long leagueId, long seasonId) {
         JsonNode standings = iracing.get("/league/season_standings", java.util.Map.of(
@@ -112,13 +118,39 @@ public class ImportService {
                 "season_id", String.valueOf(seasonId)));
         String seasonName = seasonName(leagueId, seasonId);
         String year = leadingYear(seasonName);
-        StandingsImport imp = IRacingParser.parseSeasonStandings(standings, seasonName, year);
+
+        // Walk the completed rounds oldest-first, pulling each round's per-driver
+        // league points. A round we can't fetch just leaves a gap in the calendar
+        // rather than sinking the whole standings import.
+        List<IRacingParser.LeagueRound> rounds = listSeasonRounds(leagueId, seasonId).stream()
+                .filter(IRacingParser.LeagueRound::hasResults)
+                .toList();
+        List<StandingsImport.SessionRef> sessions = new ArrayList<>();
+        Map<Long, Map<Integer, Double>> pointsByCustSession = new java.util.HashMap<>();
+        int sessionIndex = 0;
+        for (IRacingParser.LeagueRound round : rounds) {
+            JsonNode result;
+            try {
+                result = iracing.fetchResult(round.subsessionId());
+            } catch (RuntimeException e) {
+                continue;
+            }
+            int idx = ++sessionIndex;
+            sessions.add(new StandingsImport.SessionRef(
+                    idx, IRacingParser.roundVenueName(result), round.trackName()));
+            IRacingParser.parseRoundLeaguePoints(result).forEach((custId, pts) ->
+                    pointsByCustSession.computeIfAbsent(custId, k -> new java.util.HashMap<>())
+                            .put(idx, pts));
+        }
+
+        StandingsImport imp = IRacingParser.assembleSeasonStandings(
+                standings, seasonName, year, sessions, pointsByCustSession);
         if (imp.rows().isEmpty()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "No driver standings found for league " + leagueId + " season " + seasonId);
         }
         Staged staged = new Staged("STANDINGS", imp,
-                "%s — %d competitors".formatted(imp.name(), imp.rows().size()));
+                "%s — %d competitors, %d rounds".formatted(imp.name(), imp.rows().size(), sessions.size()));
         return persist(List.of(staged), ImportFormat.IRACING_JSON,
                 "league-" + leagueId + "-season-" + seasonId + "-standings.json");
     }

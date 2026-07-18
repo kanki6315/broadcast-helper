@@ -8,7 +8,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -126,6 +128,62 @@ class IRacingParserTest {
         for (int i = 1; i < st.rows().size(); i++) {
             assertTrue(st.rows().get(i).position() >= st.rows().get(i - 1).position());
         }
+    }
+
+    @Test
+    void sumsPerRoundLeaguePointsByDriver() throws IOException {
+        // iRacing already scored the round; the parser just totals league_points
+        // per driver across the round's race sim-sessions (HEAT 1 + FEATURE here).
+        Map<Long, Double> pts = IRacingParser.parseRoundLeaguePoints(fixture());
+
+        assertEquals(30, pts.size());
+        // Cooper Webster won the round: 20 in the heat plus 50 in the feature.
+        assertEquals(70.0, pts.get(161668L));
+        assertEquals(58.0, pts.get(220097L));
+    }
+
+    @Test
+    void namesTheRoundWithTheSameVenueTheResultsImportUses() throws IOException {
+        // The calendar's venue string must be the exact one the round-results
+        // import names its event with, or the recap can't line its start→finish
+        // cells up to that event.
+        String venue = IRacingParser.roundVenueName(fixture());
+
+        assertTrue(venue.startsWith("Daytona"), venue);
+        assertEquals(IRacingParser.parseSessions(fixture()).get(0).eventName(), venue);
+    }
+
+    @Test
+    void assemblesPerRoundPointsOntoStandingsRows() throws IOException {
+        JsonNode standings;
+        try (InputStream in = getClass()
+                .getResourceAsStream("/fixtures/iracing/league-season-standings-6004-114713.json")) {
+            assertNotNull(in, "missing standings fixture");
+            standings = mapper.readTree(in);
+        }
+        // One scored round (Daytona) plus a future calendar slot nobody has raced:
+        // the assembly fills the first and leaves the second blank, not zero.
+        Map<Long, Map<Integer, Double>> byCust = new HashMap<>();
+        IRacingParser.parseRoundLeaguePoints(fixture())
+                .forEach((cust, p) -> byCust.computeIfAbsent(cust, k -> new HashMap<>()).put(1, p));
+        List<StandingsImport.SessionRef> sessions = List.of(
+                new StandingsImport.SessionRef(1, "Daytona International Speedway", "Round 1"),
+                new StandingsImport.SessionRef(2, "Sebring International Raceway", "Round 2"));
+
+        StandingsImport st = IRacingParser.assembleSeasonStandings(
+                standings, "2025 Porsche Esports Supercup", "2025", sessions, byCust);
+
+        assertEquals(2, st.sessions().size());
+        StandingsImport.Row leader = st.rows().get(0);
+        assertEquals("161668", leader.key());
+        assertEquals(379.0, leader.totalPoints()); // season total is unchanged (base + adjustments)
+
+        // Only the scored round appears; the empty future round stays blank.
+        assertEquals(1, leader.pointsBySession().size());
+        StandingsImport.SessionPoints round1 = leader.pointsBySession().get(0);
+        assertEquals(1, round1.sessionIndex());
+        assertEquals(70.0, round1.totalPoints());
+        assertEquals(70.0, round1.racePoints());
     }
 
     @Test
