@@ -793,3 +793,44 @@ h2 small {
   gap: var(--space-1);
   margin-top: var(--space-2);
 }
+
+/* Class-name editor (aliases + rename) mirrors the same row rhythm. */
+.class-alias-editor {
+  min-width: 300px;
+}
+
+.class-alias-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.class-alias-name {
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.class-alias-row .class-alias-name:last-of-type {
+  flex: 1;
+}
+
+.class-alias-add,
+.class-alias-rename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.class-alias-add input,
+.class-alias-rename input {
+  width: 9rem;
+  padding: 2px 6px;
+}
+
+.class-alias-hint {
+  font-size: var(--text-xs);
+  max-width: 34ch;
+  margin-top: var(--space-2);
+}

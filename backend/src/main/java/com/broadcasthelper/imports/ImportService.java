@@ -680,7 +680,8 @@ public class ImportService {
             }
             List<String> known = seasonEntryClasses(seasonId.get());
             String className = deriveClassAndKind(imp.mainTitle(), match.matchedPrefix()).className();
-            List<String> unknown = isUnknownClass(className, known) ? List.of(className) : List.of();
+            List<String> unknown = isUnknownClass(className, known, classAliasesForSeason(seasonId.get()))
+                    ? List.of(className) : List.of();
             return new ClassReview(known, unknown);
         } catch (ResponseStatusException e) {
             return new ClassReview(List.of(), List.of());
@@ -880,9 +881,10 @@ public class ImportService {
      *  match none of the season's canonical (entry-list) classes. */
     private ClassReview classReviewForSeason(long seasonId, List<String> batchClasses) {
         List<String> known = seasonEntryClasses(seasonId);
+        Map<String, String> aliases = classAliasesForSeason(seasonId);
         LinkedHashSet<String> unknown = new LinkedHashSet<>();
         for (String className : batchClasses) {
-            if (isUnknownClass(className, known)) {
+            if (isUnknownClass(className, known, aliases)) {
                 unknown.add(className);
             }
         }
@@ -1271,6 +1273,7 @@ public class ImportService {
         // Read the canonical class set before upserting entries, so the file's
         // own rows don't seed it (see canonicalizeClass).
         List<String> knownClasses = seasonEntryClasses(seasonId);
+        Map<String, String> classAliases = classAliasesForSeason(seasonId);
         long eventId = target.eventId() != null ? target.eventId()
                 : createEvent(seasonId, chosenEventName(target, imp.eventName()), imp.circuitName(),
                 imp.circuitLengthM(), imp.circuitCountry(), imp.sessionStart().toLocalDate());
@@ -1288,7 +1291,7 @@ public class ImportService {
         db.sql("DELETE FROM result WHERE session_id = :sessionId").param("sessionId", sessionId).update();
 
         for (RaceResultsImport.Row row : imp.rows()) {
-            String className = canonicalizeClass(row.className(), knownClasses, mapping,
+            String className = canonicalizeClass(row.className(), knownClasses, mapping, classAliases,
                     imp.championshipName() + " " + imp.sessionStart().getYear());
             long entryId = upsertEntry(eventId, row.number(), className, row.team(), row.vehicle(),
                     row.manufacturer(), row.group());
@@ -1405,6 +1408,7 @@ public class ImportService {
             sessionName = sessionDisplayName(sessionType, sessionOrdinal);
         }
         List<String> knownClasses = seasonEntryClasses(seasonId);
+        Map<String, String> classAliases = classAliasesForSeason(seasonId);
         Map<String, String> mapping = target.mapping();
         String context = imp.championshipName() != null && imp.sessionStart() != null
                 ? imp.championshipName() + " " + imp.sessionStart().getYear() : "grid import";
@@ -1417,7 +1421,7 @@ public class ImportService {
         db.sql("DELETE FROM grid_position WHERE session_id = :sessionId").param("sessionId", sessionId).update();
 
         for (GridImport.Row row : imp.rows()) {
-            String className = canonicalizeClass(row.className(), knownClasses, mapping, context);
+            String className = canonicalizeClass(row.className(), knownClasses, mapping, classAliases, context);
             long entryId = upsertEntry(eventId, row.number(), className, row.team(),
                     row.vehicle(), row.manufacturer(), row.group());
             // A batch staged before the attribution fields existed deserializes
@@ -1506,7 +1510,7 @@ public class ImportService {
         String kind = normalizeKind(target.kind(), imp.mainTitle());
         boolean isCup = Boolean.TRUE.equals(target.isCup());
         String className = canonicalizeClass(target.classCode(), seasonEntryClasses(seasonId),
-                target.mapping(), imp.mainTitle());
+                target.mapping(), classAliasesForSeason(seasonId), imp.mainTitle());
         // The award set (family + kind) this class championship groups under. The
         // family is the reviewer's confirmed name (defaults to the series name for
         // the primary championship, the cup's own name for a cup).
@@ -1611,11 +1615,18 @@ public class ImportService {
                 : createEvent(seasonId, chosenEventName(target, imp.event().name()), imp.event().circuit(),
                 null, null, eventDate);
         renumberSeasonRounds(seasonId);
+        Map<String, String> classAliases = classAliasesForSeason(seasonId);
 
         for (EntryListImport.Entry e : imp.entries()) {
             // Class codes are normalized by dropping spaces so entry-list spelling
-            // ("GTD PRO") joins with results-file spelling ("GTDPRO").
+            // ("GTD PRO") joins with results-file spelling ("GTDPRO"). The entry
+            // list is the class authority, but a series-level alias still wins:
+            // it's a standing rename, and without it a re-imported entry list
+            // would re-seed the retired spelling as canon.
             String className = e.classCode() != null ? e.classCode().replace(" ", "") : null;
+            if (className != null) {
+                className = classAliases.getOrDefault(normClass(className), className);
+            }
             // A VIP / Invitational entry (blue-V icon on a driver, "Indicates
             // driver is a VIP Entry" / "Invitational Entry" in the legend) scores
             // no points — the sheet's GUEST treatment. The entry list is the
@@ -2105,23 +2116,30 @@ public class ImportService {
                 .list();
     }
 
-    private static boolean isUnknownClass(String className, List<String> known) {
+    private static boolean isUnknownClass(String className, List<String> known, Map<String, String> aliases) {
         if (className == null || known.isEmpty()) {
             return false;
         }
         String n = normClass(className);
+        if (aliases.containsKey(n)) {
+            return false;
+        }
         return known.stream().noneMatch(k -> normClass(k).equals(n));
     }
 
     /**
      * Resolve a source class spelling to the season's canonical (entry-list)
-     * class. A caller-supplied mapping wins (the reviewer's choice). Otherwise a
-     * spelling that matches a known class ignoring case/spaces is auto-resolved to
-     * that class. With no canonical set yet (bootstrap: no entry list imported),
-     * the raw spelling establishes canon. Anything else is unrecognized and fails
-     * the commit so it gets mapped in the review screen first.
+     * class. A caller-supplied mapping wins (the reviewer's choice), then a
+     * per-series alias (a standing rename the user recorded — it beats the
+     * bootstrap case so a cold season imports canonical from the start).
+     * Otherwise a spelling that matches a known class ignoring case/spaces is
+     * auto-resolved to that class. With no canonical set yet (bootstrap: no
+     * entry list imported), the raw spelling establishes canon. Anything else
+     * is unrecognized and fails the commit so it gets mapped in the review
+     * screen first.
      */
-    private String canonicalizeClass(String raw, List<String> known, Map<String, String> mapping, String context) {
+    private String canonicalizeClass(String raw, List<String> known, Map<String, String> mapping,
+                                     Map<String, String> aliases, String context) {
         // No class is a real answer, not a missing one: an overall championship
         // spans every class ("...Points (Overall)") and a teams/dealer one isn't
         // scoped to a class at all. Blank has to mean the same as null here — the
@@ -2135,10 +2153,13 @@ public class ImportService {
         if (mapping != null && mapping.containsKey(raw)) {
             return mapping.get(raw);
         }
+        String n = normClass(raw);
+        if (aliases.containsKey(n)) {
+            return aliases.get(n);
+        }
         if (known.isEmpty()) {
             return raw;
         }
-        String n = normClass(raw);
         for (String k : known) {
             if (normClass(k).equals(n)) {
                 return k;
@@ -2147,6 +2168,21 @@ public class ImportService {
         throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "Unrecognized class '" + raw + "' for " + context
                 + ". Map it to a known class in the review screen before committing. Known classes: " + known);
+    }
+
+    /** The season's series' class aliases, keyed by normalized alias spelling. */
+    private Map<String, String> classAliasesForSeason(long seasonId) {
+        Map<String, String> aliases = new java.util.LinkedHashMap<>();
+        db.sql("""
+                        SELECT ca.alias, ca.class_name
+                        FROM class_alias ca
+                                 JOIN season s ON s.series_id = ca.series_id
+                        WHERE s.id = :seasonId
+                        """)
+                .param("seasonId", seasonId)
+                .query((rs, i) -> aliases.put(normClass(rs.getString("alias")), rs.getString("class_name")))
+                .list();
+        return aliases;
     }
 
     /**

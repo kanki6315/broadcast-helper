@@ -27,6 +27,17 @@ interface RaceFormat {
   sessionCount: number
 }
 
+interface ClassAlias {
+  id: number
+  alias: string
+  className: string
+}
+
+interface ClassAliasesResponse {
+  aliases: ClassAlias[]
+  classesInUse: string[]
+}
+
 interface SeasonSummary {
   id: number
   year: number
@@ -42,6 +53,7 @@ export default function SeriesPage() {
   const [aliasDrafts, setAliasDrafts] = useState<Record<number, string>>({})
   const [expanded, setExpanded] = useState<number | null>(null)
   const [formatsExpanded, setFormatsExpanded] = useState<number | null>(null)
+  const [classNamesExpanded, setClassNamesExpanded] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -147,7 +159,9 @@ export default function SeriesPage() {
       <p>
         Aliases map standings titles to a series when a championship publishes under its own name —
         e.g. alias <em>IMSA Michelin Endurance Cup</em> on the IMSA series. Class colours set the
-        header colour and order each class appears in on the sheet.
+        header colour and order each class appears in on the sheet. Class names rename a class
+        everywhere and keep future imports mapped, for sources that spell one class differently —
+        e.g. iRacing&apos;s <em>[L] Porsche 911</em> vs <em>Hosted All Cars</em>.
       </p>
 
       {error && <p className="error">{error}</p>}
@@ -165,6 +179,7 @@ export default function SeriesPage() {
               <th>Abbreviation</th>
               <th>Aliases</th>
               <th>Class colours</th>
+              <th>Class names</th>
               <th>Race formats</th>
             </tr>
           </thead>
@@ -227,6 +242,15 @@ export default function SeriesPage() {
                     <ClassStyleEditor seriesId={s.id} onError={setError} />
                   ) : (
                     <button type="button" onClick={() => setExpanded(s.id)}>
+                      Edit…
+                    </button>
+                  )}
+                </td>
+                <td>
+                  {classNamesExpanded === s.id ? (
+                    <ClassAliasEditor seriesId={s.id} onError={setError} />
+                  ) : (
+                    <button type="button" onClick={() => setClassNamesExpanded(s.id)}>
                       Edit…
                     </button>
                   )}
@@ -557,6 +581,177 @@ function RaceFormatEditor({
         </button>
       </div>
       {assignNote && <p className="muted">{assignNote}</p>}
+    </div>
+  )
+}
+
+/**
+ * Per-series class names: rename a class across every season (entries,
+ * championships, sheet styles) and keep future imports mapped via the recorded
+ * alias, plus direct alias management for spellings known ahead of an import.
+ */
+function ClassAliasEditor({
+  seriesId,
+  onError,
+}: {
+  seriesId: number
+  onError: (message: string | null) => void
+}) {
+  const [aliases, setAliases] = useState<ClassAlias[]>([])
+  const [classesInUse, setClassesInUse] = useState<string[]>([])
+  const [renameFrom, setRenameFrom] = useState('')
+  const [renameTo, setRenameTo] = useState('')
+  const [newAlias, setNewAlias] = useState('')
+  const [newTarget, setNewTarget] = useState('')
+  const [note, setNote] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  async function load() {
+    try {
+      const res = await fetch(`/api/series/${seriesId}/class-aliases`)
+      if (!res.ok) throw new Error(`Backend returned ${res.status}`)
+      const data: ClassAliasesResponse = await res.json()
+      setAliases(data.aliases)
+      setClassesInUse(data.classesInUse)
+      onError(null)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed to reach backend')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seriesId])
+
+  async function rename() {
+    const from = renameFrom
+    const to = renameTo.trim()
+    if (!from || !to) return
+    setNote(null)
+    const res = await fetch(`/api/series/${seriesId}/classes/rename`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => null)
+      onError(err?.message ?? `Backend returned ${res.status}`)
+      return
+    }
+    const r = (await res.json()) as { entriesRenamed: number; championshipsRenamed: number }
+    onError(null)
+    setNote(
+      `Renamed ${r.entriesRenamed} entr${r.entriesRenamed === 1 ? 'y' : 'ies'} and ` +
+        `${r.championshipsRenamed} championship${r.championshipsRenamed === 1 ? '' : 's'} to “${to}”. ` +
+        `Future imports of “${from}” map automatically.`,
+    )
+    setRenameFrom('')
+    setRenameTo('')
+    await load()
+  }
+
+  async function addAlias() {
+    const alias = newAlias.trim()
+    const className = newTarget.trim()
+    if (!alias || !className) return
+    const res = await fetch(`/api/series/${seriesId}/class-aliases`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alias, className }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => null)
+      onError(err?.message ?? `Backend returned ${res.status}`)
+      return
+    }
+    onError(null)
+    setNewAlias('')
+    setNewTarget('')
+    await load()
+  }
+
+  async function removeAlias(a: ClassAlias) {
+    const res = await fetch(`/api/series/${seriesId}/class-aliases/${a.id}`, { method: 'DELETE' })
+    if (!res.ok && res.status !== 404) {
+      onError(`Backend returned ${res.status}`)
+      return
+    }
+    onError(null)
+    await load()
+  }
+
+  if (loading) return <span className="muted">Loading…</span>
+
+  return (
+    <div className="class-alias-editor">
+      {aliases.length === 0 && <p className="muted">No class aliases yet.</p>}
+      {aliases.map((a) => (
+        <div key={a.id} className="class-alias-row">
+          <span className="class-alias-name">{a.alias}</span>
+          <span className="muted">→</span>
+          <span className="class-alias-name">{a.className}</span>
+          <button type="button" onClick={() => void removeAlias(a)} aria-label={`Remove alias ${a.alias}`}>
+            ✕
+          </button>
+        </div>
+      ))}
+
+      <div className="class-alias-add">
+        <input
+          value={newAlias}
+          onChange={(e) => setNewAlias(e.target.value)}
+          placeholder="Source spelling…"
+          aria-label="Alias source spelling"
+        />
+        <input
+          value={newTarget}
+          onChange={(e) => setNewTarget(e.target.value)}
+          placeholder="Maps to class…"
+          aria-label="Alias target class"
+          list={`class-alias-targets-${seriesId}`}
+        />
+        <datalist id={`class-alias-targets-${seriesId}`}>
+          {classesInUse.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+        <button type="button" onClick={() => void addAlias()} disabled={!newAlias.trim() || !newTarget.trim()}>
+          Add
+        </button>
+      </div>
+
+      <div className="class-alias-rename">
+        <select
+          value={renameFrom}
+          onChange={(e) => setRenameFrom(e.target.value)}
+          aria-label="Class to rename"
+        >
+          <option value="">Rename class…</option>
+          {classesInUse.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <input
+          value={renameTo}
+          onChange={(e) => setRenameTo(e.target.value)}
+          placeholder="New name…"
+          aria-label="New class name"
+          list={`class-alias-targets-${seriesId}`}
+        />
+        <button type="button" onClick={() => void rename()} disabled={!renameFrom || !renameTo.trim()}>
+          Rename
+        </button>
+      </div>
+      <p className="muted class-alias-hint">
+        Renaming updates every season&apos;s entries and championships, and records the old spelling
+        as an alias. Renaming onto an existing class merges them.
+      </p>
+      {note && <p className="muted">{note}</p>}
     </div>
   )
 }

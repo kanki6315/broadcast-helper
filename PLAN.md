@@ -366,9 +366,12 @@ no entry-list class (compared case/space-insensitively) is **flagged in the
 Imports review screen and blocks commit** until the reviewer maps it to a known
 class (`ImportService.classReview` / `canonicalizeClass`; commit takes an
 optional `classMapping`). A space/case-only difference auto-resolves; a cold
-season with no entry list yet accepts the file's classes as canon. Mappings are
-not persisted (re-imports re-ask). Migration V10 back-filled the existing IMEC
-championships to the canonical short codes.
+season with no entry list yet accepts the file's classes as canon. Reviewer
+mappings are not persisted (re-imports re-ask) — a *standing* spelling mapping
+is a per-series **class alias** (V29, Phase 4's class-rename slice), which
+canonicalizeClass consults after the reviewer's mapping and before everything
+else. Migration V10 back-filled the existing IMEC championships to the
+canonical short codes.
 **Image size variants — ✅ DONE.** Full-res stays the source of truth in
 `car_image`; on upload a ~400px-longest-side **WebP** "sheet" variant is
 generated (scrimage-webp; bundled native cwebp binaries) into a new
@@ -643,7 +646,32 @@ display size.)
   flag for marking a hand-edited row so a re-import can decide whether to
   preserve it — commit currently replaces the championship wholesale, so that
   decision needs making before the editor ships.
-- **Drag-and-drop upload modal + series/event pinning — ✅ DONE (2026-07-17).**
+- **Per-series class aliases + class rename (V29) — ✅ DONE (2026-07-18).**
+  One series imported from two providers can spell its single class two ways —
+  iRacing's official-series payloads say `[L] Porsche 911` where hosted/league
+  payloads say `Hosted All Cars` (`car_class_short_name` either way), which
+  split every PESC driver's **all-time** stats row in two (season tables were
+  unaffected: one spelling per season). `class_alias` (V29: series_id, alias,
+  class_name, unique on `(series_id, lower(alias))`) is the durable fix,
+  mirroring `series_alias` for titles. `canonicalizeClass` resolves an alias
+  after the reviewer's explicit mapping but **before the bootstrap case**, so a
+  cold season imports canonical from the first file; `classReviewForSeason` /
+  `reviewStandings` consult it so an aliased spelling is never flagged
+  unknown; the entry-list commit applies it too (the entry list is the class
+  authority, but a standing rename outranks it — otherwise a re-imported entry
+  list re-seeds the retired spelling). Managed on Manage → Series → **Class
+  names** (`ClassAliasController`): alias CRUD at `/api/series/{id}/class-aliases`
+  and — the main entry point — `POST /api/series/{id}/classes/rename`
+  `{from,to}`, which renames the class across every season's entries and
+  championships in one transaction, carries the `class_style` row over (target's
+  style wins on a merge), retargets aliases pointing at the old name, and
+  records the retired spelling as an alias. Renaming onto an existing class is
+  the merge. Applied live: both PESC spellings → **Porsche 911 Cup** (2,056
+  entries, 7 championships); the all-time stats table went 135 rows → 106 and
+  the independent row-level recomputation still matches the API exactly
+  (0 discrepancies, all seasons + all-time). Re-import durability proven
+  end-to-end on a throwaway series: after a rename, re-committing the same
+  results file lands rows under the new name with nothing flagged in review.
   The bare file input on the imports page is replaced by `UploadFilesModal`:
   drag-and-drop (plus browse/paste), a per-file staged queue, and a shared
   **`SeriesEventPicker`** typeahead that pins one series + event as the batch's
