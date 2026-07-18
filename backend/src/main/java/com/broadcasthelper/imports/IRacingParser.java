@@ -279,7 +279,9 @@ public final class IRacingParser {
     /**
      * The venue name a round should carry in the championship calendar — the same
      * string {@link #parseSessions} names the round's event with, so the recap's
-     * venue match to that event (and thus its start→finish cells) lines up exactly.
+     * column label reads the same as the event it sits above. The recap matches
+     * rounds to events by ordinal, not by this name, so it is a label rather than
+     * a key; keeping it identical just avoids a column labelled unlike its event.
      */
     public static String roundVenueName(JsonNode result) {
         return circuitName(resultData(result));

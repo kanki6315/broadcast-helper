@@ -507,17 +507,48 @@ display size.)
   template-expanded and corrupts the `%2F` in the AWS signature) and parsed **as
   bytes** (S3 serves the roster as octet-stream). Endpoints: subsession →
   results+grids; `league/season_sessions` → round enumeration; `season_standings`
-  → StandingsImport (season totals only, no per-round split); bulk-import a whole
+  → StandingsImport (see the per-round assembly below); bulk-import a whole
   season, or a hand-picked list of subsessions — both resilient, one bad
   subsession reported not fatal. The **Import-from-iRacing modal** on the imports
   page is the UI for all of it (subsession list or league season → grouped result
   → the normal review + commit). Committing N rounds to one series lands them as
   N events under one season — a season assembled from individual races. Roster →
-  entry list and points-system decomposition were evaluated and dropped as
-  low-value here (a roster is season-wide with no team/class; the standings'
-  base-vs-adjustment split is the practical points breakdown). Credentials live
-  in a gitignored `application-local.yml` (the `local` Spring profile, bootRun
-  only) locally and env vars in prod.
+  entry list was evaluated and dropped as low-value here (a roster is season-wide
+  with no team/class). Credentials live in a gitignored `application-local.yml`
+  (the `local` Spring profile, bootRun only) locally and env vars in prod
+  (`IRACING_CLIENT_ID` / `_CLIENT_SECRET` / `_USERNAME` / `_PASSWORD`; leave
+  `IRACING_TOKEN_URL` / `_DATA_BASE` unset to hit the live service).
+- **iRacing standings → a full recap (per-round points) — ✅ DONE (2026-07-18).**
+  The recap builds its columns from `championship_session` and its per-round cells
+  from `standings_session_points`, but the iRacing standings import left both empty
+  (`season_standings` returns season totals only), so the recap degenerated to a
+  flat Pos/Pts list. `stageStandingsFromIRacing` now also walks the season's
+  completed rounds and reads the points **iRacing already scored** on each round's
+  result — `league_points` per `cust_id`, summed across a round's race sim-sessions
+  (a sprint-plus-feature round). **No scoring engine was built and none is needed**:
+  the points are in the `/results/get` payload the round import already downloads;
+  they were simply being dropped on the floor. `commitStandings`, the schema, and
+  `SeasonViewController.recap` are unchanged — they already consumed this shape
+  from the IMSA points-PDF path; only the parser was handing them empty lists.
+  Round N of the calendar lines up with the season event of `round_ordinal` N
+  (the recap matches **by ordinal, not venue** — see `625f73c`); the round's venue
+  name supplies the column *label* only. `total_points` stays the endpoint's
+  authoritative value: it already folds in the manual `positive/negative_adjustments`
+  that carry post-race penalties, which per-race points cannot know about, so a row
+  total and its per-round sum legitimately differ by those adjustments — that split
+  *is* the points breakdown, now alongside a real per-round one. Drivers only
+  (keyed `cust_id`); `team_standings` (car-number keyed) is the follow-up.
+  **Unvalidated against a full season:** whether `league_points` or
+  `league_agg_points` reconciles to `base_points` on a heat-format round (the
+  Daytona fixture pays both a heat and a feature), and whether `base_points`
+  already nets out the per-driver `drop_race` flag. Check `sum(per-round) ==
+  base_points` for one driver on a real season before trusting the column totals.
+  Also fixed alongside: the standings endpoint answers with a **bare list** of
+  staged batches while the subsession/season endpoints answer with an
+  `IRacingImport` — the import modal's shared `run()` cast every response to the
+  latter, so `result.failures` was undefined and the modal threw *during render*,
+  blanking the whole page (there is **no error boundary** in the app, so any render
+  throw is a white screen — worth adding one).
 - **Drag-and-drop upload modal + series/event pinning — ✅ DONE (2026-07-17).**
   The bare file input on the imports page is replaced by `UploadFilesModal`:
   drag-and-drop (plus browse/paste), a per-file staged queue, and a shared

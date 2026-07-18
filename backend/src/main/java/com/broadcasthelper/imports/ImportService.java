@@ -110,10 +110,17 @@ public class ImportService {
      * The /league/season_standings endpoint gives season totals only, so this also
      * walks the season's completed rounds and reads the per-round league points
      * iRacing already scored on each round's result. That reconstructs the per-round
-     * breakdown the recap needs (its columns and points-per-round grid), and names
-     * each round with the same venue string the round-results import uses, so the
-     * recap's start→finish cells line up. It costs one result fetch per round — the
-     * same order as importing the season's results — so it is a deliberate action.
+     * breakdown the recap needs — its columns and its points-per-round grid. It
+     * costs one result fetch per round — the same order as importing the season's
+     * results — so it is a deliberate action.
+     *
+     * Rounds are enumerated oldest-first and numbered from 1, because the recap
+     * matches championship round N to the season event with round_ordinal N (see
+     * SeasonViewController.recap — the match is by ordinal, NOT by venue, since a
+     * venue abbreviation is not unique within a season). The round's venue name
+     * supplies the recap's column *label* only. So the season's events must carry
+     * the same chronological round ordinals this calendar does — which holds when
+     * they come from the round-results import, whose commit renumbers by date.
      */
     public List<BatchSummary> stageStandingsFromIRacing(long leagueId, long seasonId) {
         JsonNode standings = iracing.get("/league/season_standings", java.util.Map.of(

@@ -144,9 +144,10 @@ class IRacingParserTest {
 
     @Test
     void namesTheRoundWithTheSameVenueTheResultsImportUses() throws IOException {
-        // The calendar's venue string must be the exact one the round-results
-        // import names its event with, or the recap can't line its start→finish
-        // cells up to that event.
+        // The recap labels a column with this name but matches the round to its
+        // event by ordinal, so this is a label, not a key. Keeping it identical to
+        // the round-results import's event name stops a column reading unlike the
+        // event beneath it.
         String venue = IRacingParser.roundVenueName(fixture());
 
         assertTrue(venue.startsWith("Daytona"), venue);
