@@ -2,58 +2,166 @@
 
 /* ==== series directory (landing) ==== */
 
-.dir-list {
+.dir-header {
   display: flex;
-  flex-direction: column;
+  align-items: baseline;
+  justify-content: space-between;
   gap: var(--space-4);
-  margin-top: var(--space-5);
+  flex-wrap: wrap;
+  margin-top: var(--space-4);
+  margin-bottom: var(--space-5);
 }
 
-.dir-panel {
+.dir-title {
+  font-size: var(--text-2xl);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.dir-filter {
+  flex: 1;
+  min-width: 220px;
+  max-width: 340px;
+  margin-left: auto;
+}
+
+.dir-filter input {
+  width: 100%;
+  padding: 7px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.dir-filter input::placeholder {
+  color: var(--text-muted);
+}
+
+.dir-filter input:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-color: var(--accent);
+}
+
+.dir-nomatch {
+  margin-top: var(--space-5);
+  color: var(--text-muted);
+}
+
+/* Multi-column on desktop, wrapping to as many columns as the wide container
+ * fits; collapses to one on phones. The card, not a nested scrollbox, is the
+ * unit that scales as series accumulate. */
+.dir-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--space-4);
+}
+
+.dir-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
+  background: var(--bg);
   transition:
     border-color var(--t-fast) var(--ease-out),
     background var(--t-fast) var(--ease-out);
 }
 
-.dir-panel:hover {
+.dir-card:hover {
   border-color: var(--border-strong);
   background: var(--surface);
 }
 
-.dir-main {
+/* Body grows to fill the card so the footer — and with it the year — lands at a
+ * constant offset from the bottom. Every card in a grid row is the same height
+ * (align-items: stretch), so the year reads as one aligned line across the row. */
+.dir-card-body {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-5);
+  flex-direction: column;
+  gap: var(--space-3);
+  flex: 1;
   padding: var(--space-5);
-  text-decoration: none;
+}
+
+/* Full-card click target. A transparent link over the whole card, so the
+ * earlier-season links (which sit above it) stay independently clickable
+ * without illegal <a>-in-<a> nesting. */
+.dir-card-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: var(--radius-lg);
+}
+
+.dir-card-cover:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.dir-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 44px;
+}
+
+.dir-logo {
+  max-height: 44px;
+  max-width: 72%;
+  width: auto;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.dir-monogram {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  min-width: 44px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
   color: var(--text);
 }
 
-.dir-main:hover {
-  text-decoration: none;
+.dir-card-go {
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--text-muted);
+  transform: translateX(0);
+  transition:
+    transform var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
 }
 
-.dir-info {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
+.dir-card:hover .dir-card-go {
+  color: var(--accent-ink);
+  transform: translateX(3px);
 }
 
-.dir-series-name {
-  font-size: var(--text-2xl);
+.dir-card-name {
+  font-size: var(--text-lg);
   font-weight: 650;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
   color: var(--ink);
   text-wrap: balance;
 }
 
-.dir-classes {
+.dir-card-classes {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-3);
   flex-wrap: wrap;
 }
 
@@ -70,48 +178,61 @@
   width: 9px;
   height: 9px;
   border-radius: 3px;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 
-.dir-season {
+/* Constant-height footer: a year/meta line over an earlier-seasons line. Both
+ * lines always render (the empty case shows "No earlier seasons"), so the band
+ * is the same height on every card and the year sits on one line across a row. */
+.dir-card-foot {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  flex-shrink: 0;
-  text-align: right;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5) var(--space-4);
+  border-top: 1px solid var(--border);
 }
 
-.dir-year {
+.dir-card-season {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.dir-card-year {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 2.25rem;
+  font-size: var(--text-lg);
   font-weight: 700;
-  line-height: 1.1;
+  line-height: 1;
   color: var(--ink);
 }
 
-.dir-season-meta {
+.dir-card-meta {
   font-size: var(--text-sm);
   color: var(--text-muted);
 }
 
-.dir-open {
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--accent-ink);
-}
-
-.dir-past {
+.dir-card-earlier {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-5);
-  border-top: 1px solid var(--border);
-  font-size: var(--text-sm);
+  min-height: 22px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+}
+
+.dir-card-earlier-label {
+  font-weight: 600;
+}
+
+.dir-card-earlier-empty {
   color: var(--text-muted);
 }
 
-.dir-past a {
+.dir-season-chip {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   padding: 1px 8px;
@@ -120,10 +241,20 @@
   color: var(--text);
 }
 
-.dir-past a:hover {
+.dir-season-chip:hover {
   border-color: var(--accent);
   color: var(--ink);
   text-decoration: none;
+}
+
+.dir-season-chip:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.dir-card-skeleton {
+  gap: var(--space-3);
+  padding: var(--space-5);
 }
 
 /* ==== season header + sub-nav ==== */
@@ -1070,17 +1201,6 @@ td.lineup-changed {
 }
 
 @media (max-width: 700px) {
-  .dir-main {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-3);
-  }
-
-  .dir-season {
-    align-items: flex-start;
-    text-align: left;
-  }
-
   /* The sub-nav scrolls invisibly on phones; a right-edge fade signals there
    * are more pages past the fold. */
   .season-head nav.seg {

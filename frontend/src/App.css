@@ -596,6 +596,64 @@ h2 small {
   object-fit: contain;
 }
 
+/* Manage-tab series logo cell: current thumbnail over an upload/replace control. */
+.series-logo-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.series-logo-thumb {
+  height: 32px;
+  max-width: 120px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.series-logo-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* A styled label standing in for the raw file input — same shape as a secondary
+ * button so it reads as an affordance, not an OS control. */
+.series-logo-upload {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.series-logo-upload:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.series-logo-upload:focus-within {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-color: var(--accent);
+}
+
+.series-logo-upload input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
 .alias-form {
   display: flex;
   gap: var(--space-1);
