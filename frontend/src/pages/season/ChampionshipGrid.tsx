@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { getJson, type ChampionshipSummary, type Recap } from '../../lib/api'
+import {
+  getJson,
+  type ChampionshipSummary,
+  type Recap,
+  type RecapSession,
+  type RecapSessionPoints,
+} from '../../lib/api'
 import { useInfoModal } from '../../components/infoModal'
 import RaceLine from '../../components/RaceLine'
 import { useSeason } from './SeasonLayout'
@@ -22,6 +28,117 @@ export function formatPoints(points: number): string {
   // NUMERIC totals arrive as JS numbers; String() already drops a trailing .0
   // and keeps real half-points ("19.5").
   return String(points)
+}
+
+/* -- points breakdown ---------------------------------------------------- */
+
+/** Compact per-session tags for a multi-session round: "Q" for qualifying,
+ * races numbered R1..Rn ("R" when the round has only one). A single-session
+ * round gets no tag — the number alone reads fine. */
+function sessionTags(sessions: RecapSession[]): (string | null)[] {
+  if (sessions.length <= 1) return sessions.map(() => null)
+  const raceTotal = sessions.filter((s) => !/qual/i.test(s.name)).length
+  let raceNo = 0
+  return sessions.map((s) => (/qual/i.test(s.name) ? 'Q' : raceTotal > 1 ? `R${++raceNo}` : 'R'))
+}
+
+interface PtsMark {
+  glyph: string
+  cls: string
+  text: string
+}
+
+/** Bonus/penalty marks for one session's earnings, values printed in full
+ * ("+1P"): the line reads race points + each extra, so the arithmetic is on
+ * the table, not in a tooltip. */
+function marksFor(sp: RecapSessionPoints): PtsMark[] {
+  const marks: PtsMark[] = []
+  if (sp.pole > 0)
+    marks.push({ glyph: `+${formatPoints(sp.pole)}P`, cls: 'mk-pole', text: `pole +${formatPoints(sp.pole)}` })
+  if (sp.fastestLap > 0)
+    marks.push({
+      glyph: `+${formatPoints(sp.fastestLap)}F`,
+      cls: 'mk-fl',
+      text: `fastest lap +${formatPoints(sp.fastestLap)}`,
+    })
+  // No letter code: the PDF's lumped extra doesn't say pole or fastest lap,
+  // so a bare "+10" is the honest mark.
+  if (sp.bonus > 0)
+    marks.push({ glyph: `+${formatPoints(sp.bonus)}`, cls: 'mk-bonus', text: `bonus +${formatPoints(sp.bonus)}` })
+  if (sp.penalty > 0)
+    marks.push({ glyph: `−${formatPoints(sp.penalty)}`, cls: 'mk-pen', text: `penalty −${formatPoints(sp.penalty)}` })
+  return marks
+}
+
+const SKIPPED: RecapSessionPoints = {
+  total: 0,
+  race: 0,
+  pole: 0,
+  fastestLap: 0,
+  penalty: 0,
+  bonus: 0,
+  contested: false,
+}
+
+/** One session's earnings inside a round cell. marksCh reserves a shared marks
+ * gutter (in ch) so digits stay in a straight column when some lines carry
+ * marks and others don't; 0 renders no gutter at all. */
+function PtsLine({
+  tag,
+  name,
+  sp,
+  marksCh,
+}: {
+  tag: string | null
+  name: string
+  sp: RecapSessionPoints
+  marksCh: number
+}) {
+  const gutter =
+    marksCh > 0 ? { minWidth: `${marksCh}ch` } : undefined
+  if (!sp.contested) {
+    return (
+      <span className="pts-line" title={`${name}: did not run`}>
+        {tag && <span className="pts-tag">{tag}</span>}
+        <span className="pts-val pts-zero" aria-hidden="true">
+          ·
+        </span>
+        <span className="sr-only">did not run</span>
+        {gutter && <span className="pts-marks" style={gutter} />}
+      </span>
+    )
+  }
+  const marks = marksFor(sp)
+  // With marks, the printed number is the RACE points and the marks carry the
+  // extras — the whole sum sits on the table. Without marks they're the same
+  // number (components always reconcile), so print the total.
+  const value = marks.length ? sp.race : sp.total
+  const title = marks.length
+    ? `${name}: ${formatPoints(sp.total)} total`
+    : tag
+      ? name
+      : undefined
+  return (
+    <span className="pts-line" title={title}>
+      {tag && <span className="pts-tag">{tag}</span>}
+      <span className={sp.total === 0 ? 'pts-val pts-zero' : 'pts-val'}>
+        {formatPoints(value)}
+      </span>
+      {gutter && (
+        <span className="pts-marks" style={gutter}>
+          {marks.map((m, i) => (
+            <span key={m.cls}>
+              {i > 0 && ' '}
+              <span className={m.cls} aria-hidden="true">
+                {m.glyph}
+              </span>
+              <span className="sr-only">{m.text}</span>
+            </span>
+          ))}
+        </span>
+      )}
+    </span>
+  )
 }
 
 interface Family {
@@ -153,7 +270,87 @@ function rank(kind: string): number {
   }
 }
 
-export function ChampFilterBar({ sel, legend }: { sel: ChampSelection; legend: boolean }) {
+/** Which notation actually appears in the shown standings — the points legend
+ * only decodes marks that exist, so a plain-points league gets no legend. */
+interface PtsLegendFlags {
+  q: boolean
+  races: boolean
+  pole: boolean
+  fl: boolean
+  bonus: boolean
+  penalty: boolean
+  skip: boolean
+}
+
+function ptsLegendFlags(recaps: Recap[]): PtsLegendFlags | null {
+  const f: PtsLegendFlags = {
+    q: false,
+    races: false,
+    pole: false,
+    fl: false,
+    bonus: false,
+    penalty: false,
+    skip: false,
+  }
+  for (const recap of recaps) {
+    for (const r of recap.rounds) {
+      if (r.sessions.length > 1) {
+        if (r.sessions.some((s) => /qual/i.test(s.name))) f.q = true
+        if (r.sessions.some((s) => !/qual/i.test(s.name))) f.races = true
+      }
+    }
+    for (const row of recap.rows) {
+      for (const sp of Object.values(row.sessionPoints)) {
+        if (sp.pole > 0) f.pole = true
+        if (sp.fastestLap > 0) f.fl = true
+        if (sp.bonus > 0) f.bonus = true
+        if (sp.penalty > 0) f.penalty = true
+        if (!sp.contested) f.skip = true
+      }
+    }
+  }
+  return Object.values(f).some(Boolean) ? f : null
+}
+
+function PointsLegend({ f }: { f: PtsLegendFlags }) {
+  return (
+    <div className="legend" aria-label="Points notation">
+      {f.q && <span>Q = qualifying</span>}
+      {f.races && <span>R = race</span>}
+      {f.pole && <span className="l-pole">P = pole</span>}
+      {f.fl && <span>F = fastest lap</span>}
+      {f.bonus && <span>+n = bonus</span>}
+      {f.penalty && <span className="l-pen">− = penalty</span>}
+      {f.skip && <span>· = did not run</span>}
+      <span>— = no entry</span>
+    </div>
+  )
+}
+
+function RecapLegend() {
+  return (
+    <div className="legend" aria-label="Cell colours">
+      <span className="l-win">
+        <i /> Win
+      </span>
+      <span className="l-top3">
+        <i /> Top 3
+      </span>
+      <span className="l-top5">
+        <i /> Top 5
+      </span>
+      <span className="l-dnf">
+        <i /> DNF
+      </span>
+      <span className="l-note">start/finish in class</span>
+      <span className="l-pole">P = pole</span>
+      <span>R = retired</span>
+      <span>· = no entry</span>
+    </div>
+  )
+}
+
+export function ChampFilterBar({ sel, legend }: { sel: ChampSelection; legend: React.ReactNode }) {
   return (
     <div className="filter-bar">
       {sel.families.length > 1 && (
@@ -189,24 +386,7 @@ export function ChampFilterBar({ sel, legend }: { sel: ChampSelection; legend: b
       {legend && (
         <>
           <span className="spacer" />
-          <div className="legend" aria-label="Cell colours">
-            <span className="l-win">
-              <i /> Win
-            </span>
-            <span className="l-top3">
-              <i /> Top 3
-            </span>
-            <span className="l-top5">
-              <i /> Top 5
-            </span>
-            <span className="l-dnf">
-              <i /> DNF
-            </span>
-            <span className="l-note">start/finish in class</span>
-            <span className="l-pole">P = pole</span>
-            <span>R = retired</span>
-            <span>· = no entry</span>
-          </div>
+          {legend}
         </>
       )}
     </div>
@@ -246,6 +426,22 @@ function ClassGrid({ champ, mode }: { champ: ChampionshipSummary; mode: 'recap' 
   const leaderPoints = recap.rows.length > 0 ? Math.max(...recap.rows.map((r) => r.totalPoints)) : 0
   const drivers = recap.championship.kind === 'DRIVERS'
   const color = classColor(champ.className)
+
+  // Points mode: per-round session tags, and the widest marks run in this
+  // class — every line reserves that gutter so digits stay in one column.
+  const tagsByRound = new Map<number, (string | null)[]>()
+  let marksCh = 0
+  if (mode === 'points') {
+    for (const r of rounds) tagsByRound.set(r.round, sessionTags(r.sessions))
+    for (const row of recap.rows) {
+      for (const sp of Object.values(row.sessionPoints)) {
+        const line = marksFor(sp)
+          .map((m) => m.glyph)
+          .join(' ')
+        marksCh = Math.max(marksCh, line.length)
+      }
+    }
+  }
 
   // "-245 (-13)": deficit to the class leader, then the gap to the row above —
   // the on-air question is usually "how far to the car ahead", not the leader.
@@ -412,9 +608,35 @@ function ClassGrid({ champ, mode }: { champ: ChampionshipSummary; mode: 'recap' 
               {rounds.map((r) => {
                 if (mode === 'points') {
                   const pts = row.pointsByRound[r.round]
+                  if (pts == null) {
+                    return (
+                      <td key={r.round} className="pts-cell">
+                        <span className="muted" title="Did not enter this round">
+                          —
+                        </span>
+                      </td>
+                    )
+                  }
+                  const roundTags = tagsByRound.get(r.round) ?? []
                   return (
-                    <td key={r.round} className="num-cell" style={{ textAlign: 'center' }}>
-                      {pts != null ? formatPoints(pts) : <span className="muted">—</span>}
+                    <td
+                      key={r.round}
+                      className="pts-cell"
+                      // The sum leaves the cell for the breakdown, so the round
+                      // total stays one hover away.
+                      title={r.sessions.length > 1 ? `${formatPoints(pts)} total` : undefined}
+                    >
+                      {r.sessions.length === 0
+                        ? formatPoints(pts)
+                        : r.sessions.map((s, si) => (
+                            <PtsLine
+                              key={s.sessionIndex}
+                              tag={roundTags[si]}
+                              name={s.name}
+                              sp={row.sessionPoints[s.sessionIndex] ?? SKIPPED}
+                              marksCh={marksCh}
+                            />
+                          ))}
                     </td>
                   )
                 }
@@ -453,8 +675,28 @@ function ClassGrid({ champ, mode }: { champ: ChampionshipSummary; mode: 'recap' 
 export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' }) {
   const { classFilter } = useSeason()
   const sel = useChampSelection()
+  const [ptsFlags, setPtsFlags] = useState<PtsLegendFlags | null>(null)
 
-  const shown = classFilter ? sel.selected.filter((c) => c.className === classFilter) : sel.selected
+  const shown = useMemo(
+    () => (classFilter ? sel.selected.filter((c) => c.className === classFilter) : sel.selected),
+    [sel.selected, classFilter],
+  )
+
+  // The points legend decodes only the notation actually on screen — recaps
+  // are already being fetched by the class grids, so this rides the cache.
+  useEffect(() => {
+    if (mode !== 'points' || shown.length === 0) {
+      setPtsFlags(null)
+      return
+    }
+    let cancelled = false
+    Promise.all(shown.map((c) => fetchRecap(c.id)))
+      .then((recaps) => !cancelled && setPtsFlags(ptsLegendFlags(recaps)))
+      .catch(() => !cancelled && setPtsFlags(null))
+    return () => {
+      cancelled = true
+    }
+  }, [mode, shown])
 
   if (sel.families.length === 0) {
     return (
@@ -467,7 +709,12 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
 
   return (
     <div>
-      <ChampFilterBar sel={sel} legend={mode === 'recap'} />
+      <ChampFilterBar
+        sel={sel}
+        legend={
+          mode === 'recap' ? <RecapLegend /> : ptsFlags ? <PointsLegend f={ptsFlags} /> : null
+        }
+      />
       {shown.length === 0 ? (
         <div className="empty-state">
           No {classFilter} standings in this championship — pick another class or championship.

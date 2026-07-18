@@ -758,7 +758,19 @@ display size.)
   (win/top-3/top-5/DNF+`R`), pole marks, and a top-level **WeatherTech ⇄ Michelin
   Endurance Cup** switch (the cup re-derives its *own* round numbering from
   `championship_session`, so DAY/SEB/WGI/RDA/ATL read as Rd 1–5) with Teams ⇄
-  Drivers under it. Sub-pages: **Schedule**, **Standings** (points per round),
+  Drivers under it. Sub-pages: **Schedule**, **Standings** (points per round;
+  since 2026-07-18 each round cell prints the **earnings breakdown** instead of
+  one sum — one line per scoring session (`Q`/`R1` tags) with every bonus
+  value on the table: `25 +1P +1F`, `320 +10` (lumped bonus, no letter code),
+  red `−n` penalties, muted `·`
+  for a did-not-run session. The recap endpoint grew `RecapRound.sessions` +
+  `RecapRow.sessionPoints` (per-`session_index` race/pole/FL/penalty/bonus
+  components, gated to scored+contested rounds exactly like `pointsByRound`);
+  components verifiably sum to totals for every imported row. Single-session
+  rounds print the bare number and the data-driven legend disappears, so a
+  source that scores one session per round renders as before. iRacing seasons
+  gain Q/R lines as they are **re-imported** under the session split landed
+  the same day — imports predating it keep one session per round until then),
   **Stats** (added 2026-07-18, see below), **Results** (round selector →
   quali/grid + race), **Entries** (lineup rotation per car per round),
   **Photos** (the old hub's `SeasonImages`).

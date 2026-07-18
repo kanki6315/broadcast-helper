@@ -44,17 +44,31 @@ public class SeasonViewController {
 
     /** One column: a round of THIS championship's published calendar. eventId is
      *  the season event it maps to (by venue), null when that event isn't
-     *  imported yet — the column still renders, its cells blank. */
-    public record RecapRound(int round, String venue, Long eventId, int raceCount) {
+     *  imported yet — the column still renders, its cells blank. Sessions are
+     *  the round's points-scoring sessions in calendar order — the standings
+     *  page prints one earnings line per session, not one summed number. */
+    public record RecapRound(int round, String venue, Long eventId, int raceCount,
+                             List<RecapSession> sessions) {
+    }
+
+    public record RecapSession(int sessionIndex, String name) {
     }
 
     public record RecapRace(int race, Integer start, Integer finish, String status, boolean notFinished) {
+    }
+
+    /** How one session paid: the components sum to {@code total} (verified for
+     *  every imported row). {@code contested} is false for did_not_race — the
+     *  cell prints a skip mark for that session, not a 0. */
+    public record RecapSessionPoints(double total, double race, double pole, double fastestLap,
+                                     double penalty, double bonus, boolean contested) {
     }
 
     public record RecapRow(int position, String competitorKey, String competitorName, String carNumber,
                            String teamName, double totalPoints,
                            RecapAdjustments adjustments,
                            Map<Integer, Double> pointsByRound,
+                           Map<Integer, RecapSessionPoints> sessionPoints,
                            Map<Integer, List<RecapRace>> cells) {
     }
 
@@ -92,21 +106,37 @@ public class SeasonViewController {
         // The championship's own calendar: sessions grouped into rounds by event
         // name (a cup's calendar is a subset of the season's, so columns come
         // from here, not from the season's events).
-        record ChampRound(int round, String eventName) {
+        record ChampSession(int round, String eventName, int sessionIndex, String sessionName) {
         }
-        List<ChampRound> champRounds = db.sql("""
-                        SELECT DISTINCT dense_rank() OVER (ORDER BY first_idx) AS round_no, event_name
+        List<ChampSession> champSessions = db.sql("""
+                        SELECT dense_rank() OVER (ORDER BY first_idx) AS round_no,
+                               event_name, session_index, session_name
                         FROM (
-                            SELECT event_name,
+                            SELECT event_name, session_index, session_name,
                                    min(session_index) OVER (PARTITION BY event_name) AS first_idx
                             FROM championship_session
                             WHERE championship_id = :id
                         ) t
-                        ORDER BY round_no
+                        ORDER BY round_no, session_index
                         """)
                 .param("id", id)
-                .query((rs, i) -> new ChampRound(rs.getInt("round_no"), rs.getString("event_name")))
+                .query((rs, i) -> new ChampSession(rs.getInt("round_no"), rs.getString("event_name"),
+                        rs.getInt("session_index"), rs.getString("session_name")))
                 .list();
+
+        record ChampRound(int round, String eventName) {
+        }
+        List<ChampRound> champRounds = new ArrayList<>();
+        Map<Integer, List<RecapSession>> sessionsByRound = new LinkedHashMap<>();
+        Map<Integer, Integer> roundBySessionIndex = new HashMap<>();
+        for (ChampSession cs : champSessions) {
+            if (!sessionsByRound.containsKey(cs.round())) {
+                champRounds.add(new ChampRound(cs.round(), cs.eventName()));
+            }
+            sessionsByRound.computeIfAbsent(cs.round(), k -> new ArrayList<>())
+                    .add(new RecapSession(cs.sessionIndex(), cs.sessionName()));
+            roundBySessionIndex.put(cs.sessionIndex(), cs.round());
+        }
 
         // Season events with at least one race, keyed by round ordinal. Rounds are
         // matched to events by ordinal, not by venue: the same track can host two
@@ -137,7 +167,8 @@ public class SeasonViewController {
             SeasonEvent match = eventsByOrdinal.get(cr.round());
             rounds.add(new RecapRound(cr.round(), venue,
                     match != null ? match.id() : null,
-                    match != null ? Math.max(match.raceCount(), 1) : 1));
+                    match != null ? Math.max(match.raceCount(), 1) : 1,
+                    sessionsByRound.getOrDefault(cr.round(), List.of())));
             if (match != null) {
                 roundByEventId.put(match.id(), cr.round());
             }
@@ -171,36 +202,40 @@ public class SeasonViewController {
                 })
                 .list();
 
-        record SessionPoints(long rowId, int round, double points, String status) {
+        record SessionPoints(long rowId, int sessionIndex, double points, double race, double pole,
+                             double fastestLap, double penalty, double bonus, String status) {
         }
         Map<Long, Map<Integer, Double>> pointsByRow = new HashMap<>();
         Map<Long, Map<Integer, Boolean>> contestedByRow = new HashMap<>();
+        Map<Long, Map<Integer, RecapSessionPoints>> sessionPointsByRow = new HashMap<>();
         db.sql("""
-                        SELECT sr.id AS row_id, rnd.round_no, ssp.total_points, ssp.status
+                        SELECT sr.id AS row_id, ssp.session_index, ssp.total_points, ssp.race_points,
+                               ssp.pole_points, ssp.fastest_lap_points, ssp.penalty_points,
+                               ssp.bonus_points, ssp.status
                         FROM standings_row sr
                                  JOIN standings_session_points ssp ON ssp.standings_row_id = sr.id
-                                 JOIN (
-                                     SELECT session_index,
-                                            dense_rank() OVER (ORDER BY first_idx) AS round_no
-                                     FROM (
-                                         SELECT session_index,
-                                                min(session_index) OVER (PARTITION BY event_name) AS first_idx
-                                         FROM championship_session
-                                         WHERE championship_id = :id
-                                     ) t
-                                 ) rnd ON rnd.session_index = ssp.session_index
                         WHERE sr.championship_id = :id
                         """)
                 .param("id", id)
-                .query((rs, i) -> new SessionPoints(rs.getLong("row_id"), rs.getInt("round_no"),
-                        rs.getDouble("total_points"), rs.getString("status")))
+                .query((rs, i) -> new SessionPoints(rs.getLong("row_id"), rs.getInt("session_index"),
+                        rs.getDouble("total_points"), rs.getDouble("race_points"),
+                        rs.getDouble("pole_points"), rs.getDouble("fastest_lap_points"),
+                        rs.getDouble("penalty_points"), rs.getDouble("bonus_points"),
+                        rs.getString("status")))
                 .list()
                 .forEach(sp -> {
-                    pointsByRow.computeIfAbsent(sp.rowId(), k -> new HashMap<>())
-                            .merge(sp.round(), sp.points(), Double::sum);
+                    Integer round = roundBySessionIndex.get(sp.sessionIndex());
+                    if (round == null) {
+                        return; // points for a session the calendar doesn't list
+                    }
                     boolean contested = !"did_not_race".equalsIgnoreCase(Objects.toString(sp.status(), ""));
+                    pointsByRow.computeIfAbsent(sp.rowId(), k -> new HashMap<>())
+                            .merge(round, sp.points(), Double::sum);
                     contestedByRow.computeIfAbsent(sp.rowId(), k -> new HashMap<>())
-                            .merge(sp.round(), contested, Boolean::logicalOr);
+                            .merge(round, contested, Boolean::logicalOr);
+                    sessionPointsByRow.computeIfAbsent(sp.rowId(), k -> new HashMap<>())
+                            .put(sp.sessionIndex(), new RecapSessionPoints(sp.points(), sp.race(),
+                                    sp.pole(), sp.fastestLap(), sp.penalty(), sp.bonus(), contested));
                 });
 
         // Start→finish cells for this class across the matched events, plus the
@@ -292,8 +327,17 @@ public class SeasonViewController {
                 }
             });
 
+            // Session breakdowns only for the rounds that made the points map —
+            // same gate, so a cell never shows sessions of an uncontested round.
+            Map<Integer, RecapSessionPoints> sessions = new LinkedHashMap<>();
+            sessionPointsByRow.getOrDefault(h.rowId(), Map.of()).forEach((sessionIndex, sp) -> {
+                if (points.containsKey(roundBySessionIndex.get(sessionIndex))) {
+                    sessions.put(sessionIndex, sp);
+                }
+            });
+
             rows.add(new RecapRow(h.position(), h.key(), h.name(), carNumber, teamName,
-                    h.totalPoints(), h.adjustments(), points, byRound));
+                    h.totalPoints(), h.adjustments(), points, sessions, byRound));
         }
 
         return new Recap(champ, rounds, rows);
