@@ -564,6 +564,9 @@ public class SheetController {
         if (haystack.contains("indianapolis")) return "IMS";
         if (haystack.contains("road atlanta") || haystack.contains("michelin raceway")) return "ATL";
         if (haystack.contains("cota") || haystack.contains("circuit of the americas")) return "COTA";
+        if (haystack.contains("francorchamps") || haystack.contains("spa-")) return "SPA";
+        if (haystack.contains("le mans") || haystack.contains("24 heures")) return "LMS";
+        if (haystack.contains("mugello")) return "MUG";
         String base = circuitName != null ? circuitName : eventName != null ? eventName : "???";
         return base.replaceAll("[^A-Za-z]", "").toUpperCase().substring(0, Math.min(3, base.length()));
     }

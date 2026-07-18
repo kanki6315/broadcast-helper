@@ -98,12 +98,16 @@ public class SeasonViewController {
                 .query((rs, i) -> new ChampRound(rs.getInt("round_no"), rs.getString("event_name")))
                 .list();
 
-        // Season events with at least one race, keyed by venue for round matching.
-        record SeasonEvent(long id, String venue, int raceCount) {
+        // Season events with at least one race, keyed by round ordinal. Rounds are
+        // matched to events by ordinal, not by venue: the same track can host two
+        // rounds (a venue abbreviation is not unique within a season), whereas the
+        // ordinal is. The champ calendar and the season's events share chronological
+        // order, so round N of the championship is the season's Nth event.
+        record SeasonEvent(long id, int raceCount) {
         }
-        Map<String, SeasonEvent> eventsByVenue = new LinkedHashMap<>();
+        Map<Integer, SeasonEvent> eventsByOrdinal = new LinkedHashMap<>();
         db.sql("""
-                        SELECT ev.id, ev.name, ev.circuit_name,
+                        SELECT ev.id, ev.round_ordinal,
                                (SELECT count(*) FROM race_session rs
                                 WHERE rs.event_id = ev.id AND rs.session_type = 'RACE') AS race_count
                         FROM event ev
@@ -111,17 +115,16 @@ public class SeasonViewController {
                         ORDER BY ev.round_ordinal
                         """)
                 .param("seasonId", champ.seasonId())
-                .query((rs, i) -> new SeasonEvent(rs.getLong("id"),
-                        SheetController.venueAbbrev(rs.getString("name"), rs.getString("circuit_name")),
-                        rs.getInt("race_count")))
+                .query((rs, i) -> Map.entry(rs.getInt("round_ordinal"),
+                        new SeasonEvent(rs.getLong("id"), rs.getInt("race_count"))))
                 .list()
-                .forEach(e -> eventsByVenue.putIfAbsent(e.venue(), e));
+                .forEach(e -> eventsByOrdinal.putIfAbsent(e.getKey(), e.getValue()));
 
         List<RecapRound> rounds = new ArrayList<>();
         Map<Long, Integer> roundByEventId = new HashMap<>();
         for (ChampRound cr : champRounds) {
             String venue = SheetController.venueAbbrev(cr.eventName(), null);
-            SeasonEvent match = eventsByVenue.get(venue);
+            SeasonEvent match = eventsByOrdinal.get(cr.round());
             rounds.add(new RecapRound(cr.round(), venue,
                     match != null ? match.id() : null,
                     match != null ? Math.max(match.raceCount(), 1) : 1));
