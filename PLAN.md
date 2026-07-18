@@ -615,6 +615,34 @@ display size.)
   for PESC 2020, collapsing to 10 recap columns with round 1 reading 72 (6+16+50).
   **Backfill = re-import the standings** — commit replaces on (season, name), so
   an already-imported season keeps one championship and simply gains the split.
+- **Standings adjustments stored as their own figures (V28) — ✅ DONE (2026-07-18).**
+  A league's steward correction is a season-level ruling with no round to
+  attribute it to, so it does not belong in `standings_session_points.penalty_points`
+  (which exists because a published standings JSON attributes its extras to the
+  session that earned them). V28 adds `base_points`, `positive_adjustments` and
+  `negative_adjustments` to **`standings_row`**, carried through the importer as
+  `StandingsImport.Adjustments` and surfaced on the recap row as `adjustments`.
+  The invariant is `total_points = base_points + positive + negative`, with the
+  per-round columns summing to `base_points` — so the difference between a row
+  total and its columns now has a name instead of being an unexplained gap
+  (Webster 2025: columns 389, adjustment −10, total 379). **Nullable, and null
+  means "this source reports no such thing"** rather than zero: an IMSA standings
+  JSON has no adjustment concept, and an official iRacing series carries none,
+  which is exactly why official totals reconcile to the rounds exactly where a
+  league's need not. Only the iRacing **league** path populates them today.
+  Gotcha for anything reading these back: Postgres hands a NUMERIC over as
+  BigDecimal, and `rs.getObject(col, Double.class)` throws "conversion to class
+  java.lang.Double from numeric not supported" — read `getBigDecimal` and convert
+  (this only shows up against a real database, not in the parser tests).
+  **Next on this seam — manual adjustments UI (not built):** the fields are
+  deliberately shaped so a human can set them without an import. A per-row editor
+  on the standings/recap surface would write `positive_adjustments` /
+  `negative_adjustments` and recompute `total_points` from `base_points`, letting
+  a broadcaster record a penalty a source hasn't published yet, or correct one it
+  got wrong. `standings_row.provenance` (already `imported` | `manual`) is the
+  flag for marking a hand-edited row so a re-import can decide whether to
+  preserve it — commit currently replaces the championship wholesale, so that
+  decision needs making before the editor ships.
 - **Drag-and-drop upload modal + series/event pinning — ✅ DONE (2026-07-17).**
   The bare file input on the imports page is replaced by `UploadFilesModal`:
   drag-and-drop (plus browse/paste), a per-file staged queue, and a shared

@@ -124,6 +124,16 @@ class IRacingParserTest {
         assertEquals(379.0, leader.totalPoints()); // total = base 389 + adjustment -10
         assertTrue(leader.pointsBySession().isEmpty(), "no per-round breakdown from this endpoint");
 
+        // The steward's correction is kept as its own figure rather than folded
+        // into a session's penalty — it belongs to the season, not a round. It
+        // is also what explains a row whose columns won't sum to its total.
+        StandingsImport.Adjustments adj = leader.adjustments();
+        assertEquals(389.0, adj.basePoints());
+        assertEquals(0.0, adj.positive());
+        assertEquals(-10.0, adj.negative());
+        assertEquals(leader.totalPoints(), adj.basePoints() + adj.positive() + adj.negative(),
+                "total must reconcile as base plus adjustments");
+
         // Rows come out in championship order.
         for (int i = 1; i < st.rows().size(); i++) {
             assertTrue(st.rows().get(i).position() >= st.rows().get(i - 1).position());
@@ -529,6 +539,9 @@ class IRacingParserTest {
         assertEquals("119101", champion.key()); // cust_id, stable across a rename
         assertEquals("Sebastian Job", champion.team());
         assertEquals(659.0, champion.totalPoints()); // the endpoint's authoritative figure
+        // An official series has no steward adjustments to report, which is why
+        // its totals reconcile to the rounds exactly.
+        assertNull(champion.adjustments());
 
         // Only the scored round appears; the round without points stays blank.
         assertEquals(1, champion.pointsBySession().size());

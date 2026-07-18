@@ -25,8 +25,22 @@ public record StandingsImport(
             double totalPoints,
             Integer netPosition,
             Double totalNetPoints,
+            Adjustments adjustments,
             List<SessionPoints> pointsBySession
     ) {
+    }
+
+    /**
+     * Manual corrections a league applied to a competitor's season total, kept
+     * apart from the per-session points because that is where they happen: a
+     * steward rules after the fact, on the season, with no round to attribute
+     * it to. {@code totalPoints} is the figure after them; {@code basePoints} is
+     * what the per-session columns add up to.
+     *
+     * Null on any source that reports no such thing — an IMSA standings JSON,
+     * or an official iRacing series, whose totals are the raw sum.
+     */
+    public record Adjustments(double basePoints, double positive, double negative) {
     }
 
     /**
