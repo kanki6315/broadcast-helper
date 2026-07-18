@@ -45,7 +45,10 @@ function LineupRow({
           )
         }
         // Changed vs the car's previous entered round (skipped rounds don't count).
-        const prevOrd = ordinals.slice(0, idx).reverse().find((o) => car.byRound[o]?.length)
+        const prevOrd = ordinals
+          .slice(0, idx)
+          .reverse()
+          .find((o) => car.byRound[o]?.length)
         const changed = prevOrd != null && !sameCrew(crew, car.byRound[prevOrd] ?? [])
         return (
           <td
@@ -95,8 +98,7 @@ export default function EntriesPage() {
   }, [hub.id])
 
   const classes = useMemo(
-    () =>
-      (lineups?.classes ?? []).filter((c) => !classFilter || c.className === classFilter),
+    () => (lineups?.classes ?? []).filter((c) => !classFilter || c.className === classFilter),
     [lineups, classFilter],
   )
 
@@ -114,8 +116,7 @@ export default function EntriesPage() {
   if (lineups.rounds.length === 0 || classes.length === 0) {
     return (
       <div className="empty-state">
-        No entry lists imported yet — driver lineups appear here per round once entry lists come
-        in.
+        No entry lists imported yet — driver lineups appear here per round once entry lists come in.
       </div>
     )
   }
@@ -134,52 +135,44 @@ export default function EntriesPage() {
   return (
     <div>
       <p className="muted" style={{ fontSize: 'var(--text-sm)', margin: 'var(--space-3) 0' }}>
-        Crew per car per round. A highlighted cell is a lineup change from the car’s previous
-        round; “—” means the car skipped the round.
+        Crew per car per round. A highlighted cell is a lineup change from the car’s previous round;
+        “—” means the car skipped the round.
       </p>
-      <div
-        className="grid-scroll"
-        tabIndex={0}
-        role="region"
-        aria-label="Driver lineups by round"
-      >
-        <table className="grid-table">
-          <caption className="sr-only">
-            Driver lineups per car per round; highlighted cells changed from the car’s previous
-            round
-          </caption>
-          <thead>
-            <tr>
-              <th className="ident" style={identStyle(0)}>
-                #
+      <table className="grid-table">
+        <caption className="sr-only">
+          Driver lineups per car per round; highlighted cells changed from the car’s previous round
+        </caption>
+        <thead>
+          <tr>
+            <th className="ident" style={identStyle(0)}>
+              #
+            </th>
+            <th className="ident" style={identStyle(1)}>
+              Team
+            </th>
+            {lineups.rounds.map((r) => (
+              <th key={r.ordinal} className="round-head" scope="col" title={r.eventName}>
+                <span className="venue">{r.venue}</span>
+                <span className="rd">Rd {r.ordinal}</span>
               </th>
-              <th className="ident" style={identStyle(1)}>
-                Team
-              </th>
-              {lineups.rounds.map((r) => (
-                <th key={r.ordinal} className="round-head" scope="col" title={r.eventName}>
-                  <span className="venue">{r.venue}</span>
-                  <span className="rd">Rd {r.ordinal}</span>
-                </th>
-              ))}
-              <th className="grid-soak" aria-hidden="true" />
-            </tr>
-          </thead>
-          <tbody>
-            {classes.map((cls) => (
-              <FragmentRows
-                key={cls.className}
-                className={cls.className}
-                color={classColor(cls.className)}
-                cars={cls.cars}
-                ordinals={ordinals}
-                identStyle={identStyle}
-                colSpan={3 + lineups.rounds.length}
-              />
             ))}
-          </tbody>
-        </table>
-      </div>
+            <th className="grid-soak" aria-hidden="true" />
+          </tr>
+        </thead>
+        <tbody>
+          {classes.map((cls) => (
+            <FragmentRows
+              key={cls.className}
+              className={cls.className}
+              color={classColor(cls.className)}
+              cars={cls.cars}
+              ordinals={ordinals}
+              identStyle={identStyle}
+              colSpan={3 + lineups.rounds.length}
+            />
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }

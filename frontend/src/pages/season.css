@@ -430,18 +430,18 @@
 
 /* ==== recap / standings / lineup tables ==== */
 
-.grid-scroll {
-  overflow: auto;
-  max-height: 80vh;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  margin: 0 0 var(--space-5);
-}
-
+/* In flow, not a scrollbox: the grid lives in the document and the page itself
+ * scrolls — vertically always, horizontally only when a season outgrows the
+ * viewport. The table carries its own frame and simply overflows its parent
+ * when wider; the parent must NOT be intrinsically sized (`max-content`), or
+ * the percentage-width soak column feeds back into the table's intrinsic
+ * measure and the layout explodes to ~500k px. */
 .grid-table {
   width: auto;
   min-width: 100%;
-  margin: 0;
+  margin: 0 0 var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   font-size: var(--text-sm);
   border-collapse: separate;
   border-spacing: 0;
@@ -459,12 +459,36 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* Headers pin to the viewport now that the grid scrolls with the document. */
 .grid-table thead th {
   position: sticky;
   top: 0;
   background: var(--surface);
   z-index: 2;
   border-bottom: 1px solid var(--border-strong);
+}
+
+/* Nothing clips the table (clipping would break viewport-sticky headers), so
+ * the corner cells round themselves to sit inside the table's radius, and the
+ * last row yields its divider to the table's own border. */
+.grid-table thead th:first-child {
+  border-top-left-radius: calc(var(--radius-md) - 1px);
+}
+
+.grid-table thead th:last-child {
+  border-top-right-radius: calc(var(--radius-md) - 1px);
+}
+
+.grid-table > tbody:last-child > tr:last-child > td {
+  border-bottom: none;
+}
+
+.grid-table > tbody:last-child > tr:last-child > td:first-child {
+  border-bottom-left-radius: calc(var(--radius-md) - 1px);
+}
+
+.grid-table > tbody:last-child > tr:last-child > td:last-child {
+  border-bottom-right-radius: calc(var(--radius-md) - 1px);
 }
 
 .grid-table .round-head {
@@ -811,8 +835,12 @@ td.lineup-changed {
 }
 
 /* The affected row's marker lives in the car cell's right padding gutter, so
- * the right-aligned digits never move — column alignment is the product. */
-.grid-table .car-no {
+ * the right-aligned digits never move — column alignment is the product. Only
+ * the results table needs this: its car cell is a plain column that anchors the
+ * absolute note-flag. Never apply it to a sticky ident car column (recap /
+ * standings), where it would clobber `.ident`'s `position: sticky` at equal
+ * specificity and let the pinned name column paint over the car number. */
+.grid-table .car-no:not(.ident) {
   position: relative;
 }
 
@@ -924,13 +952,12 @@ td.lineup-changed {
   color: var(--ink);
 }
 
-/* The chronological message log: contained scroll, hairline dividers. */
+/* The chronological message log: a framed list in normal flow — the page
+ * scrolls, the log doesn't. */
 .rc-log {
   list-style: none;
   margin: 0;
   padding: 0;
-  max-height: 320px;
-  overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }

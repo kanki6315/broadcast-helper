@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { getJson, type ChampionshipSummary, type Recap } from '../../lib/api'
 import { useInfoModal } from '../../components/infoModal'
@@ -74,7 +74,11 @@ export function useChampSelection(): ChampSelection {
     for (const c of withRows) {
       const family = c.groupTitle ?? c.title
       if (!seen.has(family)) {
-        seen.set(family, { family, label: familyLabel(family, hub.seriesName), isCup: c.isCup })
+        seen.set(family, {
+          family,
+          label: familyLabel(family, hub.seriesName),
+          isCup: c.isCup,
+        })
       }
     }
     return [...seen.values()]
@@ -138,47 +142,6 @@ export function useChampSelection(): ChampSelection {
   }
 }
 
-/** One horizontal offset shared by every class grid on the page. All grids
- * render the same rounds at the same widths, so a single scrollLeft keeps their
- * round columns aligned down the page — otherwise "what happened at CTMP" means
- * scrolling four tables that disagree by a column. */
-function useSyncedScroll() {
-  const els = useRef(new Set<HTMLDivElement>())
-  const offset = useRef(0)
-
-  return useMemo(() => {
-    // No re-entry lock: the assignment is idempotent, so the echo scroll events
-    // find every grid already within a pixel of the target and stop there. A
-    // rAF-reset guard would wedge shut wherever rAF is throttled (background
-    // tab, headless render) and kill the sync for the rest of the session.
-    // The 1px tolerance absorbs per-grid clamping — a scrollbar makes one
-    // container's max slightly different from its siblings'.
-    const apply = (left: number, from?: HTMLDivElement) => {
-      offset.current = left
-      for (const el of els.current) {
-        if (el !== from && Math.abs(el.scrollLeft - left) > 1) el.scrollLeft = left
-      }
-    }
-    return {
-      register(el: HTMLDivElement) {
-        els.current.add(el)
-        if (offset.current) el.scrollLeft = offset.current
-        return () => {
-          els.current.delete(el)
-        }
-      },
-      // A grid proposes its own latest-round offset; the furthest-right wins so
-      // every class shows the newest round any of them has run.
-      propose(left: number) {
-        if (left > offset.current) apply(left)
-      },
-      onScroll(e: React.UIEvent<HTMLDivElement>) {
-        apply(e.currentTarget.scrollLeft, e.currentTarget)
-      },
-    }
-  }, [])
-}
-
 function rank(kind: string): number {
   switch (kind) {
     case 'TEAMS':
@@ -190,13 +153,7 @@ function rank(kind: string): number {
   }
 }
 
-export function ChampFilterBar({
-  sel,
-  legend,
-}: {
-  sel: ChampSelection
-  legend: boolean
-}) {
+export function ChampFilterBar({ sel, legend }: { sel: ChampSelection; legend: boolean }) {
   return (
     <div className="filter-bar">
       {sel.families.length > 1 && (
@@ -258,25 +215,11 @@ export function ChampFilterBar({
 
 /* ------------------------------------------------------------------------- */
 
-function ClassGrid({
-  champ,
-  mode,
-  sync,
-}: {
-  champ: ChampionshipSummary
-  mode: 'recap' | 'points'
-  sync: ReturnType<typeof useSyncedScroll>
-}) {
+function ClassGrid({ champ, mode }: { champ: ChampionshipSummary; mode: 'recap' | 'points' }) {
   const { classColor } = useSeason()
   const { openDriverByName, openTeam } = useInfoModal()
   const [recap, setRecap] = useState<Recap | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const el = scrollRef.current
-    return el ? sync.register(el) : undefined
-  }, [sync, recap])
 
   useEffect(() => {
     let cancelled = false
@@ -287,29 +230,6 @@ function ClassGrid({
       cancelled = true
     }
   }, [champ.id])
-
-  // The live question is about the latest round, which lives at the far right
-  // of the calendar — open the grid with that column in view, not January.
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el || !recap) return
-    // Below 700px the identity columns unpin (season.css), so scrolling right
-    // would carry Pos/#/Team off-screen and leave every row anonymous. On a
-    // phone the car number matters more than the newest round.
-    if (window.matchMedia('(max-width: 700px)').matches) return
-    let latest = 0
-    for (const row of recap.rows) {
-      for (const key of Object.keys(mode === 'points' ? row.pointsByRound : row.cells)) {
-        const round = Number(key)
-        if (round > latest) latest = round
-      }
-    }
-    if (latest === 0) return
-    const th = el.querySelector<HTMLElement>(`th[data-round="${latest}"]`)
-    if (th) {
-      sync.propose(Math.max(0, th.offsetLeft + th.offsetWidth - el.clientWidth))
-    }
-  }, [recap, mode, sync])
 
   if (error) return <p className="error-panel">{error}</p>
   if (!recap) {
@@ -337,12 +257,22 @@ function ClassGrid({
           { key: 'pts', label: 'Pts', w: 68, cls: 'num-cell' },
           { key: 'back', label: 'Back', w: 68, cls: 'num-cell back-cell' },
           { key: 'car', label: '#', w: 60, cls: 'car-no' },
-          { key: 'name', label: drivers ? 'Driver' : 'Team', w: 260, cls: 'name-cell' },
+          {
+            key: 'name',
+            label: drivers ? 'Driver' : 'Team',
+            w: 260,
+            cls: 'name-cell',
+          },
         ]
       : [
           { key: 'pos', label: 'Pos', w: 52, cls: 'pos-cell' },
           { key: 'car', label: '#', w: 60, cls: 'car-no' },
-          { key: 'name', label: drivers ? 'Driver' : 'Team', w: 260, cls: 'name-cell' },
+          {
+            key: 'name',
+            label: drivers ? 'Driver' : 'Team',
+            w: 260,
+            cls: 'name-cell',
+          },
         ]
   const lefts: number[] = []
   identCols.reduce((acc, c) => {
@@ -364,158 +294,148 @@ function ClassGrid({
   }`
 
   return (
-    // Focusable region: arrow keys scroll later rounds into view keyboard-only.
-    <div
-      className="grid-scroll"
-      ref={scrollRef}
-      onScroll={sync.onScroll}
-      tabIndex={0}
-      role="region"
-      aria-label={gridLabel}
-    >
-      <table className="grid-table">
-        <caption className="sr-only">{gridLabel}</caption>
-        <thead>
-          <tr>
-            {identCols.map((c, i) => (
-              <th
-                key={c.key}
-                className="ident"
-                scope="col"
-                style={identStyle(i)}
-                title={c.key === 'back' ? 'Points behind the class leader' : undefined}
-              >
-                {c.label}
-              </th>
-            ))}
-            {rounds.map((r) => (
-              <th key={r.round} className="round-head" scope="col" data-round={r.round}>
-                <span className="venue">{r.venue}</span>
-                <span className="rd">Rd {r.round}</span>
-              </th>
-            ))}
-            {mode === 'points' && (
-              <>
-                <th className="num-cell">Total</th>
-                <th className="num-cell" title="Points behind the class leader">
-                  Back
-                </th>
-              </>
-            )}
-            <th className="grid-soak" aria-hidden="true" />
-          </tr>
-        </thead>
-        <tbody>
-          <tr className="class-band">
-            <td
-              colSpan={identCols.length + rounds.length + (mode === 'points' ? 2 : 0) + 1}
-              style={{ '--class-color': color } as React.CSSProperties}
+    <table className="grid-table">
+      <caption className="sr-only">{gridLabel}</caption>
+      <thead>
+        <tr>
+          {identCols.map((c, i) => (
+            <th
+              key={c.key}
+              className="ident"
+              scope="col"
+              style={identStyle(i)}
+              title={c.key === 'back' ? 'Points behind the class leader' : undefined}
             >
-              <span className="band-label">
-                {champ.className} · {kindLabel(champ.kind ?? '')}
-              </span>
-            </td>
-          </tr>
-          {recap.rows.map((row) => {
-            const back = leaderPoints - row.totalPoints
-            const name = drivers ? row.competitorName ?? row.competitorKey : row.teamName
-            return (
-              <tr key={row.competitorKey}>
-                {identCols.map((c, i) => {
-                  const style = identStyle(i)
-                  switch (c.key) {
-                    case 'pos':
-                      return (
-                        <td key={c.key} className={`ident ${c.cls}`} style={style}>
-                          {row.position}
-                        </td>
-                      )
-                    case 'pts':
-                      return (
-                        <td key={c.key} className={`ident ${c.cls}`} style={style}>
-                          {formatPoints(row.totalPoints)}
-                        </td>
-                      )
-                    case 'back':
-                      return (
-                        <td key={c.key} className={`ident ${c.cls}`} style={style}>
-                          {back === 0 ? '—' : formatPoints(back)}
-                        </td>
-                      )
-                    case 'car':
-                      return (
-                        <td key={c.key} className={`ident ${c.cls}`} style={style}>
-                          {row.carNumber ?? ''}
-                        </td>
-                      )
-                    default:
-                      return (
-                        <td key={c.key} className={`ident ${c.cls}`} style={style} title={name ?? undefined}>
-                          {name ? (
-                            // The row header opens the competitor's info
-                            // modal — driver or team by championship kind.
-                            <button
-                              type="button"
-                              className="drv-link"
-                              onClick={() =>
-                                drivers ? openDriverByName(name) : openTeam(name)
-                              }
-                            >
-                              {name}
-                            </button>
-                          ) : (
-                            name
-                          )}
-                        </td>
-                      )
-                  }
-                })}
-                {rounds.map((r) => {
-                  if (mode === 'points') {
-                    const pts = row.pointsByRound[r.round]
+              {c.label}
+            </th>
+          ))}
+          {rounds.map((r) => (
+            <th key={r.round} className="round-head" scope="col">
+              <span className="venue">{r.venue}</span>
+              <span className="rd">Rd {r.round}</span>
+            </th>
+          ))}
+          {mode === 'points' && (
+            <>
+              <th className="num-cell">Total</th>
+              <th className="num-cell" title="Points behind the class leader">
+                Back
+              </th>
+            </>
+          )}
+          <th className="grid-soak" aria-hidden="true" />
+        </tr>
+      </thead>
+      <tbody>
+        <tr className="class-band">
+          <td
+            colSpan={identCols.length + rounds.length + (mode === 'points' ? 2 : 0) + 1}
+            style={{ '--class-color': color } as React.CSSProperties}
+          >
+            <span className="band-label">
+              {champ.className} · {kindLabel(champ.kind ?? '')}
+            </span>
+          </td>
+        </tr>
+        {recap.rows.map((row) => {
+          const back = leaderPoints - row.totalPoints
+          const name = drivers ? (row.competitorName ?? row.competitorKey) : row.teamName
+          return (
+            <tr key={row.competitorKey}>
+              {identCols.map((c, i) => {
+                const style = identStyle(i)
+                switch (c.key) {
+                  case 'pos':
                     return (
-                      <td key={r.round} className="num-cell" style={{ textAlign: 'center' }}>
-                        {pts != null ? formatPoints(pts) : <span className="muted">—</span>}
+                      <td key={c.key} className={`ident ${c.cls}`} style={style}>
+                        {row.position}
                       </td>
                     )
-                  }
-                  const races = row.cells[r.round]
+                  case 'pts':
+                    return (
+                      <td key={c.key} className={`ident ${c.cls}`} style={style}>
+                        {formatPoints(row.totalPoints)}
+                      </td>
+                    )
+                  case 'back':
+                    return (
+                      <td key={c.key} className={`ident ${c.cls}`} style={style}>
+                        {back === 0 ? '—' : formatPoints(back)}
+                      </td>
+                    )
+                  case 'car':
+                    return (
+                      <td key={c.key} className={`ident ${c.cls}`} style={style}>
+                        {row.carNumber ?? ''}
+                      </td>
+                    )
+                  default:
+                    return (
+                      <td
+                        key={c.key}
+                        className={`ident ${c.cls}`}
+                        style={style}
+                        title={name ?? undefined}
+                      >
+                        {name ? (
+                          // The row header opens the competitor's info
+                          // modal — driver or team by championship kind.
+                          <button
+                            type="button"
+                            className="drv-link"
+                            onClick={() => (drivers ? openDriverByName(name) : openTeam(name))}
+                          >
+                            {name}
+                          </button>
+                        ) : (
+                          name
+                        )}
+                      </td>
+                    )
+                }
+              })}
+              {rounds.map((r) => {
+                if (mode === 'points') {
+                  const pts = row.pointsByRound[r.round]
                   return (
-                    <td key={r.round} className="race-cell">
-                      {races && races.length > 0 ? (
-                        races.map((race) => <RaceLine key={race.race} r={race} />)
-                      ) : (
-                        <span className="cell-skip" title="Did not enter this round">
-                          ·
-                        </span>
-                      )}
+                    <td key={r.round} className="num-cell" style={{ textAlign: 'center' }}>
+                      {pts != null ? formatPoints(pts) : <span className="muted">—</span>}
                     </td>
                   )
-                })}
-                {mode === 'points' && (
-                  <>
-                    <td className="num-cell" style={{ fontWeight: 700 }}>
-                      {formatPoints(row.totalPoints)}
-                    </td>
-                    <td className="num-cell back-cell">
-                      {back === 0 ? '—' : formatPoints(back)}
-                    </td>
-                  </>
-                )}
-                <td className="grid-soak" />
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
+                }
+                const races = row.cells[r.round]
+                return (
+                  <td key={r.round} className="race-cell">
+                    {races && races.length > 0 ? (
+                      races.map((race) => <RaceLine key={race.race} r={race} />)
+                    ) : (
+                      <span className="cell-skip" title="Did not enter this round">
+                        ·
+                      </span>
+                    )}
+                  </td>
+                )
+              })}
+              {mode === 'points' && (
+                <>
+                  <td className="num-cell" style={{ fontWeight: 700 }}>
+                    {formatPoints(row.totalPoints)}
+                  </td>
+                  <td className="num-cell back-cell">{back === 0 ? '—' : formatPoints(back)}</td>
+                </>
+              )}
+              <td className="grid-soak" />
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
   )
 }
 
 export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' }) {
   const { classFilter } = useSeason()
   const sel = useChampSelection()
-  const sync = useSyncedScroll()
 
   const shown = classFilter ? sel.selected.filter((c) => c.className === classFilter) : sel.selected
 
@@ -536,7 +456,7 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
           No {classFilter} standings in this championship — pick another class or championship.
         </div>
       ) : (
-        shown.map((c) => <ClassGrid key={c.id} champ={c} mode={mode} sync={sync} />)
+        shown.map((c) => <ClassGrid key={c.id} champ={c} mode={mode} />)
       )}
     </div>
   )

@@ -292,7 +292,9 @@ function RaceControl({ sessionId }: { sessionId: number }) {
                 <ol className="rc-log" aria-label="Race control messages">
                   {log.map((f) => (
                     <li key={f.seq}>
-                      <span className="rc-time">{f.elapsed && f.elapsed !== '-' ? f.elapsed : f.wallTime}</span>
+                      <span className="rc-time">
+                        {f.elapsed && f.elapsed !== '-' ? f.elapsed : f.wallTime}
+                      </span>
                       <span className="rc-msg">{f.message}</span>
                     </li>
                   ))}
@@ -382,93 +384,93 @@ function ResultsTable({ session }: { session: SessionResults }) {
   }
 
   return (
-    <div className="grid-scroll" tabIndex={0} role="region" aria-label={label}>
-      <table className="grid-table">
-        <caption className="sr-only">{label}</caption>
-        <thead>
-          <tr>
+    <table className="grid-table">
+      <caption className="sr-only">{label}</caption>
+      <thead>
+        <tr>
+          <th className="num-cell" scope="col">
+            Pos
+          </th>
+          <th className="num-cell" scope="col">
+            PIC
+          </th>
+          <th scope="col">Class</th>
+          <th className="num-cell" scope="col">
+            #
+          </th>
+          <th scope="col">Team</th>
+          <th className="soak" scope="col">
+            {isQualifying && has.fastestBy ? 'Fastest lap by' : 'Drivers'}
+          </th>
+          <th scope="col">Car</th>
+          {has.laps && (
             <th className="num-cell" scope="col">
-              Pos
+              Laps
             </th>
+          )}
+          {has.fastest && (
             <th className="num-cell" scope="col">
-              PIC
+              {isQualifying ? 'Best lap' : 'Fastest'}
             </th>
-            <th scope="col">Class</th>
+          )}
+          {has.onLap && (
             <th className="num-cell" scope="col">
-              #
+              On lap
             </th>
-            <th scope="col">Team</th>
-            <th className="soak" scope="col">
-              {isQualifying && has.fastestBy ? 'Fastest lap by' : 'Drivers'}
+          )}
+          {has.time && (
+            <th className="num-cell" scope="col">
+              {isQualifying ? 'Gap' : 'Time / Gap'}
             </th>
-            <th scope="col">Car</th>
-            {has.laps && (
-              <th className="num-cell" scope="col">
-                Laps
-              </th>
-            )}
-            {has.fastest && (
-              <th className="num-cell" scope="col">
-                {isQualifying ? 'Best lap' : 'Fastest'}
-              </th>
-            )}
-            {has.onLap && (
-              <th className="num-cell" scope="col">
-                On lap
-              </th>
-            )}
-            {has.time && (
-              <th className="num-cell" scope="col">
-                {isQualifying ? 'Gap' : 'Time / Gap'}
-              </th>
-            )}
-            {has.classGap && (
-              <th className="num-cell" scope="col">
-                Class gap
-              </th>
-            )}
-            {has.status && <th scope="col">Status</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            // Separated: car 5 in P43 and car 54 in P3 both concatenate to "543".
-            <tr key={`${r.carNumber}-${r.posOverall ?? ''}`}>
-              <td className="pos-cell">{r.posOverall ?? '—'}</td>
-              <td className="num-cell">{r.posInClass ?? '—'}</td>
-              <ClassCell className={r.className} />
-              <td className="car-no">
-                {r.carNumber}
-                {carNotes.has(r.carNumber) && (
-                  <span
-                    className="note-flag"
-                    title={carNotes.get(r.carNumber)!.join('\n')}
-                    aria-label={`Stewards' note: ${carNotes.get(r.carNumber)!.join('; ')}`}
-                  >
-                    ※
-                  </span>
-                )}
-              </td>
-              <td className="name-cell" title={r.teamName ?? undefined}>
-                <TeamLink name={r.teamName} />
-              </td>
-              <DriverCell row={r} fastestBy={isQualifying && has.fastestBy} />
-              <td className="name-cell" style={{ maxWidth: 200 }} title={r.vehicle ?? undefined}>
-                {r.vehicle}
-              </td>
-              {has.laps && <td className="num-cell">{r.laps ?? ''}</td>}
-              {has.fastest && <td className="num-cell">{r.fastestLapTime ?? ''}</td>}
-              {has.onLap && <td className="num-cell back-cell">{r.fastestLapNumber ?? ''}</td>}
-              {has.time && <td className="num-cell">{timeOf(r)}</td>}
-              {has.classGap && <td className="num-cell">{gapInClass.get(r) ?? ''}</td>}
-              {has.status && (
-                <td>{isClassified(r.status) ? '' : <span className="status-dnf">{r.status}</span>}</td>
+          )}
+          {has.classGap && (
+            <th className="num-cell" scope="col">
+              Class gap
+            </th>
+          )}
+          {has.status && <th scope="col">Status</th>}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          // Separated: car 5 in P43 and car 54 in P3 both concatenate to "543".
+          <tr key={`${r.carNumber}-${r.posOverall ?? ''}`}>
+            <td className="pos-cell">{r.posOverall ?? '—'}</td>
+            <td className="num-cell">{r.posInClass ?? '—'}</td>
+            <ClassCell className={r.className} />
+            <td className="car-no">
+              {r.carNumber}
+              {carNotes.has(r.carNumber) && (
+                <span
+                  className="note-flag"
+                  title={carNotes.get(r.carNumber)!.join('\n')}
+                  aria-label={`Stewards' note: ${carNotes.get(r.carNumber)!.join('; ')}`}
+                >
+                  ※
+                </span>
               )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+            </td>
+            <td className="name-cell" title={r.teamName ?? undefined}>
+              <TeamLink name={r.teamName} />
+            </td>
+            <DriverCell row={r} fastestBy={isQualifying && has.fastestBy} />
+            <td className="name-cell" style={{ maxWidth: 200 }} title={r.vehicle ?? undefined}>
+              {r.vehicle}
+            </td>
+            {has.laps && <td className="num-cell">{r.laps ?? ''}</td>}
+            {has.fastest && <td className="num-cell">{r.fastestLapTime ?? ''}</td>}
+            {has.onLap && <td className="num-cell back-cell">{r.fastestLapNumber ?? ''}</td>}
+            {has.time && <td className="num-cell">{timeOf(r)}</td>}
+            {has.classGap && <td className="num-cell">{gapInClass.get(r) ?? ''}</td>}
+            {has.status && (
+              <td>
+                {isClassified(r.status) ? '' : <span className="status-dnf">{r.status}</span>}
+              </td>
+            )}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }
 
@@ -493,8 +495,7 @@ export default function ResultsPage() {
   )
 
   const eventParam = Number(searchParams.get('event'))
-  const selected =
-    rounds.find((e) => e.id === eventParam) ?? rounds[rounds.length - 1] ?? null
+  const selected = rounds.find((e) => e.id === eventParam) ?? rounds[rounds.length - 1] ?? null
 
   useEffect(() => {
     if (!selected) return
@@ -603,27 +604,27 @@ export default function ResultsPage() {
                 {/* A tablist of one is a label, not a control — the event title
                     above already says which session this is. */}
                 {sessions.length > 1 && (
-                <div className="seg" role="tablist" aria-label="Session" ref={tabsRef}>
-                  {sessions.map((s) => {
-                    const on = s.sessionId === active.sessionId
-                    return (
-                      <button
-                        key={s.sessionId}
-                        type="button"
-                        role="tab"
-                        id={`session-tab-${s.sessionId}`}
-                        aria-selected={on}
-                        aria-controls={`session-panel-${s.sessionId}`}
-                        tabIndex={on ? 0 : -1}
-                        className={on ? 'seg-btn active' : 'seg-btn'}
-                        onKeyDown={onTabKey}
-                        onClick={() => setParam('session', String(s.sessionId))}
-                      >
-                        {sessionLabel(s, races.length)}
-                      </button>
-                    )
-                  })}
-                </div>
+                  <div className="seg" role="tablist" aria-label="Session" ref={tabsRef}>
+                    {sessions.map((s) => {
+                      const on = s.sessionId === active.sessionId
+                      return (
+                        <button
+                          key={s.sessionId}
+                          type="button"
+                          role="tab"
+                          id={`session-tab-${s.sessionId}`}
+                          aria-selected={on}
+                          aria-controls={`session-panel-${s.sessionId}`}
+                          tabIndex={on ? 0 : -1}
+                          className={on ? 'seg-btn active' : 'seg-btn'}
+                          onKeyDown={onTabKey}
+                          onClick={() => setParam('session', String(s.sessionId))}
+                        >
+                          {sessionLabel(s, races.length)}
+                        </button>
+                      )
+                    })}
+                  </div>
                 )}
                 {hasGrid && (
                   <button type="button" className="btn" onClick={() => setGridOpen(true)}>
@@ -639,7 +640,9 @@ export default function ResultsPage() {
               >
                 <SessionNotesPanel session={active} />
                 <ResultsTable session={active} />
-                {active.hasFlags && <RaceControl key={active.sessionId} sessionId={active.sessionId} />}
+                {active.hasFlags && (
+                  <RaceControl key={active.sessionId} sessionId={active.sessionId} />
+                )}
               </div>
               {gridOpen && hasGrid && (
                 <StartingGridModal

@@ -1,8 +1,11 @@
 /* App chrome, shared primitives, and legacy-page styles, on the token layer
  * in index.css. New season/hub surfaces live in pages/season.css. */
 
+/* Fluid shell: the recap and results grids are the product, and boxing them
+ * into a fixed column forced inner scrollbars on screens that had room to
+ * spare. The cap only reins in ultrawide monitors. */
 .container {
-  max-width: 1240px;
+  max-width: 1800px;
   margin: 0 auto;
   padding: var(--space-4) var(--space-5) var(--space-7);
   text-align: left;

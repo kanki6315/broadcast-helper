@@ -283,12 +283,18 @@ Shared vocabulary in `frontend/src/App.css`; season surfaces in
 hover, focus-visible, active, and disabled states; transitions run at
 `--t-fast` (70ms) ease-out-quart.
 
-### Data Grid (the signature component — `.grid-table` in `.grid-scroll`)
+### Data Grid (the signature component — `.grid-table` in `.grid-frame`)
 The heart of the tool: recap, standings, lineups, results. Hairline row
 dividers, `border-collapse: separate`, sticky headers (surface background) and
-sticky identity columns with explicit left offsets (disabled below 700px),
-scroll contained in a bordered `--radius-md` container capped at 80vh. Round
-columns show a mono venue code over a muted "Rd n". Class sections divide on a
+sticky identity columns with explicit left offsets (disabled below 700px).
+**The grid lives in normal document flow — no nested scrollbox.** Its bordered
+`--radius-md` frame (`.grid-frame`, `width: max-content` with `min-width:
+100%`) hugs the table; the page itself scrolls, vertically always and
+horizontally only when a season outgrows the viewport. Headers pin to the
+viewport top, ident columns to the viewport left. Because the frame cannot
+clip its table (clipping would kill viewport-sticky headers), the corner cells
+carry their own `border-radius` and the last row yields its divider to the
+frame border. Round columns show a mono venue code over a muted "Rd n". Class sections divide on a
 **class band** — a full-width row filled with the class color, name always
 printed on it. Result cells stack one `.race-line` per race, tinted by finish
 tier, with the amber **P** for pole and DNS/skips as quiet muted marks.
@@ -347,9 +353,9 @@ reshapes the table. Supporting surfaces:
 - **Race control** (`.race-control`): a quiet disclosure below the table for
   the flag/RC-message stream. Flag periods are labeled chips (green
   `--res-win` / amber `--accent-tint` tints, colour always paired with the
-  flag name + lap + duration); the message log scrolls inside its own bordered
-  `--radius-md` box, filterable by car via `.rc-car-chip`. Lazy-fetched on
-  first open.
+  flag name + lap + duration); the message log is a framed `--radius-md` list
+  in normal flow (the page scrolls, the log doesn't), filterable by car via
+  `.rc-car-chip`. Lazy-fetched on first open.
 
 ### Import modals (`.uf` / `.ir` / `.cis`)
 The Imports page opens two native-`<dialog>` modals on the token layer, siblings
@@ -408,8 +414,11 @@ to `localStorage('bh-theme')`; `index.html` applies it before first paint.
 - **Do** ship per-column sticky offsets as a `--ident-left` custom property, not
   an inline `left`. An inline `left` outranks every stylesheet rule, so the
   narrow-screen media query can never unpin the header.
-- **Do** contain wide tables in their own `.grid-scroll` — the page never
-  scrolls horizontally.
+- **Do** keep data surfaces in normal document flow — no nested scrollboxes.
+  Wide tables sit in a `.grid-frame` that hugs their width; if a season
+  outgrows the viewport the *document* scrolls horizontally, the way a page
+  does. Interior scrolling belongs to modals and nothing else (the user
+  rejected scrollboxes-within-the-page explicitly, 2026-07-17).
 - **Do** keep motion 70–140ms ease-out-quart, state-triggered, with the
   `prefers-reduced-motion` kill switch already in `index.css`.
 - **Do** hold every text pair to WCAG AA on its actual background, both themes.
@@ -436,6 +445,7 @@ to `localStorage('bh-theme')`; `index.html` applies it before first paint.
   transition). rAF is throttled in background tabs and headless renders, so an
   rAF-reset re-entry guard wedges shut and the feature dies silently. Prefer
   idempotent writes that settle on their own.
-- **Don't** auto-scroll a data grid on narrow screens. Below 700px the identity
-  columns unpin, so scrolling right carries the car number and team off-screen
-  and leaves every row anonymous.
+- **Don't** scroll the page programmatically to "helpfully" reveal a column.
+  Grids scroll with the document now, so any auto-scroll shoves the whole page
+  sideways on load — and below 700px the identity columns unpin, so it also
+  carries the car number and team off-screen and leaves every row anonymous.
