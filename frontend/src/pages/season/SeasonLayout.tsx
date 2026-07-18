@@ -135,7 +135,14 @@ export default function SeasonLayout() {
     )
   }
 
-  const sameSeries = seasons.filter((s) => s.seriesName === hub.seriesName)
+  const sameSeries = seasons
+    .filter((s) => s.seriesName === hub.seriesName)
+    .sort((a, b) => b.year - a.year)
+  // Keep the current year visible if the seasons index could not be fetched.
+  const visibleSeasons: Array<Pick<SeasonSummary, 'id' | 'year'>> =
+    sameSeries.length > 0
+      ? sameSeries
+      : [{ id: hub.id, year: hub.year }]
   const context: SeasonContext = {
     hub,
     classes,
@@ -150,24 +157,22 @@ export default function SeasonLayout() {
         <div className="season-toolbar">
           <div className="season-title-row">
             <h1>{hub.seriesName}</h1>
-            {sameSeries.length > 1 ? (
-              <select
-                className="season-select"
-                value={hub.id}
-                aria-label="Season"
-                onChange={(e) => switchSeason(e.target.value)}
-              >
-                {sameSeries.map((s) => (
-                  <option key={s.id} value={s.id}>
+            <div className="seg season-year-strip" role="group" aria-label="Season year">
+              {visibleSeasons.map((s) => {
+                const active = s.id === hub.id
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className={active ? 'seg-btn active' : 'seg-btn'}
+                    aria-pressed={active}
+                    onClick={() => switchSeason(String(s.id))}
+                  >
                     {s.year}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span className="season-select" aria-label="Season">
-                {hub.year}
-              </span>
-            )}
+                  </button>
+                )
+              })}
+            </div>
           </div>
           {classes.length > 1 && (
             <div className="class-chips" role="group" aria-label="Class filter">
