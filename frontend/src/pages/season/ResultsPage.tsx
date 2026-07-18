@@ -22,6 +22,14 @@ function TeamLink({ name }: { name: string | null }) {
   )
 }
 
+function TeamCell({ name }: { name: string | null }) {
+  return (
+    <td className="name-cell" title={name ?? undefined}>
+      <TeamLink name={name} />
+    </td>
+  )
+}
+
 /** The backend joins crew names with ", " — split them back into modal links.
  * TBD seats stay plain text. */
 function DriverLinks({ names }: { names: string | null }) {
@@ -373,6 +381,24 @@ function ResultsTable({ session }: { session: SessionResults }) {
       all.some((r) => gapInClass.has(r)),
   }
 
+  // Where the Team column sits relative to the driver(s) — or whether it shows at
+  // all. A team name that only ever restates the driver (hosted iRacing sets
+  // team_name to the driver's own name) carries nothing, so drop the column. When
+  // it does say something, its side depends on who the star of the row is: a
+  // multi-driver car is a team entry, so team leads and the crew follows; a
+  // single-seat entry is a driver, so the driver leads and the team trails.
+  const teamInformative = all.some((r) => {
+    const t = r.teamName?.trim()
+    if (!t) return false
+    return t !== r.drivers?.trim() && t !== r.fastestLapDriver?.trim()
+  })
+  const multiDriver = all.some((r) => (r.drivers ?? '').includes(', '))
+  const teamPos: 'hidden' | 'before' | 'after' = !teamInformative
+    ? 'hidden'
+    : multiDriver
+      ? 'before'
+      : 'after'
+
   if (rows.length === 0) {
     return (
       <div className="empty-state">
@@ -398,10 +424,11 @@ function ResultsTable({ session }: { session: SessionResults }) {
           <th className="num-cell" scope="col">
             #
           </th>
-          <th scope="col">Team</th>
+          {teamPos === 'before' && <th scope="col">Team</th>}
           <th className="soak" scope="col">
             {isQualifying && has.fastestBy ? 'Fastest lap by' : 'Drivers'}
           </th>
+          {teamPos === 'after' && <th scope="col">Team</th>}
           <th scope="col">Car</th>
           {has.laps && (
             <th className="num-cell" scope="col">
@@ -450,10 +477,9 @@ function ResultsTable({ session }: { session: SessionResults }) {
                 </span>
               )}
             </td>
-            <td className="name-cell" title={r.teamName ?? undefined}>
-              <TeamLink name={r.teamName} />
-            </td>
+            {teamPos === 'before' && <TeamCell name={r.teamName} />}
             <DriverCell row={r} fastestBy={isQualifying && has.fastestBy} />
+            {teamPos === 'after' && <TeamCell name={r.teamName} />}
             <td className="name-cell" style={{ maxWidth: 200 }} title={r.vehicle ?? undefined}>
               {r.vehicle}
             </td>
