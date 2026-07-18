@@ -437,6 +437,65 @@ h2 small {
   padding: 6px 14px;
 }
 
+/* Championship-year wipe: the season list with a destructive action per row,
+ * and the native <dialog> that gates it (token layer from index.css, dialog
+ * shell borrowed from .sg in starting-grid-modal.css). */
+.season-data {
+  margin-top: var(--space-6);
+}
+
+.season-data > p {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.season-data-note {
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+}
+
+.confirm-dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow-modal);
+}
+
+.confirm-dialog::backdrop {
+  background: oklch(10% 0.01 277 / 52%);
+}
+
+.confirm-dialog h3 {
+  margin: 0 0 var(--space-2);
+}
+
+.confirm-dialog p {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.btn-danger {
+  color: var(--error);
+  border-color: color-mix(in oklab, var(--error) 45%, transparent);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--error-tint);
+  border-color: color-mix(in oklab, var(--error) 60%, transparent);
+}
+
 /* The two entry points into staging: Upload files (primary) or Fetch from
  * iRacing, with a quiet "or" between and a trailing note on the API path. */
 .import-actions {

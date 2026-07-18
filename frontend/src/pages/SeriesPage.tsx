@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 interface Series {
   id: number
@@ -25,6 +25,14 @@ interface RaceFormat {
   name: string
   ordinal: number
   sessionCount: number
+}
+
+interface SeasonSummary {
+  id: number
+  year: number
+  seriesName: string
+  roundCount: number
+  championshipCount: number
 }
 
 export default function SeriesPage() {
@@ -237,7 +245,167 @@ export default function SeriesPage() {
           </tbody>
         </table>
       )}
+
+      <SeasonDataSection onError={setError} />
     </section>
+  )
+}
+
+/**
+ * Deleting a year's imported data exists for one reason: a botched or stale
+ * import that should be redone from scratch. The wipe removes what the
+ * importers created (rounds and championships); the season row, car images and
+ * series settings stay, and reimporting reattaches to the same season.
+ */
+function SeasonDataSection({ onError }: { onError: (message: string | null) => void }) {
+  const [seasons, setSeasons] = useState<SeasonSummary[]>([])
+  const [confirming, setConfirming] = useState<SeasonSummary | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  async function load() {
+    try {
+      const res = await fetch('/api/seasons')
+      if (!res.ok) throw new Error(`Backend returned ${res.status}`)
+      setSeasons(await res.json())
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed to reach backend')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function deleteData(s: SeasonSummary) {
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/seasons/${s.id}/data`, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        onError(err?.message ?? `Backend returned ${res.status}`)
+        return
+      }
+      const r = (await res.json()) as { roundsDeleted: number; championshipsDeleted: number }
+      onError(null)
+      setNote(
+        `Deleted ${r.roundsDeleted} round${r.roundsDeleted === 1 ? '' : 's'} and ` +
+          `${r.championshipsDeleted} championship${r.championshipsDeleted === 1 ? '' : 's'} ` +
+          `for ${s.seriesName} ${s.year}. The year is ready to reimport.`,
+      )
+      await load()
+    } finally {
+      setDeleting(false)
+      setConfirming(null)
+    }
+  }
+
+  return (
+    <div className="season-data">
+      <h2>Championship years</h2>
+      <p>
+        Delete a year's imported data — rounds, results, grids, flags, entry lists and standings —
+        to reimport it from scratch. Car images and series settings are kept.
+      </p>
+      {note && <p className="season-data-note">{note}</p>}
+      {loading ? (
+        <p>Loading…</p>
+      ) : seasons.length === 0 ? (
+        <p className="muted">No imported data yet.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Year</th>
+              <th>Series</th>
+              <th>Rounds</th>
+              <th>Championships</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {seasons.map((s) => (
+              <tr key={s.id}>
+                <td>{s.year}</td>
+                <td>{s.seriesName}</td>
+                <td>{s.roundCount}</td>
+                <td>{s.championshipCount}</td>
+                <td>
+                  <button type="button" onClick={() => setConfirming(s)}>
+                    Delete data…
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {confirming && (
+        <ConfirmSeasonDelete
+          season={confirming}
+          busy={deleting}
+          onConfirm={() => void deleteData(confirming)}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function ConfirmSeasonDelete({
+  season,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  season: SeasonSummary
+  busy: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+
+  useEffect(() => {
+    const d = dialogRef.current
+    if (d && !d.open) d.showModal()
+  }, [])
+
+  return (
+    <dialog
+      className="confirm-dialog"
+      ref={dialogRef}
+      aria-label={`Delete imported data for ${season.seriesName} ${season.year}`}
+      onCancel={(e) => {
+        e.preventDefault()
+        if (!busy) onCancel()
+      }}
+      onClick={(e) => {
+        if (e.target === dialogRef.current && !busy) onCancel()
+      }}
+    >
+      <h3>
+        Delete imported data for {season.seriesName} {season.year}?
+      </h3>
+      <p>
+        This removes {season.roundCount} round{season.roundCount === 1 ? '' : 's'} and{' '}
+        {season.championshipCount} championship{season.championshipCount === 1 ? '' : 's'} — every
+        result, grid, flag, entry list and standings table for the year. Car images and series
+        settings are kept. This cannot be undone; the year has to be reimported.
+      </p>
+      <div className="confirm-dialog-actions">
+        <button type="button" onClick={onCancel} disabled={busy}>
+          Cancel
+        </button>
+        <button type="button" className="btn btn-danger" onClick={onConfirm} disabled={busy}>
+          {busy ? 'Deleting…' : 'Delete data'}
+        </button>
+      </div>
+    </dialog>
   )
 }
 
