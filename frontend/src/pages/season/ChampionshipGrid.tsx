@@ -4,6 +4,7 @@ import {
   getJson,
   type ChampionshipSummary,
   type Recap,
+  type RecapRound,
   type RecapSession,
   type RecapSessionPoints,
 } from '../../lib/api'
@@ -32,14 +33,37 @@ export function formatPoints(points: number): string {
 
 /* -- points breakdown ---------------------------------------------------- */
 
-/** Compact per-session tags for a multi-session round: "Q" for qualifying,
- * races numbered R1..Rn ("R" when the round has only one). A single-session
- * round gets no tag — the number alone reads fine. */
-function sessionTags(sessions: RecapSession[]): (string | null)[] {
-  if (sessions.length <= 1) return sessions.map(() => null)
-  const raceTotal = sessions.filter((s) => !/qual/i.test(s.name)).length
-  let raceNo = 0
-  return sessions.map((s) => (/qual/i.test(s.name) ? 'Q' : raceTotal > 1 ? `R${++raceNo}` : 'R'))
+/** Compact per-session tags for a multi-session round, keyed by session index.
+ *
+ * The tag is the session's own initial — Qualifying → Q, Heat → H, Feature → F,
+ * Race/Round → R — numbered only where that word repeats inside the round. So
+ * PESC's Sachsenring reads Q · H1 H2 H3 H4 · F, and the Feature keeps its name
+ * instead of being flattened into "R5". Numbering is positional within the
+ * round, never the source's own ordinal: Carrera Cup Asia calls Zhuhai's races
+ * "Round 3"/"Round 4", but they sit under a column headed Rd 2, so they tag
+ * R1/R2 and agree with the header.
+ *
+ * A single-session round gets no tag — the number alone reads fine. */
+function sessionTags(sessions: RecapSession[]): Map<number, string | null> {
+  const tags = new Map<number, string | null>()
+  if (sessions.length <= 1) {
+    for (const s of sessions) tags.set(s.sessionIndex, null)
+    return tags
+  }
+  const initial = (name: string) => (/^qual/i.test(name.trim()) ? 'Q' : name.trim().charAt(0).toUpperCase())
+  const counts = new Map<string, number>()
+  for (const s of sessions) {
+    const i = initial(s.name)
+    counts.set(i, (counts.get(i) ?? 0) + 1)
+  }
+  const seen = new Map<string, number>()
+  for (const s of sessions) {
+    const i = initial(s.name)
+    const n = (seen.get(i) ?? 0) + 1
+    seen.set(i, n)
+    tags.set(s.sessionIndex, (counts.get(i) ?? 0) > 1 ? `${i}${n}` : i)
+  }
+  return tags
 }
 
 interface PtsMark {
@@ -70,14 +94,17 @@ function marksFor(sp: RecapSessionPoints): PtsMark[] {
   return marks
 }
 
-const SKIPPED: RecapSessionPoints = {
-  total: 0,
-  race: 0,
-  pole: 0,
-  fastestLap: 0,
-  penalty: 0,
-  bonus: 0,
-  contested: false,
+/** The sessions of one round this competitor actually ran, in calendar order.
+ * A session they sat out contributes no line at all — six blank markers for a
+ * driver who ran one heat of a six-race weekend cost a lot of vertical space
+ * to say nothing. The tag on each surviving line says which session it was. */
+function contestedSessions(
+  round: RecapRound,
+  sessionPoints: Record<number, RecapSessionPoints>,
+): { session: RecapSession; sp: RecapSessionPoints }[] {
+  return round.sessions
+    .map((session) => ({ session, sp: sessionPoints[session.sessionIndex] }))
+    .filter((s): s is { session: RecapSession; sp: RecapSessionPoints } => s.sp?.contested === true)
 }
 
 /** One session's earnings inside a round cell. marksCh reserves a shared marks
@@ -96,18 +123,6 @@ function PtsLine({
 }) {
   const gutter =
     marksCh > 0 ? { minWidth: `${marksCh}ch` } : undefined
-  if (!sp.contested) {
-    return (
-      <span className="pts-line" title={`${name}: did not run`}>
-        {tag && <span className="pts-tag">{tag}</span>}
-        <span className="pts-val pts-zero" aria-hidden="true">
-          ·
-        </span>
-        <span className="sr-only">did not run</span>
-        {gutter && <span className="pts-marks" style={gutter} />}
-      </span>
-    )
-  }
   const marks = marksFor(sp)
   // With marks, the printed number is the RACE points and the marks carry the
   // extras — the whole sum sits on the table. Without marks they're the same
@@ -271,32 +286,35 @@ function rank(kind: string): number {
 }
 
 /** Which notation actually appears in the shown standings — the points legend
- * only decodes marks that exist, so a plain-points league gets no legend. */
+ * only decodes what exists, so a plain-points league gets no legend at all.
+ * `tags` maps each session initial to the word it abbreviates, read from the
+ * real session names, so "F = feature" is stated rather than assumed. */
 interface PtsLegendFlags {
-  q: boolean
-  races: boolean
+  tags: Map<string, string>
   pole: boolean
   fl: boolean
   bonus: boolean
   penalty: boolean
-  skip: boolean
 }
 
 function ptsLegendFlags(recaps: Recap[]): PtsLegendFlags | null {
   const f: PtsLegendFlags = {
-    q: false,
-    races: false,
+    tags: new Map(),
     pole: false,
     fl: false,
     bonus: false,
     penalty: false,
-    skip: false,
   }
   for (const recap of recaps) {
     for (const r of recap.rounds) {
-      if (r.sessions.length > 1) {
-        if (r.sessions.some((s) => /qual/i.test(s.name))) f.q = true
-        if (r.sessions.some((s) => !/qual/i.test(s.name))) f.races = true
+      if (r.sessions.length <= 1) continue
+      const tags = sessionTags(r.sessions)
+      for (const s of r.sessions) {
+        // The tag carries any positional number ("H1"); the legend explains the
+        // letter, so strip the digits back off.
+        const letter = (tags.get(s.sessionIndex) ?? '').replace(/\d+$/, '')
+        const word = s.name.trim().split(/\s+/)[0].toLowerCase()
+        if (letter && !f.tags.has(letter)) f.tags.set(letter, word)
       }
     }
     for (const row of recap.rows) {
@@ -305,23 +323,27 @@ function ptsLegendFlags(recaps: Recap[]): PtsLegendFlags | null {
         if (sp.fastestLap > 0) f.fl = true
         if (sp.bonus > 0) f.bonus = true
         if (sp.penalty > 0) f.penalty = true
-        if (!sp.contested) f.skip = true
       }
     }
   }
-  return Object.values(f).some(Boolean) ? f : null
+  const any = f.tags.size > 0 || f.pole || f.fl || f.bonus || f.penalty
+  return any ? f : null
 }
 
 function PointsLegend({ f }: { f: PtsLegendFlags }) {
   return (
     <div className="legend" aria-label="Points notation">
-      {f.q && <span>Q = qualifying</span>}
-      {f.races && <span>R = race</span>}
-      {f.pole && <span className="l-pole">P = pole</span>}
-      {f.fl && <span>F = fastest lap</span>}
+      {[...f.tags].map(([letter, word]) => (
+        <span key={letter}>
+          {letter} = {word}
+        </span>
+      ))}
+      {/* The marks keep their +/− prefix here: a Feature tags "F", and its
+       * fastest-lap bonus reads "+1F" — the sign is what tells them apart. */}
+      {f.pole && <span className="l-pole">+nP = pole</span>}
+      {f.fl && <span>+nF = fastest lap</span>}
       {f.bonus && <span>+n = bonus</span>}
-      {f.penalty && <span className="l-pen">− = penalty</span>}
-      {f.skip && <span>· = did not run</span>}
+      {f.penalty && <span className="l-pen">−n = penalty</span>}
       <span>— = no entry</span>
     </div>
   )
@@ -350,7 +372,15 @@ function RecapLegend() {
   )
 }
 
-export function ChampFilterBar({ sel, legend }: { sel: ChampSelection; legend: React.ReactNode }) {
+export function ChampFilterBar({
+  sel,
+  legend,
+  view,
+}: {
+  sel: ChampSelection
+  legend: React.ReactNode
+  view?: { view: PtsView; setView: (v: PtsView) => void } | null
+}) {
   return (
     <div className="filter-bar">
       {sel.families.length > 1 && (
@@ -383,6 +413,26 @@ export function ChampFilterBar({ sel, legend }: { sel: ChampSelection; legend: R
           ))}
         </div>
       )}
+      {view && (
+        <div className="seg" role="group" aria-label="Points detail">
+          {(
+            [
+              ['breakdown', 'Breakdown'],
+              ['total', 'Round total'],
+            ] as const
+          ).map(([v, label]) => (
+            <button
+              key={v}
+              type="button"
+              className={view.view === v ? 'seg-btn active' : 'seg-btn'}
+              aria-pressed={view.view === v}
+              onClick={() => view.setView(v)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
       {legend && (
         <>
           <span className="spacer" />
@@ -395,7 +445,19 @@ export function ChampFilterBar({ sel, legend }: { sel: ChampSelection; legend: R
 
 /* ------------------------------------------------------------------------- */
 
-function ClassGrid({ champ, mode }: { champ: ChampionshipSummary; mode: 'recap' | 'points' }) {
+/** Standings cells either break a round down by session or print its one
+ * total — the high-level read for a quick championship glance. */
+type PtsView = 'breakdown' | 'total'
+
+function ClassGrid({
+  champ,
+  mode,
+  view,
+}: {
+  champ: ChampionshipSummary
+  mode: 'recap' | 'points'
+  view: PtsView
+}) {
   const { classColor } = useSeason()
   const { openDriverByName, openTeam } = useInfoModal()
   const [recap, setRecap] = useState<Recap | null>(null)
@@ -427,11 +489,12 @@ function ClassGrid({ champ, mode }: { champ: ChampionshipSummary; mode: 'recap' 
   const drivers = recap.championship.kind === 'DRIVERS'
   const color = classColor(champ.className)
 
-  // Points mode: per-round session tags, and the widest marks run in this
+  // Breakdown mode: per-round session tags, and the widest marks run in this
   // class — every line reserves that gutter so digits stay in one column.
-  const tagsByRound = new Map<number, (string | null)[]>()
+  const breakdown = mode === 'points' && view === 'breakdown'
+  const tagsByRound = new Map<number, Map<number, string | null>>()
   let marksCh = 0
-  if (mode === 'points') {
+  if (breakdown) {
     for (const r of rounds) tagsByRound.set(r.round, sessionTags(r.sessions))
     for (const row of recap.rows) {
       for (const sp of Object.values(row.sessionPoints)) {
@@ -617,26 +680,40 @@ function ClassGrid({ champ, mode }: { champ: ChampionshipSummary; mode: 'recap' 
                       </td>
                     )
                   }
-                  const roundTags = tagsByRound.get(r.round) ?? []
+                  const ran = breakdown ? contestedSessions(r, row.sessionPoints) : []
+                  // Total view, or a round the source scores as a whole: one
+                  // number. `ran` can also come back empty if a round's points
+                  // survived the recap's gate with no session marked contested;
+                  // the round total is still the honest answer.
+                  if (!breakdown || ran.length === 0) {
+                    return (
+                      <td key={r.round} className="pts-cell">
+                        <span className="pts-line">
+                          <span className={pts === 0 ? 'pts-val pts-zero' : 'pts-val'}>
+                            {formatPoints(pts)}
+                          </span>
+                        </span>
+                      </td>
+                    )
+                  }
+                  const roundTags = tagsByRound.get(r.round)
                   return (
                     <td
                       key={r.round}
                       className="pts-cell"
                       // The sum leaves the cell for the breakdown, so the round
                       // total stays one hover away.
-                      title={r.sessions.length > 1 ? `${formatPoints(pts)} total` : undefined}
+                      title={ran.length > 1 ? `${formatPoints(pts)} total` : undefined}
                     >
-                      {r.sessions.length === 0
-                        ? formatPoints(pts)
-                        : r.sessions.map((s, si) => (
-                            <PtsLine
-                              key={s.sessionIndex}
-                              tag={roundTags[si]}
-                              name={s.name}
-                              sp={row.sessionPoints[s.sessionIndex] ?? SKIPPED}
-                              marksCh={marksCh}
-                            />
-                          ))}
+                      {ran.map(({ session, sp }) => (
+                        <PtsLine
+                          key={session.sessionIndex}
+                          tag={roundTags?.get(session.sessionIndex) ?? null}
+                          name={session.name}
+                          sp={sp}
+                          marksCh={marksCh}
+                        />
+                      ))}
                     </td>
                   )
                 }
@@ -675,7 +752,18 @@ function ClassGrid({ champ, mode }: { champ: ChampionshipSummary; mode: 'recap' 
 export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' }) {
   const { classFilter } = useSeason()
   const sel = useChampSelection()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [ptsFlags, setPtsFlags] = useState<PtsLegendFlags | null>(null)
+
+  // Like every other selection on this page, the view lives in the URL so a
+  // filtered board stays bookmarkable and survives sub-page navigation.
+  const view: PtsView = searchParams.get('pts') === 'total' ? 'total' : 'breakdown'
+  const setView = (v: PtsView) => {
+    const next = new URLSearchParams(searchParams)
+    if (v === 'breakdown') next.delete('pts')
+    else next.set('pts', v)
+    setSearchParams(next, { replace: true })
+  }
 
   const shown = useMemo(
     () => (classFilter ? sel.selected.filter((c) => c.className === classFilter) : sel.selected),
@@ -711,8 +799,15 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
     <div>
       <ChampFilterBar
         sel={sel}
+        // Only offered where the two views actually differ: with nothing to
+        // break down, a toggle that changes nothing is noise.
+        view={mode === 'points' && ptsFlags ? { view, setView } : null}
         legend={
-          mode === 'recap' ? <RecapLegend /> : ptsFlags ? <PointsLegend f={ptsFlags} /> : null
+          mode === 'recap' ? (
+            <RecapLegend />
+          ) : ptsFlags && view === 'breakdown' ? (
+            <PointsLegend f={ptsFlags} />
+          ) : null
         }
       />
       {shown.length === 0 ? (
@@ -720,7 +815,7 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
           No {classFilter} standings in this championship — pick another class or championship.
         </div>
       ) : (
-        shown.map((c) => <ClassGrid key={c.id} champ={c} mode={mode} />)
+        shown.map((c) => <ClassGrid key={c.id} champ={c} mode={mode} view={view} />)
       )}
     </div>
   )

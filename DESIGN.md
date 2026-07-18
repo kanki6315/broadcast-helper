@@ -305,18 +305,38 @@ printed on it. Result cells stack one `.race-line` per race, tinted by finish
 tier, with the amber **P** for pole and DNS/skips as quiet muted marks.
 
 The **standings** grid prints how each round paid, not one summed number: a
-`.pts-cell` stacks one `.pts-line` per scoring session (muted `Q`/`R1` tags on
-multi-session rounds only), race points right-aligned in the digit column and
-every extra spelled out in a shared marks gutter — amber `+1P` pole, ink `+1F`
-fastest lap, a bare muted `+10` for a PDF's lumped bonus (no letter code: the
-source doesn't say pole or fastest lap), error-red `−n` penalty —
-so the arithmetic sits on the table, not in a tooltip (the line's title still
-gives the session total; the cell's title the round total). Zero stays printed
-but recedes; a did-not-run session is a muted `·`; a skipped round keeps the
-single `—`. Single-session rounds print the bare number, so a source that
-scores one session per round looks unchanged, and the legend (built from the
-shown data, not static) only decodes marks that actually appear — or vanishes
-entirely.
+`.pts-cell` stacks one `.pts-line` per scoring session the competitor ran,
+race points right-aligned in the digit column and every extra spelled out in a
+shared marks gutter — amber `+1P` pole, ink `+1F` fastest lap, a bare muted
+`+10` for a PDF's lumped bonus (no letter code: the source doesn't say pole or
+fastest lap), error-red `−n` penalty — so the arithmetic sits on the table,
+not in a tooltip (the line's title still gives the session total; the cell's
+title the round total). Zero stays printed but recedes; a skipped round keeps
+the single `—`.
+
+**A session the competitor sat out contributes no line at all.** Six blank
+markers for a driver who ran one heat of a six-race weekend cost a column of
+vertical space to say nothing, so the cell shows only what happened. That
+makes the muted tag load-bearing — it is the only thing identifying which
+session a number belongs to — so tags are **abbreviated from the real session
+names**, not positions: Qualifying → `Q`, Heat → `H`, Feature → `F`,
+Race/Round → `R`, numbered only where that word repeats inside the round.
+PESC's Sachsenring reads `Q · H1 H2 H3 H4 · F`, and a Feature is never
+flattened into "R5". The number is positional within the round, never the
+source's own ordinal, so Carrera Cup Asia's "Round 3"/"Round 4" tag `R1`/`R2`
+under a column headed Rd 2 instead of contradicting the header.
+
+Single-session rounds print the bare number with no tag, so a source that
+scores one session per round looks unchanged. The legend is built from the
+data on screen — it names the session words actually present (`H = heat`) and
+keeps the `+`/`−` sign on every mark, which is what separates a Feature's `F`
+tag from a `+1F` fastest lap — and vanishes when there is nothing to decode.
+
+A **Breakdown ⇄ Round total** `.seg` toggle (URL `?pts=total`, like every
+other selection on the page) collapses the cells back to one number per round
+for a high-level championship read. It appears only where the two views
+actually differ; with nothing to break down, a toggle that changes nothing is
+noise.
 
 ### Stats Table (`.stats-table`, a Data Grid variant)
 Per-driver tallies split by race format: a **two-row header** (format group

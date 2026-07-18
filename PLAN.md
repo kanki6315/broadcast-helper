@@ -762,8 +762,13 @@ display size.)
   since 2026-07-18 each round cell prints the **earnings breakdown** instead of
   one sum — one line per scoring session (`Q`/`R1` tags) with every bonus
   value on the table: `25 +1P +1F`, `320 +10` (lumped bonus, no letter code),
-  red `−n` penalties, muted `·`
-  for a did-not-run session. The recap endpoint grew `RecapRound.sessions` +
+  red `−n` penalties. A session the competitor **sat out prints no line**, so a
+  PESC driver who ran one heat of a six-race weekend costs two lines, not
+  seven; tags are abbreviated from the **real session names** (Q/H/F/R,
+  numbered only where the word repeats in the round) because once blank lines
+  are gone the tag is the only thing naming the session. A **Breakdown ⇄ Round
+  total** toggle (`?pts=total`) collapses back to one number per round.
+  The recap endpoint grew `RecapRound.sessions` +
   `RecapRow.sessionPoints` (per-`session_index` race/pole/FL/penalty/bonus
   components, gated to scored+contested rounds exactly like `pointsByRound`);
   components verifiably sum to totals for every imported row. Single-session
