@@ -1977,3 +1977,18 @@ h2 small {
 .install-hint-close:hover {
   color: var(--text);
 }
+
+/* -- offline storage diagnostics (Manage → Offline storage) ----------------- */
+
+.storage-page th[scope='row'] {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.storage-page .storage-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-4);
+}
