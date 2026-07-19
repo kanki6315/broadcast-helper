@@ -121,6 +121,17 @@ recorded (deduped per email, capped at 200 distinct addresses) and appear on
 Manage → Users for one-click adding or dismissal — the usual cause is a
 teammate signing in with a different Google account than the one you added.
 
+Sessions live in Postgres (Spring Session JDBC, `spring_session` / V34), not in
+app memory, so **a redeploy no longer signs anyone out** — handy while the app
+ships often. A login lasts the 3-day idle window (sliding) or until logout,
+across restarts. Two footnotes: after a Spring Security *upgrade*, stored
+sessions may fail to deserialize (symptom: errors on the first request per user)
+— fix is `TRUNCATE spring_session`, and everyone signs in again as they did
+before. And because a psql edit to `app_user` needs a restart to be picked up
+(the roster is cached) while sessions now survive that restart, a roster change
+made outside the Users page is neither cached nor session-purged — always change
+users through the UI.
+
 > Enabling auth requires the Google client id/secret to be present, or startup
 > fails. Set all three vars together.
 
