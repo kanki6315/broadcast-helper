@@ -422,6 +422,7 @@ h2 small {
  * native dialog per selected series, keeping the page itself skim-first. */
 .series-manager {
   max-width: 1120px;
+  margin-inline: auto;
 }
 
 .series-manager-header {
