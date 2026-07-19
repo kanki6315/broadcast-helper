@@ -1056,8 +1056,24 @@ display size.)
    read side: seasons, standings, sheets, profiles, the team-sheets PDF link.
    Share tokens or a richer permission model only if the project's scope grows.
 
-   ⇒ **Phase 4a is code-complete pending the user's Railway deploy** (Steps 1–3 done;
-   the app is hosted-ready, behind Google login, with admin/viewer tiers).
+   **Superseded same day (2026-07-19): env lists → DB-backed users.** The
+   `AUTH_ALLOWED_EMAILS`/`ADMIN_ALLOWED_EMAILS` env vars no longer exist. The
+   roster lives in `app_user` (V32: email + role ADMIN|VIEWER, unique on
+   `lower(email)`), managed from a new **Manage → Users** page (add, role
+   toggle, remove; own row locked). Authorization moved from login-time role
+   stamping to **request-time checks**: `LiveAuthorization` gates GET/HEAD
+   `/api/**` on membership and everything else on ADMIN, reading
+   `UserDirectory` — an in-memory snapshot reloaded at startup and after every
+   Users-page write (never on a schedule; a direct psql edit needs a restart —
+   a failed reload keeps the previous snapshot). So removals/demotions bite on
+   the target's next request, not at session expiry. API guards: no
+   self-removal/self-demotion, no removing the last admin (single guarded
+   statements); past those, recovery is psql. First admin is bootstrapped by a
+   manual INSERT (docs/DEPLOY.md); empty table admits nobody.
+
+   ⇒ **Phase 4a is code-complete pending the user's Railway deploy** (Steps 1–3
+   done; the app is hosted-ready, behind Google login, with DB-managed
+   admin/viewer tiers).
 
 **Ops caveat:** any reverse proxy needs its request-size limit raised to match the
 multipart limits in application.yml (defaults like nginx's 1MB would reject

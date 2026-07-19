@@ -87,30 +87,47 @@ Auth is **off by default** (local dev is open). To turn it on for the deployment
    | Variable | Value |
    |---|---|
    | `AUTH_ENABLED` | `true` |
-   | `ADMIN_ALLOWED_EMAILS` | comma-separated Google emails with **full access**, e.g. `you@gmail.com` |
-   | `AUTH_ALLOWED_EMAILS` | comma-separated Google emails with **read-only** access, e.g. `teammate@x.com` |
    | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | the Client ID |
    | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | the Client secret |
 
-How it behaves: the SPA polls `/api/me`; if auth is on and you're not signed in it
-redirects to Google, and a signed-in email on **neither** list is rejected with an
-access-denied message. Admin emails are implicitly allowed to sign in — no need to
-repeat them in `AUTH_ALLOWED_EMAILS`. **Both lists empty admits nobody** — set
-them. All `/api/**` (except `/api/me`) require a signed-in, allowed session, and
-any mutating (non-GET) `/api` call additionally requires an admin session — with
-**no admins configured, nobody can write**. Viewers don't see the Manage tab or
-inline edit controls; the backend 403s them regardless.
+3. **Bootstrap the first admin.** Who may sign in lives in the `app_user` table,
+   not in env vars, and an empty table admits nobody. Insert yourself once via
+   `railway connect` (or any psql against the deployed Postgres):
+
+   ```sql
+   INSERT INTO app_user (email, role) VALUES ('you@gmail.com', 'ADMIN');
+   ```
+
+   Every later user is added from the app itself (Manage → Users). The app
+   caches the roster and refreshes it only when the Users page changes
+   something — **after any direct psql edit to `app_user`, restart the
+   service** so it's picked up. If you ever lock the roster into a bad state
+   (the UI refuses to remove yourself or the last admin, so this takes effort),
+   the recovery is the same channel:
+
+   ```sql
+   UPDATE app_user SET role = 'ADMIN' WHERE email = 'you@gmail.com';
+   ```
+
+How it behaves: the SPA polls `/api/me`; if auth is on and you're not signed in
+it redirects to Google, and a signed-in email with no `app_user` row is rejected
+with an access-denied message. Every listed user can read all of `/api/**`
+(except the public `/api/me`); any mutating (non-GET) call additionally requires
+role `ADMIN`. Checks run **per request** against the roster, so removing or
+demoting someone on the Users page takes effect on their next click — no
+session wait, no redeploy. Viewers don't see the Manage tab or inline edit
+controls; the backend 403s them regardless.
 
 > Enabling auth requires the Google client id/secret to be present, or startup
-> fails. Set all five vars together.
+> fails. Set all three vars together.
 
 ## Team sharing
 
-Implemented as **account-based view access**: put a teammate's Google account on
-`AUTH_ALLOWED_EMAILS` and they can sign in and browse everything — seasons,
-standings, sheets, driver profiles — but change nothing (writes are admin-only,
-and the management UI is hidden). The pit-lane sheet still ships as an exported
-**PDF** for teams without accounts.
+Implemented as **account-based view access**: add a teammate's Google account as
+a **Viewer** on Manage → Users and they can sign in and browse everything —
+seasons, standings, sheets, driver profiles — but change nothing (writes are
+admin-only, and the management UI is hidden). The pit-lane sheet still ships as
+an exported **PDF** for teams without accounts.
 
 ## Config reference (env)
 
@@ -124,8 +141,6 @@ and the management UI is hidden). The pit-lane sheet still ships as an exported
 | `PARSER_SCRIPT` | `../parser/parse_entry_list.py` | In-image path (`/app/parser/parse_entry_list.py`) |
 | `TEAM_SHEET_PARSER_SCRIPT` | `../parser/extract_team_sheet_pages.py` | In-image path (`/app/parser/extract_team_sheet_pages.py`) |
 | `POINTS_PARSER_SCRIPT` | `../parser/parse_points.py` | In-image path (`/app/parser/parse_points.py`) |
-| `AUTH_ENABLED` | `false` | Set `true` on the deployment to require Google login |
-| `AUTH_ALLOWED_EMAILS` | (empty) | Comma-separated read-only Google emails |
-| `ADMIN_ALLOWED_EMAILS` | (empty) | Comma-separated full-access Google emails; implicitly allowed to sign in (empty = nobody can write) |
+| `AUTH_ENABLED` | `false` | Set `true` on the deployment to require Google login; who may sign in lives in the `app_user` table (Manage → Users) |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | — | Google OAuth client id (when auth on) |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret (when auth on) |
