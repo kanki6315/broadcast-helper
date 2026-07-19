@@ -1007,16 +1007,17 @@ display size.)
   sidecar stays; a PDFBox rewrite to drop Python is an optional later cleanup, not
   worth the regression risk now). Point the parser python/script config at the
   in-image paths.
-- **Auth: Google login (Spring Security `oauth2-client` / OIDC) + email allowlist.**
-  No third-party auth SaaS. Team sharing was going to be unlisted share tokens, but
-  the user chose **account-based view access** instead (allowlist accounts for
-  viewing) — deferred, since nobody logs in soon and the sheet ships as a PDF. See
-  build-order step 3.
+- **Auth: Google login (Spring Security `oauth2-client` / OIDC) + an email
+  allowlist.** No third-party auth SaaS. Team sharing was going to be unlisted
+  share tokens, but the user chose **account-based view access** instead. *(The
+  allowlist started as env vars and is now the `app_user` table with admin/viewer
+  roles — see build-order step 3 for what shipped.)*
 - **Images: stay in Postgres BYTEA for v1** (already ~284kB WebP variants; small).
   S3/R2 deferred — the `/data` / `/entries/{id}/image` endpoints remain the single
   indirection point, so S3 drops in later with no API change.
-- **Config via env:** datasource, Google client id/secret, and the allowlist come
-  from environment (Railway vars); application.yml keeps local dev defaults.
+- **Config via env:** datasource and the Google client id/secret come from
+  environment (Railway vars); application.yml keeps local dev defaults. (The user
+  allowlist is *not* env config — it lives in the database, see step 3.)
 
 **Build order:**
 1. **Single-container packaging — ✅ DONE.** Root `Dockerfile` (multi-stage: React
@@ -1027,11 +1028,13 @@ display size.)
    in-container: serves the React app + `/api` from one origin, Flyway migrates, the
    parser runs on amd64 (the ARM-Mac SIGILL is a Docker-emulation artifact only).
    *(Actual Railway deploy + Postgres provisioning are the user's to do.)*
-2. **Google OAuth login — ✅ DONE.** Spring Security `oauth2-client`: two filter
-   chains gated by `AUTH_ENABLED` (off in dev → open; on in prod → Google OIDC).
-   A custom `OidcUserService` rejects any signed-in email not in
-   `AUTH_ALLOWED_EMAILS` (empty = nobody). SPA-driven: `/api/me` is public and
-   reports `{authEnabled, email}`; the Layout redirects to Google when auth is on
+2. **Google OAuth login — ✅ DONE.** *(Step 3 later replaced the allowlist source
+   and added roles; the login plumbing below is unchanged.)* Spring Security
+   `oauth2-client`: two filter chains gated by `AUTH_ENABLED` (off in dev → open;
+   on in prod → Google OIDC). A custom `OidcUserService` rejects any signed-in
+   email that isn't a known user (originally `AUTH_ALLOWED_EMAILS`, now the
+   `app_user` table; empty = nobody). SPA-driven: `/api/me` is public and
+   reports `{authEnabled, email, isAdmin}`; the Layout redirects to Google when auth is on
    and unauthenticated, shows the signed-in email + logout otherwise. All other
    `/api/**` are gated; a global `fetch` interceptor (`lib/authRedirect`) redirects
    to Google on any `/api` 401, so a session that expires mid-use re-authenticates
@@ -1041,42 +1044,53 @@ display size.)
    CSRF: SameSite=Lax session cookie, tokens off. Verified: dev open, auth-on gates
    `/api/**` (401), `/oauth2/authorization/google` → Google. *(User creates the
    Google OAuth client; see docs/DEPLOY.md.)*
-3. **Team sharing — ✅ DONE (2026-07-19), as account-based view access.** The
-   single allowlist split into two tiers: `ADMIN_ALLOWED_EMAILS` (full access,
-   implicitly allowed to sign in) and `AUTH_ALLOWED_EMAILS` (read-only viewers).
-   Enforcement is method-based in `SecurityConfig`: non-GET/HEAD under `/api/**`
-   requires `ROLE_ADMIN`, granted at login by the allowlist `OidcUserService` —
-   one rule covers the Manage endpoints *and* the inline editors scattered across
-   viewing pages (driver bio/notes/photo, team notes, team sheets, car images,
-   session formats, sheet prior-year notes). `/api/me` gained `isAdmin` (auth off
-   ⇒ `true`, so dev keeps the full UI); a shared `AuthProvider` context
-   (`frontend/src/lib/auth.tsx`) replaces Layout's local `/api/me` state, hides
-   the Manage tab, bounces non-admins off `/manage/*`, and hides every inline
-   edit affordance — the backend 403 remains the real gate. Viewers get the whole
-   read side: seasons, standings, sheets, profiles, the team-sheets PDF link.
-   Share tokens or a richer permission model only if the project's scope grows.
+3. **Team sharing — ✅ DONE (2026-07-19), as account-based view access with
+   DB-managed users.** Two tiers: **ADMIN** (full access) and **VIEWER**
+   (read-only — browses seasons, standings, sheets, profiles, the team-sheets
+   PDF, but changes nothing). *Built first as `ADMIN_ALLOWED_EMAILS` /
+   `AUTH_ALLOWED_EMAILS` env lists, then replaced the same day by the database
+   version below — those env vars no longer exist.*
 
-   **Superseded same day (2026-07-19): env lists → DB-backed users.** The
-   `AUTH_ALLOWED_EMAILS`/`ADMIN_ALLOWED_EMAILS` env vars no longer exist. The
-   roster lives in `app_user` (V32: email + role ADMIN|VIEWER, unique on
-   `lower(email)`), managed from a new **Manage → Users** page (add, role
-   toggle, remove; own row locked). Authorization moved from login-time role
-   stamping to **request-time checks**: `LiveAuthorization` gates GET/HEAD
-   `/api/**` on membership and everything else on ADMIN, reading
-   `UserDirectory` — an in-memory snapshot reloaded at startup and after every
-   Users-page write (never on a schedule; a direct psql edit needs a restart —
-   a failed reload keeps the previous snapshot). So removals/demotions bite on
-   the target's next request, not at session expiry. API guards: no
-   self-removal/self-demotion, no removing the last admin (single guarded
-   statements); past those, recovery is psql. First admin is bootstrapped by a
-   manual INSERT (docs/DEPLOY.md); empty table admits nobody.
-   **Denied sign-ins (same day):** a rejected login records to `denied_login`
-   (V33) before the access_denied throw — deduped per email, capped at 200
-   distinct addresses, failure never breaks login — and surfaces on Manage →
-   Users with one-click "Add as viewer" / "Dismiss" (adding a user by any
-   route clears their denied record). `/api/users/**` is admin-only even for
-   GET. Dev note: recording only exists in the secured chain, so local
-   dev never records — seed `denied_login` via psql to see the section.
+   **Where users live.** `app_user` (V32: email + role ADMIN|VIEWER, unique on
+   `lower(email)`), managed from **Manage → Users** — add, role toggle, remove,
+   with the caller's own row locked. API guards: no self-removal or
+   self-demotion, no removing the last admin, each enforced inside a single
+   guarded statement so the count and the write can't interleave; past those
+   guards, recovery is a psql UPDATE. The first admin is bootstrapped by a
+   manual INSERT (docs/DEPLOY.md) — an empty table admits nobody, the safe
+   default.
+
+   **How access is enforced.** *Method-based, not URL-based*: `LiveAuthorization`
+   gates GET/HEAD `/api/**` on membership and every other method on ADMIN, so
+   one rule covers the Manage endpoints *and* the inline editors scattered
+   across viewing pages (driver bio/notes/photo, team notes, team sheets, car
+   images, session formats, sheet prior-year notes). `/api/users/**` is
+   admin-only even for GET. *Request-time, not login-time*: no roles are
+   stamped into the session; each decision reads `UserDirectory`, an in-memory
+   snapshot reloaded at startup and after every Users-page write — never on a
+   schedule, so **a direct psql edit to `app_user` needs a restart**, and a
+   failed reload keeps the previous snapshot rather than locking everyone out.
+   So a removal or demotion bites on the target's next request, not at session
+   expiry (up to 3 days).
+
+   **Frontend.** `/api/me` gained `isAdmin` (auth off ⇒ `true`, so dev keeps the
+   full UI); a shared `AuthProvider` context (`frontend/src/lib/auth.tsx`,
+   mounted above the routes so the standalone sheet and ⌘K modals see it)
+   replaces Layout's local `/api/me` state, hides the Manage tab, bounces
+   non-admins off `/manage/*`, and hides every inline edit affordance — the
+   backend 403 remains the real gate.
+
+   **Denied sign-ins.** A rejected login records to `denied_login` (V33) before
+   the access_denied throw, then surfaces on Manage → Users with one-click "Add
+   as viewer" / "Dismiss" — so "it won't let me in" (usually the wrong Google
+   account) is diagnosable and fixable without typing an email. Adding a user by
+   any route clears their denied record. It's the only write reachable before
+   authorization, hence deduped per email, capped at 200 distinct addresses,
+   length-guarded, and never able to break the login flow. Dev note: recording
+   lives only in the secured chain, so local dev never records — seed
+   `denied_login` via psql to exercise the UI.
+
+   Share tokens or a richer permission model only if the project's scope grows.
 
    ⇒ **Phase 4a is code-complete pending the user's Railway deploy** (Steps 1–3
    done; the app is hosted-ready, behind Google login, with DB-managed

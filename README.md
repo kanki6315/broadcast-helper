@@ -15,9 +15,10 @@ stewards' notes, and a race-control panel. **Per-race-format stats** landed
 2026-07-18 — wins, podiums, top-5s and poles counted separately for each kind of
 race a weekend runs (sprint vs main, heat vs feature) — together with the
 **grid-driver attribution** that makes a pole count for the driver who actually
-set the lap. Phase 4 (single-container hosting + Google login) is code-complete
-pending deploy. See [PLAN.md](PLAN.md) for the full plan, domain model, and phase
-roadmap.
+set the lap. **Multi-user access** landed 2026-07-19 — Google sign-in with
+admin/viewer roles managed from Manage → Users. Phase 4 (single-container
+hosting + Google login) is code-complete pending deploy. See [PLAN.md](PLAN.md)
+for the full plan, domain model, and phase roadmap.
 
 ## What it does today
 
@@ -69,6 +70,14 @@ roadmap.
 - **Manage** car photos (matched per season by car number), manufacturer and
   series logos (matched by name), per-series class colours, and per-series race
   formats (rename, merge, or reassign a session's format).
+- **Share it with the team.** Google sign-in with two tiers, managed from
+  Manage → Users: **admins** do everything, **viewers** browse everything and
+  change nothing (the Manage tab and every inline editor are hidden, and the
+  backend refuses their writes regardless). Access is checked against the
+  current roster on every request, so removing someone takes effect immediately
+  rather than whenever their session expires. Rejected sign-ins are recorded and
+  listed on the same page, so an account that can't get in — usually the wrong
+  Google account — is added with one click.
 - **Generate** the pit-lane entry-list sheet per event: drivers with flags and
   ratings, qualifying, prior-year-at-venue (auto or manual), championship
   position, car photo, and a per-round season form strip under each entry
