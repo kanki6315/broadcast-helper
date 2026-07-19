@@ -15,6 +15,14 @@
       "runtimeArgs": ["bootRun"],
       "cwd": "backend",
       "port": 8080
+    },
+    {
+      "name": "frontend-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "preview", "--", "--port", "4173"],
+      "cwd": "frontend",
+      "port": 4173,
+      "autoPort": true
     }
   ]
 }

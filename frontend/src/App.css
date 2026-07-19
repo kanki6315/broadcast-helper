@@ -1930,3 +1930,65 @@ h2 small {
 .overall-champ-meta {
   font-size: var(--text-xs);
 }
+
+/* -- install hint (PWA "add to home screen" nudge) -------------------------- */
+
+.install-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.install-hint-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.install-hint-action {
+  flex-shrink: 0;
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.install-hint-close {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  padding: 0 var(--space-1);
+  font-size: var(--text-lg);
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.install-hint-close:hover {
+  color: var(--text);
+}
+
+/* -- offline storage diagnostics (Manage → Offline storage) ----------------- */
+
+.storage-page th[scope='row'] {
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.storage-page .storage-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-4);
+}

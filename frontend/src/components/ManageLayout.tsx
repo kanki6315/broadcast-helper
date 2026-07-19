@@ -7,6 +7,7 @@ const MANAGE_LINKS = [
   { to: '/manage/logos', label: 'Manufacturer logos' },
   { to: '/manage/users', label: 'Users' },
   { to: '/manage/sessions', label: 'Sessions' },
+  { to: '/manage/storage', label: 'Offline storage' },
 ]
 
 /**
