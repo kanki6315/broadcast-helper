@@ -4,8 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.oidcLogin;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -14,8 +14,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Wires up the secured chain (auth enabled, dummy Google registration) and
- * asserts the method-based authorization rules: reads for any signed-in user,
- * writes only for ROLE_ADMIN, /api/me public. Boots the full context like
+ * asserts the request-time authorization rules: reads for any listed email,
+ * writes only for admins, /api/me public. Identities are email claims — the
+ * decision comes from LiveAuthorization reading the allowlist per request,
+ * not from authorities stamped into the session. Boots the full context like
  * {@link com.broadcasthelper.BackendApplicationTests}, so it needs the local
  * Postgres.
  */
@@ -33,6 +35,10 @@ class SecuredChainTest {
     @Autowired
     private MockMvc mvc;
 
+    private static RequestPostProcessor signedInAs(String email) {
+        return oidcLogin().idToken(t -> t.claim("email", email));
+    }
+
     @Test
     void anonymousGetsUnauthorizedOnApi() throws Exception {
         mvc.perform(get("/api/series")).andExpect(status().isUnauthorized());
@@ -45,13 +51,21 @@ class SecuredChainTest {
 
     @Test
     void signedInViewerCanRead() throws Exception {
-        mvc.perform(get("/api/series").with(oidcLogin()))
+        mvc.perform(get("/api/series").with(signedInAs("viewer@example.com")))
                 .andExpect(status().isOk());
     }
 
     @Test
     void signedInViewerCannotWrite() throws Exception {
-        mvc.perform(patch("/api/teams/notes").with(oidcLogin()))
+        mvc.perform(patch("/api/teams/notes").with(signedInAs("viewer@example.com")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void unlistedSignedInUserCannotRead() throws Exception {
+        // The live check consults the current list on every request, so a
+        // session whose email has been removed loses access immediately.
+        mvc.perform(get("/api/series").with(signedInAs("stranger@example.com")))
                 .andExpect(status().isForbidden());
     }
 
@@ -59,10 +73,7 @@ class SecuredChainTest {
     void adminCanWrite() throws Exception {
         // 400 not 401/403: authorization passed, the controller rejected the
         // empty body — which is all this test is about.
-        mvc.perform(patch("/api/teams/notes")
-                        .with(oidcLogin().authorities(
-                                new SimpleGrantedAuthority("ROLE_ADMIN"),
-                                new SimpleGrantedAuthority("OIDC_USER"))))
+        mvc.perform(patch("/api/teams/notes").with(signedInAs("admin@example.com")))
                 .andExpect(status().isBadRequest());
     }
 }
