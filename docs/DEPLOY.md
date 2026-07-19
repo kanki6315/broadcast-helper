@@ -87,25 +87,30 @@ Auth is **off by default** (local dev is open). To turn it on for the deployment
    | Variable | Value |
    |---|---|
    | `AUTH_ENABLED` | `true` |
-   | `AUTH_ALLOWED_EMAILS` | comma-separated Google emails allowed to sign in, e.g. `you@gmail.com,teammate@x.com` |
+   | `ADMIN_ALLOWED_EMAILS` | comma-separated Google emails with **full access**, e.g. `you@gmail.com` |
+   | `AUTH_ALLOWED_EMAILS` | comma-separated Google emails with **read-only** access, e.g. `teammate@x.com` |
    | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | the Client ID |
    | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | the Client secret |
 
 How it behaves: the SPA polls `/api/me`; if auth is on and you're not signed in it
-redirects to Google, and a signed-in email **not** on `AUTH_ALLOWED_EMAILS` is
-rejected with an access-denied message. An **empty allowlist admits nobody** — set
-it. All `/api/**` (except `/api/me`) require a signed-in, allowed session.
+redirects to Google, and a signed-in email on **neither** list is rejected with an
+access-denied message. Admin emails are implicitly allowed to sign in — no need to
+repeat them in `AUTH_ALLOWED_EMAILS`. **Both lists empty admits nobody** — set
+them. All `/api/**` (except `/api/me`) require a signed-in, allowed session, and
+any mutating (non-GET) `/api` call additionally requires an admin session — with
+**no admins configured, nobody can write**. Viewers don't see the Manage tab or
+inline edit controls; the backend 403s them regardless.
 
 > Enabling auth requires the Google client id/secret to be present, or startup
-> fails. Set all four vars together.
+> fails. Set all five vars together.
 
 ## Team sharing
 
-Deferred by design. The pit-lane sheet ships as an exported **PDF**, so the team
-doesn't need live access yet, and no one else is expected to sign in soon. When
-live viewing is wanted, the plan is **account-based view access** (allowlist
-specific Google accounts, view-only) rather than share tokens — a small future
-add. Until then, anything live requires being signed in and on `AUTH_ALLOWED_EMAILS`.
+Implemented as **account-based view access**: put a teammate's Google account on
+`AUTH_ALLOWED_EMAILS` and they can sign in and browse everything — seasons,
+standings, sheets, driver profiles — but change nothing (writes are admin-only,
+and the management UI is hidden). The pit-lane sheet still ships as an exported
+**PDF** for teams without accounts.
 
 ## Config reference (env)
 
@@ -120,6 +125,7 @@ add. Until then, anything live requires being signed in and on `AUTH_ALLOWED_EMA
 | `TEAM_SHEET_PARSER_SCRIPT` | `../parser/extract_team_sheet_pages.py` | In-image path (`/app/parser/extract_team_sheet_pages.py`) |
 | `POINTS_PARSER_SCRIPT` | `../parser/parse_points.py` | In-image path (`/app/parser/parse_points.py`) |
 | `AUTH_ENABLED` | `false` | Set `true` on the deployment to require Google login |
-| `AUTH_ALLOWED_EMAILS` | (empty) | Comma-separated allowed Google emails (empty = nobody) |
+| `AUTH_ALLOWED_EMAILS` | (empty) | Comma-separated read-only Google emails |
+| `ADMIN_ALLOWED_EMAILS` | (empty) | Comma-separated full-access Google emails; implicitly allowed to sign in (empty = nobody can write) |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | — | Google OAuth client id (when auth on) |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret (when auth on) |

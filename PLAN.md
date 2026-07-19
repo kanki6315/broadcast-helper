@@ -1041,18 +1041,23 @@ display size.)
    CSRF: SameSite=Lax session cookie, tokens off. Verified: dev open, auth-on gates
    `/api/**` (401), `/oauth2/authorization/google` → Google. *(User creates the
    Google OAuth client; see docs/DEPLOY.md.)*
-3. **Team sharing — DEFERRED, and reframed (decided 2026-07-10).** No one else is
-   expected to log in soon, and the main deliverable (the pit-lane sheet) is already
-   shared as an exported **PDF**, so live sharing isn't needed yet. When it is, it
-   will be **account-based view access** — allowlist specific Google accounts for
-   viewing the live dashboards — *not* unlisted share tokens. Concretely that means
-   splitting today's single allowlist into an **editor** allowlist and a **viewer**
-   allowlist and gating mutating requests (POST/PUT/PATCH/DELETE) to editors; a
-   small, clean add when someone actually needs live access. Share tokens or a
-   richer permission model only if the project's scope grows.
+3. **Team sharing — ✅ DONE (2026-07-19), as account-based view access.** The
+   single allowlist split into two tiers: `ADMIN_ALLOWED_EMAILS` (full access,
+   implicitly allowed to sign in) and `AUTH_ALLOWED_EMAILS` (read-only viewers).
+   Enforcement is method-based in `SecurityConfig`: non-GET/HEAD under `/api/**`
+   requires `ROLE_ADMIN`, granted at login by the allowlist `OidcUserService` —
+   one rule covers the Manage endpoints *and* the inline editors scattered across
+   viewing pages (driver bio/notes/photo, team notes, team sheets, car images,
+   session formats, sheet prior-year notes). `/api/me` gained `isAdmin` (auth off
+   ⇒ `true`, so dev keeps the full UI); a shared `AuthProvider` context
+   (`frontend/src/lib/auth.tsx`) replaces Layout's local `/api/me` state, hides
+   the Manage tab, bounces non-admins off `/manage/*`, and hides every inline
+   edit affordance — the backend 403 remains the real gate. Viewers get the whole
+   read side: seasons, standings, sheets, profiles, the team-sheets PDF link.
+   Share tokens or a richer permission model only if the project's scope grows.
 
-   ⇒ **Phase 4a is code-complete pending the user's Railway deploy** (Steps 1–2 done;
-   the app is hosted-ready, behind Google login, team gets PDFs).
+   ⇒ **Phase 4a is code-complete pending the user's Railway deploy** (Steps 1–3 done;
+   the app is hosted-ready, behind Google login, with admin/viewer tiers).
 
 **Ops caveat:** any reverse proxy needs its request-size limit raised to match the
 multipart limits in application.yml (defaults like nginx's 1MB would reject
