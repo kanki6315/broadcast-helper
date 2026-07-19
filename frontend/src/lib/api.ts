@@ -136,6 +136,8 @@ export interface Recap {
     kind: string | null
     family: string
     isCup: boolean
+    /** Scores the whole field across classes; cells carry overall positions. */
+    isOverall: boolean
     seasonId: number
     year: number
     seriesName: string

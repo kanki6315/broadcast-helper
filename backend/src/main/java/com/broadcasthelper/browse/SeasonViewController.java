@@ -40,7 +40,8 @@ public class SeasonViewController {
     /* ------------------------------------------------------------------ */
 
     public record ChampInfo(long id, String title, String className, String kind, String family,
-                            boolean isCup, long seasonId, int year, String seriesName) {
+                            boolean isCup, boolean isOverall, long seasonId, int year,
+                            String seriesName) {
     }
 
     /** One column: a round of THIS championship's published calendar. eventId is
@@ -102,7 +103,7 @@ public class SeasonViewController {
     public Recap recap(@PathVariable long id) {
         ChampInfo champ = db.sql("""
                         SELECT c.id, c.title, c.class_name, g.kind, g.family, g.is_cup,
-                               s.id AS season_id, s.year, sr.name AS series_name
+                               c.is_overall, s.id AS season_id, s.year, sr.name AS series_name
                         FROM championship c
                                  JOIN championship_group g ON g.id = c.group_id
                                  JOIN season s ON s.id = c.season_id
@@ -112,8 +113,8 @@ public class SeasonViewController {
                 .param("id", id)
                 .query((rs, i) -> new ChampInfo(rs.getLong("id"), rs.getString("title"),
                         rs.getString("class_name"), rs.getString("kind"), rs.getString("family"),
-                        rs.getBoolean("is_cup"), rs.getLong("season_id"), rs.getInt("year"),
-                        rs.getString("series_name")))
+                        rs.getBoolean("is_cup"), rs.getBoolean("is_overall"), rs.getLong("season_id"),
+                        rs.getInt("year"), rs.getString("series_name")))
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such championship"));
 
@@ -270,25 +271,31 @@ public class SeasonViewController {
                                     sp.pole(), sp.fastestLap(), sp.penalty(), sp.bonus(), contested));
                 });
 
-        // Start→finish cells for this class across the matched events, plus the
-        // driver names per entry (for DRIVERS championships, rows match entries
-        // by crew member name; TEAMS match by car number).
+        // Start→finish cells across the matched events, plus the driver names
+        // per entry (for DRIVERS championships, rows match entries by crew
+        // member name; TEAMS match by car number). A class championship reads
+        // its own class's entries and in-class positions; an overall
+        // championship scores the whole field, so it reads every class and
+        // whole-field positions — an Am driver's chip is where they ran
+        // overall, same scale as every other row.
+        String posCol = champ.isOverall() ? "position_overall" : "position_in_class";
+        String classFilter = champ.isOverall() ? "" : " AND en.class_name = :className";
         record Cell(long entryId, String carNumber, String team, long eventId, int raceOrdinal,
                     String raceName, Integer start, Integer finish, String status, boolean notFinished) {
         }
         List<Cell> cells = roundByEventId.isEmpty() ? List.of() : db.sql("""
                         SELECT en.id AS entry_id, en.car_number, en.team_name, ev.id AS event_id,
                                rs.ordinal AS race_ordinal, rs.name AS race_name,
-                               g.position_in_class AS start_pos, r.position_in_class AS finish_pos, r.status,
+                               g.%1$s AS start_pos, r.%1$s AS finish_pos, r.status,
                                COALESCE(r.not_finished, false) AS not_finished
                         FROM entry en
                                  JOIN event ev ON ev.id = en.event_id
                                  JOIN race_session rs ON rs.event_id = ev.id AND rs.session_type = 'RACE'
                                  LEFT JOIN result r ON r.session_id = rs.id AND r.entry_id = en.id
                                  LEFT JOIN grid_position g ON g.session_id = rs.id AND g.entry_id = en.id
-                        WHERE ev.id IN (:eventIds) AND en.class_name = :className
+                        WHERE ev.id IN (:eventIds)%2$s
                         ORDER BY ev.round_ordinal, rs.ordinal
-                        """)
+                        """.formatted(posCol, classFilter))
                 .param("eventIds", roundByEventId.keySet())
                 .param("className", champ.className())
                 .query((rs, i) -> new Cell(rs.getLong("entry_id"), rs.getString("car_number"),
@@ -308,9 +315,9 @@ public class SeasonViewController {
                             SELECT da.entry_id, COALESCE(d.first_name || ' ' || d.surname, '') AS name
                             FROM driver_assignment da
                                      LEFT JOIN driver d ON d.id = da.driver_id
-                            WHERE da.entry_id IN (SELECT id FROM entry
-                                                  WHERE event_id IN (:eventIds) AND class_name = :className)
-                            """)
+                            WHERE da.entry_id IN (SELECT id FROM entry en
+                                                  WHERE event_id IN (:eventIds)%s)
+                            """.formatted(classFilter))
                     .param("eventIds", roundByEventId.keySet())
                     .param("className", champ.className())
                     .query((rs, i) -> driverNamesByEntry
