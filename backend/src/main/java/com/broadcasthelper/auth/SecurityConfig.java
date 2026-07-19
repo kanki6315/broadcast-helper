@@ -13,6 +13,7 @@ import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
@@ -94,7 +95,7 @@ public class SecurityConfig {
     private OAuth2UserService<OidcUserRequest, OidcUser> allowlistUserService(
             UserDirectory directory, DeniedLogins deniedLogins) {
         OidcUserService delegate = new OidcUserService();
-        return request -> requireListed(delegate.loadUser(request), directory, deniedLogins);
+        return request -> emailNamed(requireListed(delegate.loadUser(request), directory, deniedLogins));
     }
 
     /**
@@ -110,5 +111,16 @@ public class SecurityConfig {
                     "Email not on the user list: " + user.getEmail());
         }
         return user;
+    }
+
+    /**
+     * Rewraps the user so {@code getName()} — and therefore Spring Session's
+     * {@code principal_name} column — is the email rather than Google's opaque
+     * {@code sub}, which is what makes the Sessions admin page readable. Called
+     * only after {@link #requireListed} confirms a non-null email, so the name
+     * attribute is always present. Authorities are preserved.
+     */
+    static OidcUser emailNamed(OidcUser user) {
+        return new DefaultOidcUser(user.getAuthorities(), user.getIdToken(), user.getUserInfo(), "email");
     }
 }

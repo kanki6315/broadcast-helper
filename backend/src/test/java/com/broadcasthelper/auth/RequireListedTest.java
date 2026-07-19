@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.oidc.OidcIdToken;
 import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
@@ -66,5 +67,20 @@ class RequireListedTest {
         OidcUser member = googleUser("member@example.test");
         assertSame(member, SecurityConfig.requireListed(member, ONLY_MEMBER, deniedLogins));
         assertTrue(deniedLogins.list().isEmpty());
+    }
+
+    @Test
+    void emailNamedMakesGetNameTheEmailAndKeepsAuthorities() {
+        OidcUser google = new DefaultOidcUser(
+                List.of(new SimpleGrantedAuthority("OIDC_USER")),
+                OidcIdToken.withTokenValue("t").claim("sub", "opaque-google-id")
+                        .claim("email", "member@example.test").build());
+        // Default OIDC name is the sub — that's what we're replacing so
+        // Spring Session's principal_name is readable.
+        assertEquals("opaque-google-id", google.getName());
+
+        OidcUser named = SecurityConfig.emailNamed(google);
+        assertEquals("member@example.test", named.getName());
+        assertEquals(google.getAuthorities(), named.getAuthorities());
     }
 }

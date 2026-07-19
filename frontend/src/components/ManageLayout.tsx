@@ -6,6 +6,7 @@ const MANAGE_LINKS = [
   { to: '/manage/imports', label: 'Imports' },
   { to: '/manage/logos', label: 'Manufacturer logos' },
   { to: '/manage/users', label: 'Users' },
+  { to: '/manage/sessions', label: 'Sessions' },
 ]
 
 /**

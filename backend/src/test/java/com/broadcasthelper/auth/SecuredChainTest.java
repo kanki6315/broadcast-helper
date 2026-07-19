@@ -104,6 +104,8 @@ class SecuredChainTest {
                 .andExpect(status().isForbidden());
         mvc.perform(get("/api/users/denied").with(signedInAs(VIEWER)))
                 .andExpect(status().isForbidden());
+        mvc.perform(get("/api/users/sessions").with(signedInAs(VIEWER)))
+                .andExpect(status().isForbidden());
         mvc.perform(get("/api/users").with(signedInAs(ADMIN)))
                 .andExpect(status().isOk());
     }
