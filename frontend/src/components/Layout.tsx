@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet } from 'react-router-dom'
 import { useMe } from '../lib/auth'
 import { getTheme, setTheme, type Theme } from '../lib/theme'
 import SearchPalette, { SearchIcon, isMacLike } from './SearchPalette'
+import InstallHint from './InstallHint'
 
 const TABS = [
   { to: '/', label: 'Series', end: true },
@@ -96,6 +97,7 @@ export default function Layout() {
 
   return (
     <main className="container">
+      <InstallHint />
       <div className="topbar">
         <Link to="/" className="wordmark">
           Broadcast<span> Helper</span>
