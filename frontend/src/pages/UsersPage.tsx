@@ -8,6 +8,13 @@ interface UserRow {
   createdAt: string
 }
 
+interface DeniedRow {
+  id: number
+  email: string
+  attemptCount: number
+  lastAttemptAt: string
+}
+
 /**
  * The access roster. This table is the only access list — there are no env-var
  * fallbacks — so the backend refuses self-removal and removing the last admin;
@@ -17,14 +24,19 @@ export default function UsersPage() {
   const me = useMe()
   const myEmail = me?.email?.toLowerCase() ?? null
   const [rows, setRows] = useState<UserRow[]>([])
+  const [denied, setDenied] = useState<DeniedRow[]>([])
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<'ADMIN' | 'VIEWER'>('VIEWER')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   async function load() {
-    const res = await fetch('/api/users')
-    if (res.ok) setRows(await res.json())
+    const [usersRes, deniedRes] = await Promise.all([
+      fetch('/api/users'),
+      fetch('/api/users/denied'),
+    ])
+    if (usersRes.ok) setRows(await usersRes.json())
+    setDenied(deniedRes.ok ? await deniedRes.json() : [])
   }
 
   useEffect(() => {
@@ -150,6 +162,59 @@ export default function UsersPage() {
           })}
         </tbody>
       </table>
+
+      {denied.length > 0 && (
+        <>
+          <h3>Denied sign-ins ({denied.length})</h3>
+          <p className="muted">
+            These Google accounts tried to sign in but aren&apos;t on the list — usually a teammate
+            using a different account than expected. Add them as a viewer (promote above if
+            needed) or dismiss.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Attempts</th>
+                <th>Last attempt</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {denied.map((d) => (
+                <tr key={d.id}>
+                  <td>{d.email}</td>
+                  <td>{d.attemptCount}</td>
+                  <td>{new Date(d.lastAttemptAt).toLocaleString()}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={busy}
+                      onClick={() =>
+                        void call('/api/users', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ email: d.email, role: 'VIEWER' }),
+                        })
+                      }
+                    >
+                      Add as viewer
+                    </button>{' '}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void call(`/api/users/denied/${d.id}`, { method: 'DELETE' })}
+                    >
+                      Dismiss
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
     </section>
   )
 }

@@ -1070,6 +1070,13 @@ display size.)
    self-removal/self-demotion, no removing the last admin (single guarded
    statements); past those, recovery is psql. First admin is bootstrapped by a
    manual INSERT (docs/DEPLOY.md); empty table admits nobody.
+   **Denied sign-ins (same day):** a rejected login records to `denied_login`
+   (V33) before the access_denied throw — deduped per email, capped at 200
+   distinct addresses, failure never breaks login — and surfaces on Manage →
+   Users with one-click "Add as viewer" / "Dismiss" (adding a user by any
+   route clears their denied record). `/api/users/**` is admin-only even for
+   GET. Dev note: recording only exists in the secured chain, so local
+   dev never records — seed `denied_login` via psql to see the section.
 
    ⇒ **Phase 4a is code-complete pending the user's Railway deploy** (Steps 1–3
    done; the app is hosted-ready, behind Google login, with DB-managed

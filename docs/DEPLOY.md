@@ -116,7 +116,10 @@ with an access-denied message. Every listed user can read all of `/api/**`
 role `ADMIN`. Checks run **per request** against the roster, so removing or
 demoting someone on the Users page takes effect on their next click — no
 session wait, no redeploy. Viewers don't see the Manage tab or inline edit
-controls; the backend 403s them regardless.
+controls; the backend 403s them regardless. Rejected sign-in attempts are
+recorded (deduped per email, capped at 200 distinct addresses) and appear on
+Manage → Users for one-click adding or dismissal — the usual cause is a
+teammate signing in with a different Google account than the one you added.
 
 > Enabling auth requires the Google client id/secret to be present, or startup
 > fails. Set all three vars together.
