@@ -1992,3 +1992,9 @@ h2 small {
   flex-wrap: wrap;
   margin-top: var(--space-4);
 }
+
+/* Highlight a layout-vs-window viewport mismatch (the overflow culprit). */
+.storage-page .vp-gap {
+  color: var(--error);
+  font-weight: 600;
+}
