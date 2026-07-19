@@ -925,6 +925,9 @@ function OverallChampionshipEditor({
                   type="checkbox"
                   checked={c.isOverall}
                   disabled={saving === c.id}
+                  // The row's own text runs the title into the meta line, so
+                  // name the control explicitly like every other input here.
+                  aria-label={`${c.title} scores the whole field`}
                   onChange={(e) => void setOverall(c, e.target.checked)}
                 />
                 <span className="overall-champ-title">{c.title}</span>
