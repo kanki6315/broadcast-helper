@@ -709,6 +709,29 @@ display size.)
   Challenge DH Entrants" standings key rows by **team name**, but non-DRIVERS
   recap matching compares keys to **car numbers** — that recap has no cells
   under any flag setting.
+- **Overall-championship toggle in the series modal — ✅ DONE (2026-07-18).**
+  The flag above could only be set by hand-written SQL, and the symptom of a
+  missed one is quiet (subclass drivers render with points but no chips, which
+  reads as missing results rather than a missing setting), so it needed a
+  discoverable home. `SeriesChampionshipController` (`GET
+  /api/series/{id}/championships` listing the series' championships with the
+  flag + a standings `rowCount`; `PUT .../championships/{cid}/overall`) follows
+  `ClassStyleController`'s conventions — `JdbcClient`, `requireSeries` guard,
+  `@Valid` record body. The write is **scoped to the series inside the UPDATE**
+  (`AND season_id IN (SELECT id FROM season WHERE series_id = :seriesId)`), so
+  a championship id from another series is a 404 rather than a silent
+  cross-series write; `SeriesChampionshipControllerTest` covers that plus the
+  toggle round-trip and sibling isolation. The UI is a third `SettingsSection`
+  in the modal's **Classes tab**, next to Class colours and Class names — the
+  established home for corrections that outlive an import — listing
+  championships grouped by season, newest first. **Gotcha it had to handle:**
+  `ChampionshipGrid`'s module-level `recapCache` memoizes recaps for the whole
+  session, so a toggle would not show on the season board until a hard reload;
+  the editor calls a new exported `invalidateRecap(id)` after a successful PUT.
+  Verified end-to-end in the browser: toggling Mustang DH Drivers off dropped
+  its recap to 18/36 rows with cells and flipped the legend to "start/finish in
+  class" across **SPA navigation with no reload**, and toggling back on
+  restored 36/36 — which is the cache invalidation proving itself.
 - **Confirm-and-commit grouping (`commit-group`) — ✅ DONE (2026-07-17).** After
   staging, both import modals (the file-upload `UploadFilesModal` and the
   `IRacingImportModal`) hand off to a shared **`ConfirmImportStep`**: proposed
