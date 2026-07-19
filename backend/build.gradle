@@ -23,6 +23,9 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
+	// Sessions in Postgres rather than Tomcat's memory, so a redeploy doesn't
+	// sign everyone out (the app ships often). Schema is owned by Flyway (V34).
+	implementation 'org.springframework.session:spring-session-jdbc'
 	implementation 'org.flywaydb:flyway-core'
 	implementation 'org.flywaydb:flyway-database-postgresql'
 	// Image downscaling + WebP encoding for car-image variants (bundled native

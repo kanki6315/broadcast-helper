@@ -13,9 +13,10 @@ server:
   servlet:
     session:
       # Idle window: the login survives up to this long between requests (sliding
-      # — active use keeps it alive). Sessions are in-memory, so a redeploy still
-      # ends every session regardless; after either, the next /api call does a
-      # (usually silent) Google re-login.
+      # — active use keeps it alive). Sessions live in Postgres (Spring Session
+      # JDBC, see spring.session below), so they now survive a redeploy; only
+      # this idle window or an explicit logout ends one. Spring Session reads
+      # this property when spring.session.timeout is unset.
       timeout: 3d
       cookie:
         # SameSite=Lax keeps the session cookie off cross-site requests, which
@@ -23,9 +24,9 @@ server:
         same-site: lax
         # Persist the cookie past browser close (without this it's a session
         # cookie the browser drops on exit). It's only an opaque session id —
-        # inert once the idle window lapses or the service redeploys — so it
-        # never outlives the server-side session. Headroom past the 3d idle
-        # window so continuous use can't hit an absolute cap mid-session.
+        # inert once the idle window lapses — so it never outlives the
+        # server-side session. Headroom past the 3d idle window so continuous
+        # use can't hit an absolute cap mid-session.
         max-age: 7d
 
 # The Python sidecar that turns entry-list PDFs into entries.json
@@ -66,6 +67,11 @@ broadcast-helper.auth:
   enabled: ${AUTH_ENABLED:false}
 
 spring:
+  session:
+    # Sessions in Postgres so a redeploy doesn't sign everyone out. Flyway owns
+    # the schema (V34), so Spring Session must not try to create it.
+    jdbc:
+      initialize-schema: never
   servlet:
     multipart:
       # Bulk image upload: a full grid can be 50+ photos of several MB each.
