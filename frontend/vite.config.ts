@@ -57,7 +57,7 @@ export default defineConfig({
             options: {
               cacheName: 'api-images',
               expiration: {
-                maxEntries: 300,
+                maxEntries: 3000,
                 maxAgeSeconds: 60 * 60 * 24 * 30,
                 purgeOnQuotaError: true, // iOS evicts aggressively; fail gracefully
               },
@@ -105,7 +105,11 @@ export default defineConfig({
             options: {
               cacheName: 'api-data',
               networkTimeoutSeconds: 4,
-              expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 * 7 },
+              expiration: {
+                maxEntries: 3000,
+                maxAgeSeconds: 60 * 60 * 24 * 30, // 30d: keep prep available offline for weeks
+                purgeOnQuotaError: true,
+              },
               cacheableResponse: { statuses: [200] },
             },
           },
