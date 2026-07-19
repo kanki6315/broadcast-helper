@@ -58,15 +58,12 @@ broadcast-helper:
     token-url: ${IRACING_TOKEN_URL:https://oauth.iracing.com/oauth2/token}
     data-base: ${IRACING_DATA_BASE:https://members-ng.iracing.com/data}
 
-# Auth (Phase 4a Step 2). Disabled by default so local dev needs no Google creds;
-# set AUTH_ENABLED=true + the Google client + allowlist on the hosted deployment.
+# Auth. Disabled by default so local dev needs no Google creds; set
+# AUTH_ENABLED=true + the Google client on the hosted deployment. Who may sign
+# in (and who may write) lives in the app_user table, managed from Manage →
+# Users — bootstrap the first admin via psql (see docs/DEPLOY.md).
 broadcast-helper.auth:
   enabled: ${AUTH_ENABLED:false}
-  # Comma-separated Google emails allowed to sign in READ-ONLY. Empty = nobody extra.
-  allowed-emails: ${AUTH_ALLOWED_EMAILS:}
-  # Comma-separated Google emails with full (write) access; implicitly allowed to
-  # sign in, so they need not repeat in AUTH_ALLOWED_EMAILS. Empty = no admins.
-  admin-emails: ${ADMIN_ALLOWED_EMAILS:}
 
 spring:
   servlet:

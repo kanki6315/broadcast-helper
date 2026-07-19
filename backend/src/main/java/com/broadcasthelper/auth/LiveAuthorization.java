@@ -22,22 +22,22 @@ import org.springframework.stereotype.Component;
 @Component
 public class LiveAuthorization {
 
-    private final AuthProperties auth;
+    private final UserDirectory directory;
 
-    public LiveAuthorization(AuthProperties auth) {
-        this.auth = auth;
+    public LiveAuthorization(UserDirectory directory) {
+        this.directory = directory;
     }
 
     /** Any listed email (viewer or admin) — gates GET/HEAD under /api. */
     public AuthorizationManager<RequestAuthorizationContext> member() {
         return (authentication, context) ->
-                new AuthorizationDecision(auth.allows(emailOf(authentication.get())));
+                new AuthorizationDecision(directory.allows(emailOf(authentication.get())));
     }
 
     /** Admin emails only — gates every other method under /api. */
     public AuthorizationManager<RequestAuthorizationContext> admin() {
         return (authentication, context) ->
-                new AuthorizationDecision(auth.isAdmin(emailOf(authentication.get())));
+                new AuthorizationDecision(directory.isAdmin(emailOf(authentication.get())));
     }
 
     private static String emailOf(Authentication authentication) {

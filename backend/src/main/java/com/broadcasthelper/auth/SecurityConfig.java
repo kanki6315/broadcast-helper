@@ -41,7 +41,7 @@ public class SecurityConfig {
 
     @Bean
     @ConditionalOnProperty(prefix = "broadcast-helper.auth", name = "enabled", havingValue = "true")
-    SecurityFilterChain securedChain(HttpSecurity http, AuthProperties auth, LiveAuthorization live)
+    SecurityFilterChain securedChain(HttpSecurity http, UserDirectory directory, LiveAuthorization live)
             throws Exception {
         http
                 .authorizeHttpRequests(a -> a
@@ -55,7 +55,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/**").access(live.admin())
                         .anyRequest().authenticated())
                 .oauth2Login(o -> o
-                        .userInfoEndpoint(u -> u.oidcUserService(allowlistUserService(auth)))
+                        .userInfoEndpoint(u -> u.oidcUserService(allowlistUserService(directory)))
                         // Login itself returns to the SPA; a rejected email lands
                         // back with a flag the frontend can surface.
                         .defaultSuccessUrl("/", true)
@@ -80,18 +80,18 @@ public class SecurityConfig {
     }
 
     /**
-     * Loads the Google profile and rejects any email not on the allowlist so a
-     * stranger gets the access_denied message at the door. Roles are NOT
+     * Loads the Google profile and rejects any email not in the user roster so
+     * a stranger gets the access_denied message at the door. Roles are NOT
      * granted here — {@link LiveAuthorization} decides them per request.
      */
-    private OAuth2UserService<OidcUserRequest, OidcUser> allowlistUserService(AuthProperties auth) {
+    private OAuth2UserService<OidcUserRequest, OidcUser> allowlistUserService(UserDirectory directory) {
         OidcUserService delegate = new OidcUserService();
         return request -> {
             OidcUser user = delegate.loadUser(request);
-            if (!auth.allows(user.getEmail())) {
+            if (!directory.allows(user.getEmail())) {
                 throw new OAuth2AuthenticationException(
                         new OAuth2Error("access_denied"),
-                        "Email not on the allowlist: " + user.getEmail());
+                        "Email not on the user list: " + user.getEmail());
             }
             return user;
         };

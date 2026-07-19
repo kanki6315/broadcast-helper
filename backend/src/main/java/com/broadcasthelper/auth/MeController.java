@@ -17,9 +17,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class MeController {
 
     private final AuthProperties auth;
+    private final UserDirectory directory;
 
-    public MeController(AuthProperties auth) {
+    public MeController(AuthProperties auth, UserDirectory directory) {
         this.auth = auth;
+        this.directory = directory;
     }
 
     public record Me(boolean authEnabled, String email, boolean isAdmin) {
@@ -31,6 +33,6 @@ public class MeController {
             return new Me(false, null, true);
         }
         String email = user != null ? user.getEmail() : null;
-        return new Me(true, email, auth.isAdmin(email));
+        return new Me(true, email, directory.isAdmin(email));
     }
 }

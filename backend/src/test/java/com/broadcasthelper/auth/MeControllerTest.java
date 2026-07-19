@@ -2,19 +2,28 @@ package com.broadcasthelper.auth;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * The /api/me contract: auth off reports admin (dev mode shows the full UI);
- * auth on reports the signed-in user's tier, and signed-out means not admin.
+ * auth on reports the signed-in user's tier from the directory, and signed-out
+ * means not admin. The directory is stubbed by subclass (house pattern).
  */
 class MeControllerTest {
 
     private static MeController controller(boolean enabled) {
-        return new MeController(new AuthProperties(enabled,
-                List.of("viewer@example.com"), List.of("admin@example.com")));
+        UserDirectory stub = new UserDirectory(null) {
+            @Override
+            public boolean allows(String email) {
+                return email != null;
+            }
+
+            @Override
+            public boolean isAdmin(String email) {
+                return "admin@example.com".equals(email);
+            }
+        };
+        return new MeController(new AuthProperties(enabled), stub);
     }
 
     @Test
