@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import TeamAssignmentEditor from '../components/TeamAssignmentEditor'
 
 interface Series {
   id: number
@@ -47,7 +48,7 @@ interface SeasonSummary {
   championshipCount: number
 }
 
-type SeriesPanel = 'identity' | 'aliases' | 'classes' | 'formats' | 'years'
+type SeriesPanel = 'identity' | 'aliases' | 'classes' | 'formats' | 'teams' | 'years'
 
 export default function SeriesPage() {
   const [series, setSeries] = useState<Series[]>([])
@@ -169,6 +170,7 @@ function SeriesManagementDialog({
   const dialogRef = useRef<HTMLDialogElement>(null)
   const [panel, setPanel] = useState<SeriesPanel>('identity')
   const [error, setError] = useState<string | null>(null)
+  const [teamDirty, setTeamDirty] = useState(false)
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -180,16 +182,25 @@ function SeriesManagementDialog({
     { id: 'aliases', label: 'Aliases' },
     { id: 'classes', label: 'Classes' },
     { id: 'formats', label: 'Race formats' },
+    { id: 'teams', label: 'Teams' },
     { id: 'years', label: 'Years' },
   ]
+
+  function canLeaveTeams() {
+    return panel !== 'teams' || !teamDirty || window.confirm('Discard unsaved team assignments?')
+  }
+
+  function close() {
+    if (canLeaveTeams()) onClose()
+  }
 
   return (
     <dialog
       ref={dialogRef}
       className="series-management-dialog"
       aria-labelledby="series-dialog-title"
-      onCancel={(event) => { event.preventDefault(); onClose() }}
-      onClick={(event) => { if (event.target === dialogRef.current) onClose() }}
+      onCancel={(event) => { event.preventDefault(); close() }}
+      onClick={(event) => { if (event.target === dialogRef.current) close() }}
     >
       <div className="series-dialog-shell">
         <header className="series-dialog-header">
@@ -204,7 +215,7 @@ function SeriesManagementDialog({
               <p>Series settings</p>
             </div>
           </div>
-          <button type="button" className="series-dialog-close" onClick={onClose} aria-label="Close series settings">×</button>
+          <button type="button" className="series-dialog-close" onClick={close} aria-label="Close series settings">×</button>
         </header>
 
         <div className="series-dialog-layout">
@@ -215,7 +226,7 @@ function SeriesManagementDialog({
                 key={item.id}
                 className={panel === item.id ? 'active' : ''}
                 aria-current={panel === item.id ? 'page' : undefined}
-                onClick={() => { setPanel(item.id); setError(null) }}
+                onClick={() => { if (!canLeaveTeams()) return; setPanel(item.id); setError(null) }}
               >{item.label}</button>
             ))}
           </nav>
@@ -241,6 +252,9 @@ function SeriesManagementDialog({
               <SettingsSection title="Race formats" description="Control the stat buckets used for sprint, heat and feature sessions.">
                 <RaceFormatEditor seriesId={series.id} onError={setError} />
               </SettingsSection>
+            )}
+            {panel === 'teams' && (
+              <TeamAssignmentEditor seasons={seasons} onError={setError} onDirtyChange={setTeamDirty} />
             )}
             {panel === 'years' && (
               <SeasonDataEditor seasons={seasons} onError={setError} onRefresh={onRefresh} />

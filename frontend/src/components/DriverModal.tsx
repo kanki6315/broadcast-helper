@@ -471,7 +471,7 @@ export default function DriverModal({
                 {profile.carNumber && (
                   <p className="dm-seat">
                     <span className="dm-car">#{profile.carNumber}</span>{' '}
-                    {profile.teamName && (
+                    {profile.teamName && profile.teamName.toLocaleLowerCase() !== 'privateer' && (
                       <button
                         type="button"
                         className="drv-link"
@@ -480,6 +480,9 @@ export default function DriverModal({
                       >
                         {profile.teamName}
                       </button>
+                    )}
+                    {profile.teamName?.toLocaleLowerCase() === 'privateer' && (
+                      <span className="dm-privateer">Privateer</span>
                     )}
                     {profile.className && <> · {profile.className}</>}
                     {profile.seriesName && (

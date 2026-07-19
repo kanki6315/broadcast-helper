@@ -8,7 +8,7 @@ export default defineConfig({
     // Forward API calls to the Spring Boot backend so the app is CORS-free
     // in development and the frontend only ever talks to relative /api URLs.
     proxy: {
-      '/api': 'http://localhost:8080',
+      '/api': process.env.VITE_API_ORIGIN ?? 'http://localhost:8080',
     },
   },
 })

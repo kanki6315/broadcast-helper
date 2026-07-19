@@ -69,6 +69,8 @@ public class TeamController {
                                      JOIN event ev ON ev.id = en.event_id
                                      JOIN season s ON s.id = ev.season_id
                                      JOIN series sr ON sr.id = s.series_id
+                                     LEFT JOIN season_team st ON st.id = en.season_team_id
+                            WHERE st.privateer_driver_id IS NULL
                             ORDER BY lower(trim(en.team_name)), ev.event_date DESC NULLS LAST, ev.id DESC
                         )
                         SELECT l.team_name, l.year, l.series_name,
@@ -134,7 +136,8 @@ public class TeamController {
         String displayName = db.sql("""
                         SELECT en.team_name
                         FROM entry en JOIN event ev ON ev.id = en.event_id
-                        WHERE lower(trim(en.team_name)) = :key
+                             LEFT JOIN season_team st ON st.id = en.season_team_id
+                        WHERE lower(trim(en.team_name)) = :key AND st.privateer_driver_id IS NULL
                         ORDER BY ev.event_date DESC NULLS LAST, ev.id DESC
                         LIMIT 1
                         """)
@@ -166,7 +169,9 @@ public class TeamController {
                                  JOIN event ev ON ev.id = en.event_id
                                  JOIN season s ON s.id = ev.season_id
                                  JOIN series sr ON sr.id = s.series_id
+                                 LEFT JOIN season_team st ON st.id = en.season_team_id
                         WHERE lower(trim(en.team_name)) = :key
+                          AND st.privateer_driver_id IS NULL
                           AND s.year = (SELECT max(s2.year)
                                         FROM entry en2
                                                  JOIN event ev2 ON ev2.id = en2.event_id

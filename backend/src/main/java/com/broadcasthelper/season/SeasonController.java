@@ -150,6 +150,9 @@ public class SeasonController {
         // then events (cascades sessions, results, grids, flags and entries).
         int championships = db.sql("DELETE FROM championship WHERE season_id = :id").param("id", id).update();
         db.sql("DELETE FROM championship_group WHERE season_id = :id").param("id", id).update();
+        // Team overrides are season data too. The season row intentionally
+        // survives this wipe, so its ON DELETE cascade would never run here.
+        db.sql("DELETE FROM season_team WHERE season_id = :id").param("id", id).update();
         int rounds = db.sql("DELETE FROM event WHERE season_id = :id").param("id", id).update();
         return new SeasonDataDeleted(rounds, championships);
     }

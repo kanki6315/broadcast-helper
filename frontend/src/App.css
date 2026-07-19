@@ -644,7 +644,7 @@ h2 small {
 }
 
 .series-management-dialog {
-  width: min(960px, calc(100vw - 32px));
+  width: min(1120px, calc(100vw - 32px));
   height: min(720px, calc(100dvh - 32px));
   max-width: none;
   max-height: none;
@@ -765,9 +765,10 @@ h2 small {
 }
 
 .series-dialog-nav button.active {
-  color: var(--ink);
-  background: var(--bg);
-  box-shadow: var(--shadow-raise);
+  color: var(--accent-ink);
+  background: var(--accent-tint);
+  border-color: color-mix(in oklab, var(--accent) 55%, var(--border));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 55%, var(--border));
 }
 
 .series-dialog-content {
@@ -796,6 +797,323 @@ h2 small {
 
 .series-settings-section > p + p {
   margin-top: calc(-1 * var(--space-3));
+}
+
+/* Team assignments: an explicit roster grid inside the existing modal shell.
+ * The modal content remains the sole vertical scroll owner; the roster gains
+ * horizontal overflow only when the viewport can no longer carry its columns. */
+.team-assignment-editor {
+  min-width: 0;
+}
+
+.team-assignment-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-5);
+  margin-bottom: var(--space-5);
+}
+
+.team-assignment-head h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+}
+
+.team-assignment-head p {
+  max-width: 65ch;
+  margin: var(--space-1) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-wrap: pretty;
+}
+
+.team-season-picker {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.team-season-picker select,
+.team-roster-table input,
+.team-history-line select {
+  min-height: 34px;
+  padding: 6px 10px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-sizing: border-box;
+}
+
+.team-season-picker select,
+.team-history-line select,
+.team-roster-table td.num,
+.team-history-line .num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.team-roster-frame {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.team-roster-table {
+  width: 100%;
+  min-width: 780px;
+  border-spacing: 0;
+  border-collapse: separate;
+  table-layout: fixed;
+}
+
+.team-roster-table th,
+.team-roster-table td {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  vertical-align: middle;
+  box-sizing: border-box;
+}
+
+.team-roster-table thead th {
+  position: sticky;
+  top: calc(-1 * var(--space-5));
+  z-index: var(--z-sticky);
+  color: var(--text-muted);
+  background: var(--surface);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.team-roster-table thead th:first-child {
+  border-radius: var(--radius-md) 0 0;
+}
+
+.team-roster-table thead th:last-child {
+  border-radius: 0 var(--radius-md) 0 0;
+}
+
+.team-roster-table tbody > tr:first-child:hover > th,
+.team-roster-table tbody > tr:first-child:hover > td {
+  background: var(--surface);
+}
+
+.team-roster-table tbody.is-expanded > tr:first-child > th,
+.team-roster-table tbody.is-expanded > tr:first-child > td {
+  background: var(--accent-tint);
+}
+
+.team-roster-table tbody th[scope='row'] {
+  width: 26%;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.team-roster-table input {
+  width: 100%;
+}
+
+.team-expand-col {
+  width: 44px;
+  padding-right: 0 !important;
+  text-align: center !important;
+}
+
+.team-actions-col {
+  width: 116px;
+  text-align: right !important;
+}
+
+.team-expand,
+.team-add-compact,
+.team-remove,
+.team-add-change {
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.team-expand {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  font-size: var(--text-base);
+  line-height: 1;
+  transform: rotate(-90deg);
+  transition: transform var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+}
+
+.is-expanded .team-expand {
+  transform: rotate(0deg);
+}
+
+.team-expand:hover,
+.team-add-compact:hover:not(:disabled),
+.team-remove:hover:not(:disabled),
+.team-add-change:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+.team-add-compact,
+.team-add-change {
+  padding: 5px var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.team-add-compact:disabled,
+.team-remove:disabled,
+.team-add-change:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.team-history-row > td {
+  padding: 0 var(--space-3) var(--space-3) !important;
+  background: var(--accent-tint);
+}
+
+.team-history-row > td:first-child {
+  padding: 0 !important;
+}
+
+.team-history {
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.team-history-head,
+.team-history-line {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) 132px 120px 82px 32px;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.team-history-field {
+  display: contents;
+}
+
+.team-history-field-label {
+  display: none;
+}
+
+.team-history-head {
+  padding: 0 var(--space-2) var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.team-history-line {
+  min-height: 42px;
+  padding: var(--space-1) var(--space-2);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+.team-history-line input,
+.team-history-line select {
+  min-width: 0;
+  width: 100%;
+}
+
+.team-remove {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  font-size: var(--text-lg);
+}
+
+.team-add-change {
+  margin-top: var(--space-2);
+  color: var(--text);
+  background: var(--bg);
+  border-color: var(--border-strong);
+}
+
+.team-roster-status {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-muted);
+  background: var(--surface);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  font-size: var(--text-xs);
+}
+
+.team-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--success);
+  font-weight: 600;
+}
+
+.team-saved > span {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.team-assignment-actions {
+  position: sticky;
+  bottom: calc(-1 * var(--space-5));
+  z-index: var(--z-sticky);
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin: var(--space-4) calc(-1 * var(--space-5)) calc(-1 * var(--space-5));
+  padding: var(--space-3) var(--space-5);
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
+
+.team-roster-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.team-roster-skeleton > span {
+  height: 48px;
+  border-radius: 0;
+}
+
+.team-assignment-empty {
+  margin-top: var(--space-5);
+}
+
+.team-assignment-empty h3 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-base);
+}
+
+.team-assignment-empty p {
+  margin: 0;
 }
 
 .series-identity-form,
@@ -982,8 +1300,179 @@ h2 small {
     padding: var(--space-4);
   }
 
+  .team-assignment-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .team-season-picker {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .team-roster-frame {
+    overflow-x: auto;
+  }
+
+  .team-roster-table thead th {
+    position: static;
+  }
+
+  .team-assignment-actions {
+    bottom: calc(-1 * var(--space-4));
+    margin-right: calc(-1 * var(--space-4));
+    margin-bottom: calc(-1 * var(--space-4));
+    margin-left: calc(-1 * var(--space-4));
+    padding-right: var(--space-4);
+    padding-left: var(--space-4);
+  }
+
   .series-alias-form {
     flex-direction: column;
+  }
+}
+
+@media (max-width: 560px) {
+  .team-roster-frame {
+    overflow: visible;
+  }
+
+  .team-roster-table {
+    min-width: 0;
+  }
+
+  .team-roster-table thead {
+    display: none;
+  }
+
+  .team-roster-table tbody {
+    display: block;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .team-roster-table tbody:last-of-type {
+    border-bottom: 0;
+  }
+
+  .team-roster-table tbody > tr:first-child {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    padding: var(--space-2);
+  }
+
+  .team-roster-table tbody > tr:first-child > th,
+  .team-roster-table tbody > tr:first-child > td {
+    width: auto;
+    padding: var(--space-1) var(--space-2);
+    border: 0;
+  }
+
+  .team-roster-table tbody > tr:first-child > .team-expand-col {
+    grid-column: 1;
+    grid-row: 1 / span 4;
+    padding-left: 0;
+  }
+
+  .team-roster-table tbody > tr:first-child > th[scope='row'] {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .team-roster-table tbody > tr:first-child > td:nth-child(3) {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .team-roster-table tbody > tr:first-child > td:nth-child(4) {
+    grid-column: 2;
+    grid-row: 3;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+  }
+
+  .team-roster-table tbody > tr:first-child > .team-actions-col {
+    grid-column: 2;
+    grid-row: 4;
+    text-align: left !important;
+  }
+
+  .team-history-row {
+    display: block;
+  }
+
+  .team-history-row > td:first-child {
+    display: none;
+  }
+
+  .team-history-row > td:last-child {
+    display: block;
+    padding: 0 var(--space-3) var(--space-3) !important;
+    border: 0;
+  }
+
+  .team-history {
+    padding: var(--space-2);
+  }
+
+  .team-history-head {
+    display: none;
+  }
+
+  .team-history-line {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 28px;
+    gap: var(--space-2);
+    padding: var(--space-2) 0;
+  }
+
+  .team-history-field {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .team-history-field-label {
+    display: block;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    font-weight: 600;
+  }
+
+  .team-history-team {
+    grid-column: 1 / -1;
+  }
+
+  .team-history-from {
+    grid-column: 1;
+  }
+
+  .team-history-to {
+    grid-column: 2;
+  }
+
+  .team-history-status {
+    grid-column: 1 / span 2;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+  }
+
+  .team-history-line > button {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .team-roster-table tbody th[scope='row'] {
+    overflow-wrap: anywhere;
+  }
+
+  .team-roster-status,
+  .team-assignment-actions {
+    flex-wrap: wrap;
+  }
+
+  .team-assignment-actions > button {
+    flex: 1 1 auto;
+    justify-content: center;
   }
 }
 

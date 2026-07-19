@@ -33,6 +33,7 @@ public class ImportService {
     private final ObjectMapper json;
     private final IRacingClient iracing;
     private final com.broadcasthelper.formats.RaceFormatService raceFormats;
+    private final com.broadcasthelper.teams.TeamAssignmentService teamAssignments;
     private final TransactionTemplate txTemplate;
     private final String parserPython;
     private final String parserScript;
@@ -40,6 +41,7 @@ public class ImportService {
 
     public ImportService(JdbcClient db, ObjectMapper json, IRacingClient iracing,
                          com.broadcasthelper.formats.RaceFormatService raceFormats,
+                         com.broadcasthelper.teams.TeamAssignmentService teamAssignments,
                          PlatformTransactionManager txManager,
                          @org.springframework.beans.factory.annotation.Value("${broadcast-helper.entry-list-parser.python:python3}") String parserPython,
                          @org.springframework.beans.factory.annotation.Value("${broadcast-helper.entry-list-parser.script:../parser/parse_entry_list.py}") String parserScript,
@@ -48,6 +50,7 @@ public class ImportService {
         this.json = json;
         this.iracing = iracing;
         this.raceFormats = raceFormats;
+        this.teamAssignments = teamAssignments;
         this.txTemplate = new TransactionTemplate(txManager);
         this.parserPython = parserPython;
         this.parserScript = parserScript;
@@ -1326,6 +1329,7 @@ public class ImportService {
         // The event's race shape may have changed (a new session appeared);
         // recompute AUTO format assignments within the same transaction.
         raceFormats.autoAssignEvent(eventId);
+        teamAssignments.applySeason(seasonId);
     }
 
     /**
@@ -1466,6 +1470,7 @@ public class ImportService {
         // A grid can find-or-create the session before its results arrive;
         // keep format assignments in step with the new shape.
         raceFormats.autoAssignEvent(eventId);
+        teamAssignments.applySeason(seasonId);
     }
 
     /**
@@ -1677,6 +1682,7 @@ public class ImportService {
                         .update();
             }
         }
+        teamAssignments.applySeason(seasonId);
     }
 
     // ---------------------------------------------------------------- helpers
