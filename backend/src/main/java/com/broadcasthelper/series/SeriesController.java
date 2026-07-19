@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,6 +39,9 @@ public class SeriesController {
     public record CreateSeriesRequest(@NotBlank String name, String abbreviation) {
     }
 
+    public record UpdateSeriesRequest(@NotBlank String name, String abbreviation) {
+    }
+
     public record AddAliasRequest(@NotBlank String alias) {
     }
 
@@ -58,6 +62,21 @@ public class SeriesController {
         }
         Series saved = repository.save(new Series(request.name().trim(), request.abbreviation()));
         return toResponse(saved, Map.of(), Map.of());
+    }
+
+    @PatchMapping("/{id}")
+    public SeriesResponse update(@PathVariable long id, @Valid @RequestBody UpdateSeriesRequest request) {
+        Series series = repository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such series"));
+        String name = request.name().trim();
+        if (!series.getName().equalsIgnoreCase(name) && repository.existsByNameIgnoreCase(name)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "A series with that name already exists");
+        }
+        String abbreviation = request.abbreviation() == null || request.abbreviation().isBlank()
+                ? null
+                : request.abbreviation().trim();
+        series.updateIdentity(name, abbreviation);
+        return toResponse(repository.save(series), loadAliases(), loadLogoVersions());
     }
 
     @PostMapping("/{id}/aliases")

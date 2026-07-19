@@ -30,21 +30,22 @@ public class SeasonController {
         this.db = db;
     }
 
-    public record SeasonSummary(long id, int year, String seriesName,
+    public record SeasonSummary(long id, int year, long seriesId, String seriesName,
                                 long roundCount, long championshipCount) {
     }
 
     @GetMapping
     public List<SeasonSummary> seasons() {
         return db.sql("""
-                        SELECT s.id, s.year, sr.name AS series_name,
+                        SELECT s.id, s.year, sr.id AS series_id, sr.name AS series_name,
                                (SELECT count(*) FROM event e WHERE e.season_id = s.id)          AS round_count,
                                (SELECT count(*) FROM championship c WHERE c.season_id = s.id)   AS championship_count
                         FROM season s JOIN series sr ON sr.id = s.series_id
                         ORDER BY s.year DESC, sr.name
                         """)
                 .query((rs, i) -> new SeasonSummary(rs.getLong("id"), rs.getInt("year"),
-                        rs.getString("series_name"), rs.getLong("round_count"), rs.getLong("championship_count")))
+                        rs.getLong("series_id"), rs.getString("series_name"), rs.getLong("round_count"),
+                        rs.getLong("championship_count")))
                 .list();
     }
 

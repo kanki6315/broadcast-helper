@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 
 interface Series {
   id: number
@@ -41,27 +41,29 @@ interface ClassAliasesResponse {
 interface SeasonSummary {
   id: number
   year: number
+  seriesId: number
   seriesName: string
   roundCount: number
   championshipCount: number
 }
 
+type SeriesPanel = 'identity' | 'aliases' | 'classes' | 'formats' | 'years'
+
 export default function SeriesPage() {
   const [series, setSeries] = useState<Series[]>([])
-  const [name, setName] = useState('')
-  const [abbreviation, setAbbreviation] = useState('')
-  const [aliasDrafts, setAliasDrafts] = useState<Record<number, string>>({})
-  const [expanded, setExpanded] = useState<number | null>(null)
-  const [formatsExpanded, setFormatsExpanded] = useState<number | null>(null)
-  const [classNamesExpanded, setClassNamesExpanded] = useState<number | null>(null)
+  const [seasons, setSeasons] = useState<SeasonSummary[]>([])
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  async function loadSeries() {
+  async function load() {
     try {
-      const res = await fetch('/api/series')
-      if (!res.ok) throw new Error(`Backend returned ${res.status}`)
-      setSeries(await res.json())
+      const [seriesRes, seasonsRes] = await Promise.all([fetch('/api/series'), fetch('/api/seasons')])
+      if (!seriesRes.ok) throw new Error(`Backend returned ${seriesRes.status}`)
+      if (!seasonsRes.ok) throw new Error(`Backend returned ${seasonsRes.status}`)
+      setSeries(await seriesRes.json())
+      setSeasons(await seasonsRes.json())
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to reach backend')
@@ -71,239 +73,281 @@ export default function SeriesPage() {
   }
 
   useEffect(() => {
-    void loadSeries()
+    void load()
   }, [])
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    const res = await fetch('/api/series', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, abbreviation: abbreviation || null }),
-    })
-    if (res.status === 409) {
-      setError('A series with that name already exists')
-      return
-    }
-    if (!res.ok) {
-      setError(`Backend returned ${res.status}`)
-      return
-    }
-    setError(null)
-    setName('')
-    setAbbreviation('')
-    await loadSeries()
-  }
-
-  async function uploadLogo(id: number, file: File) {
-    const form = new FormData()
-    form.append('file', file)
-    const res = await fetch(`/api/series/${id}/logo`, { method: 'POST', body: form })
-    if (!res.ok) {
-      const body = await res.json().catch(() => null)
-      setError(body?.message ?? `Logo upload failed (${res.status})`)
-      return
-    }
-    setError(null)
-    await loadSeries()
-  }
-
-  async function removeLogo(id: number) {
-    const res = await fetch(`/api/series/${id}/logo`, { method: 'DELETE' })
-    if (!res.ok && res.status !== 404) {
-      setError(`Backend returned ${res.status}`)
-      return
-    }
-    setError(null)
-    await loadSeries()
-  }
-
-  async function addAlias(id: number) {
-    const alias = (aliasDrafts[id] ?? '').trim()
-    if (!alias) return
-    const res = await fetch(`/api/series/${id}/aliases`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ alias }),
-    })
-    if (res.status === 409) {
-      setError('That alias already exists')
-      return
-    }
-    if (!res.ok) {
-      setError(`Backend returned ${res.status}`)
-      return
-    }
-    setError(null)
-    setAliasDrafts((d) => ({ ...d, [id]: '' }))
-    await loadSeries()
-  }
+  const selected = series.find((item) => item.id === selectedId) ?? null
 
   return (
-    <section>
-      <form onSubmit={handleSubmit} className="series-form">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Series name (e.g. IMSA WeatherTech SportsCar Championship)"
-          required
-        />
-        <input
-          value={abbreviation}
-          onChange={(e) => setAbbreviation(e.target.value)}
-          placeholder="Abbreviation (e.g. IMSA)"
-        />
-        <button type="submit">Add series</button>
-      </form>
+    <section className="series-manager">
+      <div className="series-manager-header">
+        <div>
+          <h1>Series</h1>
+          <p>Select a series to manage its identity, classes, formats and imported years.</p>
+        </div>
+        <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>
+          Add series
+        </button>
+      </div>
 
-      <p>
-        Aliases map standings titles to a series when a championship publishes under its own name —
-        e.g. alias <em>IMSA Michelin Endurance Cup</em> on the IMSA series. Class colours set the
-        header colour and order each class appears in on the sheet. Class names rename a class
-        everywhere and keep future imports mapped, for sources that spell one class differently —
-        e.g. iRacing&apos;s <em>[L] Porsche 911</em> vs <em>Hosted All Cars</em>.
-      </p>
-
-      {error && <p className="error">{error}</p>}
+      {error && <p className="error-panel">{error}</p>}
 
       {loading ? (
-        <p>Loading…</p>
+        <div className="series-directory" aria-label="Loading series">
+          {[0, 1, 2].map((key) => <div key={key} className="series-row-skeleton skeleton" />)}
+        </div>
       ) : series.length === 0 ? (
-        <p>No series yet. Add the first one above.</p>
+        <div className="empty-state">
+          <h2>No series yet</h2>
+          <p>Add the first championship series to begin importing event data.</p>
+          <button type="button" onClick={() => setCreating(true)}>Add series</button>
+        </div>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Logo</th>
-              <th>Name</th>
-              <th>Abbreviation</th>
-              <th>Aliases</th>
-              <th>Class colours</th>
-              <th>Class names</th>
-              <th>Race formats</th>
-            </tr>
-          </thead>
-          <tbody>
-            {series.map((s) => (
-              <tr key={s.id}>
-                <td>
-                  <div className="series-logo-cell">
-                    {s.logoVersion != null ? (
-                      <img
-                        className="series-logo-thumb"
-                        src={`/api/series/${s.id}/logo/data?v=${s.logoVersion}`}
-                        alt={`${s.name} logo`}
-                      />
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                    <div className="series-logo-actions">
-                      <label className="series-logo-upload">
-                        {s.logoVersion != null ? 'Replace' : 'Upload'}
-                        <input
-                          type="file"
-                          accept="image/*,.svg"
-                          onChange={(e) =>
-                            e.target.files?.[0] && void uploadLogo(s.id, e.target.files[0])
-                          }
-                        />
-                      </label>
-                      {s.logoVersion != null && (
-                        <button type="button" onClick={() => void removeLogo(s.id)}>
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </td>
-                <td>{s.name}</td>
-                <td>{s.abbreviation ?? '—'}</td>
-                <td>
-                  {s.aliases.length > 0 && (
-                    <div>
-                      {s.aliases.map((a) => (
-                        <div key={a}>{a}</div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="alias-form">
-                    <input
-                      value={aliasDrafts[s.id] ?? ''}
-                      onChange={(e) => setAliasDrafts((d) => ({ ...d, [s.id]: e.target.value }))}
-                      placeholder="Add alias…"
-                    />
-                    <button type="button" onClick={() => addAlias(s.id)}>
-                      Add
-                    </button>
-                  </div>
-                </td>
-                <td>
-                  {expanded === s.id ? (
-                    <ClassStyleEditor seriesId={s.id} onError={setError} />
+        <div className="series-directory">
+          {series.map((item) => {
+            const years = seasons.filter((season) => season.seriesId === item.id)
+            return (
+              <button
+                type="button"
+                className="series-directory-row"
+                key={item.id}
+                onClick={() => setSelectedId(item.id)}
+                aria-label={`Manage ${item.name}`}
+              >
+                <span className="series-directory-mark" aria-hidden="true">
+                  {item.logoVersion != null ? (
+                    <img src={`/api/series/${item.id}/logo/data?v=${item.logoVersion}`} alt="" />
                   ) : (
-                    <button type="button" onClick={() => setExpanded(s.id)}>
-                      Edit…
-                    </button>
+                    <span>{seriesInitials(item)}</span>
                   )}
-                </td>
-                <td>
-                  {classNamesExpanded === s.id ? (
-                    <ClassAliasEditor seriesId={s.id} onError={setError} />
-                  ) : (
-                    <button type="button" onClick={() => setClassNamesExpanded(s.id)}>
-                      Edit…
-                    </button>
-                  )}
-                </td>
-                <td>
-                  {formatsExpanded === s.id ? (
-                    <RaceFormatEditor seriesId={s.id} onError={setError} />
-                  ) : (
-                    <button type="button" onClick={() => setFormatsExpanded(s.id)}>
-                      Edit…
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </span>
+                <span className="series-directory-identity">
+                  <strong>{item.name}</strong>
+                  {item.abbreviation && <span>{item.abbreviation}</span>}
+                </span>
+                <span className="series-directory-years">
+                  {years.length > 0 ? years.map((season) => (
+                    <span className="series-year" key={season.id}>{season.year}</span>
+                  )) : <span className="muted">No championship years</span>}
+                </span>
+                <span className="series-directory-arrow" aria-hidden="true">›</span>
+              </button>
+            )
+          })}
+        </div>
       )}
 
-      <SeasonDataSection onError={setError} />
+      {selected && (
+        <SeriesManagementDialog
+          series={selected}
+          seasons={seasons.filter((season) => season.seriesId === selected.id)}
+          onClose={() => setSelectedId(null)}
+          onRefresh={load}
+        />
+      )}
+      {creating && <AddSeriesDialog onClose={() => setCreating(false)} onCreated={load} />}
     </section>
   )
 }
 
-/**
- * Deleting a year's imported data exists for one reason: a botched or stale
- * import that should be redone from scratch. The wipe removes what the
- * importers created (rounds and championships); the season row, car images and
- * series settings stay, and reimporting reattaches to the same season.
- */
-function SeasonDataSection({ onError }: { onError: (message: string | null) => void }) {
-  const [seasons, setSeasons] = useState<SeasonSummary[]>([])
+function seriesInitials(series: Series) {
+  if (series.abbreviation?.trim()) return series.abbreviation.trim().slice(0, 4).toUpperCase()
+  return series.name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join('').toUpperCase()
+}
+
+function SeriesManagementDialog({
+  series,
+  seasons,
+  onClose,
+  onRefresh,
+}: {
+  series: Series
+  seasons: SeasonSummary[]
+  onClose: () => void
+  onRefresh: () => Promise<void>
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const [panel, setPanel] = useState<SeriesPanel>('identity')
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (dialog && !dialog.open) dialog.showModal()
+  }, [])
+
+  const panels: Array<{ id: SeriesPanel; label: string }> = [
+    { id: 'identity', label: 'Identity' },
+    { id: 'aliases', label: 'Aliases' },
+    { id: 'classes', label: 'Classes' },
+    { id: 'formats', label: 'Race formats' },
+    { id: 'years', label: 'Years' },
+  ]
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="series-management-dialog"
+      aria-labelledby="series-dialog-title"
+      onCancel={(event) => { event.preventDefault(); onClose() }}
+      onClick={(event) => { if (event.target === dialogRef.current) onClose() }}
+    >
+      <div className="series-dialog-shell">
+        <header className="series-dialog-header">
+          <div className="series-dialog-title">
+            <span className="series-dialog-mark" aria-hidden="true">
+              {series.logoVersion != null ? (
+                <img src={`/api/series/${series.id}/logo/data?v=${series.logoVersion}`} alt="" />
+              ) : <span>{seriesInitials(series)}</span>}
+            </span>
+            <div>
+              <h2 id="series-dialog-title">{series.name}</h2>
+              <p>Series settings</p>
+            </div>
+          </div>
+          <button type="button" className="series-dialog-close" onClick={onClose} aria-label="Close series settings">×</button>
+        </header>
+
+        <div className="series-dialog-layout">
+          <nav className="series-dialog-nav" aria-label="Series settings sections">
+            {panels.map((item) => (
+              <button
+                type="button"
+                key={item.id}
+                className={panel === item.id ? 'active' : ''}
+                aria-current={panel === item.id ? 'page' : undefined}
+                onClick={() => { setPanel(item.id); setError(null) }}
+              >{item.label}</button>
+            ))}
+          </nav>
+          <div className="series-dialog-content">
+            {error && <p className="error-panel">{error}</p>}
+            {panel === 'identity' && (
+              <SeriesIdentityEditor series={series} onError={setError} onRefresh={onRefresh} />
+            )}
+            {panel === 'aliases' && (
+              <SeriesAliasEditor series={series} onError={setError} onRefresh={onRefresh} />
+            )}
+            {panel === 'classes' && (
+              <div className="series-settings-stack">
+                <SettingsSection title="Class colours" description="Set the display colour and order used across sheets and season pages.">
+                  <ClassStyleEditor seriesId={series.id} onError={setError} />
+                </SettingsSection>
+                <SettingsSection title="Class names" description="Map source spellings and rename a class across every imported season.">
+                  <ClassAliasEditor seriesId={series.id} onError={setError} />
+                </SettingsSection>
+              </div>
+            )}
+            {panel === 'formats' && (
+              <SettingsSection title="Race formats" description="Control the stat buckets used for sprint, heat and feature sessions.">
+                <RaceFormatEditor seriesId={series.id} onError={setError} />
+              </SettingsSection>
+            )}
+            {panel === 'years' && (
+              <SeasonDataEditor seasons={seasons} onError={setError} onRefresh={onRefresh} />
+            )}
+          </div>
+        </div>
+      </div>
+    </dialog>
+  )
+}
+
+function SettingsSection({ title, description, children }: { title: string; description: string; children: ReactNode }) {
+  return <section className="series-settings-section"><h3>{title}</h3><p>{description}</p>{children}</section>
+}
+
+function SeriesIdentityEditor({ series, onError, onRefresh }: {
+  series: Series
+  onError: (message: string | null) => void
+  onRefresh: () => Promise<void>
+}) {
+  const [name, setName] = useState(series.name)
+  const [abbreviation, setAbbreviation] = useState(series.abbreviation ?? '')
+  const [saving, setSaving] = useState(false)
+
+  async function save(event: FormEvent) {
+    event.preventDefault()
+    setSaving(true)
+    try {
+      const response = await fetch(`/api/series/${series.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), abbreviation: abbreviation.trim() || null }),
+      })
+      if (!response.ok) {
+        const body = await response.json().catch(() => null)
+        onError(body?.message ?? (response.status === 409 ? 'A series with that name already exists' : `Backend returned ${response.status}`))
+        return
+      }
+      onError(null)
+      await onRefresh()
+    } finally { setSaving(false) }
+  }
+
+  async function uploadLogo(file: File) {
+    const form = new FormData(); form.append('file', file)
+    const response = await fetch(`/api/series/${series.id}/logo`, { method: 'POST', body: form })
+    if (!response.ok) {
+      const body = await response.json().catch(() => null)
+      onError(body?.message ?? `Logo upload failed (${response.status})`); return
+    }
+    onError(null); await onRefresh()
+  }
+
+  async function removeLogo() {
+    const response = await fetch(`/api/series/${series.id}/logo`, { method: 'DELETE' })
+    if (!response.ok && response.status !== 404) { onError(`Backend returned ${response.status}`); return }
+    onError(null); await onRefresh()
+  }
+
+  return (
+    <SettingsSection title="Identity" description="Used throughout navigation, imports and broadcast sheets.">
+      <form className="series-identity-form" onSubmit={save}>
+        <label><span>Name</span><input value={name} onChange={(e) => setName(e.target.value)} required /></label>
+        <label><span>Abbreviation</span><input value={abbreviation} onChange={(e) => setAbbreviation(e.target.value)} placeholder="e.g. IMSA" /></label>
+        <div className="series-logo-field">
+          <span>Series image</span>
+          <div className="series-logo-preview">
+            {series.logoVersion != null ? <img src={`/api/series/${series.id}/logo/data?v=${series.logoVersion}`} alt={`${series.name} logo`} /> : <span className="muted">No image uploaded</span>}
+          </div>
+          <div className="series-logo-actions">
+            <label className="series-logo-upload">{series.logoVersion != null ? 'Replace image' : 'Upload image'}<input type="file" accept="image/*,.svg" onChange={(e) => e.target.files?.[0] && void uploadLogo(e.target.files[0])} /></label>
+            {series.logoVersion != null && <button type="button" onClick={() => void removeLogo()}>Remove</button>}
+          </div>
+        </div>
+        <div className="series-form-actions"><button className="btn btn-primary" type="submit" disabled={saving || !name.trim()}>{saving ? 'Saving…' : 'Save changes'}</button></div>
+      </form>
+    </SettingsSection>
+  )
+}
+
+function SeriesAliasEditor({ series, onError, onRefresh }: {
+  series: Series
+  onError: (message: string | null) => void
+  onRefresh: () => Promise<void>
+}) {
+  const [draft, setDraft] = useState('')
+  async function addAlias(event: FormEvent) {
+    event.preventDefault(); const alias = draft.trim(); if (!alias) return
+    const response = await fetch(`/api/series/${series.id}/aliases`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alias }) })
+    if (!response.ok) { onError(response.status === 409 ? 'That alias already exists' : `Backend returned ${response.status}`); return }
+    setDraft(''); onError(null); await onRefresh()
+  }
+  return (
+    <SettingsSection title="Series aliases" description="Match championship titles that publish under a different series name.">
+      {series.aliases.length > 0 ? <ul className="series-alias-list">{series.aliases.map((alias) => <li key={alias}>{alias}</li>)}</ul> : <p className="muted">No aliases yet.</p>}
+      <form className="series-alias-form" onSubmit={addAlias}><input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="e.g. IMSA Michelin Endurance Cup" aria-label="New series alias" /><button type="submit" disabled={!draft.trim()}>Add alias</button></form>
+    </SettingsSection>
+  )
+}
+
+function SeasonDataEditor({ seasons, onError, onRefresh }: {
+  seasons: SeasonSummary[]
+  onError: (message: string | null) => void
+  onRefresh: () => Promise<void>
+}) {
   const [confirming, setConfirming] = useState<SeasonSummary | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [note, setNote] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  async function load() {
-    try {
-      const res = await fetch('/api/seasons')
-      if (!res.ok) throw new Error(`Backend returned ${res.status}`)
-      setSeasons(await res.json())
-    } catch (e) {
-      onError(e instanceof Error ? e.message : 'Failed to reach backend')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    void load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   async function deleteData(s: SeasonSummary) {
     setDeleting(true)
@@ -321,7 +365,7 @@ function SeasonDataSection({ onError }: { onError: (message: string | null) => v
           `${r.championshipsDeleted} championship${r.championshipsDeleted === 1 ? '' : 's'} ` +
           `for ${s.seriesName} ${s.year}. The year is ready to reimport.`,
       )
-      await load()
+      await onRefresh()
     } finally {
       setDeleting(false)
       setConfirming(null)
@@ -329,23 +373,19 @@ function SeasonDataSection({ onError }: { onError: (message: string | null) => v
   }
 
   return (
-    <div className="season-data">
-      <h2>Championship years</h2>
+    <SettingsSection title="Championship years" description="Review imported seasons or clear a year before reimporting it from scratch.">
       <p>
-        Delete a year's imported data — rounds, results, grids, flags, entry lists and standings —
-        to reimport it from scratch. Car images and series settings are kept.
+        Deleting a year removes its rounds, results, grids, flags, entry lists and standings. Car
+        images and series settings are kept.
       </p>
       {note && <p className="season-data-note">{note}</p>}
-      {loading ? (
-        <p>Loading…</p>
-      ) : seasons.length === 0 ? (
+      {seasons.length === 0 ? (
         <p className="muted">No imported data yet.</p>
       ) : (
-        <table>
+        <table className="series-years-table">
           <thead>
             <tr>
               <th>Year</th>
-              <th>Series</th>
               <th>Rounds</th>
               <th>Championships</th>
               <th></th>
@@ -355,7 +395,6 @@ function SeasonDataSection({ onError }: { onError: (message: string | null) => v
             {seasons.map((s) => (
               <tr key={s.id}>
                 <td>{s.year}</td>
-                <td>{s.seriesName}</td>
                 <td>{s.roundCount}</td>
                 <td>{s.championshipCount}</td>
                 <td>
@@ -377,7 +416,33 @@ function SeasonDataSection({ onError }: { onError: (message: string | null) => v
           onCancel={() => setConfirming(null)}
         />
       )}
-    </div>
+    </SettingsSection>
+  )
+}
+
+function AddSeriesDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => Promise<void> }) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const [name, setName] = useState('')
+  const [abbreviation, setAbbreviation] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => { const dialog = dialogRef.current; if (dialog && !dialog.open) dialog.showModal() }, [])
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    const response = await fetch('/api/series', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), abbreviation: abbreviation.trim() || null }) })
+    if (!response.ok) { setError(response.status === 409 ? 'A series with that name already exists' : `Backend returned ${response.status}`); return }
+    await onCreated(); onClose()
+  }
+  return (
+    <dialog ref={dialogRef} className="confirm-dialog add-series-dialog" aria-labelledby="add-series-title" onCancel={(event) => { event.preventDefault(); onClose() }} onClick={(event) => { if (event.target === dialogRef.current) onClose() }}>
+      <h2 id="add-series-title">Add series</h2>
+      <p>Create the series first, then open it to add its image, aliases and class settings.</p>
+      {error && <p className="error-panel">{error}</p>}
+      <form className="add-series-form" onSubmit={submit}>
+        <label><span>Name</span><input value={name} onChange={(e) => setName(e.target.value)} autoFocus required /></label>
+        <label><span>Abbreviation</span><input value={abbreviation} onChange={(e) => setAbbreviation(e.target.value)} placeholder="Optional" /></label>
+        <div className="confirm-dialog-actions"><button type="button" onClick={onClose}>Cancel</button><button type="submit" className="btn btn-primary" disabled={!name.trim()}>Add series</button></div>
+      </form>
+    </dialog>
   )
 }
 

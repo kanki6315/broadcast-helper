@@ -44,6 +44,11 @@ public class Series {
         return abbreviation;
     }
 
+    public void updateIdentity(String name, String abbreviation) {
+        this.name = name;
+        this.abbreviation = abbreviation;
+    }
+
     public OffsetDateTime getCreatedAt() {
         return createdAt;
     }
