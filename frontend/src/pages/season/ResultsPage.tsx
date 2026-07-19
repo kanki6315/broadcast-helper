@@ -446,7 +446,7 @@ function ResultsTable({ session }: { session: SessionResults }) {
     return (
       <div className="empty-state">
         {session.results.length === 0
-          ? 'Nothing imported for this session yet — import a results file from the Imports tab.'
+          ? 'Nothing imported for this session yet — import a results file from Manage → Imports.'
           : `No ${classFilter} cars in this session.`}
       </div>
     )
@@ -624,7 +624,7 @@ export default function ResultsPage() {
   if (rounds.length === 0) {
     return (
       <div className="empty-state">
-        No session results yet — import a results or grid file from the Imports tab.
+        No session results yet — import a results or grid file from Manage → Imports.
       </div>
     )
   }

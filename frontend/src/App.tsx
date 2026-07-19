@@ -1,6 +1,7 @@
-import { HashRouter, Routes, Route, useParams } from 'react-router-dom'
+import { HashRouter, Navigate, Routes, Route, useParams } from 'react-router-dom'
 import './App.css'
 import Layout from './components/Layout'
+import ManageLayout from './components/ManageLayout'
 import InfoModalProvider from './components/InfoModalProvider'
 import SeriesDirectoryPage from './pages/SeriesDirectoryPage'
 import SeasonLayout from './pages/season/SeasonLayout'
@@ -43,9 +44,15 @@ export default function App() {
               <Route path="photos" element={<PhotosPage />} />
             </Route>
             <Route path="/events/:eventId" element={<EventDetailPage />} />
-            <Route path="/imports" element={<ImportsPage />} />
-            <Route path="/logos" element={<LogosPage />} />
-            <Route path="/series" element={<SeriesPage />} />
+            <Route path="/manage" element={<ManageLayout />}>
+              <Route index element={<Navigate to="series" replace />} />
+              <Route path="series" element={<SeriesPage />} />
+              <Route path="imports" element={<ImportsPage />} />
+              <Route path="logos" element={<LogosPage />} />
+            </Route>
+            <Route path="/imports" element={<Navigate to="/manage/imports" replace />} />
+            <Route path="/logos" element={<Navigate to="/manage/logos" replace />} />
+            <Route path="/series" element={<Navigate to="/manage/series" replace />} />
           </Route>
         </Routes>
       </InfoModalProvider>

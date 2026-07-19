@@ -125,7 +125,7 @@ export default function SeriesDirectoryPage() {
   if (groups.length === 0) {
     return (
       <div className="empty-state">
-        No series yet — <Link to="/imports">import</Link> a results, standings, or entry-list file
+        No series yet — <Link to="/manage/imports">import</Link> a results, standings, or entry-list file
         to get started.
       </div>
     )

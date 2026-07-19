@@ -90,6 +90,72 @@
   border-bottom-color: var(--accent);
 }
 
+/* Manage is a permission-ready route group, not another global destination
+ * row. Its child routes use the segmented-control vocabulary so the hierarchy
+ * stays clear without presenting two identical tab bars. */
+.manage-layout {
+  max-width: 1400px;
+  margin-inline: auto;
+}
+
+.manage-section-header {
+  max-width: 1120px;
+  margin: 0 auto var(--space-4);
+}
+
+.manage-section-header h1 {
+  margin: 0;
+  font-size: var(--text-xl);
+}
+
+.manage-section-header p {
+  max-width: 65ch;
+  margin: var(--space-1) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.manage-subnav {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  gap: 2px;
+  margin: 0 auto var(--space-6);
+  padding: 3px;
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  scrollbar-width: none;
+}
+
+.manage-subnav::-webkit-scrollbar {
+  display: none;
+}
+
+.manage-subnav-link {
+  padding: 5px 12px;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+.manage-subnav-link:hover {
+  color: var(--ink);
+}
+
+.manage-subnav-link.active {
+  color: var(--ink);
+  background: var(--bg);
+  box-shadow: var(--shadow-raise);
+}
+
 /* -- buttons ------------------------------------------------------------------ */
 
 .btn,
@@ -433,9 +499,20 @@ h2 small {
   margin-bottom: var(--space-5);
 }
 
-.series-manager-header h1 {
+.series-manager-header h2 {
   margin: 0;
-  font-size: var(--text-xl);
+  font-size: var(--text-lg);
+}
+
+.imports-page > h2,
+.logos-page > h2 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-lg);
+}
+
+.logos-page {
+  max-width: 1120px;
+  margin-inline: auto;
 }
 
 .series-manager-header p {

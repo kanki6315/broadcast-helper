@@ -5,9 +5,7 @@ import SearchPalette, { SearchIcon, isMacLike } from './SearchPalette'
 
 const TABS = [
   { to: '/', label: 'Series', end: true },
-  { to: '/imports', label: 'Imports', end: false },
-  { to: '/logos', label: 'Logos', end: false },
-  { to: '/series', label: 'Manage', end: false },
+  { to: '/manage', label: 'Manage', end: false },
 ]
 
 const THEMES: { value: Theme; label: string; title: string }[] = [

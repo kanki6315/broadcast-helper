@@ -816,7 +816,7 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
     return (
       <div className="empty-state">
         No standings imported yet — bring in a standings file from the{' '}
-        <Link to="/imports">Imports</Link> tab and the season recap builds itself.
+        <Link to="/manage/imports">Imports</Link> under Manage and the season recap builds itself.
       </div>
     )
   }

@@ -82,7 +82,7 @@ export default function SeriesPage() {
     <section className="series-manager">
       <div className="series-manager-header">
         <div>
-          <h1>Series</h1>
+          <h2>Series settings</h2>
           <p>Select a series to manage its identity, classes, formats and imported years.</p>
         </div>
         <button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>

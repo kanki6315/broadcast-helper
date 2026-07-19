@@ -8,7 +8,7 @@ export default function SchedulePage() {
   if (hub.events.length === 0) {
     return (
       <div className="empty-state">
-        No events yet — import a results file or entry list from the Imports tab.
+        No events yet — import a results file or entry list from Manage → Imports.
       </div>
     )
   }

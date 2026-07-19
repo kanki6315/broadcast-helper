@@ -309,7 +309,8 @@ export default function ImportsPage() {
   }
 
   return (
-    <section>
+    <section className="imports-page">
+      <h2>Imports</h2>
       <p>
         Upload results/standings JSON files, an iRacing subsession result, an entry list PDF, or a
         starting-grid CSV. Each file is staged; confirm what it belongs to (series, event or

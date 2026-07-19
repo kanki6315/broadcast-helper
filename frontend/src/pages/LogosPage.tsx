@@ -41,7 +41,8 @@ export default function LogosPage() {
   const missing = rows.filter((r) => r.logoVersion == null).length
 
   return (
-    <section>
+    <section className="logos-page">
+      <h2>Manufacturer logos</h2>
       <p>
         Upload a logo per manufacturer (SVG or PNG recommended). Logos are matched to entries by
         manufacturer name and reused on every sheet, replacing the car-model text. Until a logo is
