@@ -1,5 +1,6 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { useIsAdmin } from '../lib/auth'
 
 interface EventSummary {
   id: number
@@ -90,16 +91,18 @@ function SessionFormatsSection({
   sessions: EventSession[]
   onChanged: () => void
 }) {
+  const isAdmin = useIsAdmin()
   const [formats, setFormats] = useState<RaceFormatOption[]>([])
   const [error, setError] = useState<string | null>(null)
   const races = sessions.filter((s) => s.sessionType === 'RACE')
 
   useEffect(() => {
+    if (!isAdmin) return // the format list only feeds the (admin-only) picker
     void fetch(`/api/series/${seriesId}/race-formats`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Backend returned ${r.status}`))))
       .then((list: (RaceFormatOption & { sessionCount: number })[]) => setFormats(list))
       .catch(() => setFormats([]))
-  }, [seriesId])
+  }, [seriesId, isAdmin])
 
   if (races.length === 0) return null
 
@@ -135,22 +138,26 @@ function SessionFormatsSection({
             <tr key={s.id}>
               <td>{s.name}</td>
               <td>
-                <select
-                  // An AUTO row shows as "Auto (Sprint)" rather than a picked
-                  // value — picking a format is what pins it MANUAL.
-                  value={s.formatSource === 'MANUAL' ? (s.formatId ?? '') : ''}
-                  aria-label={`Format for ${s.name}`}
-                  onChange={(e) =>
-                    void setFormat(s.id, e.target.value === '' ? null : Number(e.target.value))
-                  }
-                >
-                  <option value="">Auto{s.formatName && s.formatSource === 'AUTO' ? ` (${s.formatName})` : ''}</option>
-                  {formats.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.name}
-                    </option>
-                  ))}
-                </select>
+                {isAdmin ? (
+                  <select
+                    // An AUTO row shows as "Auto (Sprint)" rather than a picked
+                    // value — picking a format is what pins it MANUAL.
+                    value={s.formatSource === 'MANUAL' ? (s.formatId ?? '') : ''}
+                    aria-label={`Format for ${s.name}`}
+                    onChange={(e) =>
+                      void setFormat(s.id, e.target.value === '' ? null : Number(e.target.value))
+                    }
+                  >
+                    <option value="">Auto{s.formatName && s.formatSource === 'AUTO' ? ` (${s.formatName})` : ''}</option>
+                    {formats.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  (s.formatName ?? 'Auto')
+                )}
               </td>
               <td>{s.formatSource === 'MANUAL' && <span className="badge">MANUAL</span>}</td>
             </tr>
@@ -256,6 +263,7 @@ export default function EventDetailPage() {
  * missing or the PDF numbers it differently.
  */
 function TeamSheetsSection({ eventId, entries }: { eventId: number; entries: EventEntry[] }) {
+  const isAdmin = useIsAdmin()
   const [sheets, setSheets] = useState<TeamSheets | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -310,6 +318,9 @@ function TeamSheetsSection({ eventId, entries }: { eventId: number; entries: Eve
   const cars = [...new Map(entries.map((e) => [normalizeCar(e.carNumber), e])).values()]
   const unmapped = cars.filter((e) => !pageByCar.has(normalizeCar(e.carNumber)))
 
+  // Viewers with no PDF attached have nothing to see or do here.
+  if (!isAdmin && !sheets) return null
+
   return (
     <div className="team-sheets">
       <h3>Team sheets PDF</h3>
@@ -334,7 +345,7 @@ function TeamSheetsSection({ eventId, entries }: { eventId: number; entries: Eve
               open
             </a>
           </p>
-          {unmapped.length > 0 && (
+          {isAdmin && unmapped.length > 0 && (
             <div>
               <p>Not found in the PDF — set a page manually if the team is in there:</p>
               <ul>
@@ -368,35 +379,43 @@ function TeamSheetsSection({ eventId, entries }: { eventId: number; entries: Eve
                     <td>{p.carNumber}</td>
                     <td>{p.teamName}</td>
                     <td>
-                      <PageInput
-                        key={`${p.carNumber}:${p.page}`}
-                        value={p.page}
-                        max={sheets.pageCount}
-                        disabled={busy}
-                        onSet={(page) => setPage(p.carNumber, page)}
-                      />
+                      {isAdmin ? (
+                        <PageInput
+                          key={`${p.carNumber}:${p.page}`}
+                          value={p.page}
+                          max={sheets.pageCount}
+                          disabled={busy}
+                          onSet={(page) => setPage(p.carNumber, page)}
+                        />
+                      ) : (
+                        p.page
+                      )}
                     </td>
                     <td>
-                      <button onClick={() => setPage(p.carNumber, null)} disabled={busy}>
-                        Clear
-                      </button>
+                      {isAdmin && (
+                        <button onClick={() => setPage(p.carNumber, null)} disabled={busy}>
+                          Clear
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </details>
-          <p>
-            <label>
-              Replace PDF: <input type="file" accept="application/pdf" onChange={upload} disabled={busy} />
-            </label>{' '}
-            <button
-              disabled={busy}
-              onClick={() => void call(`/api/events/${eventId}/team-sheets`, { method: 'DELETE' })}
-            >
-              Remove
-            </button>
-          </p>
+          {isAdmin && (
+            <p>
+              <label>
+                Replace PDF: <input type="file" accept="application/pdf" onChange={upload} disabled={busy} />
+              </label>{' '}
+              <button
+                disabled={busy}
+                onClick={() => void call(`/api/events/${eventId}/team-sheets`, { method: 'DELETE' })}
+              >
+                Remove
+              </button>
+            </p>
+          )}
         </>
       )}
     </div>

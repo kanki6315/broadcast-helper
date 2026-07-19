@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useIsAdmin } from '../lib/auth'
 
 interface ImageSummary {
   id: number
@@ -22,6 +23,7 @@ interface BulkResult {
 
 /** Per-season car-image management, embedded in the season hub. */
 export default function SeasonImages({ seasonId }: { seasonId: number }) {
+  const isAdmin = useIsAdmin()
   const [images, setImages] = useState<ImageSummary[]>([])
   const [missing, setMissing] = useState<MissingCar[]>([])
   const [results, setResults] = useState<BulkResult[]>([])
@@ -92,22 +94,26 @@ export default function SeasonImages({ seasonId }: { seasonId: number }) {
 
   return (
     <div>
-      <p>
-        Bulk-upload car photos named with the car number (e.g. <code>31.png</code>,{' '}
-        <code>2026_023_triarsi.jpg</code>). Images are matched per season, so shared numbers across
-        series never collide, and each image carries over between events until replaced.
-      </p>
+      {isAdmin && (
+        <>
+          <p>
+            Bulk-upload car photos named with the car number (e.g. <code>31.png</code>,{' '}
+            <code>2026_023_triarsi.jpg</code>). Images are matched per season, so shared numbers
+            across series never collide, and each image carries over between events until replaced.
+          </p>
 
-      <div className="series-form">
-        <input
-          ref={fileInput}
-          type="file"
-          accept="image/*"
-          multiple
-          disabled={busy}
-          onChange={(e) => e.target.files && uploadFiles(e.target.files)}
-        />
-      </div>
+          <div className="series-form">
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/*"
+              multiple
+              disabled={busy}
+              onChange={(e) => e.target.files && uploadFiles(e.target.files)}
+            />
+          </div>
+        </>
+      )}
 
       {error && <p className="error">{error}</p>}
 

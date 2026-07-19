@@ -9,6 +9,7 @@ import {
   type NamedFormatLine,
   type QualiLine,
 } from '../lib/api'
+import { useIsAdmin } from '../lib/auth'
 import { flagCode } from '../lib/countries'
 import { formatPoints } from '../pages/season/ChampionshipGrid'
 import { useInfoModal } from './infoModal'
@@ -348,6 +349,7 @@ export default function DriverModal({
   onClose: () => void
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null)
+  const isAdmin = useIsAdmin()
   const { openTeam } = useInfoModal()
   const [profile, setProfile] = useState<DriverProfile | null>(null)
   const [stats, setStats] = useState<DriverStats | null>(null)
@@ -524,9 +526,11 @@ export default function DriverModal({
                   ) : (
                     <p className="dm-quiet">No bio yet.</p>
                   )}
-                  <button type="button" className="btn dm-edit" onClick={() => setEditing(true)}>
-                    {facts.length > 0 || profile.photoVersion != null ? 'Edit bio' : 'Add bio'}
-                  </button>
+                  {isAdmin && (
+                    <button type="button" className="btn dm-edit" onClick={() => setEditing(true)}>
+                      {facts.length > 0 || profile.photoVersion != null ? 'Edit bio' : 'Add bio'}
+                    </button>
+                  )}
                 </div>
               )}
             </section>

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react'
+import { useIsAdmin } from '../lib/auth'
 
 /**
  * The "Broadcast notes" section shared by the driver and team modals:
  * autosaves on blur, exposes a flush through `flushRef` so the host modal can
  * persist a dirty draft when it closes, and retries a failed save on the next
- * flush. `initial` changes re-seed the draft (profile refetch).
+ * flush. `initial` changes re-seed the draft (profile refetch). Viewers see
+ * the notes read-only — the single gate for both host modals.
  */
 export default function NotesSection({
   initial,
@@ -15,6 +17,7 @@ export default function NotesSection({
   save: (text: string) => Promise<void>
   flushRef: MutableRefObject<() => void>
 }) {
+  const isAdmin = useIsAdmin()
   const [notes, setNotes] = useState(initial)
   const stateRef = useRef({ current: initial, saved: initial })
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -67,12 +70,18 @@ export default function NotesSection({
       </div>
       <textarea
         value={notes}
-        placeholder="Pronunciation quirks, storylines, history — anything worth saying on air. Saves automatically."
+        readOnly={!isAdmin}
+        placeholder={
+          isAdmin
+            ? 'Pronunciation quirks, storylines, history — anything worth saying on air. Saves automatically.'
+            : 'No notes yet.'
+        }
         onChange={(e) => {
+          if (!isAdmin) return
           setNotes(e.target.value)
           stateRef.current.current = e.target.value
         }}
-        onBlur={flush}
+        onBlur={isAdmin ? flush : undefined}
       />
     </section>
   )

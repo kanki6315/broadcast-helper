@@ -3,6 +3,7 @@ import './App.css'
 import Layout from './components/Layout'
 import ManageLayout from './components/ManageLayout'
 import InfoModalProvider from './components/InfoModalProvider'
+import { AuthProvider } from './lib/auth'
 import SeriesDirectoryPage from './pages/SeriesDirectoryPage'
 import SeasonLayout from './pages/season/SeasonLayout'
 import HubPage from './pages/season/HubPage'
@@ -27,35 +28,38 @@ function SheetRoute() {
 export default function App() {
   return (
     <HashRouter>
-      {/* Provider sits outside the routes so the info modals open from the
-          app chrome (⌘K) and from the standalone sheet alike. */}
-      <InfoModalProvider>
-        <Routes>
-          <Route path="/sheet/:eventId" element={<SheetRoute />} />
-          <Route element={<Layout />}>
-            <Route path="/" element={<SeriesDirectoryPage />} />
-            <Route path="/seasons/:seasonId" element={<SeasonLayout />}>
-              <Route index element={<HubPage />} />
-              <Route path="schedule" element={<SchedulePage />} />
-              <Route path="standings" element={<StandingsPage />} />
-              <Route path="stats" element={<StatsPage />} />
-              <Route path="results" element={<ResultsPage />} />
-              <Route path="entries" element={<EntriesPage />} />
-              <Route path="photos" element={<PhotosPage />} />
+      {/* Providers sit outside the routes so the info modals open from the
+          app chrome (⌘K) and from the standalone sheet alike — and so both
+          see the same auth state for gating edit controls. */}
+      <AuthProvider>
+        <InfoModalProvider>
+          <Routes>
+            <Route path="/sheet/:eventId" element={<SheetRoute />} />
+            <Route element={<Layout />}>
+              <Route path="/" element={<SeriesDirectoryPage />} />
+              <Route path="/seasons/:seasonId" element={<SeasonLayout />}>
+                <Route index element={<HubPage />} />
+                <Route path="schedule" element={<SchedulePage />} />
+                <Route path="standings" element={<StandingsPage />} />
+                <Route path="stats" element={<StatsPage />} />
+                <Route path="results" element={<ResultsPage />} />
+                <Route path="entries" element={<EntriesPage />} />
+                <Route path="photos" element={<PhotosPage />} />
+              </Route>
+              <Route path="/events/:eventId" element={<EventDetailPage />} />
+              <Route path="/manage" element={<ManageLayout />}>
+                <Route index element={<Navigate to="series" replace />} />
+                <Route path="series" element={<SeriesPage />} />
+                <Route path="imports" element={<ImportsPage />} />
+                <Route path="logos" element={<LogosPage />} />
+              </Route>
+              <Route path="/imports" element={<Navigate to="/manage/imports" replace />} />
+              <Route path="/logos" element={<Navigate to="/manage/logos" replace />} />
+              <Route path="/series" element={<Navigate to="/manage/series" replace />} />
             </Route>
-            <Route path="/events/:eventId" element={<EventDetailPage />} />
-            <Route path="/manage" element={<ManageLayout />}>
-              <Route index element={<Navigate to="series" replace />} />
-              <Route path="series" element={<SeriesPage />} />
-              <Route path="imports" element={<ImportsPage />} />
-              <Route path="logos" element={<LogosPage />} />
-            </Route>
-            <Route path="/imports" element={<Navigate to="/manage/imports" replace />} />
-            <Route path="/logos" element={<Navigate to="/manage/logos" replace />} />
-            <Route path="/series" element={<Navigate to="/manage/series" replace />} />
-          </Route>
-        </Routes>
-      </InfoModalProvider>
+          </Routes>
+        </InfoModalProvider>
+      </AuthProvider>
     </HashRouter>
   )
 }

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
+import { useMe } from '../lib/auth'
 import { getTheme, setTheme, type Theme } from '../lib/theme'
 import SearchPalette, { SearchIcon, isMacLike } from './SearchPalette'
 
 const TABS = [
   { to: '/', label: 'Series', end: true },
-  { to: '/manage', label: 'Manage', end: false },
+  { to: '/manage', label: 'Manage', end: false, adminOnly: true },
 ]
 
 const THEMES: { value: Theme; label: string; title: string }[] = [
@@ -13,11 +14,6 @@ const THEMES: { value: Theme; label: string; title: string }[] = [
   { value: 'light', label: 'Light', title: 'Force light theme' },
   { value: 'dark', label: 'Dark', title: 'Force dark theme' },
 ]
-
-interface Me {
-  authEnabled: boolean
-  email: string | null
-}
 
 function ThemeToggle() {
   const [theme, setThemeState] = useState<Theme>(() => getTheme())
@@ -46,7 +42,7 @@ function ThemeToggle() {
 }
 
 export default function Layout() {
-  const [me, setMe] = useState<Me | null>(null)
+  const me = useMe()
   const [searchOpen, setSearchOpen] = useState(false)
   const authError = new URLSearchParams(window.location.search).get('authError')
 
@@ -61,13 +57,6 @@ export default function Layout() {
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [])
-
-  useEffect(() => {
-    void fetch('/api/me')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then(setMe)
-      .catch(() => setMe({ authEnabled: false, email: null }))
   }, [])
 
   function login() {
@@ -135,7 +124,7 @@ export default function Layout() {
         </div>
       </div>
       <nav className="tabs">
-        {TABS.map((t) => (
+        {TABS.filter((t) => !t.adminOnly || me.isAdmin).map((t) => (
           <NavLink
             key={t.to}
             to={t.to}

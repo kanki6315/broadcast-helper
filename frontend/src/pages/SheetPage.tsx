@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react'
 import 'flag-icons/css/flag-icons.min.css'
 import './sheet.css'
+import { useIsAdmin } from '../lib/auth'
 import { flagCode } from '../lib/countries'
 import { finishText, finishTier, statusAbbr, type FormRace } from '../lib/raceForm'
 import TeamSheetsModal, { prefetchTeamSheets } from '../components/TeamSheetsModal'
@@ -97,6 +98,7 @@ function StripRace({ race, showLabel }: { race: FormRace; showLabel: boolean }) 
 
 export default function SheetPage({ eventId }: { eventId: number }) {
   const { openDriverByName } = useInfoModal()
+  const isAdmin = useIsAdmin()
   const [sheet, setSheet] = useState<Sheet | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [teamSheet, setTeamSheet] = useState<{ page: number; title: string } | null>(null)
@@ -313,12 +315,25 @@ export default function SheetPage({ eventId }: { eventId: number }) {
                           {e.startingDriver && <span className="q-driver">{e.startingDriver}</span>}
                         </td>
                         <td
-                          className={e.priorYearAuto ? 'col-prior editable prior-auto' : 'col-prior editable'}
-                          title={e.priorYearAuto ? 'Auto from last year (same car & team) — click to override' : undefined}
-                          contentEditable
+                          className={
+                            !isAdmin
+                              ? 'col-prior'
+                              : e.priorYearAuto
+                                ? 'col-prior editable prior-auto'
+                                : 'col-prior editable'
+                          }
+                          title={
+                            isAdmin && e.priorYearAuto
+                              ? 'Auto from last year (same car & team) — click to override'
+                              : undefined
+                          }
+                          contentEditable={isAdmin}
                           suppressContentEditableWarning
-                          onBlur={(ev) =>
-                            saveNote(e.entryId, ev.currentTarget.textContent ?? '', e.priorYearNote ?? '')
+                          onBlur={
+                            isAdmin
+                              ? (ev) =>
+                                  saveNote(e.entryId, ev.currentTarget.textContent ?? '', e.priorYearNote ?? '')
+                              : undefined
                           }
                         >
                           {e.priorYearNote}
