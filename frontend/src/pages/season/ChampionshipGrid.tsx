@@ -324,7 +324,23 @@ function PointsLegend({ f }: { f: PtsLegendFlags }) {
   )
 }
 
-function RecapLegend({ tags }: { tags: Map<string, string> }) {
+/** Whether the chips on screen are in-class positions, whole-field positions
+ *  (overall championships), or a mix of grids showing each. */
+type PosScope = 'class' | 'overall' | 'mixed'
+
+function posScopeOf(recaps: Recap[]): PosScope {
+  if (recaps.every((r) => r.championship.isOverall)) return 'overall'
+  if (recaps.every((r) => !r.championship.isOverall)) return 'class'
+  return 'mixed'
+}
+
+const POS_SCOPE_NOTE: Record<PosScope, string> = {
+  class: 'start/finish in class',
+  overall: 'start/finish overall',
+  mixed: 'start/finish in class · overall standings: whole field',
+}
+
+function RecapLegend({ tags, scope }: { tags: Map<string, string>; scope: PosScope }) {
   return (
     <div className="legend" aria-label="Cell colours">
       <span className="l-win">
@@ -339,7 +355,7 @@ function RecapLegend({ tags }: { tags: Map<string, string> }) {
       <span className="l-dnf">
         <i /> DNF
       </span>
-      <span className="l-note">start/finish in class</span>
+      <span className="l-note">{POS_SCOPE_NOTE[scope]}</span>
       {/* The race tags come first: they read left-to-right before the chip,
        * and "C = consolation" is not guessable. Listed only where a round
        * actually ran more than one race. */}
@@ -806,6 +822,7 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
   const [searchParams, setSearchParams] = useSearchParams()
   const [ptsFlags, setPtsFlags] = useState<PtsLegendFlags | null>(null)
   const [raceTags, setRaceTags] = useState<Map<string, string>>(new Map())
+  const [posScope, setPosScope] = useState<PosScope>('class')
 
   // Like every other selection on this page, the view lives in the URL so a
   // filtered board stays bookmarkable and survives sub-page navigation.
@@ -843,11 +860,13 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
         if (cancelled) return
         setPtsFlags(mode === 'points' ? ptsLegendFlags(recaps) : null)
         setRaceTags(mode === 'recap' ? raceLegendTags(recaps) : new Map())
+        setPosScope(posScopeOf(recaps))
       })
       .catch(() => {
         if (cancelled) return
         setPtsFlags(null)
         setRaceTags(new Map())
+        setPosScope('class')
       })
     return () => {
       cancelled = true
@@ -873,7 +892,7 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
         view={mode === 'points' && ptsFlags ? { view, setView } : null}
         legend={
           mode === 'recap' ? (
-            <RecapLegend tags={raceTags} />
+            <RecapLegend tags={raceTags} scope={posScope} />
           ) : ptsFlags && view === 'breakdown' ? (
             <PointsLegend f={ptsFlags} />
           ) : null
