@@ -132,6 +132,13 @@ before. And because a psql edit to `app_user` needs a restart to be picked up
 made outside the Users page is neither cached nor session-purged — always change
 users through the UI.
 
+Admins can see who's signed in and revoke sessions at **Manage → Sessions** —
+per session, or "sign out everywhere" for one email. Revoking forces a re-login;
+it does **not** remove access (that's removing them from Users). Sessions created
+before this feature shipped show the raw Google `sub` instead of an email until
+those users next sign in; `TRUNCATE spring_session` clears them if that matters
+(the production table is near-empty pre-launch anyway).
+
 > Enabling auth requires the Google client id/secret to be present, or startup
 > fails. Set all three vars together.
 
