@@ -1524,11 +1524,18 @@ public class ImportService {
         long groupId = findOrCreateChampionshipGroup(seasonId, family, kind, isCup);
 
         // Replace this championship wholesale (cascade removes sessions/rows/points).
+        // is_overall survives the replace: it is set by hand (or by the no-class
+        // rule) after import, and a routine standings refresh must not silently
+        // turn an overall championship back into a class one.
+        boolean isOverall = className == null || className.isBlank()
+                || db.sql("SELECT is_overall FROM championship WHERE season_id = :seasonId AND name = :name")
+                        .param("seasonId", seasonId).param("name", imp.name())
+                        .query(Boolean.class).optional().orElse(false);
         db.sql("DELETE FROM championship WHERE season_id = :seasonId AND name = :name")
                 .param("seasonId", seasonId).param("name", imp.name()).update();
         long championshipId = db.sql("""
-                        INSERT INTO championship (season_id, group_id, name, title, class_name)
-                        VALUES (:seasonId, :groupId, :name, :title, :className)
+                        INSERT INTO championship (season_id, group_id, name, title, class_name, is_overall)
+                        VALUES (:seasonId, :groupId, :name, :title, :className, :isOverall)
                         RETURNING id
                         """)
                 .param("seasonId", seasonId)
@@ -1536,6 +1543,7 @@ public class ImportService {
                 .param("name", imp.name())
                 .param("title", imp.mainTitle())
                 .param("className", className)
+                .param("isOverall", isOverall)
                 .query(Long.class)
                 .single();
 
