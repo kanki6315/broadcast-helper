@@ -151,6 +151,39 @@ class AppUserControllerTest {
     }
 
     @Test
+    void creatingAUserClearsTheirDeniedRecord() {
+        clearUsers();
+        db.sql("DELETE FROM denied_login").update();
+        db.sql("INSERT INTO denied_login (email, attempt_count) VALUES ('waiting@example.test', 3)").update();
+
+        controller.create(new CreateRequest("WAITING@Example.TEST", "VIEWER"));
+        assertTrue(controller.denied().isEmpty());
+    }
+
+    @Test
+    void deniedListIsNewestFirst() {
+        db.sql("DELETE FROM denied_login").update();
+        db.sql("""
+                INSERT INTO denied_login (email, last_attempt_at) VALUES
+                ('old@example.test', now() - interval '2 hours'),
+                ('new@example.test', now() - interval '1 hour')
+                """).update();
+
+        assertEquals(List.of("new@example.test", "old@example.test"),
+                controller.denied().stream().map(DeniedLogins.DeniedLogin::email).toList());
+    }
+
+    @Test
+    void dismissDeniedIs204Then404() {
+        db.sql("DELETE FROM denied_login").update();
+        db.sql("INSERT INTO denied_login (email) VALUES ('drop@example.test')").update();
+        long id = controller.denied().get(0).id();
+
+        controller.dismissDenied(id);
+        assertStatus(HttpStatus.NOT_FOUND, () -> controller.dismissDenied(id));
+    }
+
+    @Test
     void unknownIdIsNotFound() {
         assertStatus(HttpStatus.NOT_FOUND,
                 () -> controller.setRole(999_999_999L, new RoleRequest("VIEWER"), null));

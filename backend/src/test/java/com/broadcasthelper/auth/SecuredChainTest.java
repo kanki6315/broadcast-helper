@@ -99,6 +99,16 @@ class SecuredChainTest {
     }
 
     @Test
+    void rosterAndDeniedListsAreAdminOnlyEvenForReads() throws Exception {
+        mvc.perform(get("/api/users").with(signedInAs(VIEWER)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/users/denied").with(signedInAs(VIEWER)))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/users").with(signedInAs(ADMIN)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void adminCanWrite() throws Exception {
         // 400 not 401/403: authorization passed, the controller rejected the
         // empty body — which is all this test is about.

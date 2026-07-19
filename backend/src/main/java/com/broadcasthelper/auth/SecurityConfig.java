@@ -24,9 +24,11 @@ import org.springframework.security.web.authentication.HttpStatusEntryPoint;
  * except {@code /api/me} (the SPA polls it to learn auth state) and leaves the
  * static bundle open so the app shell can load and drive the login redirect.
  * Authorization is decided per request by {@link LiveAuthorization} — reads for
- * any listed email, writes for admins — so membership changes apply immediately
- * instead of when the session expires. Login itself only rejects unlisted
- * emails (the access_denied UX); it stamps no roles into the session.
+ * any listed email, writes for admins, and {@code /api/users/**} (the roster +
+ * denied-login lists) admin-only even for reads — so membership changes apply
+ * immediately instead of when the session expires. Login itself only rejects
+ * unlisted emails (the access_denied UX, recorded via {@link DeniedLogins});
+ * it stamps no roles into the session.
  */
 @Configuration
 @EnableWebSecurity
@@ -41,12 +43,16 @@ public class SecurityConfig {
 
     @Bean
     @ConditionalOnProperty(prefix = "broadcast-helper.auth", name = "enabled", havingValue = "true")
-    SecurityFilterChain securedChain(HttpSecurity http, UserDirectory directory, LiveAuthorization live)
+    SecurityFilterChain securedChain(HttpSecurity http, UserDirectory directory,
+                                     LiveAuthorization live, DeniedLogins deniedLogins)
             throws Exception {
         http
                 .authorizeHttpRequests(a -> a
                         // PUBLIC first so /api/me stays reachable signed-out.
                         .requestMatchers(PUBLIC).permitAll()
+                        // The roster and denied-login lists are admin-only even
+                        // for reads — must precede the general GET rule below.
+                        .requestMatchers("/api/users/**").access(live.admin())
                         .requestMatchers(HttpMethod.GET, "/api/**").access(live.member())
                         .requestMatchers(HttpMethod.HEAD, "/api/**").access(live.member())
                         // Every other method — including OPTIONS and anything
@@ -55,7 +61,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/**").access(live.admin())
                         .anyRequest().authenticated())
                 .oauth2Login(o -> o
-                        .userInfoEndpoint(u -> u.oidcUserService(allowlistUserService(directory)))
+                        .userInfoEndpoint(u -> u.oidcUserService(
+                                allowlistUserService(directory, deniedLogins)))
                         // Login itself returns to the SPA; a rejected email lands
                         // back with a flag the frontend can surface.
                         .defaultSuccessUrl("/", true)
@@ -84,16 +91,24 @@ public class SecurityConfig {
      * a stranger gets the access_denied message at the door. Roles are NOT
      * granted here — {@link LiveAuthorization} decides them per request.
      */
-    private OAuth2UserService<OidcUserRequest, OidcUser> allowlistUserService(UserDirectory directory) {
+    private OAuth2UserService<OidcUserRequest, OidcUser> allowlistUserService(
+            UserDirectory directory, DeniedLogins deniedLogins) {
         OidcUserService delegate = new OidcUserService();
-        return request -> {
-            OidcUser user = delegate.loadUser(request);
-            if (!directory.allows(user.getEmail())) {
-                throw new OAuth2AuthenticationException(
-                        new OAuth2Error("access_denied"),
-                        "Email not on the user list: " + user.getEmail());
-            }
-            return user;
-        };
+        return request -> requireListed(delegate.loadUser(request), directory, deniedLogins);
+    }
+
+    /**
+     * Records the attempt and rejects when the email isn't in the roster.
+     * Package-private so a unit test can cover record-before-throw without a
+     * real Google flow.
+     */
+    static OidcUser requireListed(OidcUser user, UserDirectory directory, DeniedLogins deniedLogins) {
+        if (!directory.allows(user.getEmail())) {
+            deniedLogins.record(user.getEmail());
+            throw new OAuth2AuthenticationException(
+                    new OAuth2Error("access_denied"),
+                    "Email not on the user list: " + user.getEmail());
+        }
+        return user;
     }
 }

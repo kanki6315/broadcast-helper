@@ -39,10 +39,12 @@ public class AppUserController {
 
     private final JdbcClient db;
     private final UserDirectory directory;
+    private final DeniedLogins deniedLogins;
 
-    public AppUserController(JdbcClient db, UserDirectory directory) {
+    public AppUserController(JdbcClient db, UserDirectory directory, DeniedLogins deniedLogins) {
         this.db = db;
         this.directory = directory;
+        this.deniedLogins = deniedLogins;
     }
 
     public record AppUser(long id, String email, String role, OffsetDateTime createdAt) {
@@ -78,7 +80,11 @@ public class AppUserController {
                     .param("role", role)
                     .query(AppUserController::mapUser)
                     .single();
+            // Reload before clearing the denied record: if the cleanup were to
+            // fail first, the committed user would be missing from the snapshot
+            // and unable to sign in. A leftover denied row is merely cosmetic.
             directory.reload();
+            deniedLogins.clearFor(email);
             return created;
         } catch (DuplicateKeyException e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -139,6 +145,19 @@ public class AppUserController {
                     "Cannot remove the last remaining admin");
         }
         directory.reload();
+    }
+
+    @GetMapping("/denied")
+    public List<DeniedLogins.DeniedLogin> denied() {
+        return deniedLogins.list();
+    }
+
+    @DeleteMapping("/denied/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void dismissDenied(@PathVariable long id) {
+        if (!deniedLogins.dismiss(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such denied login");
+        }
     }
 
     private AppUser find(long id) {
