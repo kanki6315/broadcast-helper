@@ -4,17 +4,24 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserService;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * Two mutually-exclusive filter chains selected by {@code broadcast-helper.auth.enabled}:
@@ -22,6 +29,8 @@ import org.springframework.security.web.authentication.HttpStatusEntryPoint;
  * chain for the hosted deployment. The secured chain gates every {@code /api/**}
  * except {@code /api/me} (the SPA polls it to learn auth state) and leaves the
  * static bundle open so the app shell can load and drive the login redirect.
+ * Writes are admin-only: any non-GET/HEAD method under {@code /api/**} requires
+ * {@code ROLE_ADMIN}, granted at login to emails on the admin list.
  */
 @Configuration
 @EnableWebSecurity
@@ -39,7 +48,14 @@ public class SecurityConfig {
     SecurityFilterChain securedChain(HttpSecurity http, AuthProperties auth) throws Exception {
         http
                 .authorizeHttpRequests(a -> a
+                        // PUBLIC first so /api/me stays reachable signed-out.
                         .requestMatchers(PUBLIC).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/**").authenticated()
+                        .requestMatchers(HttpMethod.HEAD, "/api/**").authenticated()
+                        // Every other method — including OPTIONS and anything
+                        // exotic — fails closed to admins. Same-origin SPA sends
+                        // no CORS preflights, so nothing legitimate is lost.
+                        .requestMatchers("/api/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .oauth2Login(o -> o
                         .userInfoEndpoint(u -> u.oidcUserService(allowlistUserService(auth)))
@@ -66,7 +82,10 @@ public class SecurityConfig {
         return http.build();
     }
 
-    /** Loads the Google profile, then rejects any email not on the allowlist. */
+    /**
+     * Loads the Google profile, rejects any email not on the allowlist, and
+     * grants {@code ROLE_ADMIN} to emails on the admin list.
+     */
     private OAuth2UserService<OidcUserRequest, OidcUser> allowlistUserService(AuthProperties auth) {
         OidcUserService delegate = new OidcUserService();
         return request -> {
@@ -76,7 +95,18 @@ public class SecurityConfig {
                         new OAuth2Error("access_denied"),
                         "Email not on the allowlist: " + user.getEmail());
             }
-            return user;
+            if (!auth.isAdmin(user.getEmail())) {
+                return user;
+            }
+            Set<GrantedAuthority> authorities = new LinkedHashSet<>(user.getAuthorities());
+            authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
+            // Propagate the registration's name attribute (Google: "sub") so
+            // getName() behaves exactly as the delegate's user did.
+            String nameAttr = request.getClientRegistration().getProviderDetails()
+                    .getUserInfoEndpoint().getUserNameAttributeName();
+            return (nameAttr == null || nameAttr.isBlank())
+                    ? new DefaultOidcUser(authorities, user.getIdToken(), user.getUserInfo())
+                    : new DefaultOidcUser(authorities, user.getIdToken(), user.getUserInfo(), nameAttr);
         };
     }
 }

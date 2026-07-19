@@ -62,8 +62,11 @@ broadcast-helper:
 # set AUTH_ENABLED=true + the Google client + allowlist on the hosted deployment.
 broadcast-helper.auth:
   enabled: ${AUTH_ENABLED:false}
-  # Comma-separated Google emails allowed to sign in (edit/import). Empty = nobody.
+  # Comma-separated Google emails allowed to sign in READ-ONLY. Empty = nobody extra.
   allowed-emails: ${AUTH_ALLOWED_EMAILS:}
+  # Comma-separated Google emails with full (write) access; implicitly allowed to
+  # sign in, so they need not repeat in AUTH_ALLOWED_EMAILS. Empty = no admins.
+  admin-emails: ${ADMIN_ALLOWED_EMAILS:}
 
 spring:
   servlet:

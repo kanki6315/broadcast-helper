@@ -9,7 +9,9 @@ import org.springframework.web.bind.annotation.RestController;
  * The SPA polls this on load to learn auth state without being redirected: it is
  * public even when auth is on. {@code authEnabled=false} → open (local dev);
  * {@code authEnabled=true, email=null} → not signed in, so the frontend sends the
- * browser to Google; a non-null email means signed in.
+ * browser to Google; a non-null email means signed in. The backend, not the
+ * frontend, decides that "auth off ⇒ admin", so the SPA has exactly one boolean
+ * to consult for showing edit controls.
  */
 @RestController
 public class MeController {
@@ -20,11 +22,15 @@ public class MeController {
         this.auth = auth;
     }
 
-    public record Me(boolean authEnabled, String email) {
+    public record Me(boolean authEnabled, String email, boolean isAdmin) {
     }
 
     @GetMapping("/api/me")
     public Me me(@AuthenticationPrincipal OidcUser user) {
-        return new Me(auth.enabled(), user != null ? user.getEmail() : null);
+        if (!auth.enabled()) {
+            return new Me(false, null, true);
+        }
+        String email = user != null ? user.getEmail() : null;
+        return new Me(true, email, auth.isAdmin(email));
     }
 }
