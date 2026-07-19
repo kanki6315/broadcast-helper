@@ -570,12 +570,20 @@
 
 /* ==== recap / standings / lineup tables ==== */
 
-/* In flow, not a scrollbox: the grid lives in the document and the page itself
- * scrolls — vertically always, horizontally only when a season outgrows the
- * viewport. The table carries its own frame and simply overflows its parent
- * when wider; the parent must NOT be intrinsically sized (`max-content`), or
- * the percentage-width soak column feeds back into the table's intrinsic
- * measure and the layout explodes to ~500k px. */
+/* Each grid scrolls horizontally inside its own container so the page never
+ * slides sideways in a narrow/windowed view (e.g. iPad Stage Manager). The
+ * wrapper is a plain block, so it has a definite (parent) width — NOT
+ * `max-content` — which is what keeps the percentage soak column from feeding
+ * back into the table's intrinsic measure and exploding the layout to ~500k px.
+ * The sticky ident columns pin to this scroller (team stays visible mid-scroll);
+ * the header pins to the table region rather than the page viewport. */
+.grid-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+/* The table carries its own frame; `min-width: 100%` fills the scroller when the
+ * season is short and overflows it (triggering the scroll) when long. */
 .grid-table {
   width: auto;
   min-width: 100%;
@@ -926,6 +934,26 @@
     position: sticky;
     top: 0;
     left: auto;
+  }
+}
+
+/* Compact the dense grids in narrow/windowed views so more round columns fit
+ * before the horizontal scroll is needed. Only round/data geometry is touched:
+ * the ident columns keep their JS-declared widths (padding can only shrink the
+ * content box, never exceed the declared min-width), so the sticky `left`
+ * offsets stay aligned. */
+@media (max-width: 820px) {
+  .grid-table {
+    font-size: var(--text-xs);
+  }
+
+  .grid-table th,
+  .grid-table td {
+    padding: 3px 6px;
+  }
+
+  .grid-table .round-head {
+    min-width: 60px;
   }
 }
 

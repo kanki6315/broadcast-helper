@@ -619,7 +619,8 @@ function ClassGrid({
   }`
 
   return (
-    <table className="grid-table">
+    <div className="grid-scroll">
+      <table className="grid-table">
       <caption className="sr-only">{gridLabel}</caption>
       <thead>
         <tr>
@@ -819,7 +820,8 @@ function ClassGrid({
           )
         })}
       </tbody>
-    </table>
+      </table>
+    </div>
   )
 }
 

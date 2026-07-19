@@ -138,6 +138,7 @@ export default function EntriesPage() {
         Crew per car per round. A highlighted cell is a lineup change from the car’s previous round;
         “—” means the car skipped the round.
       </p>
+      <div className="grid-scroll">
       <table className="grid-table">
         <caption className="sr-only">
           Driver lineups per car per round; highlighted cells changed from the car’s previous round
@@ -173,6 +174,7 @@ export default function EntriesPage() {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
