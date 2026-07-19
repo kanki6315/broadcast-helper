@@ -453,7 +453,8 @@ function ResultsTable({ session }: { session: SessionResults }) {
   }
 
   return (
-    <table className="grid-table">
+    <div className="grid-scroll">
+      <table className="grid-table">
       <caption className="sr-only">{label}</caption>
       <thead>
         <tr>
@@ -566,7 +567,8 @@ function ResultsTable({ session }: { session: SessionResults }) {
           </tr>
         ))}
       </tbody>
-    </table>
+      </table>
+    </div>
   )
 }
 
