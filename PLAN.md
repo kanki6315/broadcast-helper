@@ -1103,6 +1103,18 @@ display size.)
    — recover with `TRUNCATE spring_session` (everyone re-signs-in, as a restart
    used to force anyway). Login cookie is now `SESSION`, not `JSESSIONID`.
 
+   **Session management (Manage → Sessions).** Admins list active sessions
+   (email, signed-in, last-active) and revoke them — one at a time or "sign out
+   everywhere" per email. Revoking forces re-login; it is NOT the access-control
+   path (that's removing from Users). Read/delete key on `spring_session.primary_id`,
+   never `session_id` (the latter is base64'd into the cookie ≈ the auth token,
+   so it never leaves the server); delete cascades to the attributes row. The
+   list filters out pre-login (null-principal) and expired-unreaped rows. To make
+   the list readable, login now rewraps the OIDC user with name attribute
+   `"email"` so `principal_name` is the email, not Google's `sub`
+   (`SecurityConfig.emailNamed`; nothing depended on `getName()` being `sub`).
+   `/api/users/sessions` is under the `/api/users/**` admin-only rule.
+
    Share tokens or a richer permission model only if the project's scope grows.
 
    ⇒ **Phase 4a is code-complete pending the user's Railway deploy** (Steps 1–3
