@@ -1090,6 +1090,19 @@ display size.)
    lives only in the secured chain, so local dev never records — seed
    `denied_login` via psql to exercise the UI.
 
+   **Sessions in Postgres.** Spring Session JDBC (`spring_session` /
+   `spring_session_attributes`, V34, schema Flyway-owned so
+   `spring.session.jdbc.initialize-schema: never`) replaced Tomcat's in-memory
+   sessions, so a redeploy no longer signs everyone out — chosen because the app
+   ships often mid-development. Costs ~2 queries per authenticated request (PK
+   load + `last_access_time` write, the latter is what drives idle expiry);
+   negligible next to the season aggregation queries, and this stays decoupled
+   from the authorization check, which still reads the in-memory `UserDirectory`
+   snapshot. The `SecurityContext`/`OidcUser` is Java-serialized into
+   `attribute_bytes`, so a Spring Security upgrade can invalidate stored sessions
+   — recover with `TRUNCATE spring_session` (everyone re-signs-in, as a restart
+   used to force anyway). Login cookie is now `SESSION`, not `JSESSIONID`.
+
    Share tokens or a richer permission model only if the project's scope grows.
 
    ⇒ **Phase 4a is code-complete pending the user's Railway deploy** (Steps 1–3
