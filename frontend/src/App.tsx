@@ -18,6 +18,7 @@ import ImportsPage from './pages/ImportsPage'
 import LogosPage from './pages/LogosPage'
 import SeriesPage from './pages/SeriesPage'
 import SheetPage from './pages/SheetPage'
+import UsersPage from './pages/UsersPage'
 
 // The sheet renders standalone (no app chrome) so the printed page is clean.
 function SheetRoute() {
@@ -52,6 +53,7 @@ export default function App() {
                 <Route path="series" element={<SeriesPage />} />
                 <Route path="imports" element={<ImportsPage />} />
                 <Route path="logos" element={<LogosPage />} />
+                <Route path="users" element={<UsersPage />} />
               </Route>
               <Route path="/imports" element={<Navigate to="/manage/imports" replace />} />
               <Route path="/logos" element={<Navigate to="/manage/logos" replace />} />

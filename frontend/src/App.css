@@ -1194,10 +1194,21 @@ h2 small {
   border-bottom: 0;
 }
 
-.series-alias-form {
+.series-alias-form,
+.users-form {
   display: flex;
   max-width: 600px;
   gap: var(--space-2);
+}
+
+.users-form input {
+  min-width: 0;
+  flex: 1;
+  padding: 7px 10px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
 }
 
 .series-alias-form input {
@@ -1328,7 +1339,8 @@ h2 small {
     padding-left: var(--space-4);
   }
 
-  .series-alias-form {
+  .series-alias-form,
+  .users-form {
     flex-direction: column;
   }
 }

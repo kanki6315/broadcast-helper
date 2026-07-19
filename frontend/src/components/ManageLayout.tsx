@@ -5,6 +5,7 @@ const MANAGE_LINKS = [
   { to: '/manage/series', label: 'Series settings' },
   { to: '/manage/imports', label: 'Imports' },
   { to: '/manage/logos', label: 'Manufacturer logos' },
+  { to: '/manage/users', label: 'Users' },
 ]
 
 /**
