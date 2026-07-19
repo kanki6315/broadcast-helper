@@ -680,6 +680,35 @@ display size.)
   metadata, so pinning is a convenience, not required). It owns the
   `/api/series` + `/api/events` fetch, filters events to the chosen series, and
   supports creating a new series inline.
+- **Overall (umbrella) championships in the recap (V31) — ✅ DONE (2026-07-18).**
+  Some series run a top-level championship scoring every driver plus optional
+  class championships scoring a subset — Porsche Carrera Cup Asia's Overall over
+  Am/Masters/Pro-Am, Mustang Challenge's DH over DHL. Each `entry` carries only
+  its subclass, and the recap matched race cells via
+  `en.class_name = championship.class_name` — so a subclass driver in the
+  umbrella's standings rendered with points but **no start→finish chips, car
+  number, or team** (DRIVERS rows derive car/team from their latest matched
+  cell). `championship.is_overall` (V31) makes the umbrella explicit: a flagged
+  recap drops the class filter on the cells and driver-name queries (safe —
+  `entry` is `UNIQUE(event_id, car_number)`, so car-number matching can't
+  collide) and reads `position_overall` instead of `position_in_class`, so an
+  Am driver's chip is where they ran in the whole field, the same scale as
+  every other row. Class championships are untouched and keep in-class
+  positions. The recap legend note follows what's on screen: "start/finish
+  overall", "start/finish in class", or a spelled-out mixed line when an
+  All-classes board shows both. The standings commit **preserves the flag
+  across its DELETE+INSERT replace** and applies the no-class rule at creation
+  (a championship committed without a class is overall from the start — V31
+  backfills those rows, e.g. PCCA's Dealer Trophy). A championship whose
+  class_name names a real class can't be inferred and needs a one-time manual
+  `UPDATE`: done locally for Mustang DH Drivers and PCCA Overall;
+  **production needs the same flags set after deploy**. Verified live: DH
+  Drivers went 18/36 → 36/36 rows with cells, and every chip matched the raw
+  `position_overall` columns row-for-row while the DHL grid stayed
+  byte-identical in-class. Found while debugging, left unfixed: "Mustang
+  Challenge DH Entrants" standings key rows by **team name**, but non-DRIVERS
+  recap matching compares keys to **car numbers** — that recap has no cells
+  under any flag setting.
 - **Confirm-and-commit grouping (`commit-group`) — ✅ DONE (2026-07-17).** After
   staging, both import modals (the file-upload `UploadFilesModal` and the
   `IRacingImportModal`) hand off to a shared **`ConfirmImportStep`**: proposed
