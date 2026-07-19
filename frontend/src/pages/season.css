@@ -727,6 +727,26 @@
   color: var(--ink);
 }
 
+.recap-identity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.25;
+}
+
+.recap-teams {
+  max-width: 100%;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  white-space: normal;
+}
+
+.recap-team-separator {
+  color: var(--border-strong);
+}
+
 /* In plain (non-matrix) tables, one column soaks the leftover width so the
  * numeric columns stay tight against their neighbours. */
 .grid-table .soak {

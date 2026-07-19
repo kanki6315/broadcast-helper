@@ -15,6 +15,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -78,7 +79,7 @@ public class SeasonViewController {
     }
 
     public record RecapRow(int position, String competitorKey, String competitorName, String carNumber,
-                           String teamName, double totalPoints,
+                           String teamName, List<String> teamNames, double totalPoints,
                            RecapAdjustments adjustments,
                            Map<Integer, Double> pointsByRound,
                            Map<Integer, RecapSessionPoints> sessionPoints,
@@ -286,7 +287,7 @@ public class SeasonViewController {
                                  LEFT JOIN result r ON r.session_id = rs.id AND r.entry_id = en.id
                                  LEFT JOIN grid_position g ON g.session_id = rs.id AND g.entry_id = en.id
                         WHERE ev.id IN (:eventIds) AND en.class_name = :className
-                        ORDER BY ev.id, rs.ordinal
+                        ORDER BY ev.round_ordinal, rs.ordinal
                         """)
                 .param("eventIds", roundByEventId.keySet())
                 .param("className", champ.className())
@@ -332,6 +333,10 @@ public class SeasonViewController {
             Map<Integer, List<RecapRace>> byRound = new LinkedHashMap<>();
             String carNumber = driversKind ? null : h.key();
             String teamName = driversKind ? null : h.name();
+            Map<String, String> distinctTeamNames = new LinkedHashMap<>();
+            if (!driversKind && teamName != null && !teamName.isBlank()) {
+                distinctTeamNames.put(teamName.trim().toLowerCase(Locale.ROOT), teamName.trim());
+            }
             int latestRound = -1;
             for (Cell c : cells) {
                 boolean mine = driversKind
@@ -344,6 +349,10 @@ public class SeasonViewController {
                 byRound.computeIfAbsent(round, k -> new ArrayList<>())
                         .add(new RecapRace(c.raceOrdinal(), c.raceName(), c.start(), c.finish(),
                                 c.status(), c.notFinished()));
+                if (c.team() != null && !c.team().isBlank()) {
+                    String displayTeam = c.team().trim();
+                    distinctTeamNames.putIfAbsent(displayTeam.toLowerCase(Locale.ROOT), displayTeam);
+                }
                 if (driversKind && round > latestRound) {
                     latestRound = round;
                     carNumber = c.carNumber();
@@ -370,6 +379,7 @@ public class SeasonViewController {
             });
 
             rows.add(new RecapRow(h.position(), h.key(), h.name(), carNumber, teamName,
+                    List.copyOf(distinctTeamNames.values()),
                     h.totalPoints(), h.adjustments(), points, sessions, byRound));
         }
 

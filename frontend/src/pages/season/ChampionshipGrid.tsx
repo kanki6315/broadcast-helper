@@ -381,10 +381,12 @@ function raceLegendTags(recaps: Recap[]): Map<string, string> {
 export function ChampFilterBar({
   sel,
   legend,
+  teams,
   view,
 }: {
   sel: ChampSelection
   legend: React.ReactNode
+  teams?: { shown: boolean; setShown: (shown: boolean) => void } | null
   view?: { view: PtsView; setView: (v: PtsView) => void } | null
 }) {
   return (
@@ -439,6 +441,18 @@ export function ChampFilterBar({
           ))}
         </div>
       )}
+      {teams && (
+        <div className="seg" role="group" aria-label="Recap display">
+          <button
+            type="button"
+            className={teams.shown ? 'seg-btn active' : 'seg-btn'}
+            aria-pressed={teams.shown}
+            onClick={() => teams.setShown(!teams.shown)}
+          >
+            Show teams
+          </button>
+        </div>
+      )}
       {legend && (
         <>
           <span className="spacer" />
@@ -458,10 +472,12 @@ type PtsView = 'breakdown' | 'total'
 function ClassGrid({
   champ,
   mode,
+  showTeams,
   view,
 }: {
   champ: ChampionshipSummary
   mode: 'recap' | 'points'
+  showTeams: boolean
   view: PtsView
 }) {
   const { classColor } = useSeason()
@@ -627,6 +643,10 @@ function ClassGrid({
           const back = leaderPoints - row.totalPoints
           const prevPoints = rowIdx > 0 ? recap.rows[rowIdx - 1].totalPoints : null
           const name = drivers ? (row.competitorName ?? row.competitorKey) : row.teamName
+          const teamNames = drivers
+            ? (row.teamNames?.length ? row.teamNames : row.teamName ? [row.teamName] : [])
+            : []
+          const shownTeamNames = showTeams ? teamNames : []
           return (
             <tr key={row.competitorKey}>
               {identCols.map((c, i) => {
@@ -662,18 +682,33 @@ function ClassGrid({
                         key={c.key}
                         className={`ident ${c.cls}`}
                         style={style}
-                        title={name ?? undefined}
+                        title={name ? (shownTeamNames.length ? `${name} — ${shownTeamNames.join(', ')}` : name) : undefined}
                       >
                         {name ? (
-                          // The row header opens the competitor's info
-                          // modal — driver or team by championship kind.
-                          <button
-                            type="button"
-                            className="drv-link"
-                            onClick={() => (drivers ? openDriverByName(name) : openTeam(name))}
-                          >
-                            {name}
-                          </button>
+                          <span className="recap-identity">
+                            {/* The primary label opens the championship competitor. */}
+                            <button
+                              type="button"
+                              className="drv-link"
+                              onClick={() => (drivers ? openDriverByName(name) : openTeam(name))}
+                            >
+                              {name}
+                            </button>
+                            {shownTeamNames.length > 0 && (
+                              <span className="recap-teams">
+                                {shownTeamNames.map((teamName, index) => (
+                                  <span key={teamName}>
+                                    {index > 0 && <span className="recap-team-separator" aria-hidden="true"> · </span>}
+                                    {teamName === 'Privateer' ? teamName : (
+                                      <button type="button" className="drv-link" onClick={() => openTeam(teamName)}>
+                                        {teamName}
+                                      </button>
+                                    )}
+                                  </span>
+                                ))}
+                              </span>
+                            )}
+                          </span>
                         ) : (
                           name
                         )}
@@ -775,10 +810,17 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
   // Like every other selection on this page, the view lives in the URL so a
   // filtered board stays bookmarkable and survives sub-page navigation.
   const view: PtsView = searchParams.get('pts') === 'total' ? 'total' : 'breakdown'
+  const showTeams = mode === 'recap' && searchParams.get('teams') === 'show'
   const setView = (v: PtsView) => {
     const next = new URLSearchParams(searchParams)
     if (v === 'breakdown') next.delete('pts')
     else next.set('pts', v)
+    setSearchParams(next, { replace: true })
+  }
+  const setShowTeams = (shown: boolean) => {
+    const next = new URLSearchParams(searchParams)
+    if (shown) next.set('teams', 'show')
+    else next.delete('teams')
     setSearchParams(next, { replace: true })
   }
 
@@ -825,6 +867,7 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
     <div>
       <ChampFilterBar
         sel={sel}
+        teams={mode === 'recap' && sel.kind === 'DRIVERS' ? { shown: showTeams, setShown: setShowTeams } : null}
         // Only offered where the two views actually differ: with nothing to
         // break down, a toggle that changes nothing is noise.
         view={mode === 'points' && ptsFlags ? { view, setView } : null}
@@ -841,7 +884,7 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
           No {classFilter} standings in this championship — pick another class or championship.
         </div>
       ) : (
-        shown.map((c) => <ClassGrid key={c.id} champ={c} mode={mode} view={view} />)
+        shown.map((c) => <ClassGrid key={c.id} champ={c} mode={mode} showTeams={showTeams} view={view} />)
       )}
     </div>
   )

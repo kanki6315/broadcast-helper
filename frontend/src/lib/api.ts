@@ -119,6 +119,8 @@ export interface RecapRow {
   competitorName: string | null
   carNumber: string | null
   teamName: string | null
+  /** Distinct teams represented during the season, ordered by first appearance. */
+  teamNames?: string[]
   totalPoints: number
   pointsByRound: Record<number, number>
   /** Keyed by RecapSession.sessionIndex; only sessions of scored, contested rounds. */
