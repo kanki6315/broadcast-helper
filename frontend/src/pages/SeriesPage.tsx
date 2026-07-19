@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import TeamAssignmentEditor from '../components/TeamAssignmentEditor'
+import { invalidateRecap } from './season/ChampionshipGrid'
 
 interface Series {
   id: number
@@ -37,6 +38,18 @@ interface ClassAlias {
 interface ClassAliasesResponse {
   aliases: ClassAlias[]
   classesInUse: string[]
+}
+
+interface SeriesChampionship {
+  id: number
+  seasonId: number
+  year: number
+  title: string
+  className: string | null
+  kind: string | null
+  isCup: boolean
+  isOverall: boolean
+  rowCount: number
 }
 
 interface SeasonSummary {
@@ -245,6 +258,9 @@ function SeriesManagementDialog({
                 </SettingsSection>
                 <SettingsSection title="Class names" description="Map source spellings and rename a class across every imported season.">
                   <ClassAliasEditor seriesId={series.id} onError={setError} />
+                </SettingsSection>
+                <SettingsSection title="Overall championships" description="Mark a championship that scores the whole field rather than one class. Its recap then shows every class's drivers, with start and finish positions read overall instead of in class.">
+                  <OverallChampionshipEditor seriesId={series.id} onError={setError} />
                 </SettingsSection>
               </div>
             )}
@@ -831,6 +847,95 @@ function ClassAliasEditor({
         as an alias. Renaming onto an existing class merges them.
       </p>
       {note && <p className="muted">{note}</p>}
+    </div>
+  )
+}
+
+function OverallChampionshipEditor({
+  seriesId,
+  onError,
+}: {
+  seriesId: number
+  onError: (message: string | null) => void
+}) {
+  const [championships, setChampionships] = useState<SeriesChampionship[]>([])
+  const [saving, setSaving] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  async function load() {
+    try {
+      const res = await fetch(`/api/series/${seriesId}/championships`)
+      if (!res.ok) throw new Error(`Backend returned ${res.status}`)
+      const data: { championships: SeriesChampionship[] } = await res.json()
+      setChampionships(data.championships)
+      onError(null)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed to reach backend')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seriesId])
+
+  async function setOverall(c: SeriesChampionship, isOverall: boolean) {
+    setSaving(c.id)
+    try {
+      const res = await fetch(`/api/series/${seriesId}/championships/${c.id}/overall`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isOverall }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        onError(err?.message ?? `Backend returned ${res.status}`)
+        return
+      }
+      onError(null)
+      // The recap is cached for the session and this changes how it renders,
+      // so drop it or navigating back to the season serves the stale one.
+      invalidateRecap(c.id)
+      await load()
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  if (loading) return <span className="muted">Loading…</span>
+  if (championships.length === 0) {
+    return <p className="muted">No championships imported for this series yet.</p>
+  }
+
+  // Newest season first, matching the backend's ordering.
+  const years = [...new Set(championships.map((c) => c.year))]
+
+  return (
+    <div className="overall-champ-editor">
+      {years.map((year) => (
+        <div key={year} className="overall-champ-year">
+          <h4>{year}</h4>
+          {championships
+            .filter((c) => c.year === year)
+            .map((c) => (
+              <label key={c.id} className="overall-champ-row">
+                <input
+                  type="checkbox"
+                  checked={c.isOverall}
+                  disabled={saving === c.id}
+                  onChange={(e) => void setOverall(c, e.target.checked)}
+                />
+                <span className="overall-champ-title">{c.title}</span>
+                <span className="muted overall-champ-meta">
+                  {[c.className, c.kind, c.isCup ? 'cup' : null].filter(Boolean).join(' · ')}
+                  {c.rowCount === 0 && ' · no standings'}
+                </span>
+              </label>
+            ))}
+        </div>
+      ))}
     </div>
   )
 }

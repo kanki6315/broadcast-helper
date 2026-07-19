@@ -26,6 +26,13 @@ export function fetchRecap(id: number): Promise<Recap> {
   return p
 }
 
+/** Drop a cached recap after something changed how it renders — the series
+ *  settings modal's overall-championship toggle re-scopes the whole grid, and
+ *  SPA navigation back to the season would otherwise serve the stale promise. */
+export function invalidateRecap(id: number) {
+  recapCache.delete(id)
+}
+
 export function formatPoints(points: number): string {
   // NUMERIC totals arrive as JS numbers; String() already drops a trailing .0
   // and keeps real half-points ("19.5").

@@ -1892,3 +1892,29 @@ h2 small {
   max-width: 34ch;
   margin-top: var(--space-2);
 }
+
+.overall-champ-year + .overall-champ-year {
+  margin-top: var(--space-4);
+}
+
+.overall-champ-year > h4 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.overall-champ-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.overall-champ-title {
+  font-weight: 600;
+}
+
+.overall-champ-meta {
+  font-size: var(--text-xs);
+}
