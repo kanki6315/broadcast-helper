@@ -39,9 +39,57 @@ async function collect(): Promise<Report> {
   }
 }
 
+interface Viewport {
+  /** What CSS lays out against; on iPad standalone this can stay stuck at the
+   * full-screen width and not track a resized Stage Manager window. */
+  layoutW: number
+  layoutH: number
+  /** Tracks the actual visible window (via the visualViewport API). */
+  visualW: number
+  visualH: number
+  innerW: number
+  innerH: number
+  screenW: number
+  screenH: number
+  dpr: number
+  scale: number
+}
+
+function readViewport(): Viewport {
+  const vv = window.visualViewport
+  return {
+    layoutW: document.documentElement.clientWidth,
+    layoutH: document.documentElement.clientHeight,
+    visualW: vv ? Math.round(vv.width) : window.innerWidth,
+    visualH: vv ? Math.round(vv.height) : window.innerHeight,
+    innerW: window.innerWidth,
+    innerH: window.innerHeight,
+    screenW: window.screen.width,
+    screenH: window.screen.height,
+    dpr: window.devicePixelRatio,
+    scale: vv ? Number(vv.scale.toFixed(3)) : 1,
+  }
+}
+
 export default function StoragePage() {
   const [report, setReport] = useState<Report | null>(null)
   const [busy, setBusy] = useState(false)
+  const [vp, setVp] = useState<Viewport>(readViewport)
+
+  // Live-track viewport dimensions so resizing the window (e.g. iPad Stage
+  // Manager) updates the readout — the point is to watch which dimension tracks
+  // the window and which stays stuck.
+  useEffect(() => {
+    const onResize = () => setVp(readViewport())
+    window.addEventListener('resize', onResize)
+    window.visualViewport?.addEventListener('resize', onResize)
+    window.visualViewport?.addEventListener('scroll', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.visualViewport?.removeEventListener('resize', onResize)
+      window.visualViewport?.removeEventListener('scroll', onResize)
+    }
+  }, [])
 
   const refresh = useCallback(() => {
     setBusy(true)
@@ -76,14 +124,67 @@ export default function StoragePage() {
     refresh()
   }
 
+  const widthGap = vp.layoutW - vp.visualW
+  const heightGap = vp.layoutH - vp.visualH
+
   return (
     <section className="storage-page">
-      <h2>Offline storage</h2>
+      <h2>Diagnostics</h2>
       <p>
-        Cache diagnostics for the installable app. These numbers are specific to{' '}
+        On-device diagnostics for the installable app. These numbers are specific to{' '}
         <strong>this device and browser</strong> — open this page in the installed app on the iPad to
-        see its real quota and cached data.
+        see real values.
       </p>
+
+      <h3>Viewport</h3>
+      <p>
+        If <strong>layout ≠ window</strong>, CSS is laying out against a size other than the visible
+        window — the cause of content overflowing a resized Stage Manager window. Resize the window
+        and watch which row tracks it.
+      </p>
+      <table>
+        <tbody>
+          <tr>
+            <th scope="row">Window (visual viewport)</th>
+            <td>
+              {vp.visualW} × {vp.visualH}
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">Layout viewport</th>
+            <td>
+              {vp.layoutW} × {vp.layoutH}
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">Layout − window</th>
+            <td className={widthGap !== 0 || heightGap !== 0 ? 'vp-gap' : undefined}>
+              {widthGap} × {heightGap} px{widthGap !== 0 && ' — layout is wider than the window'}
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">window.inner</th>
+            <td>
+              {vp.innerW} × {vp.innerH}
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">screen</th>
+            <td>
+              {vp.screenW} × {vp.screenH}
+            </td>
+          </tr>
+          <tr>
+            <th scope="row">devicePixelRatio / scale</th>
+            <td>
+              {vp.dpr} / {vp.scale}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Offline storage</h3>
+      <p>Cache quota and per-bucket contents for the service worker.</p>
       {!secure && (
         <p className="error">
           Storage APIs and the service worker are unavailable in this insecure context, so the values
