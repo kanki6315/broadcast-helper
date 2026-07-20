@@ -732,6 +732,29 @@ display size.)
   its recap to 18/36 rows with cells and flipped the legend to "start/finish in
   class" across **SPA navigation with no reload**, and toggling back on
   restored 36/36 — which is the cache invalidation proving itself.
+- **Group cup toggle + team-name-keyed recaps — ✅ DONE (2026-07-20).** Two
+  related non-DRIVERS gaps. (1) The recap matched entries to standings rows by
+  **car number only**, but a team/entrant-keyed championship keys rows by name
+  (Carrera Cup Asia's Dealer Trophy by dealer, Mustang's DH Entrants by team) —
+  so those recaps rendered zero cells. `SeasonViewController` now falls back to
+  `sameTeamName(entry.team, key)` when the car number finds nothing; it cannot
+  fire for a car-number-keyed TEAMS championship (a name is never a bare
+  number) and gathers **every** entry a team fielded — one car for a dealer,
+  all four for a multi-car entrant (Robert Noaker Racing → 30 chips). Verified:
+  DH Entrants went 0/20 → 12/20 rows with cells (the 12 are its DH-class
+  entries; the 8 DHL-only entrants fill in once it's flagged overall — it is
+  the entrants analogue of DH Drivers and wants that flag). (2) `is_cup` lives
+  on `championship_group` and `findOrCreateChampionshipGroup` never updates an
+  existing one, so a group mis-flagged at import could only be fixed with SQL.
+  `SeriesGroupController` (`GET /api/series/{id}/groups`, `PUT
+  .../groups/{gid}/cup`) mirrors `SeriesChampionshipController` exactly
+  (series-scoped UPDATE → 404 on a foreign group; `SeriesGroupControllerTest`
+  covers it). UI is a fourth **Classes-tab** section listing groups with an
+  `is_cup` checkbox. Used it to correct the Dealer Trophy's Teams group
+  (is_cup true → false), which is the agreed-correct state — its family is the
+  series' own name, and it runs the full 6-round calendar, so it was never a
+  cup. **Local-DB note:** the live DB is now `pit_pass` (post-rebrand); the old
+  `broadcast_helper` DB is orphaned — verify against `pit_pass`.
 - **Confirm-and-commit grouping (`commit-group`) — ✅ DONE (2026-07-17).** After
   staging, both import modals (the file-upload `UploadFilesModal` and the
   `IRacingImportModal`) hand off to a shared **`ConfirmImportStep`**: proposed
