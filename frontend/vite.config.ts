@@ -51,6 +51,21 @@ export default defineConfig({
         // cached below instead). Fonts + hashed JS/CSS + index.html precache.
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2}'],
         globIgnores: ['**/pdf.worker*.js', '**/pdf.worker*.mjs'],
+        // The precache installs a NavigationRoute that serves index.html for
+        // every in-scope navigation — great for SPA client routes, fatal for
+        // the server-owned ones. The OAuth login flow is all full-page
+        // navigations Spring must handle (/oauth2/authorization/google kicks
+        // off, /login/oauth2/code/google exchanges the code); if the worker
+        // answers those with the cached shell instead, the handshake silently
+        // dies ("clicking Sign in does nothing"). Deny-list them (plus /logout,
+        // /error, and /api navigations) so they always hit the network.
+        navigateFallbackDenylist: [
+          /^\/oauth2\//,
+          /^\/login\//,
+          /^\/logout/,
+          /^\/error/,
+          /^\/api\//,
+        ],
         // Routes are matched in order (first match wins), so the specific image
         // and /api/me buckets sit before the general api-data catch-all.
         runtimeCaching: [
