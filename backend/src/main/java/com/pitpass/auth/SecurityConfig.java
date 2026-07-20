@@ -41,8 +41,11 @@ public class SecurityConfig {
             "/", "/index.html", "/assets/**",
             // PWA shell served from the web root (not /assets): icons, manifest,
             // service worker. The login screen and the browser tab reference
-            // these before the user signs in, so they must load pre-auth.
-            "/favicon.ico", "/*.png", "/manifest.webmanifest", "/sw.js", "/workbox-*.js",
+            // these before the user signs in, so they must load pre-auth. The
+            // brand marks are root SVGs (the login logo + favicon), hence
+            // "/*.svg" — uploaded series/manufacturer logos live under /api and
+            // stay gated.
+            "/favicon.ico", "/*.png", "/*.svg", "/manifest.webmanifest", "/sw.js", "/workbox-*.js",
             "/api/me", "/oauth2/**", "/login/**", "/error"
     };
 

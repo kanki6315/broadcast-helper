@@ -87,6 +87,11 @@
   --shadow-raise: 0 1px 2px oklch(0% 0 0 / 8%), 0 2px 8px oklch(0% 0 0 / 6%);
   --shadow-modal: 0 4px 12px oklch(0% 0 0 / 14%), 0 12px 40px oklch(0% 0 0 / 18%);
 
+  /* The brand mark is always light ink, so on a light surface it needs its dark
+   * backing plate; on a dark surface the transparent (plate-less) version blends
+   * cleanly. Dark themes override this below. */
+  --brand-mark: url('/pit-pass-access-lane.svg');
+
   font-family: var(--font-sans);
   font-size: 16px;
   line-height: 1.5;
@@ -130,6 +135,8 @@
   --shadow-raise: 0 1px 2px oklch(0% 0 0 / 30%), 0 2px 8px oklch(0% 0 0 / 25%);
   --shadow-modal: 0 4px 12px oklch(0% 0 0 / 40%), 0 12px 48px oklch(0% 0 0 / 50%);
 
+  --brand-mark: url('/pit-pass-access-lane-transparent.svg');
+
   color-scheme: dark;
 }
 
@@ -165,6 +172,8 @@
     --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
     --shadow-raise: 0 1px 2px oklch(0% 0 0 / 30%), 0 2px 8px oklch(0% 0 0 / 25%);
     --shadow-modal: 0 4px 12px oklch(0% 0 0 / 40%), 0 12px 48px oklch(0% 0 0 / 50%);
+
+    --brand-mark: url('/pit-pass-access-lane-transparent.svg');
 
     color-scheme: dark;
   }

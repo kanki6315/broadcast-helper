@@ -35,10 +35,11 @@
   white-space: nowrap;
 }
 
-.wordmark img {
+.wordmark-mark {
   width: 28px;
   height: 28px;
   flex: 0 0 auto;
+  background: center / contain no-repeat var(--brand-mark);
 }
 
 .wordmark-name {
@@ -494,9 +495,11 @@ h2 small {
   gap: var(--space-3);
 }
 
-.login-brand img {
+.login-brand-mark {
   width: 56px;
   height: 56px;
+  flex: 0 0 auto;
+  background: center / contain no-repeat var(--brand-mark);
 }
 
 .login-brand h1 {
