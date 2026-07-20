@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 328 328" role="img" aria-labelledby="title desc">
+  <title id="title">Pit Pass Access Lane</title>
+  <desc id="desc">Two offset P forms separated by a tall pit-lane rail and crossed by a gold access marker.</desc>
+
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c1f28"/>
+      <stop offset="1" stop-color="#15171e"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f1f1f1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- The square stays full-bleed; iOS and maskable launchers supply the corner mask. -->
+  <rect width="328" height="328" fill="url(#ground)"/>
+
+  <!-- Left P, traced from the large dark-background rendering in the concept board. -->
+  <path
+    d="M49 85H112C133 85 148 100 148 121C148 142 133 157 112 157H72V199H49V134H112C120 134 126 129 126 121C126 113 120 108 112 108H49Z"
+    fill="url(#mark)"
+    stroke="#11131a"
+    stroke-width="0.9"
+    paint-order="stroke fill"
+  />
+
+  <!-- Right P is deliberately lower and slightly narrower than the left. -->
+  <path
+    d="M202 110H262C283 110 297 125 297 147C297 168 282 184 261 184H224V228H202V161H261C269 161 275 155 275 147C275 139 269 133 261 133H202Z"
+    fill="url(#mark)"
+    stroke="#11131a"
+    stroke-width="0.9"
+    paint-order="stroke fill"
+  />
+
+  <!-- The lane rail remains independent of both letterforms. -->
+  <rect x="161" y="51" width="24" height="210" fill="url(#mark)" stroke="#11131a" stroke-width="0.9"/>
+
+  <!-- Access bridge sits above the rail, as in the generated concept. -->
+  <rect x="145" y="161" width="46" height="22" rx="1.5" fill="#f3af38" stroke="#bd7e1e" stroke-width="0.8"/>
+</svg>

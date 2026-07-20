@@ -14,7 +14,7 @@ export default defineConfig({
       // shows a "reload to update" banner instead of refreshing itself, so a
       // live broadcast is never yanked out from under the user mid-session.
       registerType: 'prompt',
-      includeAssets: ['pwa-64x64.png', 'apple-touch-icon-180x180.png'],
+      includeAssets: ['pit-pass-access-lane.svg', 'apple-touch-icon-180x180.png'],
       manifest: {
         name: 'Pit Pass',
         short_name: 'Pit Pass',

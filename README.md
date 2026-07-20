@@ -96,6 +96,8 @@ for the full plan, domain model, and phase roadmap.
 - **PDF parsers** — Python sidecars (`parser/`), invoked by the backend to turn
   entry-list PDFs (`parser/SCHEMA.md`) and championship-points PDFs
   (`parser/POINTS_SCHEMA.md`) into JSON
+- **PWA** — installable, with read-only offline caching via a service worker
+  (`vite-plugin-pwa`). Architecture, cache strategy, and gotchas: `docs/PWA.md`
 
 ## Running locally
 
@@ -142,4 +144,7 @@ docker-compose.yml
 PLAN.md     build plan / roadmap
 PRODUCT.md  who it's for, design principles, anti-references
 DESIGN.md   the visual system: tokens, components, named rules
+docs/
+  DEPLOY.md deploying to Railway (build, env, auth, backfills)
+  PWA.md    installable app + offline: service worker, caches, update flow
 ```
