@@ -392,6 +392,13 @@ tr.clickable:hover td {
 /* Screen-reader-only text (headings, table captions). */
 .sr-only {
   position: absolute;
+  /* Pin to the origin. Without an explicit offset an absolutely-positioned
+   * visually-hidden element sits at its STATIC position — which, inside a wide
+   * horizontally-scrolling table, lands far to the right and leaks past the
+   * viewport, extending the document's scroll width (phantom horizontal scroll /
+   * dead space). Pinning to 0/0 keeps its 1px box in-bounds. */
+  top: 0;
+  left: 0;
   width: 1px;
   height: 1px;
   padding: 0;
