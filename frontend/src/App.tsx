@@ -21,6 +21,7 @@ import SheetPage from './pages/SheetPage'
 import UsersPage from './pages/UsersPage'
 import SessionsPage from './pages/SessionsPage'
 import StoragePage from './pages/StoragePage'
+import UpdatePrompt from './components/UpdatePrompt'
 
 // The sheet renders standalone (no app chrome) so the printed page is clean.
 function SheetRoute() {
@@ -36,6 +37,7 @@ export default function App() {
           see the same auth state for gating edit controls. */}
       <AuthProvider>
         <InfoModalProvider>
+          <UpdatePrompt />
           <Routes>
             <Route path="/sheet/:eventId" element={<SheetRoute />} />
             <Route element={<Layout />}>

@@ -1985,6 +1985,55 @@ h2 small {
   color: var(--text);
 }
 
+/* -- update-available banner (PWA new-version prompt) ----------------------- */
+
+.update-banner {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-4);
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: calc(100vw - var(--space-5) * 2);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.update-banner-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.update-banner-reload {
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.update-banner-dismiss {
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.update-banner-dismiss:hover {
+  color: var(--text);
+}
+
 /* -- offline storage diagnostics (Manage → Offline storage) ----------------- */
 
 .storage-page th[scope='row'] {

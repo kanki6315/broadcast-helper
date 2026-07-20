@@ -10,7 +10,10 @@ export default defineConfig({
     // flaky). The app shell is precached; API reads are NetworkFirst so a page
     // you've opened online reopens offline from cache. No offline writes.
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt' (not autoUpdate): a new deploy installs but WAITS — the app
+      // shows a "reload to update" banner instead of refreshing itself, so a
+      // live broadcast is never yanked out from under the user mid-session.
+      registerType: 'prompt',
       includeAssets: ['favicon.svg', 'apple-touch-icon-180x180.png'],
       manifest: {
         name: 'Broadcast Helper',
