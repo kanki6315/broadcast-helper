@@ -80,7 +80,7 @@ export default function Layout() {
     return (
       <main className="login-screen">
         <div className="login-brand">
-          <img src="/pit-pass-access-lane.svg" alt="" />
+          <span className="login-brand-mark" aria-hidden="true" />
           <h1>Pit Pass</h1>
         </div>
         {authError ? (
@@ -103,7 +103,7 @@ export default function Layout() {
       <InstallHint />
       <div className="topbar">
         <Link to="/" className="wordmark">
-          <img src="/pit-pass-access-lane.svg" alt="" />
+          <span className="wordmark-mark" aria-hidden="true" />
           <span className="wordmark-name">Pit <strong>Pass</strong></span>
         </Link>
         <div className="topbar-side">
