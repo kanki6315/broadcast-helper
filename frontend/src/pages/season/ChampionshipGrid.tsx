@@ -610,12 +610,15 @@ function ClassGrid({
 
   // The offset goes out as a custom property, never an inline `left` — the
   // stylesheet owns `left` so the narrow-screen rule can unpin the header.
-  const identStyle = (i: number): React.CSSProperties =>
-    ({
-      '--ident-left': `${lefts[i]}px`,
-      minWidth: identCols[i].w,
-      maxWidth: identCols[i].key === 'name' ? identCols[i].w : undefined,
-    }) as React.CSSProperties
+  const identStyle = (i: number): React.CSSProperties => {
+    const col = identCols[i]
+    // The name column is the last sticky column, so its width feeds no offsets;
+    // hand it entirely to CSS (a responsive clamp in season.css) so it shrinks
+    // with the viewport. The numeric columns keep fixed inline widths because
+    // the cumulated sticky-left offsets depend on them.
+    if (col.key === 'name') return { '--ident-left': `${lefts[i]}px` } as React.CSSProperties
+    return { '--ident-left': `${lefts[i]}px`, minWidth: col.w } as React.CSSProperties
+  }
 
   const gridLabel = `${champ.className} ${kindLabel(champ.kind ?? '')} — ${
     mode === 'recap' ? 'season recap, start and finish by round' : 'championship points by round'
