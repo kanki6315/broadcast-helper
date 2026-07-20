@@ -644,9 +644,9 @@
   line-height: 1.15;
   padding-top: 6px;
   padding-bottom: 6px;
-  /* future/empty rounds would otherwise collapse to ~56px and break the
-   * calendar's rhythm against contested rounds */
-  min-width: 84px;
+  /* future/empty rounds would otherwise collapse and break the calendar's
+   * rhythm against contested rounds — kept tight now that the pills are smaller */
+  min-width: 60px;
 }
 
 /* Trailing spacer: absorbs the leftover width on short calendars so the data
@@ -727,8 +727,13 @@
   text-align: right;
 }
 
+/* The name is the widest ident column, so it's the one that should give way as
+ * the table is squeezed. Fluid cap: shrinks with the viewport (down to a
+ * still-readable ~104px), freeing room for more round columns before the table
+ * has to scroll. Long names ellipsize; the full name stays in the title + the
+ * competitor link. */
 .grid-table .name-cell {
-  max-width: 240px;
+  max-width: clamp(104px, 20vw, 216px);
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 500;
@@ -787,15 +792,19 @@
   text-align: center;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  padding: 2px 6px;
+  padding: 2px 4px;
 }
 
 .race-line {
   display: block;
-  padding: 0 6px;
+  /* Hug the numbers instead of stretching to fill the column — the tint should
+   * be the width of "11/2", not the whole cell. Still block-level so multi-race
+   * rounds stack; margin auto centers the hugged chip in the column. */
+  width: fit-content;
+  min-width: 36px;
+  margin: 1px auto;
+  padding: 0 4px;
   border-radius: 3px;
-  margin: 1px 0;
-  min-width: 52px;
 }
 
 /* A multi-race round names each line ("H1", "F") in the same muted tag as the
@@ -953,7 +962,7 @@
   }
 
   .grid-table .round-head {
-    min-width: 60px;
+    min-width: 52px;
   }
 }
 
