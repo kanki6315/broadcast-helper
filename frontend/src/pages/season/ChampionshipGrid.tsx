@@ -577,15 +577,18 @@ function ClassGrid({
   const identCols =
     mode === 'recap'
       ? [
-          { key: 'pos', label: 'Pos', w: 52, cls: 'pos-cell' },
-          { key: 'pts', label: 'Pts', w: 68, cls: 'num-cell' },
-          // Wide enough for "-245 (-13)" without wrapping.
-          { key: 'back', label: 'Back', w: 112, cls: 'num-cell back-cell' },
-          { key: 'car', label: '#', w: 60, cls: 'car-no' },
+          { key: 'pos', label: 'Pos', w: 44, cls: 'pos-cell' },
+          // Points with the deficit to the class leader folded in as "(-N)" — the
+          // old standalone Back column is gone. Width matches that old Back column
+          // (112px), which reliably fit "-1156 (-126)"; the merged "points (-gap)"
+          // is no wider. Widths are border-box, so this MUST exceed the widest
+          // content or the cumulated sticky-left offsets drift.
+          { key: 'pts', label: 'Pts', w: 112, cls: 'num-cell' },
+          { key: 'car', label: '#', w: 44, cls: 'car-no' },
           {
             key: 'name',
             label: drivers ? 'Driver' : 'Team',
-            w: 260,
+            w: 216,
             cls: 'name-cell',
           },
         ]
@@ -686,12 +689,7 @@ function ClassGrid({
                     return (
                       <td key={c.key} className={`ident ${c.cls}`} style={style}>
                         {formatPoints(row.totalPoints)}
-                      </td>
-                    )
-                  case 'back':
-                    return (
-                      <td key={c.key} className={`ident ${c.cls}`} style={style}>
-                        {backText(back, prevPoints, row.totalPoints)}
+                        {back > 0 && <span className="back-gap"> (-{formatPoints(back)})</span>}
                       </td>
                     )
                   case 'car':
