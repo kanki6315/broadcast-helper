@@ -67,7 +67,7 @@ export default function InstallHint() {
     <div className="install-hint" role="note">
       <span className="install-hint-text">
         {prompt ? (
-          'Install Broadcast Helper for offline access trackside.'
+          'Install Pit Pass for offline access trackside.'
         ) : (
           <>
             Install for offline access: tap <strong>Share</strong> then{' '}

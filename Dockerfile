@@ -1,6 +1,6 @@
 # Single-container image for hosting (Phase 4a): the Spring Boot backend serves
 # the built React bundle as static assets, with the Python entry-list parser
-# sidecar bundled in. Build from the repo root: `docker build -t broadcast-helper .`
+# sidecar bundled in. Build from the repo root: `docker build -t pit-pass .`
 
 # 1) Build the React bundle.
 FROM node:20-slim AS frontend

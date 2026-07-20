@@ -1,4 +1,4 @@
-# Deploying Broadcast Helper (Railway)
+# Deploying Pit Pass (Railway)
 
 The app ships as a **single container** (`Dockerfile` at the repo root): the Spring
 Boot backend serves the built React bundle as static assets, with the Python PDF
@@ -7,7 +7,7 @@ parsers (pdfplumber) bundled in a venv. One image, one process.
 ## Build
 
 ```bash
-docker build -t broadcast-helper .
+docker build -t pit-pass .
 ```
 
 Multi-stage: (1) `npm ci && npm run build` the frontend, (2) fold `dist/` into the
@@ -23,7 +23,7 @@ That is a local artifact only. **Railway builds and runs amd64**, where it works
 To exercise the parser locally, build/run for amd64:
 
 ```bash
-docker build --platform linux/amd64 -t broadcast-helper .
+docker build --platform linux/amd64 -t pit-pass .
 ```
 
 Everything else (frontend, API, DB) runs fine on the native ARM image.
@@ -154,9 +154,9 @@ an exported **PDF** for teams without accounts.
 
 | Variable | Default (local) | Notes |
 |---|---|---|
-| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/broadcast_helper` | JDBC URL |
-| `SPRING_DATASOURCE_USERNAME` | `broadcast` | |
-| `SPRING_DATASOURCE_PASSWORD` | `broadcast` | |
+| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/pit_pass` | JDBC URL |
+| `SPRING_DATASOURCE_USERNAME` | `pitpass` | |
+| `SPRING_DATASOURCE_PASSWORD` | `pitpass` | |
 | `PORT` | `8080` | Listen port (Railway sets this) |
 | `PARSER_PYTHON` | `python3` | Set to the venv python in-image (`/opt/venv/bin/python3`); shared by every sidecar |
 | `PARSER_SCRIPT` | `../parser/parse_entry_list.py` | In-image path (`/app/parser/parse_entry_list.py`) |

@@ -32,7 +32,7 @@ server:
 # The Python sidecar that turns entry-list PDFs into entries.json
 # (see parser/SCHEMA.md). Local defaults are relative to the backend working
 # directory; in the container these point at the bundled copy via env.
-broadcast-helper:
+pit-pass:
   entry-list-parser:
     python: ${PARSER_PYTHON:python3}
     script: ${PARSER_SCRIPT:../parser/parse_entry_list.py}
@@ -63,7 +63,7 @@ broadcast-helper:
 # AUTH_ENABLED=true + the Google client on the hosted deployment. Who may sign
 # in (and who may write) lives in the app_user table, managed from Manage →
 # Users — bootstrap the first admin via psql (see docs/DEPLOY.md).
-broadcast-helper.auth:
+pit-pass.auth:
   enabled: ${AUTH_ENABLED:false}
 
 spring:
@@ -85,9 +85,9 @@ spring:
   #   SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET
   datasource:
     # Env-driven for hosting (Railway Postgres vars); local dev defaults preserved.
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/broadcast_helper}
-    username: ${SPRING_DATASOURCE_USERNAME:broadcast}
-    password: ${SPRING_DATASOURCE_PASSWORD:broadcast}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/pit_pass}
+    username: ${SPRING_DATASOURCE_USERNAME:pitpass}
+    password: ${SPRING_DATASOURCE_PASSWORD:pitpass}
   jpa:
     # Flyway owns the schema; Hibernate only checks that entities match it.
     hibernate:

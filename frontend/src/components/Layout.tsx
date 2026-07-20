@@ -79,7 +79,10 @@ export default function Layout() {
   if (me.authEnabled && !me.email) {
     return (
       <main className="login-screen">
-        <h1>Broadcast Helper</h1>
+        <div className="login-brand">
+          <img src="/pwa-64x64.png" alt="" />
+          <h1>Pit Pass</h1>
+        </div>
         {authError ? (
           <p className="error">
             That Google account isn’t on the allowlist. Ask the owner to add your email, then try
@@ -100,7 +103,8 @@ export default function Layout() {
       <InstallHint />
       <div className="topbar">
         <Link to="/" className="wordmark">
-          Broadcast<span> Helper</span>
+          <img src="/pwa-64x64.png" alt="" />
+          <span className="wordmark-name">Pit <strong>Pass</strong></span>
         </Link>
         <div className="topbar-side">
           <button

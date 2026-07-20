@@ -24,6 +24,9 @@
 
 .wordmark {
   margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: var(--text-base);
   font-weight: 650;
   letter-spacing: -0.01em;
@@ -32,8 +35,19 @@
   white-space: nowrap;
 }
 
-.wordmark span {
+.wordmark img {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+}
+
+.wordmark-name {
+  color: var(--ink);
+}
+
+.wordmark-name strong {
   color: var(--accent-ink);
+  font-weight: 650;
 }
 
 .topbar-side {
@@ -472,6 +486,21 @@ h2 small {
   gap: var(--space-4);
   text-align: center;
   padding: var(--space-6);
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.login-brand img {
+  width: 56px;
+  height: 56px;
+}
+
+.login-brand h1 {
+  margin: 0;
 }
 
 .login-button {

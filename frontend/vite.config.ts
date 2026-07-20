@@ -14,10 +14,10 @@ export default defineConfig({
       // shows a "reload to update" banner instead of refreshing itself, so a
       // live broadcast is never yanked out from under the user mid-session.
       registerType: 'prompt',
-      includeAssets: ['favicon.svg', 'apple-touch-icon-180x180.png'],
+      includeAssets: ['pwa-64x64.png', 'apple-touch-icon-180x180.png'],
       manifest: {
-        name: 'Broadcast Helper',
-        short_name: 'Broadcast',
+        name: 'Pit Pass',
+        short_name: 'Pit Pass',
         description: 'Motorsport broadcast prep: series, standings, and sheets.',
         display: 'standalone',
         start_url: '/',
