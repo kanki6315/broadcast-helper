@@ -52,6 +52,17 @@ interface SeriesChampionship {
   rowCount: number
 }
 
+interface SeriesGroup {
+  id: number
+  seasonId: number
+  year: number
+  family: string
+  kind: string | null
+  label: string
+  isCup: boolean
+  championshipCount: number
+}
+
 interface SeasonSummary {
   id: number
   year: number
@@ -261,6 +272,9 @@ function SeriesManagementDialog({
                 </SettingsSection>
                 <SettingsSection title="Overall championships" description="Mark a championship that scores the whole field rather than one class. Its recap then shows every class's drivers, with start and finish positions read overall instead of in class.">
                   <OverallChampionshipEditor seriesId={series.id} onError={setError} />
+                </SettingsSection>
+                <SettingsSection title="Championship groups" description="A cup is a side award over a subset of the rounds, published under its own name. Uncheck a group the importer mistook for a cup so it sorts as a full-season championship and can feed the sheet's points column.">
+                  <CupGroupEditor seriesId={series.id} onError={setError} />
                 </SettingsSection>
               </div>
             )}
@@ -934,6 +948,94 @@ function OverallChampionshipEditor({
                 <span className="muted overall-champ-meta">
                   {[c.className, c.kind, c.isCup ? 'cup' : null].filter(Boolean).join(' · ')}
                   {c.rowCount === 0 && ' · no standings'}
+                </span>
+              </label>
+            ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function CupGroupEditor({
+  seriesId,
+  onError,
+}: {
+  seriesId: number
+  onError: (message: string | null) => void
+}) {
+  const [groups, setGroups] = useState<SeriesGroup[]>([])
+  const [saving, setSaving] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  async function load() {
+    try {
+      const res = await fetch(`/api/series/${seriesId}/groups`)
+      if (!res.ok) throw new Error(`Backend returned ${res.status}`)
+      const data: { groups: SeriesGroup[] } = await res.json()
+      setGroups(data.groups)
+      onError(null)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed to reach backend')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seriesId])
+
+  async function setCup(g: SeriesGroup, isCup: boolean) {
+    setSaving(g.id)
+    try {
+      const res = await fetch(`/api/series/${seriesId}/groups/${g.id}/cup`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isCup }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        onError(err?.message ?? `Backend returned ${res.status}`)
+        return
+      }
+      onError(null)
+      await load()
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  if (loading) return <span className="muted">Loading…</span>
+  if (groups.length === 0) {
+    return <p className="muted">No championship groups for this series yet.</p>
+  }
+
+  // Newest season first, matching the backend's ordering.
+  const years = [...new Set(groups.map((g) => g.year))]
+
+  return (
+    <div className="overall-champ-editor">
+      {years.map((year) => (
+        <div key={year} className="overall-champ-year">
+          <h4>{year}</h4>
+          {groups
+            .filter((g) => g.year === year)
+            .map((g) => (
+              <label key={g.id} className="overall-champ-row">
+                <input
+                  type="checkbox"
+                  checked={g.isCup}
+                  disabled={saving === g.id}
+                  aria-label={`${g.label} is a cup`}
+                  onChange={(e) => void setCup(g, e.target.checked)}
+                />
+                <span className="overall-champ-title">{g.label}</span>
+                <span className="muted overall-champ-meta">
+                  {g.championshipCount === 1
+                    ? '1 championship'
+                    : `${g.championshipCount} championships`}
                 </span>
               </label>
             ))}
