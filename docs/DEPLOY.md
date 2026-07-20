@@ -150,6 +150,22 @@ seasons, standings, sheets, driver profiles — but change nothing (writes are
 admin-only, and the management UI is hidden). The pit-lane sheet still ships as
 an exported **PDF** for teams without accounts.
 
+## PWA / offline
+
+Pit Pass is an installable PWA with read-only offline caching (full details:
+[PWA.md](PWA.md)). Nothing extra to configure at deploy time — the service
+worker and manifest are emitted into the static bundle and served by Spring Boot
+like everything else. Two deploy-relevant facts:
+
+- **HTTPS is required** for the service worker and storage APIs. Railway serves
+  HTTPS, so this is satisfied in production; it only bites when testing on a
+  device over a plain-http LAN address.
+- **Updates are opt-in per user.** A new deploy doesn't force-refresh open apps —
+  the app polls every ~30 min while foregrounded and shows a "new version — Reload"
+  banner. Users on the installed iPad app pick up a deploy on next launch or when
+  they tap the banner. Changing the service worker's own update behavior costs one
+  extra relaunch on existing installs (the old worker applies the first update).
+
 ## Config reference (env)
 
 | Variable | Default (local) | Notes |
