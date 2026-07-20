@@ -38,7 +38,11 @@ public class SecurityConfig {
 
     // Static SPA shell + the endpoints the login flow itself needs.
     private static final String[] PUBLIC = {
-            "/", "/index.html", "/favicon.svg", "/assets/**",
+            "/", "/index.html", "/assets/**",
+            // PWA shell served from the web root (not /assets): icons, manifest,
+            // service worker. The login screen and the browser tab reference
+            // these before the user signs in, so they must load pre-auth.
+            "/favicon.ico", "/*.png", "/manifest.webmanifest", "/sw.js", "/workbox-*.js",
             "/api/me", "/oauth2/**", "/login/**", "/error"
     };
 

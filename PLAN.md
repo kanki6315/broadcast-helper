@@ -1,4 +1,4 @@
-# Broadcast Helper — Build Plan
+# Pit Pass — Build Plan
 
 A tool that automates event preparation for a motorsports commentator / pit-lane
 reporter: import results and standings, manage entry lists and car photos, and

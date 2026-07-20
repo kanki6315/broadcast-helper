@@ -1,4 +1,4 @@
-# Deploying Broadcast Helper (Railway)
+# Deploying Pit Pass (Railway)
 
 The app ships as a **single container** (`Dockerfile` at the repo root): the Spring
 Boot backend serves the built React bundle as static assets, with the Python PDF

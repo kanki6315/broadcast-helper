@@ -23,7 +23,7 @@ season form, a championship position, a win or pole count — without hunting.
 
 ## Product Purpose
 
-Broadcast Helper turns raw timing-provider exports (results, standings, grids,
+Pit Pass turns raw timing-provider exports (results, standings, grids,
 entry-list and championship-points PDFs) into a browsable, broadcast-ready
 reference: championships
 grouped by family, a per-class season reference table, per-driver counting

@@ -1,4 +1,4 @@
-# Broadcast Helper
+# Pit Pass
 
 Event-preparation tool for motorsports broadcasters: import results, standings,
 entry lists, and car photos; generate broadcast reference documents as PDFs.

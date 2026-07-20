@@ -1,5 +1,5 @@
 ---
-name: Broadcast Helper
+name: Pit Pass
 description: A skim-first motorsport reference — Apple-clean restraint fused with on-air timing-terminal density.
 colors:
   # Hex values are sRGB approximations for tooling; the canonical OKLCH tokens
@@ -118,7 +118,7 @@ components:
     padding: "6px 10px"
 ---
 
-# Design System: Broadcast Helper
+# Design System: Pit Pass
 
 ## 1. Overview
 
