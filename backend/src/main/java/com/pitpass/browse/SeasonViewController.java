@@ -273,7 +273,8 @@ public class SeasonViewController {
 
         // Start→finish cells across the matched events, plus the driver names
         // per entry (for DRIVERS championships, rows match entries by crew
-        // member name; TEAMS match by car number). A class championship reads
+        // member name; TEAMS/ENTRANTS match by car number, falling back to team
+        // name for the ones keyed that way). A class championship reads
         // its own class's entries and in-class positions; an overall
         // championship scores the whole field, so it reads every class and
         // whole-field positions — an Am driver's chip is where they ran
@@ -348,7 +349,8 @@ public class SeasonViewController {
             for (Cell c : cells) {
                 boolean mine = driversKind
                         ? matchesDriver(driverNamesByEntry.get(c.entryId()), h.key(), h.name())
-                        : sameCarNumber(c.carNumber(), h.key());
+                        : sameCarNumber(c.carNumber(), h.key())
+                          || sameTeamName(c.team(), h.key());
                 if (!mine) {
                     continue;
                 }
@@ -395,6 +397,21 @@ public class SeasonViewController {
 
     private static boolean sameCarNumber(String a, String b) {
         return SheetController.normalizeCarNumber(a).equals(SheetController.normalizeCarNumber(b));
+    }
+
+    /**
+     * Fallback match for a non-DRIVERS championship keyed by team/entrant name
+     * rather than car number — Carrera Cup Asia's Dealer Trophy, Mustang's DH
+     * Entrants. A team-keyed standings row gathers every one of that team's
+     * entries: one car for a dealer, all four for a multi-car entrant. Never
+     * fires for a car-number-keyed TEAMS championship (a team name is not a bare
+     * number), so it only widens matching where car numbers found nothing.
+     */
+    private static boolean sameTeamName(String team, String key) {
+        if (team == null || team.isBlank()) {
+            return false;
+        }
+        return team.trim().equalsIgnoreCase(Objects.toString(key, "").trim());
     }
 
     private static boolean matchesDriver(List<String> entryDrivers, String key, String name) {
