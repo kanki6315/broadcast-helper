@@ -25,6 +25,16 @@ export default defineConfig({
         background_color: '#ffffff',
         theme_color: '#f0b84a',
         icons: [
+          // Vector first: browsers that support SVG app icons (desktop install,
+          // and a growing set of others) render the crisp source at any size.
+          // The raster fallbacks below cover everyone else; iOS ignores these
+          // and uses the apple-touch-icon PNG, Android the maskable PNG.
+          {
+            src: 'pit-pass-access-lane.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
+            purpose: 'any',
+          },
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
           {
