@@ -1,10 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 48 48">
-  <!-- PWA / home-screen source icon. Same BH wordmark as favicon.svg but a
-       FULL-BLEED square (no rx): iOS rounds home-screen icons itself and fills
-       transparency with black, and maskable icons get cropped to a circle. The
-       mark's ~24% padding keeps it inside the maskable safe zone. -->
-  <rect width="48" height="48" fill="#f0b84a"/>
-  <g fill="none" stroke="#221806" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- PWA / home-screen source icon. FULL-BLEED square (no rx): iOS rounds
+       home-screen icons itself, and a full-bleed OPAQUE fill means iOS never
+       backs transparency with white. Dark warm-charcoal plate + the gold BH
+       wordmark as the vivid mark, sized to fill the tile confidently (the
+       "Zwift" treatment: dark plate, bright mark). The maskable variant
+       (maskable-icon-512x512.png) shrinks the mark into the safe zone instead. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#302619"/>
+      <stop offset="1" stop-color="#14100a"/>
+    </linearGradient>
+  </defs>
+  <rect width="48" height="48" fill="url(#bg)"/>
+  <g transform="translate(24 24) scale(1.12) translate(-24 -24)"
+     fill="none" stroke="#f0b84a" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
     <!-- B -->
     <path d="M11.5 13.5V34.5"/>
     <path d="M11.5 13.5H16C19.5 13.5 20.5 15.6 20.5 18.75C20.5 21.9 19.5 24 16 24H11.5"/>
