@@ -4,11 +4,11 @@ services:
     # restores into the same or a newer server, so a local seed from prod fails
     # on anything older.
     image: postgres:18-alpine
-    container_name: broadcast-helper-db
+    container_name: pit-pass-db
     environment:
-      POSTGRES_DB: broadcast_helper
-      POSTGRES_USER: broadcast
-      POSTGRES_PASSWORD: broadcast
+      POSTGRES_DB: pit_pass
+      POSTGRES_USER: pitpass
+      POSTGRES_PASSWORD: pitpass
     ports:
       - "5432:5432"
     volumes:
@@ -18,7 +18,7 @@ services:
       # layout is not readable here.)
       - pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U broadcast -d broadcast_helper"]
+      test: ["CMD-SHELL", "pg_isready -U pitpass -d pit_pass"]
       interval: 5s
       timeout: 3s
       retries: 10
