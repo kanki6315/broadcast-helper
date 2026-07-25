@@ -17,7 +17,7 @@
 }
 
 .ir::backdrop {
-  background: oklch(10% 0.01 277 / 52%);
+  background: var(--scrim);
 }
 
 .ir[open] {
@@ -482,7 +482,7 @@
   color: var(--text-muted);
 }
 
-@media (max-width: 480px) {
+@media (max-width: 30em) {
   .ir-league-ids .btn {
     flex: 1 1 100%;
     justify-content: center;

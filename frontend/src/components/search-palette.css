@@ -13,7 +13,7 @@
 }
 
 .sp::backdrop {
-  background: oklch(10% 0.01 277 / 52%);
+  background: var(--scrim);
 }
 
 .sp[open] {
@@ -141,7 +141,7 @@
 .sp-flag {
   flex: none;
   width: 15px;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   /* background-COLOR, not the shorthand: the shorthand would erase the
    * flag-icons background-image. An unknown nationality (or a team row)
    * keeps the neutral slot so names align down the list. */
@@ -220,7 +220,7 @@
   background: var(--bg);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 40em) {
   .search-trigger .search-trigger-label,
   .search-trigger .sp-kbd {
     display: none;

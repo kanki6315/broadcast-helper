@@ -17,7 +17,7 @@
 }
 
 .sg::backdrop {
-  background: oklch(10% 0.01 277 / 52%);
+  background: var(--scrim);
 }
 
 .sg[open] {
@@ -229,7 +229,7 @@
 
 /* Phones: one file, no stagger — a 2-up grid at 375px crushes the team names,
  * and the running order is the fact that has to survive. */
-@media (max-width: 560px) {
+@media (max-width: 35em) {
   .sg-slots {
     grid-template-columns: 1fr;
     padding-bottom: 0;

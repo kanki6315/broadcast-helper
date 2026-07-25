@@ -343,7 +343,7 @@
   color: var(--error);
 }
 
-@media (max-width: 480px) {
+@media (max-width: 30em) {
   .cis-foot .btn,
   .cis-foot .btn-primary {
     flex: 1 1 auto;

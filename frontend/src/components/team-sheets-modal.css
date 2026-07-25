@@ -7,7 +7,7 @@
   position: fixed;
   inset: 0;
   z-index: var(--z-modal);
-  background: oklch(0% 0 0 / 55%);
+  background: var(--scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -93,7 +93,7 @@
 }
 
 .ts-status.error {
-  color: oklch(80% 0.09 25);
+  color: var(--error);
 }
 
 @media print {

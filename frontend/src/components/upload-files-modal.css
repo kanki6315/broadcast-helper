@@ -20,7 +20,7 @@
 }
 
 .uf::backdrop {
-  background: oklch(10% 0.01 277 / 52%);
+  background: var(--scrim);
 }
 
 .uf[open] {
@@ -396,7 +396,7 @@
   color: var(--success);
 }
 
-@media (max-width: 480px) {
+@media (max-width: 30em) {
   .uf-foot .btn,
   .uf-foot .btn-primary {
     flex: 1 1 auto;
