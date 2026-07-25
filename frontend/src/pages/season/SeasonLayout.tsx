@@ -105,6 +105,18 @@ export default function SeasonLayout() {
     return out
   }, [hub, styles])
 
+  // Name the tab. Prepping an event means several seasons open at once, and
+  // every tab reading "Pit Pass" means clicking each one to find out which is
+  // which. Year first: it is short, so it survives the tab's truncation and
+  // separates 2026 from 2025 of the same series at a glance.
+  useEffect(() => {
+    if (!hub) return
+    document.title = `${hub.year} · ${hub.seriesName} · Pit Pass`
+    return () => {
+      document.title = 'Pit Pass'
+    }
+  }, [hub])
+
   // A stale bookmark may carry a class this season can't answer; degrade to
   // "All classes" rather than filtering every surface into emptiness.
   const classParam = searchParams.get('class')
@@ -213,6 +225,12 @@ export default function SeasonLayout() {
           ))}
         </nav>
       </header>
+      {/* One chip click rewrites all four strip cells and the whole recap. Nothing
+        * announced that, so a screen-reader user heard only the button's own
+        * pressed state change (WCAG 4.1.3). */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {classFilter ? `Showing ${classFilter} only` : 'Showing all classes'}
+      </p>
       <Outlet context={context} />
     </section>
   )
