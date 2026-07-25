@@ -20,7 +20,13 @@ const recapCache = new Map<number, Promise<Recap>>()
 export function fetchRecap(id: number): Promise<Recap> {
   let p = recapCache.get(id)
   if (!p) {
-    p = getJson<Recap>(`/api/championships/${id}/recap`)
+    // Evict on failure. Caching the REJECTED promise made one dropped request
+    // permanent: every later call re-awaited the same rejection, so a momentary
+    // network blip killed standings until a full page reload.
+    p = getJson<Recap>(`/api/championships/${id}/recap`).catch((e) => {
+      recapCache.delete(id)
+      throw e
+    })
     recapCache.set(id, p)
   }
   return p
@@ -158,7 +164,7 @@ function familyLabel(family: string, seriesName: string): string {
   return label || family
 }
 
-function kindLabel(kind: string): string {
+export function kindLabel(kind: string): string {
   const lower = kind.toLowerCase()
   return lower.charAt(0).toUpperCase() + lower.slice(1)
 }
@@ -506,19 +512,42 @@ function ClassGrid({
   const { classColor } = useSeason()
   const { openDriverByName, openTeam } = useInfoModal()
   const [recap, setRecap] = useState<Recap | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+  // The effect keys on champ.id, which never changes for a mounted grid — so
+  // without an explicit attempt counter a single dropped request left this
+  // class dead until the page was reloaded, taking the season's filter with it.
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let cancelled = false
+    setFailed(false)
     fetchRecap(champ.id)
       .then((r) => !cancelled && setRecap(r))
-      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : 'Failed to load'))
+      .catch(() => !cancelled && setFailed(true))
     return () => {
       cancelled = true
     }
-  }, [champ.id])
+  }, [champ.id, attempt])
 
-  if (error) return <p className="error-panel">{error}</p>
+  if (failed) {
+    // Never the raw exception: "TypeError: Failed to fetch" tells the user
+    // nothing and reads like data corruption on a page full of numbers.
+    return (
+      <p className="error-panel">
+        Couldn’t load the {champ.className} {kindLabel(champ.kind ?? '').toLowerCase()} recap.{' '}
+        <button
+          type="button"
+          className="hs-retry"
+          onClick={() => {
+            invalidateRecap(champ.id)
+            setAttempt((n) => n + 1)
+          }}
+        >
+          Retry
+        </button>
+      </p>
+    )
+  }
   if (!recap) {
     return (
       <div className="skeleton-block">

@@ -10,7 +10,11 @@ services:
       POSTGRES_USER: pitpass
       POSTGRES_PASSWORD: pitpass
     ports:
-      - "5432:5432"
+      # Host port is deliberately NOT 5432: another project's Postgres holds the
+      # default on this machine, and a port clash is a silent auth failure
+      # ("password authentication failed") rather than a bind error, because the
+      # connection lands on the wrong server. The container port stays 5432.
+      - "5532:5432"
     volumes:
       # postgres:18+ expects a single mount at /var/lib/postgresql and puts the
       # cluster in a versioned subdirectory; mounting .../data directly makes the

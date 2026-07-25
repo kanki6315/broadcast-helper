@@ -1294,7 +1294,7 @@ h2 small {
   margin-top: var(--space-4);
 }
 
-@media (max-width: 700px) {
+@media (max-width: 43.75em) {
   .series-manager-header {
     align-items: center;
   }
@@ -1384,7 +1384,7 @@ h2 small {
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 35em) {
   .team-roster-frame {
     overflow: visible;
   }
@@ -2085,4 +2085,45 @@ h2 small {
 .storage-page .vp-gap {
   color: var(--error);
   font-weight: 600;
+}
+
+
+/* ==== touch targets ========================================================
+ * The density is deliberate (DESIGN.md: a timing tower, not a phone app) and
+ * every target already clears WCAG 2.5.8's 24x24 — that is the AA bar, and it is
+ * met everywhere. 2.5.5's 44x44 is AAA, and this block buys it where it is free.
+ *
+ * REAL padding, never negative margins. Inflating a hit area back over its
+ * neighbours is worse than leaving it small: the areas overlap and a tap near a
+ * boundary opens the wrong row. So these controls genuinely get taller on touch.
+ * Values are measured: (44 - content height) / 2, rounded up.
+ *
+ * DELIBERATELY EXCLUDED: `.drv-link` in the recap grid. Its rows pitch at 30px,
+ * so a 44px target would overflow into the row above and below — the very
+ * mis-tap this block exists to prevent — and growing the rows to 44px would make
+ * an eleven-column results table roughly half as scannable, which is the one
+ * thing the product cannot trade away. It stays at its AA-compliant 25.5px.
+ * ------------------------------------------------------------------------- */
+@media (pointer: coarse) {
+  .wr-link {
+    padding: 12px 0;
+  }
+
+  .hs-more {
+    padding: 14px 4px;
+    margin: 0 -4px;
+  }
+
+  /* `.season-year-strip .seg-btn` sets its own padding at higher specificity,
+   * so match it rather than losing the cascade. */
+  .seg-btn,
+  .season-year-strip .seg-btn {
+    padding-block: 12px;
+  }
+
+  .class-chip,
+  .tab,
+  .search-trigger {
+    padding-block: 11px;
+  }
 }

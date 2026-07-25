@@ -13,7 +13,7 @@
 }
 
 .dm::backdrop {
-  background: oklch(10% 0.01 277 / 52%);
+  background: var(--scrim);
 }
 
 .dm[open] {
@@ -101,7 +101,7 @@
 
 .dm-name .fi {
   font-size: var(--text-base);
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   flex: none;
 }
 
@@ -657,8 +657,15 @@
 .drv-link {
   border: none;
   background: none;
-  padding: 0;
-  margin: 0;
+  /* 17.5px line box + 4px each side = 25.5px, clearing the 24x24 floor
+   * (WCAG 2.5.8) with the half-pixel to spare that 3px did not have. The equal
+   * negative margin spends it on the cell's own padding, so no row grows. */
+  display: inline-block;
+  padding: 4px 0;
+  margin: -4px 0;
+  /* A very short entrant name ("Rs1") measured 23px wide — 2.5.8 is 24 on BOTH
+   * axes, so floor the width too. Text-align stays inherited, so nothing moves. */
+  min-width: 24px;
   font: inherit;
   color: inherit;
   cursor: pointer;
@@ -673,7 +680,7 @@
 
 /* -- narrow screens ---------------------------------------------------------------------- */
 
-@media (max-width: 560px) {
+@media (max-width: 35em) {
   .dm {
     width: calc(100vw - 16px);
     max-height: calc(100dvh - 16px);

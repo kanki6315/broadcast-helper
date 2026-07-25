@@ -36,6 +36,8 @@ ENV PARSER_PYTHON=/opt/venv/bin/python3 \
     PARSER_SCRIPT=/app/parser/parse_entry_list.py \
     TEAM_SHEET_PARSER_SCRIPT=/app/parser/extract_team_sheet_pages.py \
     POINTS_PARSER_SCRIPT=/app/parser/parse_points.py
-EXPOSE 8080
+# Documentation only, and only meaningful when $PORT is unset — Railway injects
+# it. Kept in step with the application.yml fallback so the two never disagree.
+EXPOSE 8731
 # Size the heap to the container's memory limit (PaaS instances are small).
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]

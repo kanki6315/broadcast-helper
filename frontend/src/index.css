@@ -35,6 +35,8 @@
   --space-8: 64px;
 
   /* -- shape ---------------------------------------------------------------- */
+  --radius-xs: 3px;   /* DESIGN.md names this step; five files were using a
+                       * one-off 2px that sat outside the scale. */
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 10px;
@@ -79,9 +81,20 @@
    * must read loud in the booth and at the desk alike. */
   --res-win: oklch(90% 0.075 155);          /* green tint */
   --res-top3: oklch(91% 0.05 350);          /* pink tint */
-  --res-top5: oklch(90% 0.055 295);         /* violet tint */
+  --res-top5: oklch(91% 0.055 295);         /* violet tint — 91%, not 90%: the
+                                             * amber pole mark on it measured
+                                             * 4.4991:1, a hair under AA. */
   --res-dnf-bg: oklch(27% 0.012 277);       /* inverted chip: dark on light */
   --res-dnf-ink: oklch(93% 0.005 260);
+  /* The pole mark ON that chip. --accent-ink is tuned against the page ground,
+   * and the DNF chip inverts away from it — painting the page's amber on the
+   * chip measured 1.31:1 in dark mode. This accent inverts with the chip. */
+  --res-dnf-accent: oklch(80% 0.13 80);     /* bright amber on the dark chip */
+
+  /* The dim behind a modal. Repeated verbatim across five dialogs before this
+   * token existed; a graphite scrim, not plain black, so it sits on the same
+   * hue as every other surface. */
+  --scrim: oklch(10% 0.01 277 / 52%);
 
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
   --shadow-raise: 0 1px 2px oklch(0% 0 0 / 8%), 0 2px 8px oklch(0% 0 0 / 6%);
@@ -130,6 +143,9 @@
   --res-top5: oklch(34% 0.075 290);
   --res-dnf-bg: oklch(72% 0.014 277);       /* inverted chip: light on dark */
   --res-dnf-ink: oklch(18% 0.012 277);
+  --res-dnf-accent: oklch(35% 0.08 60);     /* dark amber on the light chip */
+
+  --scrim: oklch(6% 0.01 277 / 66%);        /* deeper: the ground is already dark */
 
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
   --shadow-raise: 0 1px 2px oklch(0% 0 0 / 30%), 0 2px 8px oklch(0% 0 0 / 25%);
@@ -168,6 +184,9 @@
     --res-top5: oklch(34% 0.075 290);
     --res-dnf-bg: oklch(72% 0.014 277);
     --res-dnf-ink: oklch(18% 0.012 277);
+    --res-dnf-accent: oklch(35% 0.08 60);
+
+    --scrim: oklch(6% 0.01 277 / 66%);
 
     --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
     --shadow-raise: 0 1px 2px oklch(0% 0 0 / 30%), 0 2px 8px oklch(0% 0 0 / 25%);
@@ -228,6 +247,15 @@ th.num {
 th,
 td {
   border-bottom: 1px solid var(--border);
+}
+
+/* Set only for the duration of a theme swap (see lib/theme.ts). Without it,
+ * every `transition: color` in the app latches the outgoing theme's value. */
+[data-theme-switching],
+[data-theme-switching] *,
+[data-theme-switching] *::before,
+[data-theme-switching] *::after {
+  transition: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
