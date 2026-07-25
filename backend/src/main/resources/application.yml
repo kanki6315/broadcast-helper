@@ -1,13 +1,24 @@
 # Include exception reasons in error responses so the UI can show the user
 # why an import failed (e.g. "No series or series alias matches ...").
 server:
-  # Railway (and most PaaS) inject the port to listen on via $PORT.
-  port: ${PORT:8080}
+  # Railway (and most PaaS) inject the port to listen on via $PORT. The local
+  # fallback is 8731, not 8080 — this project claims ports no other local service
+  # is likely to hold, so a stray listener can never be mistaken for ours.
+  port: ${PORT:8731}
   # Behind Railway's TLS-terminating proxy the app receives plain http; honour the
   # X-Forwarded-* headers so Spring rebuilds the original https origin. Without this
   # the OAuth redirect_uri is built as http://, which Google rejects. Harmless in
   # local dev (no forwarded headers → the real request scheme is used).
   forward-headers-strategy: framework
+  # The browse payloads are large, highly repetitive JSON (a season's lineups
+  # matrix is ~60kB uncompressed) and were being served raw — no Content-Encoding
+  # even when the client asked for gzip. The tool is used trackside and in booths
+  # on variable connectivity, so this is the cheapest real win available.
+  compression:
+    enabled: true
+    mime-types: application/json,text/html,text/css,application/javascript,image/svg+xml
+    # Below ~1kB the header overhead and CPU aren't worth it.
+    min-response-size: 1024
   error:
     include-message: always
   servlet:
@@ -85,7 +96,8 @@ spring:
   #   SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET
   datasource:
     # Env-driven for hosting (Railway Postgres vars); local dev defaults preserved.
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/pit_pass}
+    # Local port is 5532, not 5432 — see docker-compose.yml for why.
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5532/pit_pass}
     username: ${SPRING_DATASOURCE_USERNAME:pitpass}
     password: ${SPRING_DATASOURCE_PASSWORD:pitpass}
   jpa:
