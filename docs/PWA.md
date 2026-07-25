@@ -102,10 +102,10 @@ Use this on the actual iPad; the numbers are device/browser-specific.
 
 - **HTTPS is mandatory.** Service workers *and* the storage APIs
   (`navigator.storage`, `caches`) are secure-context-only (localhost excepted).
-  Over a plain-http LAN address (`http://<mac-ip>:5173`) the SW won't register and
+  Over a plain-http LAN address (`http://<mac-ip>:6731`) the SW won't register and
   Diagnostics reads all blank. Production is HTTPS (Railway), so this only matters
   for local device testing — use a trusted-HTTPS tunnel (e.g. `cloudflared tunnel
-  --url http://localhost:4173`) or test on the deployment.
+  --url http://localhost:6732`) or test on the deployment.
 - **Offline auth fallback.** `lib/auth.tsx` synthesizes an *open/admin* `me` when
   `/api/me` is unreachable (mimics local dev so the login screen isn't shown
   behind a dead backend). Offline this would render edit controls that can't save.

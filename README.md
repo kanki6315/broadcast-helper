@@ -106,28 +106,30 @@ Prerequisites: JDK 21, Node 20+, Docker, Python 3.10+ with
 (only for exporting a sheet to PDF).
 
 ```bash
-# 1. Database
+# 1. Database — Postgres on host port 5532 (not the 5432 default; see
+#    docker-compose.yml). Connect with:
+#    PGPASSWORD=pitpass psql -h localhost -p 5532 -U pitpass -d pit_pass
 docker compose up -d
 
-# 2. Backend (http://localhost:8080) — applies Flyway migrations on startup
+# 2. Backend (http://localhost:8731) — applies Flyway migrations on startup
 cd backend && ./gradlew bootRun
 
-# 3. Frontend (http://localhost:5173) — proxies /api to the backend
+# 3. Frontend (http://localhost:6731) — proxies /api to the backend
 cd frontend && npm install && npm run dev
 ```
 
-Open http://localhost:5173.
+Open http://localhost:6731.
 
 ## Generating a sheet PDF
 
 Each event's sheet renders as a standalone print-first page at
-`http://localhost:5173/#/sheet/{eventId}` (linked from the Events tab). Use the
+`http://localhost:6731/#/sheet/{eventId}` (linked from the Events tab). Use the
 page's **Print / Save PDF** button and choose "Save as PDF", or export headless:
 
 ```bash
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
   --headless=new --disable-gpu --no-pdf-header-footer \
-  --print-to-pdf=sheet.pdf "http://localhost:5173/#/sheet/{eventId}"
+  --print-to-pdf=sheet.pdf "http://localhost:6731/#/sheet/{eventId}"
 ```
 
 ## Layout

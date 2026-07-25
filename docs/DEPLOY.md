@@ -74,7 +74,7 @@ Auth is **off by default** (local dev is open). To turn it on for the deployment
    Credentials → Create Credentials → OAuth client ID → *Web application*.
    - **Authorized redirect URI:** `https://<your-app>.up.railway.app/login/oauth2/code/google`
      — it **must be `https`** (Google rejects `http` for non-localhost). The path is
-     fixed by Spring. Add `http://localhost:8080/login/oauth2/code/google` too only
+     fixed by Spring. Add `http://localhost:8731/login/oauth2/code/google` too only
      if you test the container locally.
    - Copy the **Client ID** and **Client secret**.
 
@@ -170,10 +170,10 @@ like everything else. Two deploy-relevant facts:
 
 | Variable | Default (local) | Notes |
 |---|---|---|
-| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/pit_pass` | JDBC URL |
+| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5532/pit_pass` | JDBC URL. The local port is 5532, not the Postgres default — see `docker-compose.yml`. Railway supplies its own URL. |
 | `SPRING_DATASOURCE_USERNAME` | `pitpass` | |
 | `SPRING_DATASOURCE_PASSWORD` | `pitpass` | |
-| `PORT` | `8080` | Listen port (Railway sets this) |
+| `PORT` | `8731` | Listen port (Railway sets this; 8731 is the local fallback) |
 | `PARSER_PYTHON` | `python3` | Set to the venv python in-image (`/opt/venv/bin/python3`); shared by every sidecar |
 | `PARSER_SCRIPT` | `../parser/parse_entry_list.py` | In-image path (`/app/parser/parse_entry_list.py`) |
 | `TEAM_SHEET_PARSER_SCRIPT` | `../parser/extract_team_sheet_pages.py` | In-image path (`/app/parser/extract_team_sheet_pages.py`) |
