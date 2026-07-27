@@ -27,8 +27,35 @@ sheet does not.
 ```bash
 cd parser
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[test]"
 ```
+
+## Installing as a package
+`pyproject.toml` makes this directory pip-installable (distribution
+`pitpass-parser`) so other projects can run the sidecars without vendoring the
+code. The install provides three console commands — `parse-entry-list`,
+`parse-points`, `extract-team-sheet-pages` — with the same CLIs as the scripts.
+Install straight from the (private) repo at a release tag:
+
+```bash
+pip install "pitpass-parser @ git+https://oauth2:${GH_TOKEN}@github.com/kanki6315/broadcast-helper.git@parser-v1.0.0#subdirectory=parser"
+```
+
+(`GH_TOKEN` is a fine-grained PAT with read-only Contents on this repo; local
+clones can use `pip install -e path/to/broadcast-helper/parser` instead.)
+
+This repo's own backend does **not** consume the package — it invokes the
+scripts by path (`python parse_entry_list.py <pdf>`), which keeps working
+unchanged; the package exists for external consumers (imsa-fantasy's Docker
+image installs it and runs `parse-entry-list` as its sidecar).
+
+### Cutting a parser release
+1. Bump `version` in `pyproject.toml`; merge to `main`.
+2. `git tag parser-vX.Y.Z && git push origin parser-vX.Y.Z`
+   (`parser-v*` tags namespace parser releases apart from any future app tags).
+3. Bump the `PARSER_REF` build arg in imsa-fantasy's `apps/api/Dockerfile` when
+   that consumer should pick up the change. Contract rule: additive changes
+   only — see the compatibility policy in [SCHEMA.md](SCHEMA.md).
 
 ## Run
 ```bash
@@ -47,9 +74,12 @@ printed beside them — see POINTS_SCHEMA.md for why that check earns its keep.
 
 ## Test
 ```bash
-pip install pytest
 pytest                      # skips if samples/ has no PDF fixture
 ```
+`test_schema.py` validates every sample entry list's output against
+[`schemas/entries.schema.json`](schemas/entries.schema.json), the
+machine-readable half of SCHEMA.md — field renames and type drift fail here
+before they reach a consumer.
 
 ## How it works — `parse_points.py`
 The IMSA sheet is read by geometry, not text: `extract_text()` renders adjacent

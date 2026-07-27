@@ -1,8 +1,21 @@
 # entries.json contract
 
-The boundary between the Python parser and the Java loader (PLAN.md §4). The
-parser emits exactly this shape; the loader maps it to `event`/`entry`/`lineup`/
-`driver` and owns dedup + persistence. Keep changes here in lockstep on both sides.
+The boundary between the Python parser and its consumers: this repo's Java
+loader (PLAN.md §4) and imsa-fantasy's C# entry-list import. The parser emits
+exactly this shape — [`schemas/entries.schema.json`](schemas/entries.schema.json)
+is the machine-readable version, enforced by `test_schema.py` — and the loader
+maps it to `event`/`entry`/`lineup`/`driver` and owns dedup + persistence.
+
+## Compatibility policy
+Consumers are **tolerant readers**: each binds only the fields it uses and
+ignores the rest, so **adding** a field is always safe and requires no consumer
+changes. What breaks consumers silently is renaming, retyping, or repurposing
+an existing field, changing which keys are emitted vs. omitted, or changing the
+semantics of `unparsed` / the `markers` values — treat those as breaking
+changes and check both consumers (this repo's loader and imsa-fantasy's subset
+DTOs in `EntryListImportEndpoints.cs`) before shipping. `unparsed` is the one
+field every consumer must honor: SCHEMA'd loaders fail loud on it rather than
+silently importing an unrecognized driver line.
 
 ```jsonc
 {
