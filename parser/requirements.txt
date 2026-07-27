@@ -1,3 +1,0 @@
-# Canonical dependency list lives in pyproject.toml; kept for the venv
-# quick-start in README.md.
-pdfplumber>=0.11

@@ -27,7 +27,7 @@ sheet does not.
 ```bash
 cd parser
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[test]"
 ```
 
 ## Installing as a package
@@ -74,7 +74,6 @@ printed beside them — see POINTS_SCHEMA.md for why that check earns its keep.
 
 ## Test
 ```bash
-pip install -e ".[test]"
 pytest                      # skips if samples/ has no PDF fixture
 ```
 `test_schema.py` validates every sample entry list's output against

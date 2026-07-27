@@ -13,6 +13,9 @@ application-local.yaml
 # Python
 __pycache__/
 *.pyc
+.venv/
+build/
+*.egg-info/
 
 # Impeccable design-hook cache
 .impeccable/
