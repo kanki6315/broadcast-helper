@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/kanki6315/broadcast-helper/blob/main/parser/schemas/entries.schema.json",
+  "title": "entries.json — entry-list parser output",
+  "description": "Machine-readable companion to SCHEMA.md. Strict (additionalProperties: false) about what the parser emits; consumers should read tolerantly and ignore fields they don't use — see SCHEMA.md's compatibility policy. Event header keys are present only when found on the page, so only series/source_file are required there.",
+  "type": "object",
+  "required": ["event", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "type": "object",
+      "required": ["series", "source_file"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "circuit": { "type": ["string", "null"] },
+        "location": { "type": ["string", "null"] },
+        "series": { "type": ["string", "null"] },
+        "start_date": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "end_date": { "type": ["string", "null"], "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "total_entries": { "type": ["integer", "null"], "minimum": 0 },
+        "source_file": { "type": "string" }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "required": [
+        "class_name", "class_code", "class_order", "car_number", "team",
+        "sponsor", "team_nationality", "bronze_cup", "dealer_trophy",
+        "car_type", "tire", "engine", "fuel", "drivers"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "class_name": { "type": ["string", "null"] },
+        "class_code": { "type": ["string", "null"] },
+        "class_order": { "type": ["integer", "null"], "minimum": 1 },
+        "car_number": { "type": "string" },
+        "team": { "type": ["string", "null"] },
+        "sponsor": { "type": ["string", "null"] },
+        "team_nationality": { "type": ["string", "null"] },
+        "bronze_cup": { "type": "boolean" },
+        "dealer_trophy": { "type": "boolean" },
+        "car_type": { "type": ["string", "null"] },
+        "tire": { "type": ["string", "null"] },
+        "engine": { "type": ["string", "null"] },
+        "fuel": { "type": ["string", "null"] },
+        "drivers": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/driver" }
+        }
+      }
+    },
+    "driver": {
+      "type": "object",
+      "required": ["order", "rating", "name", "nationality", "hometown", "markers", "is_tbd"],
+      "additionalProperties": false,
+      "properties": {
+        "order": { "type": "integer", "minimum": 1 },
+        "rating": { "enum": ["P", "G", "S", "B", null] },
+        "name": { "type": ["string", "null"] },
+        "nationality": { "type": ["string", "null"] },
+        "hometown": { "type": ["string", "null"] },
+        "markers": {
+          "type": "array",
+          "items": { "enum": ["coach", "rookie", "invitational", "non_series"] }
+        },
+        "is_tbd": { "type": "boolean" },
+        "unparsed": { "const": true }
+      }
+    }
+  }
+}
