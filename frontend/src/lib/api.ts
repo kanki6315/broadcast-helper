@@ -437,6 +437,27 @@ export interface DriverStats {
   seasons: SeasonStatLine[]
 }
 
+export interface TeamStatsRow {
+  teamId: number
+  teamName: string
+  className: string
+  carNumbers: string | null
+  byFormat: FormatLine[]
+  quali: QualiLine
+}
+
+export interface TeamStatsTable {
+  formats: FormatInfo[]
+  rows: TeamStatsRow[]
+}
+
+export interface TeamStats {
+  teamId: number
+  career: CareerTotals
+  bySeries: SeriesStatLine[]
+  seasons: SeasonStatLine[]
+}
+
 /* -- team profile ----------------------------------------------------------- */
 
 export interface TeamSearchHit {
@@ -496,9 +517,22 @@ export interface TeamChampMatrix {
   entries: TeamChampEntry[]
 }
 
+export interface TeamRef {
+  id: number
+  name: string
+}
+
+export interface TeamLineage {
+  predecessor: TeamRef | null
+  successors: TeamRef[]
+}
+
 export interface TeamProfile {
+  /** Null only for a legacy spelling that has entries but no team entity. */
+  teamId: number | null
   name: string
   notes: string | null
+  lineage: TeamLineage | null
   roster: TeamRosterSeason[]
   championships: TeamChampMatrix[]
 }

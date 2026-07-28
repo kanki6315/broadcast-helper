@@ -18,6 +18,7 @@ import ImportsPage from './pages/ImportsPage'
 import LogosPage from './pages/LogosPage'
 import SeriesPage from './pages/SeriesPage'
 import SheetPage from './pages/SheetPage'
+import TeamsPage from './pages/TeamsPage'
 import UsersPage from './pages/UsersPage'
 import SessionsPage from './pages/SessionsPage'
 import StoragePage from './pages/StoragePage'
@@ -55,6 +56,7 @@ export default function App() {
               <Route path="/manage" element={<ManageLayout />}>
                 <Route index element={<Navigate to="series" replace />} />
                 <Route path="series" element={<SeriesPage />} />
+                <Route path="teams" element={<TeamsPage />} />
                 <Route path="imports" element={<ImportsPage />} />
                 <Route path="logos" element={<LogosPage />} />
                 <Route path="users" element={<UsersPage />} />

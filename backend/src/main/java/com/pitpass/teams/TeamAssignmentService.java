@@ -3,6 +3,8 @@ package com.pitpass.teams;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 /**
  * Resolves a driver's season assignment at an event round and materialises it
  * onto entry. The snapshot keeps the rest of the application on its established
@@ -13,15 +15,17 @@ import org.springframework.stereotype.Service;
 public class TeamAssignmentService {
 
     private final JdbcClient db;
+    private final TeamResolver teamResolver;
 
-    public TeamAssignmentService(JdbcClient db) {
+    public TeamAssignmentService(JdbcClient db, TeamResolver teamResolver) {
         this.db = db;
+        this.teamResolver = teamResolver;
     }
 
     /** Re-resolve every entry after an admin save or an import renumbers rounds. */
     public int applySeason(long seasonId) {
         ensureNewDriversDefaultToPrivateer(seasonId);
-        return db.sql("""
+        int updated = db.sql("""
                         WITH driver_resolutions AS (
                             SELECT en.id AS entry_id, da.driver_id, picked.team_id, picked.team_name
                             FROM entry en
@@ -51,6 +55,45 @@ public class TeamAssignmentService {
                         """)
                 .param("seasonId", seasonId)
                 .update();
+        syncGlobalTeamIds(seasonId);
+        return updated;
+    }
+
+    /**
+     * The rewrite above changes entry.team_name, so the global team_id (set at
+     * import time from the raw spelling) must follow: privateer entries carry
+     * no global team, and each resolved season_team maps onto its global team
+     * via the alias catalogue.
+     */
+    private void syncGlobalTeamIds(long seasonId) {
+        db.sql("""
+                        UPDATE entry en
+                        SET team_id = NULL
+                        FROM season_team st
+                        WHERE st.id = en.season_team_id
+                          AND st.privateer_driver_id IS NOT NULL
+                          AND st.season_id = :seasonId
+                          AND en.team_id IS NOT NULL
+                        """)
+                .param("seasonId", seasonId)
+                .update();
+
+        record NamedTeam(long id, String name) {
+        }
+        List<NamedTeam> teams = db.sql("""
+                        SELECT id, name FROM season_team
+                        WHERE season_id = :seasonId AND privateer_driver_id IS NULL
+                        """)
+                .param("seasonId", seasonId)
+                .query((rs, i) -> new NamedTeam(rs.getLong("id"), rs.getString("name")))
+                .list();
+        for (NamedTeam st : teams) {
+            Long globalId = teamResolver.resolveOrCreate(st.name());
+            db.sql("UPDATE entry SET team_id = :globalId WHERE season_team_id = :stId")
+                    .param("globalId", globalId)
+                    .param("stId", st.id())
+                    .update();
+        }
     }
 
     /**

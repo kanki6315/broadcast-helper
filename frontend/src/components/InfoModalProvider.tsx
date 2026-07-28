@@ -4,7 +4,11 @@ import { InfoModalCtx, type InfoModalApi } from './infoModal'
 import DriverModal from './DriverModal'
 import TeamModal from './TeamModal'
 
-type Open = { type: 'driver'; id: number } | { type: 'team'; name: string } | null
+type Open =
+  | { type: 'driver'; id: number }
+  | { type: 'team'; name: string }
+  | { type: 'team'; id: number }
+  | null
 
 /** Hosts the driver and team info modals (one at a time — opening one from
  * inside the other replaces it, which reads as drill-through navigation). */
@@ -31,6 +35,7 @@ export default function InfoModalProvider({ children }: { children: ReactNode })
       openTeam: (name) => {
         if (name.trim()) setOpen({ type: 'team', name: name.trim() })
       },
+      openTeamById: (id) => setOpen({ type: 'team', id }),
     }),
     [],
   )
@@ -41,7 +46,13 @@ export default function InfoModalProvider({ children }: { children: ReactNode })
       {open?.type === 'driver' && (
         <DriverModal driverId={open.id} onClose={() => setOpen(null)} />
       )}
-      {open?.type === 'team' && <TeamModal teamName={open.name} onClose={() => setOpen(null)} />}
+      {open?.type === 'team' && (
+        <TeamModal
+          teamId={'id' in open ? open.id : undefined}
+          teamName={'name' in open ? open.name : undefined}
+          onClose={() => setOpen(null)}
+        />
+      )}
     </InfoModalCtx.Provider>
   )
 }

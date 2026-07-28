@@ -5,8 +5,10 @@ import {
   type TeamChampMatrix,
   type TeamProfile,
   type TeamRosterSeason,
+  type TeamStats,
 } from '../lib/api'
 import { formatPoints } from '../pages/season/ChampionshipGrid'
+import CareerStats from './CareerStats'
 import { useInfoModal } from './infoModal'
 import NotesSection from './NotesSection'
 import RaceLine from './RaceLine'
@@ -179,15 +181,18 @@ function RosterEntryRows({
 /* ------------------------------------------------------------------------- */
 
 export default function TeamModal({
+  teamId,
   teamName,
   onClose,
 }: {
-  teamName: string
+  teamId?: number
+  teamName?: string
   onClose: () => void
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null)
-  const { openDriver } = useInfoModal()
+  const { openDriver, openTeamById } = useInfoModal()
   const [profile, setProfile] = useState<TeamProfile | null>(null)
+  const [stats, setStats] = useState<TeamStats | null>(null)
   const [error, setError] = useState<string | null>(null)
   const flushNotes = useRef<() => void>(() => {})
 
@@ -198,26 +203,41 @@ export default function TeamModal({
 
   useEffect(() => {
     let cancelled = false
+    setProfile(null)
+    setStats(null)
     setError(null)
-    getJson<TeamProfile>(`/api/teams/profile?name=${encodeURIComponent(teamName)}`)
-      .then((p) => !cancelled && setProfile(p))
+    const query =
+      teamId != null ? `id=${teamId}` : `name=${encodeURIComponent(teamName ?? '')}`
+    getJson<TeamProfile>(`/api/teams/profile?${query}`)
+      .then((p) => {
+        if (cancelled) return
+        setProfile(p)
+        if (p.teamId != null) {
+          void getJson<TeamStats>(`/api/teams/${p.teamId}/stats`)
+            .then((s) => !cancelled && setStats(s))
+            .catch(() => {
+              /* stats are additive — the profile still stands */
+            })
+        }
+      })
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : 'Failed to load team'))
     return () => {
       cancelled = true
     }
-  }, [teamName])
+  }, [teamId, teamName])
 
   const saveNotes = useCallback(
     async (text: string) => {
+      if (!profile) return
       const r = await fetch('/api/teams/notes', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: teamName, notes: text }),
+        body: JSON.stringify({ name: profile.name, notes: text }),
         keepalive: true,
       })
       if (!r.ok) throw new Error(String(r.status))
     },
-    [teamName],
+    [profile],
   )
 
   const close = useCallback(() => {
@@ -275,6 +295,26 @@ export default function TeamModal({
                       .join(' · ')}
                   </p>
                 )}
+                {profile.lineage?.predecessor && (
+                  <p className="dm-seat">
+                    Continued from{' '}
+                    <button
+                      type="button"
+                      className="drv-link"
+                      onClick={() => openTeamById(profile.lineage!.predecessor!.id)}
+                    >
+                      {profile.lineage.predecessor.name}
+                    </button>
+                  </p>
+                )}
+                {(profile.lineage?.successors ?? []).map((s) => (
+                  <p key={s.id} className="dm-seat">
+                    Entry transferred to{' '}
+                    <button type="button" className="drv-link" onClick={() => openTeamById(s.id)}>
+                      {s.name}
+                    </button>
+                  </p>
+                ))}
               </div>
               <button type="button" className="dm-close" aria-label="Close" onClick={close}>
                 ✕
@@ -289,6 +329,8 @@ export default function TeamModal({
                   <RosterBlock key={season.seasonId} season={season} onDriver={goToDriver} />
                 ))
               )}
+
+              {stats && <CareerStats stats={stats} />}
 
               {profile.championships.length === 0 ? (
                 <p className="dm-quiet dm-pad-x">

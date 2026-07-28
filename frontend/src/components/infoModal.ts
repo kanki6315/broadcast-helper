@@ -11,6 +11,8 @@ export interface InfoModalApi {
   openDriverByName: (name: string) => void
   /** Teams are name-keyed — the backend normalizes casing/whitespace. */
   openTeam: (name: string) => void
+  /** Open a team by its entity id (stats tables, lineage links). */
+  openTeamById: (id: number) => void
 }
 
 export const InfoModalCtx = createContext<InfoModalApi | null>(null)

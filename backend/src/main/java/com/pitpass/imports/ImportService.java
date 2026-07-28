@@ -34,6 +34,7 @@ public class ImportService {
     private final IRacingClient iracing;
     private final com.pitpass.formats.RaceFormatService raceFormats;
     private final com.pitpass.teams.TeamAssignmentService teamAssignments;
+    private final com.pitpass.teams.TeamResolver teamResolver;
     private final TransactionTemplate txTemplate;
     private final String parserPython;
     private final String parserScript;
@@ -42,6 +43,7 @@ public class ImportService {
     public ImportService(JdbcClient db, ObjectMapper json, IRacingClient iracing,
                          com.pitpass.formats.RaceFormatService raceFormats,
                          com.pitpass.teams.TeamAssignmentService teamAssignments,
+                         com.pitpass.teams.TeamResolver teamResolver,
                          PlatformTransactionManager txManager,
                          @org.springframework.beans.factory.annotation.Value("${pit-pass.entry-list-parser.python:python3}") String parserPython,
                          @org.springframework.beans.factory.annotation.Value("${pit-pass.entry-list-parser.script:../parser/parse_entry_list.py}") String parserScript,
@@ -51,6 +53,7 @@ public class ImportService {
         this.iracing = iracing;
         this.raceFormats = raceFormats;
         this.teamAssignments = teamAssignments;
+        this.teamResolver = teamResolver;
         this.txTemplate = new TransactionTemplate(txManager);
         this.parserPython = parserPython;
         this.parserScript = parserScript;
@@ -1647,13 +1650,14 @@ public class ImportService {
             boolean isGuest = e.drivers().stream()
                     .anyMatch(d -> d.markers() != null && d.markers().contains("invitational"));
             long entryId = db.sql("""
-                            INSERT INTO entry (event_id, car_number, class_name, team_name, vehicle, manufacturer,
-                                               sponsor, tire, fuel, is_guest)
-                            VALUES (:eventId, :number, :className, :team, :vehicle, :manufacturer,
+                            INSERT INTO entry (event_id, car_number, class_name, team_name, team_id, vehicle,
+                                               manufacturer, sponsor, tire, fuel, is_guest)
+                            VALUES (:eventId, :number, :className, :team, :teamId, :vehicle, :manufacturer,
                                     :sponsor, :tire, :fuel, :isGuest)
                             ON CONFLICT (event_id, car_number) DO UPDATE
                                 SET class_name = EXCLUDED.class_name,
                                     team_name = EXCLUDED.team_name,
+                                    team_id = EXCLUDED.team_id,
                                     vehicle = EXCLUDED.vehicle,
                                     manufacturer = EXCLUDED.manufacturer,
                                     sponsor = EXCLUDED.sponsor,
@@ -1666,6 +1670,7 @@ public class ImportService {
                     .param("number", e.carNumber())
                     .param("className", className)
                     .param("team", e.team())
+                    .param("teamId", teamResolver.resolveOrCreate(e.team()))
                     .param("vehicle", e.carType())
                     .param("manufacturer", resolveManufacturer(className, e.carType(), e.engine()))
                     .param("sponsor", e.sponsor())
@@ -1963,11 +1968,12 @@ public class ImportService {
         // manufacturer/class_group only overwrite when the source supplies them —
         // a metadata-poor import (grid CSV) must not erase entry-list richness.
         return db.sql("""
-                        INSERT INTO entry (event_id, car_number, class_name, team_name, vehicle, manufacturer, class_group)
-                        VALUES (:eventId, :number, :className, :team, :vehicle, :manufacturer, :group)
+                        INSERT INTO entry (event_id, car_number, class_name, team_name, team_id, vehicle, manufacturer, class_group)
+                        VALUES (:eventId, :number, :className, :team, :teamId, :vehicle, :manufacturer, :group)
                         ON CONFLICT (event_id, car_number) DO UPDATE
                             SET class_name = EXCLUDED.class_name,
                                 team_name = EXCLUDED.team_name,
+                                team_id = EXCLUDED.team_id,
                                 vehicle = EXCLUDED.vehicle,
                                 manufacturer = COALESCE(EXCLUDED.manufacturer, entry.manufacturer),
                                 class_group = COALESCE(EXCLUDED.class_group, entry.class_group)
@@ -1977,6 +1983,7 @@ public class ImportService {
                 .param("number", number)
                 .param("className", className)
                 .param("team", team)
+                .param("teamId", teamResolver.resolveOrCreate(team))
                 .param("vehicle", vehicle)
                 .param("manufacturer", resolveManufacturer(className, vehicle, manufacturer))
                 .param("group", group)
