@@ -51,11 +51,16 @@ public class SeasonStatsController {
     public record StatsTable(List<FormatInfo> formats, List<DriverStatsRow> rows) {
     }
 
+    public record TeamStatsRow(long teamId, String teamName, String className,
+                               String carNumbers, List<FormatLine> byFormat, QualiLine quali) {
+    }
+
+    public record TeamStatsTable(List<FormatInfo> formats, List<TeamStatsRow> rows) {
+    }
+
     @GetMapping("/seasons/{id}/stats")
     public StatsTable seasonStats(@PathVariable long id) {
-        db.sql("SELECT 1 FROM season WHERE id = :id").param("id", id).query(Integer.class)
-                .optional()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such season"));
+        requireSeason(id);
         return statsTable("ev.season_id = :id", id);
     }
 
@@ -63,10 +68,32 @@ public class SeasonStatsController {
      *  same buckets aggregate cleanly across its seasons. */
     @GetMapping("/series/{id}/stats")
     public StatsTable seriesStats(@PathVariable long id) {
+        requireSeries(id);
+        return statsTable("s.series_id = :id", id);
+    }
+
+    @GetMapping("/seasons/{id}/team-stats")
+    public TeamStatsTable seasonTeamStats(@PathVariable long id) {
+        requireSeason(id);
+        return teamStatsTable("ev.season_id = :id", id);
+    }
+
+    @GetMapping("/series/{id}/team-stats")
+    public TeamStatsTable seriesTeamStats(@PathVariable long id) {
+        requireSeries(id);
+        return teamStatsTable("s.series_id = :id", id);
+    }
+
+    private void requireSeason(long id) {
+        db.sql("SELECT 1 FROM season WHERE id = :id").param("id", id).query(Integer.class)
+                .optional()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such season"));
+    }
+
+    private void requireSeries(long id) {
         db.sql("SELECT 1 FROM series WHERE id = :id").param("id", id).query(Integer.class)
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such series"));
-        return statsTable("s.series_id = :id", id);
     }
 
     private record RaceAgg(long driverId, String name, String className, Long formatId,
@@ -162,24 +189,8 @@ public class SeasonStatsController {
                         new Context(rs.getString("car_number"), rs.getString("team_name"))))
                 .list();
 
-        // Formats referenced by the data, in their series ordinal order; a null
-        // format bucket ("Unassigned") only when a session actually lacks one.
-        List<FormatInfo> formats = new ArrayList<>(db.sql("""
-                        SELECT rf.id, rf.name, rf.ordinal
-                        FROM race_format rf
-                        WHERE rf.id IN (SELECT DISTINCT rs.format_id
-                                        FROM race_session rs
-                                                 JOIN event ev ON ev.id = rs.event_id
-                                                 JOIN season s ON s.id = ev.season_id
-                                        WHERE %s AND rs.format_id IS NOT NULL)
-                        ORDER BY rf.ordinal, rf.name
-                        """.formatted(scopePredicate))
-                .param("id", id)
-                .query((rs, i) -> new FormatInfo(rs.getLong("id"), rs.getString("name"), rs.getInt("ordinal")))
-                .list());
-        if (raceAggs.stream().anyMatch(a -> a.formatId() == null)) {
-            formats.add(new FormatInfo(null, "Unassigned", 99));
-        }
+        List<FormatInfo> formats = formatColumns(scopePredicate, id,
+                raceAggs.stream().anyMatch(a -> a.formatId() == null));
 
         // Assemble one row per driver × class, format lines in column order.
         record RowKey(long driverId, String className) {
@@ -226,5 +237,169 @@ public class SeasonStatsController {
             return a.driverName().compareToIgnoreCase(b.driverName());
         });
         return new StatsTable(formats, rows);
+    }
+
+    /** Formats referenced by the scope's data, in their series ordinal order; a
+     *  null format bucket ("Unassigned") only when a session actually lacks one. */
+    private List<FormatInfo> formatColumns(String scopePredicate, long id, boolean includeUnassigned) {
+        List<FormatInfo> formats = new ArrayList<>(db.sql("""
+                        SELECT rf.id, rf.name, rf.ordinal
+                        FROM race_format rf
+                        WHERE rf.id IN (SELECT DISTINCT rs.format_id
+                                        FROM race_session rs
+                                                 JOIN event ev ON ev.id = rs.event_id
+                                                 JOIN season s ON s.id = ev.season_id
+                                        WHERE %s AND rs.format_id IS NOT NULL)
+                        ORDER BY rf.ordinal, rf.name
+                        """.formatted(scopePredicate))
+                .param("id", id)
+                .query((rs, i) -> new FormatInfo(rs.getLong("id"), rs.getString("name"), rs.getInt("ordinal")))
+                .list());
+        if (includeUnassigned) {
+            formats.add(new FormatInfo(null, "Unassigned", 99));
+        }
+        return formats;
+    }
+
+    private record TeamRaceAgg(long teamId, String name, String className, Long formatId,
+                               int starts, int wins, int podiums, int top5s, int dnfs) {
+    }
+
+    private record TeamQualiAgg(long teamId, String className, int sessions, int poles, int top5s) {
+    }
+
+    private TeamStatsTable teamStatsTable(String scopePredicate, long id) {
+        // Race tallies per team × class × format. Counting is per car-entry —
+        // one result row per entry, so a two-car team scores two starts a race.
+        // Entries without a global team (iRacing privateers) are excluded.
+        List<TeamRaceAgg> raceAggs = db.sql("""
+                        SELECT en.team_id, t.name, en.class_name, rs.format_id,
+                               count(*) FILTER (WHERE r.position_in_class IS NOT NULL) AS starts,
+                               count(*) FILTER (WHERE r.position_in_class = 1)  AS wins,
+                               count(*) FILTER (WHERE r.position_in_class <= 3) AS podiums,
+                               count(*) FILTER (WHERE r.position_in_class <= 5) AS top5s,
+                               count(*) FILTER (WHERE r.not_finished)           AS dnfs
+                        FROM result r
+                                 JOIN race_session rs ON rs.id = r.session_id AND rs.session_type = 'RACE'
+                                 JOIN event ev ON ev.id = rs.event_id
+                                 JOIN season s ON s.id = ev.season_id
+                                 JOIN entry en ON en.id = r.entry_id
+                                 JOIN team t ON t.id = en.team_id
+                        WHERE %s
+                        GROUP BY en.team_id, t.name, en.class_name, rs.format_id
+                        """.formatted(scopePredicate))
+                .param("id", id)
+                .query((rs, i) -> new TeamRaceAgg(rs.getLong("team_id"), rs.getString("name"),
+                        rs.getString("class_name"), rs.getObject("format_id", Long.class),
+                        rs.getInt("starts"), rs.getInt("wins"), rs.getInt("podiums"),
+                        rs.getInt("top5s"), rs.getInt("dnfs")))
+                .list();
+
+        // A quali claim needs no driver attribution here: whoever set the time,
+        // the entry — and so the team — owns the result.
+        List<TeamQualiAgg> qualiAggs = db.sql("""
+                        SELECT en.team_id, en.class_name,
+                               count(*) FILTER (WHERE r.position_in_class IS NOT NULL) AS sessions,
+                               count(*) FILTER (WHERE r.position_in_class = 1)  AS poles,
+                               count(*) FILTER (WHERE r.position_in_class <= 5) AS top5s
+                        FROM result r
+                                 JOIN race_session rs ON rs.id = r.session_id AND rs.session_type = 'QUALIFYING'
+                                 JOIN event ev ON ev.id = rs.event_id
+                                 JOIN season s ON s.id = ev.season_id
+                                 JOIN entry en ON en.id = r.entry_id
+                        WHERE %s AND en.team_id IS NOT NULL
+                        GROUP BY en.team_id, en.class_name
+                        """.formatted(scopePredicate))
+                .param("id", id)
+                .query((rs, i) -> new TeamQualiAgg(rs.getLong("team_id"), rs.getString("class_name"),
+                        rs.getInt("sessions"), rs.getInt("poles"), rs.getInt("top5s")))
+                .list();
+
+        // Car numbers per team × class from its latest in-scope event, so the
+        // column reads as "what they run now" (JDC-Miller shows #5, not #85).
+        record CarKey(long teamId, String className) {
+        }
+        Map<CarKey, String> carNumbers = new LinkedHashMap<>();
+        db.sql("""
+                        SELECT DISTINCT ON (en.team_id, en.class_name)
+                               en.team_id, en.class_name,
+                               (SELECT string_agg(DISTINCT e2.car_number, ' ' ORDER BY e2.car_number)
+                                FROM entry e2
+                                WHERE e2.event_id = ev.id AND e2.team_id = en.team_id
+                                  AND e2.class_name = en.class_name) AS car_numbers
+                        FROM entry en
+                                 JOIN event ev ON ev.id = en.event_id
+                                 JOIN season s ON s.id = ev.season_id
+                        WHERE %s AND en.team_id IS NOT NULL
+                        ORDER BY en.team_id, en.class_name, ev.event_date DESC NULLS LAST, ev.id DESC
+                        """.formatted(scopePredicate))
+                .param("id", id)
+                .query((rs, i) -> carNumbers.put(
+                        new CarKey(rs.getLong("team_id"), rs.getString("class_name")),
+                        rs.getString("car_numbers")))
+                .list();
+
+        List<FormatInfo> formats = formatColumns(scopePredicate, id,
+                raceAggs.stream().anyMatch(a -> a.formatId() == null));
+
+        record RowKey(long teamId, String className) {
+        }
+        Map<RowKey, List<TeamRaceAgg>> byRow = new LinkedHashMap<>();
+        for (TeamRaceAgg a : raceAggs) {
+            byRow.computeIfAbsent(new RowKey(a.teamId(), a.className()), k -> new ArrayList<>()).add(a);
+        }
+        Map<RowKey, TeamQualiAgg> qualiByRow = new LinkedHashMap<>();
+        for (TeamQualiAgg q : qualiAggs) {
+            qualiByRow.put(new RowKey(q.teamId(), q.className()), q);
+        }
+        // A team can qualify without racing (quali-only import); those rows
+        // still deserve a line.
+        for (TeamQualiAgg q : qualiAggs) {
+            byRow.computeIfAbsent(new RowKey(q.teamId(), q.className()), k -> new ArrayList<>());
+        }
+
+        Map<Long, String> teamNames = new LinkedHashMap<>();
+        for (TeamRaceAgg a : raceAggs) {
+            teamNames.putIfAbsent(a.teamId(), a.name());
+        }
+        List<Long> unnamed = byRow.keySet().stream().map(RowKey::teamId)
+                .filter(t -> !teamNames.containsKey(t)).distinct().toList();
+        if (!unnamed.isEmpty()) {
+            db.sql("SELECT id, name FROM team WHERE id IN (:ids)")
+                    .param("ids", unnamed)
+                    .query((rs, i) -> teamNames.put(rs.getLong("id"), rs.getString("name")))
+                    .list();
+        }
+
+        List<TeamStatsRow> rows = new ArrayList<>();
+        for (Map.Entry<RowKey, List<TeamRaceAgg>> e : byRow.entrySet()) {
+            List<TeamRaceAgg> aggs = e.getValue();
+            List<FormatLine> lines = new ArrayList<>();
+            for (FormatInfo f : formats) {
+                aggs.stream().filter(a -> Objects.equals(a.formatId(), f.id())).findFirst()
+                        .ifPresent(a -> lines.add(new FormatLine(a.formatId(), a.starts(),
+                                a.wins(), a.podiums(), a.top5s(), a.dnfs())));
+            }
+            TeamQualiAgg q = qualiByRow.get(e.getKey());
+            rows.add(new TeamStatsRow(e.getKey().teamId(), teamNames.get(e.getKey().teamId()),
+                    e.getKey().className(),
+                    carNumbers.get(new CarKey(e.getKey().teamId(), e.getKey().className())),
+                    lines, new QualiLine(q != null ? q.sessions() : 0,
+                    q != null ? q.poles() : 0, q != null ? q.top5s() : 0)));
+        }
+        rows.sort((a, b) -> {
+            int wa = a.byFormat().stream().mapToInt(FormatLine::wins).sum();
+            int wb = b.byFormat().stream().mapToInt(FormatLine::wins).sum();
+            if (wa != wb) {
+                return wb - wa;
+            }
+            int pa = a.byFormat().stream().mapToInt(FormatLine::podiums).sum();
+            int pb = b.byFormat().stream().mapToInt(FormatLine::podiums).sum();
+            if (pa != pb) {
+                return pb - pa;
+            }
+            return a.teamName().compareToIgnoreCase(b.teamName());
+        });
+        return new TeamStatsTable(formats, rows);
     }
 }

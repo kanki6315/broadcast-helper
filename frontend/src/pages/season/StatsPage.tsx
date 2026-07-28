@@ -1,18 +1,42 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getJson, type DriverStatsRow, type StatsTable } from '../../lib/api'
+import {
+  getJson,
+  type FormatInfo,
+  type FormatLine,
+  type QualiLine,
+  type StatsTable,
+  type TeamStatsTable,
+} from '../../lib/api'
 import { useSeason } from './SeasonLayout'
 import { useInfoModal } from '../../components/infoModal'
 
 /**
- * Per-driver tallies (starts, wins, podiums, top-5s, DNFs) split by race
- * format, plus qualifying (poles, top-5s). A win is in-class P1; poles come
- * only from qualifying results — a reversed feature grid's front row is not a
- * pole, so these counts can rightly disagree with the recap's start chips.
- * The All-time scope aggregates every season of the series into the same
- * format buckets.
+ * Per-driver or per-team tallies (starts, wins, podiums, top-5s, DNFs) split
+ * by race format, plus qualifying (poles, top-5s). A win is in-class P1; poles
+ * come only from qualifying results — a reversed feature grid's front row is
+ * not a pole, so these counts can rightly disagree with the recap's start
+ * chips. The All-time scope aggregates every season of the series into the
+ * same format buckets. Team counting is per car-entry (a two-car team scores
+ * two starts a race), and a team's quali claim needs no driver attribution.
  */
 
 type Scope = 'season' | 'alltime'
+type Mode = 'drivers' | 'teams'
+
+/** One table row in either mode: a driver × class or a team × class. */
+interface Row {
+  id: number
+  name: string
+  car: string | null
+  className: string
+  byFormat: FormatLine[]
+  quali: QualiLine
+}
+
+interface TableData {
+  formats: FormatInfo[]
+  rows: Row[]
+}
 
 const RACE_COLS = [
   { key: 'starts', label: 'St', title: 'Starts (classified entries)' },
@@ -35,7 +59,7 @@ interface Sort {
 /** Text columns read A→Z first; a tally column is asked "who has the most",
  * so it opens descending. */
 function defaultDir(key: SortKey): SortDir {
-  return key === 'driver' || key === 'car' ? 'asc' : 'desc'
+  return key === 'name' || key === 'car' ? 'asc' : 'desc'
 }
 
 function flipDir(dir: SortDir): SortDir {
@@ -44,9 +68,9 @@ function flipDir(dir: SortDir): SortDir {
 
 /** The value a row sorts by, or null for "never contested" — which is not a
  * zero and never sorts among them (see nulls-last in `sortRows`). */
-function sortValue(row: DriverStatsRow, key: SortKey): number | string | null {
-  if (key === 'driver') return row.driverName.toLowerCase()
-  if (key === 'car') return row.carNumber ?? null
+function sortValue(row: Row, key: SortKey): number | string | null {
+  if (key === 'name') return row.name.toLowerCase()
+  if (key === 'car') return row.car ?? null
   if (key === 'quali:poles') return row.quali.sessions > 0 ? row.quali.poles : null
   if (key === 'quali:top5s') return row.quali.sessions > 0 ? row.quali.top5s : null
   const [, id, col] = key.split(':')
@@ -68,7 +92,7 @@ function compareCar(a: string, b: string): number {
  * BOTH directions: "didn't enter" is not a score of zero, and floating it to
  * the top of an ascending sort would read as one. Ties keep the incoming
  * order (Array#sort is stable), which is the backend's own ranking. */
-function sortRows(rows: DriverStatsRow[], sort: Sort | null): DriverStatsRow[] {
+function sortRows(rows: Row[], sort: Sort | null): Row[] {
   if (!sort) return rows
   const flip = sort.dir === 'asc' ? 1 : -1
   return [...rows].sort((ra, rb) => {
@@ -142,9 +166,10 @@ function SortHead({
 
 export default function StatsPage() {
   const { hub, classes, classFilter, classColor } = useSeason()
-  const { openDriverByName } = useInfoModal()
+  const { openDriverByName, openTeamById } = useInfoModal()
   const [scope, setScope] = useState<Scope>('season')
-  const [data, setData] = useState<StatsTable | null>(null)
+  const [mode, setMode] = useState<Mode>('drivers')
+  const [data, setData] = useState<TableData | null>(null)
   // Column groups the user has toggled off — keyed 'quali', 'none' (Unassigned)
   // or the format id. Offered groups are only ever those present in the scope's
   // data, so a format another series uses can't be selected here.
@@ -168,11 +193,39 @@ export default function StatsPage() {
     setError(null)
     setHidden(new Set())
     // Season and all-time expose different format groups, so a sort keyed to
-    // one scope's column may not exist in the other.
+    // one scope's column may not exist in the other; a mode switch changes the
+    // ident columns too.
     setSort(null)
+    const path = mode === 'drivers' ? 'stats' : 'team-stats'
     const url =
-      scope === 'season' ? `/api/seasons/${hub.id}/stats` : `/api/series/${hub.seriesId}/stats`
-    getJson<StatsTable>(url)
+      scope === 'season'
+        ? `/api/seasons/${hub.id}/${path}`
+        : `/api/series/${hub.seriesId}/${path}`
+    const load =
+      mode === 'drivers'
+        ? getJson<StatsTable>(url).then((d) => ({
+            formats: d.formats,
+            rows: d.rows.map((r) => ({
+              id: r.driverId,
+              name: r.driverName,
+              car: r.carNumber,
+              className: r.className,
+              byFormat: r.byFormat,
+              quali: r.quali,
+            })),
+          }))
+        : getJson<TeamStatsTable>(url).then((d) => ({
+            formats: d.formats,
+            rows: d.rows.map((r) => ({
+              id: r.teamId,
+              name: r.teamName,
+              car: r.carNumbers,
+              className: r.className,
+              byFormat: r.byFormat,
+              quali: r.quali,
+            })),
+          }))
+    load
       .then((d) => {
         if (!cancelled) setData(d)
       })
@@ -182,7 +235,7 @@ export default function StatsPage() {
     return () => {
       cancelled = true
     }
-  }, [hub.id, hub.seriesId, scope])
+  }, [hub.id, hub.seriesId, scope, mode])
 
   // Rows grouped by class (band rows, like the recap grids), honoring the
   // class filter. Backend order (wins, then podiums) is kept within a class
@@ -190,7 +243,7 @@ export default function StatsPage() {
   // across them: the class band is a structural division, not a row property.
   const byClass = useMemo(() => {
     if (!data) return []
-    const groups = new Map<string, DriverStatsRow[]>()
+    const groups = new Map<string, Row[]>()
     for (const row of data.rows) {
       if (classFilter && row.className !== classFilter) continue
       if (!groups.has(row.className)) groups.set(row.className, [])
@@ -204,7 +257,7 @@ export default function StatsPage() {
           (order.indexOf(a[0]) + 1 || order.length + 1) -
           (order.indexOf(b[0]) + 1 || order.length + 1),
       )
-      .map(([name, rows]) => [name, sortRows(rows, sort)] as [string, DriverStatsRow[]])
+      .map(([name, rows]) => [name, sortRows(rows, sort)] as [string, Row[]])
   }, [data, classFilter, classes, sort])
 
   const hasQuali = useMemo(
@@ -256,6 +309,24 @@ export default function StatsPage() {
   return (
     <section aria-label="Stats">
       <div className="filter-bar">
+        <div className="seg" role="group" aria-label="Stats for">
+          <button
+            type="button"
+            className={mode === 'drivers' ? 'seg-btn active' : 'seg-btn'}
+            aria-pressed={mode === 'drivers'}
+            onClick={() => setMode('drivers')}
+          >
+            Drivers
+          </button>
+          <button
+            type="button"
+            className={mode === 'teams' ? 'seg-btn active' : 'seg-btn'}
+            aria-pressed={mode === 'teams'}
+            onClick={() => setMode('teams')}
+          >
+            Teams
+          </button>
+        </div>
         <div className="seg" role="group" aria-label="Stats scope">
           <button
             type="button"
@@ -321,16 +392,16 @@ export default function StatsPage() {
         <div className="grid-scroll">
           <table className="grid-table stats-table">
             <caption className="sr-only">
-              Driver stats by race format
+              {mode === 'drivers' ? 'Driver' : 'Team'} stats by race format
               {scope === 'alltime' ? ` — ${hub.seriesName} all-time` : ` — ${hub.year} season`}
             </caption>
             <thead>
               <tr>
-                <th className="ident" scope="col" rowSpan={2} aria-sort={ariaSort('driver')}>
+                <th className="ident" scope="col" rowSpan={2} aria-sort={ariaSort('name')}>
                   <SortHead
-                    label="Driver"
-                    title="Driver name"
-                    sortKey="driver"
+                    label={mode === 'drivers' ? 'Driver' : 'Team'}
+                    title={mode === 'drivers' ? 'Driver name' : 'Team name'}
+                    sortKey="name"
                     sort={sort}
                     onSort={toggleSort}
                   />
@@ -338,7 +409,7 @@ export default function StatsPage() {
                 <th className="num-cell" scope="col" rowSpan={2} aria-sort={ariaSort('car')}>
                   <SortHead
                     label="#"
-                    title="Car number"
+                    title={mode === 'drivers' ? 'Car number' : 'Car numbers'}
                     sortKey="car"
                     sort={sort}
                     onSort={toggleSort}
@@ -425,17 +496,19 @@ export default function StatsPage() {
                 {rows.map((row) => {
                   const lineByFormat = new Map(row.byFormat.map((l) => [l.formatId, l]))
                   return (
-                    <tr key={`${row.driverId}-${row.className}`}>
-                      <td className="ident name-cell" title={row.driverName}>
+                    <tr key={`${row.id}-${row.className}`}>
+                      <td className="ident name-cell" title={row.name}>
                         <button
                           type="button"
                           className="drv-link"
-                          onClick={() => openDriverByName(row.driverName)}
+                          onClick={() =>
+                            mode === 'drivers' ? openDriverByName(row.name) : openTeamById(row.id)
+                          }
                         >
-                          {row.driverName}
+                          {row.name}
                         </button>
                       </td>
-                      <td className="num-cell car-no">{row.carNumber ?? ''}</td>
+                      <td className="num-cell car-no">{row.car ?? ''}</td>
                       {formats.flatMap((f) => {
                         const line = lineByFormat.get(f.id)
                         return RACE_COLS.map((c, ci) => (
