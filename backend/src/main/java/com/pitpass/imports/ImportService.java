@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -1885,23 +1886,28 @@ public class ImportService {
      * driver table by full name first so we never duplicate a driver whose
      * results-file first/surname split differs from a naive first-space split.
      */
-    private Long findOrCreateDriverByFullName(String fullName, String country) {
-        Optional<Long> existing = db.sql("""
-                        SELECT id FROM driver WHERE lower(first_name || ' ' || surname) = lower(:name)
+    Long findOrCreateDriverByFullName(String fullName, String country) {
+        record DriverRow(long id, String first, String surname) {
+        }
+        Optional<DriverRow> existing = db.sql("""
+                        SELECT id, first_name, surname FROM driver
+                        WHERE lower(first_name || ' ' || surname) = lower(:name)
                         """)
                 .param("name", fullName)
-                .query(Long.class)
+                .query((rs, i) -> new DriverRow(rs.getLong("id"), rs.getString("first_name"), rs.getString("surname")))
                 .optional();
-        if (existing.isPresent()) {
-            return existing.get();
-        }
         int split = fullName.indexOf(' ');
         String first = split > 0 ? fullName.substring(0, split) : fullName;
         String surname = split > 0 ? fullName.substring(split + 1) : "";
+        if (existing.isPresent()) {
+            DriverRow row = existing.get();
+            recaseIfShouty(row.id(), row.first(), row.surname(), first, surname);
+            return row.id();
+        }
         return db.sql("""
                         INSERT INTO driver (first_name, surname, country)
                         VALUES (:first, :surname, :country)
-                        ON CONFLICT (first_name, surname) DO UPDATE
+                        ON CONFLICT (lower(first_name), lower(surname)) DO UPDATE
                             SET country = COALESCE(EXCLUDED.country, driver.country)
                         RETURNING id
                         """)
@@ -1910,6 +1916,25 @@ public class ImportService {
                 .param("country", country)
                 .query(Long.class)
                 .single();
+    }
+
+    /** Results CSVs/PDFs shout names ("CHAD GILSINGER"); the first source that
+     *  spells the same name properly upgrades the stored casing. Same-split
+     *  only — a full-name-derived split must never overwrite a source-supplied
+     *  one, that's the identity key. */
+    private void recaseIfShouty(long id, String storedFirst, String storedSurname,
+                                String first, String surname) {
+        String stored = storedFirst + " " + storedSurname;
+        String incoming = first + " " + surname;
+        if (storedFirst.equalsIgnoreCase(first) && storedSurname.equalsIgnoreCase(surname)
+                && stored.equals(stored.toUpperCase(Locale.ROOT))
+                && !incoming.equals(incoming.toUpperCase(Locale.ROOT))) {
+            db.sql("UPDATE driver SET first_name = :first, surname = :surname WHERE id = :id")
+                    .param("first", first)
+                    .param("surname", surname)
+                    .param("id", id)
+                    .update();
+        }
     }
 
     private long findOrCreateSeries(String name) {
@@ -2158,23 +2183,28 @@ public class ImportService {
         }
     }
 
-    /** The one driver identity rule: find-or-create on (first_name, surname),
-     *  never erasing known country/hometown with a source that omits them. */
-    private long findOrCreateDriver(String firstName, String surname, String country, String hometown) {
-        return db.sql("""
+    /** The one driver identity rule: find-or-create on case-insensitive
+     *  (first_name, surname), never erasing known country/hometown with a
+     *  source that omits them. */
+    long findOrCreateDriver(String firstName, String surname, String country, String hometown) {
+        record DriverRow(long id, String first, String surname) {
+        }
+        DriverRow row = db.sql("""
                         INSERT INTO driver (first_name, surname, country, hometown)
                         VALUES (:first, :surname, :country, :hometown)
-                        ON CONFLICT (first_name, surname) DO UPDATE
+                        ON CONFLICT (lower(first_name), lower(surname)) DO UPDATE
                             SET country = COALESCE(EXCLUDED.country, driver.country),
                                 hometown = COALESCE(EXCLUDED.hometown, driver.hometown)
-                        RETURNING id
+                        RETURNING id, first_name, surname
                         """)
                 .param("first", firstName)
                 .param("surname", surname)
                 .param("country", country)
                 .param("hometown", hometown)
-                .query(Long.class)
+                .query((rs, i) -> new DriverRow(rs.getLong("id"), rs.getString("first_name"), rs.getString("surname")))
                 .single();
+        recaseIfShouty(row.id(), row.first(), row.surname(), firstName, surname);
+        return row.id();
     }
 
     /** Results files spell ratings out ("Platinum"); store the single letter everywhere. */
