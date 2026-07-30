@@ -33,6 +33,10 @@ interface ImportReview {
   guess: TargetGuess | null
   classReview: { knownClasses: string[]; unknownClasses: string[] }
   needsSession: boolean
+  // File cars absent from the guessed event's roster (null when no event was
+  // guessed or it has no entries). Only the numbers matter here: any new car
+  // sends the batch to the review table, where the confirmation checkbox lives.
+  rosterDiff: { newCars: { number: string }[] } | null
 }
 interface BatchListItem {
   id: number
@@ -53,6 +57,7 @@ interface ConfirmBatch {
   guess: TargetGuess | null
   unknownClasses: string[]
   needsSession: boolean
+  newCarNumbers: string[]
 }
 // The draggable unit: one file / subsession (its batches share a filename).
 interface ConfirmItem {
@@ -86,6 +91,9 @@ interface BatchResult {
 function excludeReason(b: ConfirmBatch): string | null {
   if (b.unknownClasses.length > 0) return 'unrecognized class'
   if (b.needsSession) return 'needs a session chosen'
+  // Cars the guessed event never entered need the reviewer's explicit
+  // confirmation, which lives in the table — committing here would 422.
+  if (b.newCarNumbers.length > 0) return 'adds cars not on the entry list'
   if (b.kind === 'STANDINGS') {
     // The guess reads kind and year from the standings title; a generically named
     // iRacing season ("League 6004 season 99330") yields a garbage kind and no
@@ -182,6 +190,7 @@ export default function ConfirmImportStep({
         guess: review?.guess ?? null,
         unknownClasses: review?.classReview.unknownClasses ?? [],
         needsSession: review?.needsSession ?? false,
+        newCarNumbers: review?.rosterDiff?.newCars.map((c) => c.number) ?? [],
       }
       if (!EVENT_KINDS.has(b.kind)) {
         standingsBatches.push(cb)
@@ -383,7 +392,7 @@ export default function ConfirmImportStep({
 
     const eventPayload = wantGroups.map((g) => ({ key: g.key, eventId: g.eventId, name: g.name, eventDate: g.date }))
     const batchPayload: { batchId: number; eventKey: string | null; target: unknown }[] = []
-    const eventTarget = () => ({
+    const eventTarget = (g: EventGroupDraft) => ({
       seriesId,
       newSeriesName: null,
       eventId: null,
@@ -396,6 +405,11 @@ export default function ConfirmImportStep({
       sessionType: null,
       sessionOrdinal: null,
       classMapping: {},
+      // A create-group's first batch seeds the event's roster, and its siblings
+      // (the same weekend's files) legitimately drift from it — pre-approve.
+      // Attach-groups keep the new-entries guard live: a mismatch 422s the
+      // group, and the batches finish in the review table with its checkbox.
+      allowNewEntries: g.eventId == null ? true : null,
     })
     for (const g of wantGroups) {
       for (const key of g.itemKeys) {
@@ -403,7 +417,7 @@ export default function ConfirmImportStep({
         if (!it) continue
         for (const b of it.batches) {
           if (retryFailedOnly && !failedIds.has(b.id)) continue
-          batchPayload.push({ batchId: b.id, eventKey: g.key, target: eventTarget() })
+          batchPayload.push({ batchId: b.id, eventKey: g.key, target: eventTarget(g) })
         }
       }
     }
@@ -425,6 +439,7 @@ export default function ConfirmImportStep({
           sessionType: null,
           sessionOrdinal: null,
           classMapping: {},
+          allowNewEntries: null, // standings write no entries
         },
       })
     }

@@ -823,6 +823,20 @@ public class ImportService {
         }
     }
 
+    /** One car in a file-vs-event roster comparison. {@code number} is the raw
+     *  car_number — the entry table's uniqueness key, where "04" and "4" are
+     *  different cars — so the diff reports exactly what a commit would do. */
+    public record CarRef(String number, String className, String teamName) {
+    }
+
+    /** How this file's cars compare to the target event's committed roster.
+     *  newCars would be created by the commit (the wrong-file fingerprint: a
+     *  correct file rarely names a car the event never entered); missingCars
+     *  are entered but absent from the file (normal for grids — withdrawals
+     *  and DNQs). Null when there is no roster to compare against. */
+    public record RosterDiff(List<CarRef> newCars, List<CarRef> missingCars, int eventEntryCount) {
+    }
+
     public record ImportReview(String kind, TargetGuess guess,
                                ClassReview classReview,
                                boolean needsSession,
@@ -835,7 +849,11 @@ public class ImportService {
                                // GRID only: no slot has a time — the fingerprint of a grid set
                                // by something other than qualifying. The UI uses it to suggest
                                // filling in the grid basis.
-                               boolean gridTimesAllBlank) {
+                               boolean gridTimesAllBlank,
+                               // File cars vs the target event's entries, for kinds that write
+                               // entries (grid/results/entry list). Null when no event is
+                               // chosen or guessed, or the event has no entries yet.
+                               RosterDiff rosterDiff) {
     }
 
     /** Everything the review screen needs: the guessed target and the
@@ -854,12 +872,18 @@ public class ImportService {
             String sessionTypeHint = null;
             Integer sessionOrdinalHint = null;
             boolean gridTimesAllBlank = false;
+            List<CarRef> fileCars = null;
             TargetGuess guess;
             switch (batch.kind()) {
-                case "ENTRY_LIST" -> guess = guessEntryList(json.readValue(payload, EntryListImport.class));
+                case "ENTRY_LIST" -> {
+                    EntryListImport imp = json.readValue(payload, EntryListImport.class);
+                    guess = guessEntryList(imp);
+                    fileCars = carRefs(imp);
+                }
                 case "RACE_RESULTS" -> {
                     RaceResultsImport imp = json.readValue(payload, RaceResultsImport.class);
                     guess = guessRaceResults(imp);
+                    fileCars = carRefs(imp);
                     needsSession = imp.sessionStart() == null;
                     if (needsSession) {
                         sessionTypeHint = normalizeSessionType(imp.sessionType(), imp.sessionName());
@@ -874,6 +898,7 @@ public class ImportService {
                 case "GRID" -> {
                     GridImport imp = json.readValue(payload, GridImport.class);
                     guess = guessGrid(imp);
+                    fileCars = carRefs(imp);
                     needsSession = imp.sessionStart() == null;
                     if (needsSession) {
                         sessionTypeHint = normalizeSessionType(imp.sessionType(), imp.sessionName());
@@ -896,10 +921,18 @@ public class ImportService {
                 }
                 default -> guess = null;
             }
+            RosterDiff rosterDiff = null;
+            if (fileCars != null && "STAGED".equals(batch.status())) {
+                Long effectiveEvent = chosenEventId != null ? chosenEventId
+                        : (guess != null ? guess.eventId() : null);
+                if (effectiveEvent != null) {
+                    rosterDiff = rosterDiff(effectiveEvent, fileCars);
+                }
+            }
             return new ImportReview(batch.kind(), guess, cr, needsSession,
-                    sessionTypeHint, sessionOrdinalHint, gridTimesAllBlank);
+                    sessionTypeHint, sessionOrdinalHint, gridTimesAllBlank, rosterDiff);
         } catch (JsonProcessingException e) {
-            return new ImportReview(batch.kind(), null, cr, false, null, null, false);
+            return new ImportReview(batch.kind(), null, cr, false, null, null, false, null);
         }
     }
 
@@ -994,6 +1027,63 @@ public class ImportService {
                         "No such event: " + eventId));
     }
 
+    /** The event's committed roster, keyed by raw car_number (the entry
+     *  uniqueness key — see V2: "04" and "4" are distinct cars). */
+    private Map<String, CarRef> eventRoster(long eventId) {
+        Map<String, CarRef> roster = new LinkedHashMap<>();
+        db.sql("""
+                        SELECT car_number, class_name, team_name FROM entry
+                        WHERE event_id = :eventId
+                        ORDER BY class_name NULLS LAST, car_number
+                        """)
+                .param("eventId", eventId)
+                .query((rs, i) -> roster.put(rs.getString("car_number"),
+                        new CarRef(rs.getString("car_number"), rs.getString("class_name"),
+                                rs.getString("team_name"))))
+                .list();
+        return roster;
+    }
+
+    /** Null when the event has no entries yet: a first import has no roster to
+     *  disagree with, so there is nothing to flag (and nothing to guard). */
+    private RosterDiff rosterDiff(long eventId, List<CarRef> fileCars) {
+        Map<String, CarRef> roster = eventRoster(eventId);
+        if (roster.isEmpty()) {
+            return null;
+        }
+        // Dedupe by raw number, mirroring the upsert's conflict key — a file
+        // that lists a car twice still creates (or updates) one entry.
+        Map<String, CarRef> file = new LinkedHashMap<>();
+        for (CarRef c : fileCars) {
+            file.putIfAbsent(c.number(), c);
+        }
+        List<CarRef> newCars = file.values().stream()
+                .filter(c -> !roster.containsKey(c.number()))
+                .toList();
+        List<CarRef> missingCars = roster.values().stream()
+                .filter(c -> !file.containsKey(c.number()))
+                .toList();
+        return new RosterDiff(newCars, missingCars, roster.size());
+    }
+
+    private static List<CarRef> carRefs(GridImport imp) {
+        return imp.rows().stream()
+                .map(r -> new CarRef(r.number(), r.className(), r.team()))
+                .toList();
+    }
+
+    private static List<CarRef> carRefs(RaceResultsImport imp) {
+        return imp.rows().stream()
+                .map(r -> new CarRef(r.number(), r.className(), r.team()))
+                .toList();
+    }
+
+    private static List<CarRef> carRefs(EntryListImport imp) {
+        return imp.entries().stream()
+                .map(e -> new CarRef(e.carNumber(), e.classCode(), e.team()))
+                .toList();
+    }
+
     /**
      * The season a standings batch lands in. A standings JSON states its year, so
      * the guess is the answer. A points PDF has no year in its text worth trusting
@@ -1063,7 +1153,11 @@ public class ImportService {
             Integer seasonYear,                    // standings: overrides the year the payload claims
             String sessionType, Integer sessionOrdinal, // for files with no session metadata (grid CSVs)
             Map<String, String> classMapping,
-            String gridBasis // grid commits: how the grid was set, when not by qualifying
+            String gridBasis, // grid commits: how the grid was set, when not by qualifying
+            // Reviewer confirmed creating entries for cars absent from the target
+            // event's roster (the review's rosterDiff.newCars). Null/false blocks
+            // such a commit with a 422 — see requireNewEntriesAck.
+            Boolean allowNewEntries
     ) {
         Map<String, String> mapping() {
             return classMapping == null ? Map.of() : classMapping;
@@ -1080,6 +1174,37 @@ public class ImportService {
         return target.eventName() != null && !target.eventName().isBlank()
                 ? target.eventName().trim()
                 : payloadName;
+    }
+
+    /**
+     * 422 when this commit would create entries on an event that already has a
+     * roster, unless the reviewer acknowledged it (allowNewEntries). A car the
+     * event never entered is the fingerprint of a file targeted at the wrong
+     * event — the mistake that once replaced CTMP's grid with Watkins Glen's.
+     * No-op for an empty event: a first import has no roster to disagree with,
+     * so the event-creating paths can never trip this.
+     */
+    private void requireNewEntriesAck(long eventId, List<CarRef> fileCars, ImportTarget target,
+                                      String fileNoun) {
+        if (Boolean.TRUE.equals(target.allowNewEntries())) {
+            return;
+        }
+        RosterDiff diff = rosterDiff(eventId, fileCars);
+        if (diff == null || diff.newCars().isEmpty()) {
+            return;
+        }
+        List<String> cars = diff.newCars().stream().limit(10)
+                .map(c -> "#" + c.number() + (c.teamName() != null && !c.teamName().isBlank()
+                        ? " (" + c.teamName() + ")" : ""))
+                .toList();
+        int extra = diff.newCars().size() - cars.size();
+        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "This " + fileNoun + " would add " + diff.newCars().size()
+                + " car(s) not on the event's entry list: " + String.join(", ", cars)
+                + (extra > 0 ? " and " + extra + " more" : "")
+                + ". The event already has " + diff.eventEntryCount()
+                + " entries — check the file matches the event, or confirm adding new entries"
+                + " in review and commit again.");
     }
 
     @Transactional
@@ -1281,7 +1406,8 @@ public class ImportService {
     private static ImportTarget withEvent(ImportTarget t, long eventId, String eventName) {
         return new ImportTarget(t.seriesId(), t.newSeriesName(), eventId, eventName,
                 t.classCode(), t.kind(), t.isCup(), t.familyName(), t.seasonYear(),
-                t.sessionType(), t.sessionOrdinal(), t.classMapping(), t.gridBasis());
+                t.sessionType(), t.sessionOrdinal(), t.classMapping(), t.gridBasis(),
+                t.allowNewEntries());
     }
 
     private static String messageOf(RuntimeException ex) {
@@ -1378,6 +1504,7 @@ public class ImportService {
             sessionOrdinal = target.sessionOrdinal() != null ? target.sessionOrdinal() : imp.sessionOrdinal();
             sessionName = sessionDisplayName(sessionType, sessionOrdinal);
         }
+        requireNewEntriesAck(eventId, carRefs(imp), target, "results file");
         // Read the canonical class set before upserting entries, so the file's
         // own rows don't seed it (see canonicalizeClass).
         List<String> knownClasses = seasonEntryClasses(seasonId);
@@ -1513,6 +1640,7 @@ public class ImportService {
             sessionOrdinal = target.sessionOrdinal() != null ? target.sessionOrdinal() : 1;
             sessionName = sessionDisplayName(sessionType, sessionOrdinal);
         }
+        requireNewEntriesAck(eventId, carRefs(imp), target, "grid file");
         List<String> knownClasses = seasonEntryClasses(seasonId);
         Map<String, String> classAliases = classAliasesForSeason(seasonId);
         Map<String, String> mapping = target.mapping();
@@ -1749,6 +1877,7 @@ public class ImportService {
                 : createEvent(seasonId, chosenEventName(target, imp.event().name()), imp.event().circuit(),
                 null, null, eventDate);
         renumberSeasonRounds(seasonId);
+        requireNewEntriesAck(eventId, carRefs(imp), target, "entry list");
         Map<String, String> classAliases = classAliasesForSeason(seasonId);
 
         for (EntryListImport.Entry e : imp.entries()) {
