@@ -110,7 +110,7 @@ class ImportServiceOfficialStandingsTest {
     }
 
     private static ImportService service(StubClient client) {
-        return new ImportService(null, MAPPER, client, null, null, null, null, "python3", "unused", "unused");
+        return new ImportService(null, MAPPER, client, null, null, null, null, "python3", "unused", "unused", "unused");
     }
 
     @Test

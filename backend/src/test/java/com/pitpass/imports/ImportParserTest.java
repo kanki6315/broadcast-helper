@@ -481,6 +481,45 @@ class ImportParserTest {
         }
     }
 
+    // ------------------------------------------------------------ grid PDFs
+
+    @Test
+    void mapsGridPdfJsonOntoGridImport() throws IOException {
+        JsonNode root = mapper.readTree(csvFixture("grid-pdf-parsed.json"));
+        GridImport grid = ImportService.mapGridPdfJson(root);
+
+        // The title's race number pre-fills the reviewer's session picker;
+        // everything else stays null so the reviewer target flow fires.
+        assertEquals(2, grid.sessionOrdinal());
+        assertNull(grid.sessionStart());
+        assertNull(grid.sessionName());
+        assertNull(grid.championshipName());
+
+        assertEquals(4, grid.rows().size());
+        GridImport.Row pole = grid.rows().get(0);
+        assertEquals(1, pole.positionOverall());
+        assertEquals(1, pole.positionInClass());
+        assertEquals("15", pole.number());
+        assertEquals("Pro", pole.className());
+        assertEquals("Kelly-Moss Road and Race", pole.team());
+        assertEquals("Porsche 992", pole.vehicle());
+        assertEquals("1:20.709", pole.time());
+        // One name, no roster to resolve a seat against: attribution stays
+        // null and readers fall back to the entry's sole crew member.
+        assertNull(pole.startingDriverSeat());
+        assertNull(pole.qualifyingDriverSeat());
+        assertTrue(pole.drivers().isEmpty());
+
+        // In-class positions derive from overall order; leading zeros survive;
+        // a null time (no qualifying) stays null.
+        GridImport.Row proAm = grid.rows().get(2);
+        assertEquals(1, proAm.positionInClass());
+        GridImport.Row untimed = grid.rows().get(3);
+        assertEquals("08", untimed.number());
+        assertEquals(3, untimed.positionInClass());
+        assertNull(untimed.time());
+    }
+
     // ------------------------------------------------------------ results CSVs
 
     @Test

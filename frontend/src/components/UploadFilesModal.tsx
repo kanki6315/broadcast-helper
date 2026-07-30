@@ -40,6 +40,7 @@ const FORMAT_OPTIONS: [string, string][] = [
   ['AUTO', 'Auto-detect'],
   ['IMSA_CSV', 'IMSA — CSV (grid/results)'],
   ['IMSA_POINTS_PDF', 'IMSA — Championship points PDF'],
+  ['IMSA_GRID_PDF', 'IMSA — Starting grid PDF'],
 ]
 
 const KIND_LABEL: Record<string, string> = {
@@ -292,8 +293,8 @@ export default function UploadFilesModal({
               ))}
             </select>
             <span className="uf-format-note">
-              Auto-detect reads JSON and PDF. Choose a format only for a timing CSV (grid, race, or
-              qualifying results) or a points PDF.
+              Auto-detect reads JSON and entry-list PDFs. Choose a format for a timing CSV (grid,
+              race, or qualifying results), a points PDF, or a starting-grid PDF.
             </span>
           </div>
         </details>

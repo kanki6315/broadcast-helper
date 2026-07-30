@@ -15,6 +15,10 @@ public enum ImportFormat {
     // way a grid CSV is. Prefer the JSON where the series publishes one — it
     // splits pole from fastest lap, which the PDF cannot.
     IMSA_POINTS_PDF("IMSA", Medium.PDF, "IMSA — Championship points PDF"),
+    // Same explicit-choice rule as the points PDF: only Python can tell the
+    // PDF families apart. Early-vintage events (2021 Carrera Cup NA) published
+    // some starting grids only this way.
+    IMSA_GRID_PDF("IMSA", Medium.PDF, "IMSA — Starting grid PDF"),
     IMSA_CSV("IMSA", Medium.CSV, "IMSA — CSV (grid/results)"),
     // One subsession export holds a whole meeting — qualifying, every race, and
     // each race's grid — so it stages as several batches. The same payload comes

@@ -16,8 +16,9 @@ import parse_entry_list as p
 
 HERE = Path(__file__).parent
 SCHEMA_PATH = HERE / "schemas" / "entries.schema.json"
-# Entry-list samples are every PDF that isn't a points sheet.
-SAMPLES = sorted(f for f in (HERE / "samples").glob("*.pdf") if "Points" not in f.name)
+# Entry-list samples are every PDF that isn't a points sheet or a starting grid.
+SAMPLES = sorted(f for f in (HERE / "samples").glob("*.pdf")
+                 if "Points" not in f.name and "Grid" not in f.name)
 
 pytestmark = pytest.mark.skipif(not SAMPLES, reason="no sample PDFs present")
 
