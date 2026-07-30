@@ -15,16 +15,6 @@ interface ImportBatch {
   createdAt: string
 }
 
-interface SeriesOption {
-  id: number
-  name: string
-  abbreviation: string | null
-}
-interface EventOption {
-  id: number
-  name: string
-  eventDate: string | null
-}
 interface TargetGuess {
   seriesId: number | null
   seriesName: string | null
@@ -45,8 +35,6 @@ interface ClassReview {
 interface ImportReview {
   kind: string
   guess: TargetGuess | null
-  seriesOptions: SeriesOption[]
-  eventOptions: EventOption[]
   classReview: ClassReview
   needsSession: boolean
   // Pre-fills for the session picker: a results CSV knows race from qualifying
