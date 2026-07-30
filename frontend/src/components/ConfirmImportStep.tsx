@@ -410,6 +410,9 @@ export default function ConfirmImportStep({
       // Attach-groups keep the new-entries guard live: a mismatch 422s the
       // group, and the batches finish in the review table with its checkbox.
       allowNewEntries: g.eventId == null ? true : null,
+      // Deletion is never implied by the group flow — the opt-in checkbox
+      // lives in the review table only.
+      removeOrphanedEntries: null,
     })
     for (const g of wantGroups) {
       for (const key of g.itemKeys) {
@@ -440,6 +443,7 @@ export default function ConfirmImportStep({
           sessionOrdinal: null,
           classMapping: {},
           allowNewEntries: null, // standings write no entries
+          removeOrphanedEntries: null,
         },
       })
     }
