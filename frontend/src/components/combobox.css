@@ -1,0 +1,199 @@
+/* The shared typeahead combobox (Combobox.tsx) — the `.sp` search grammar as a
+ * form field. Token layer (index.css). Results render in normal flow by
+ * default so a host dialog's own overflow never clips them; the `.floating`
+ * variant overlays the page for in-page hosts (the import review rows), where
+ * an inline list would shove the table down on every keystroke. */
+
+.sep-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.sep-field-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.sep-req {
+  color: var(--accent-ink);
+  margin-left: 2px;
+}
+
+.sep-combo {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.sep-combo-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  transition: border-color var(--t-fast) var(--ease-out);
+}
+
+.sep-combo-row:focus-within {
+  border-color: var(--accent);
+}
+
+.sep-combo.disabled .sep-combo-row {
+  opacity: 0.55;
+  background: var(--surface);
+  cursor: not-allowed;
+}
+
+.sep-combo-icon {
+  color: var(--text-muted);
+  flex: none;
+}
+
+.sep-combo-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  font-size: var(--text-sm);
+  color: var(--ink);
+  padding: 1px 0;
+}
+
+.sep-combo-input::placeholder {
+  color: var(--text-muted);
+}
+
+.sep-combo-input:focus,
+.sep-combo-input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+/* the muted "auto" default reads as a placeholder even when it is a real value */
+.sep-combo-input.ghost {
+  color: var(--text-muted);
+}
+
+.sep-combo-clear {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  line-height: 1;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.sep-combo-clear:hover {
+  color: var(--ink);
+}
+
+.sep-combo-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: min(240px, 34vh);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  box-shadow: var(--shadow-raise);
+}
+
+/* In-page hosts: overlay the list instead of growing the row. An overlay is a
+ * state response, so it takes the modal shadow tier (Flat-Instrument rule). */
+.sep-combo-list.floating {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: var(--z-dropdown);
+  box-shadow: var(--shadow-modal);
+}
+
+.sep-opt {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* selection is amber (the Selection-Is-Amber rule) */
+.sep-opt.active {
+  background: var(--accent-tint);
+}
+
+.sep-opt-name {
+  color: var(--ink);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sep-opt-hint {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sep-opt.auto .sep-opt-name {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.sep-opt.create .sep-opt-name,
+.sep-opt.action .sep-opt-name {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.sep-opt.create .sep-opt-plus,
+.sep-opt.action .sep-opt-plus {
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.sep-combo-empty,
+.sep-combo-loading,
+.sep-combo-more {
+  margin: 0;
+  padding: 10px 8px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* The capped-list footer — names what filtering hides. */
+.sep-combo-more {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-bottom: 6px;
+}
+
+.sep-combo-loading .skeleton {
+  display: block;
+  height: 1.1lh;
+  margin: 3px 0;
+}

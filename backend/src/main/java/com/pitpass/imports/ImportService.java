@@ -812,12 +812,6 @@ public class ImportService {
 
     // -------------------------------------------------------------- target review
 
-    public record SeriesOption(long id, String name, String abbreviation) {
-    }
-
-    public record EventOption(long id, String name, String eventDate) {
-    }
-
     /** The tool's guess for the import target; every field is editable in review. */
     public record TargetGuess(Long seriesId, String seriesName, Integer seasonYear,
                               Long eventId, String eventName, String circuit, String eventDate,
@@ -829,7 +823,6 @@ public class ImportService {
     }
 
     public record ImportReview(String kind, TargetGuess guess,
-                               List<SeriesOption> seriesOptions, List<EventOption> eventOptions,
                                ClassReview classReview,
                                boolean needsSession,
                                // Pre-fills for the reviewer's session picker when needsSession:
@@ -844,17 +837,15 @@ public class ImportService {
                                boolean gridTimesAllBlank) {
     }
 
-    /** Everything the review screen needs: the guessed target, the options to pick
-     *  from, and the class-mapping review — so nothing is inferred at commit.
+    /** Everything the review screen needs: the guessed target and the
+     *  class-mapping review — so nothing is inferred at commit. (The series and
+     *  event pick-lists come from /api/series and /api/events; the review carries
+     *  only what is specific to this batch.)
      *  chosenEventId / chosenYear (optional) recompute the class review against the
      *  season the reviewer actually picked, for payloads that can't resolve one by
      *  themselves (grid CSVs) or only guess it (points PDFs). */
     public ImportReview reviewTarget(long id, Long chosenEventId, Integer chosenYear) {
         BatchSummary batch = get(id);
-        List<SeriesOption> seriesOptions = db.sql("SELECT id, name, abbreviation FROM series ORDER BY name")
-                .query((rs, i) -> new SeriesOption(rs.getLong("id"), rs.getString("name"),
-                        rs.getString("abbreviation")))
-                .list();
         ClassReview cr = classReview(id);
         String payload = payloadJson(id);
         try {
@@ -904,20 +895,10 @@ public class ImportService {
                 }
                 default -> guess = null;
             }
-            // Without a series/season guess the usual per-season event list is
-            // empty and the reviewer would be stuck with only "+ new event" —
-            // forking a duplicate event rather than attaching to the real one.
-            // Fall back to every event so they can always override the guess.
-            List<EventOption> events;
-            if (guess != null && guess.seriesId() != null && guess.seasonYear() != null) {
-                events = eventsInSeason(guess.seriesId(), guess.seasonYear());
-            } else {
-                events = allEvents();
-            }
-            return new ImportReview(batch.kind(), guess, seriesOptions, events, cr, needsSession,
+            return new ImportReview(batch.kind(), guess, cr, needsSession,
                     sessionTypeHint, sessionOrdinalHint, gridTimesAllBlank);
         } catch (JsonProcessingException e) {
-            return new ImportReview(batch.kind(), null, seriesOptions, List.of(), cr, false, null, null, false);
+            return new ImportReview(batch.kind(), null, cr, false, null, null, false);
         }
     }
 
@@ -989,22 +970,6 @@ public class ImportService {
                 ck.className(), ck.kind(), Boolean.FALSE, seriesName);
     }
 
-    /** Every event across all seasons, labeled with series + year, newest first.
-     *  The fallback event list when a payload carries nothing to narrow by. */
-    private List<EventOption> allEvents() {
-        return db.sql("""
-                        SELECT e.id, sr.name || ' ' || s.year || ' — ' || e.name AS label, e.event_date
-                        FROM event e
-                                 JOIN season s ON s.id = e.season_id
-                                 JOIN series sr ON sr.id = s.series_id
-                        ORDER BY e.event_date DESC NULLS LAST, e.id DESC
-                        """)
-                .query((rs, i) -> new EventOption(rs.getLong("id"), rs.getString("label"),
-                        rs.getObject("event_date", LocalDate.class) != null
-                                ? rs.getObject("event_date", LocalDate.class).toString() : null))
-                .list();
-    }
-
     /** Class review for a known season: which of the batch's class spellings
      *  match none of the season's canonical (entry-list) classes. */
     private ClassReview classReviewForSeason(long seasonId, List<String> batchClasses) {
@@ -1026,20 +991,6 @@ public class ImportService {
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                         "No such event: " + eventId));
-    }
-
-    private List<EventOption> eventsInSeason(long seriesId, int year) {
-        return db.sql("""
-                        SELECT e.id, e.name, e.event_date
-                        FROM event e JOIN season s ON s.id = e.season_id
-                        WHERE s.series_id = :seriesId AND s.year = :year
-                        ORDER BY e.event_date NULLS LAST, e.id
-                        """)
-                .param("seriesId", seriesId).param("year", year)
-                .query((rs, i) -> new EventOption(rs.getLong("id"), rs.getString("name"),
-                        rs.getObject("event_date", LocalDate.class) != null
-                                ? rs.getObject("event_date", LocalDate.class).toString() : null))
-                .list();
     }
 
     /**
