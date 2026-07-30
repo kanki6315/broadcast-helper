@@ -284,13 +284,24 @@ public class SeasonViewController {
         record Cell(long entryId, String carNumber, String team, long eventId, int raceOrdinal,
                     String raceName, Integer start, Integer finish, String status, boolean notFinished) {
         }
+        // car_number resolves through car_number_alias (V38): the rare entrant
+        // that raced under a second number (JDC-Miller's #5 running Daytona as
+        // #85) matches its standings row by the canonical number, so its cells
+        // land on the one row the standings source published.
         List<Cell> cells = roundByEventId.isEmpty() ? List.of() : db.sql("""
-                        SELECT en.id AS entry_id, en.car_number, en.team_name, ev.id AS event_id,
+                        SELECT en.id AS entry_id,
+                               COALESCE(cna.canonical_number, en.car_number) AS car_number,
+                               en.team_name, ev.id AS event_id,
                                rs.ordinal AS race_ordinal, rs.name AS race_name,
                                g.%1$s AS start_pos, r.%1$s AS finish_pos, r.status,
                                COALESCE(r.not_finished, false) AS not_finished
                         FROM entry en
                                  JOIN event ev ON ev.id = en.event_id
+                                 LEFT JOIN car_number_alias cna
+                                           ON cna.season_id = ev.season_id
+                                          AND lower(trim(cna.class_name)) = lower(trim(en.class_name))
+                                          AND regexp_replace(trim(cna.car_number), '^0+(?=\\d)', '')
+                                              = regexp_replace(trim(en.car_number), '^0+(?=\\d)', '')
                                  JOIN race_session rs ON rs.event_id = ev.id AND rs.session_type = 'RACE'
                                  LEFT JOIN result r ON r.session_id = rs.id AND r.entry_id = en.id
                                  LEFT JOIN grid_position g ON g.session_id = rs.id AND g.entry_id = en.id

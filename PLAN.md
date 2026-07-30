@@ -755,6 +755,40 @@ display size.)
   series' own name, and it runs the full 6-round calendar, so it was never a
   cup. **Local-DB note:** the live DB is now `pit_pass` (post-rebrand); the old
   `broadcast_helper` DB is orphaned — verify against `pit_pass`.
+- **Car-number aliases: one entrant, two numbers (V38) — ✅ DONE (2026-07-30).**
+  A car-number-keyed standings row gathers its cells by number, which loses the
+  rare season where the same entrant raced under a second number. Two real 2026
+  cases, structurally different: JDC-Miller's #5 GTP ran Daytona as **#85**
+  (same organization — a team merge was tried and could not work, because the
+  recap never consults `team_id`), and van der Steur's #19 GTD transferred
+  mid-season to Car Blanche's **#068** (deliberately two organizations —
+  lineage, never a team merge; the standings source moved the points to the
+  surviving row). The thing that persists across both is the **entrant**, and
+  its identity is a car number scoped to one season + class — so that is the
+  model: `car_number_alias` (V38, the fourth alias table after series/class/
+  team) maps `car_number → canonical_number` per season + class, unique per
+  normalized number ("04" = "4", mirrored in SQL with
+  `regexp_replace(trim(x), '^0+(?=\d)', '')`). Consumers: the recap's cell
+  query resolves `COALESCE(alias.canonical_number, entry.car_number)` before
+  matching — which also fixes the team-profile championship matrices for free
+  (they reuse `seasonView.recap`) — and the sheet's champ column falls back
+  through the alias so a mid-season sheet shows the entrant's standing for a
+  number the standings file never printed. **Per-event surfaces (lineups,
+  results, entries, the sheet's entry list) deliberately stay as-raced** —
+  "#85 at Daytona" is real history; only standings identity resolves. CRUD at
+  `/api/seasons/{id}/car-number-aliases` (`CarNumberAliasController`,
+  ClassAliasController conventions); UI is an admin-only **"Linked numbers"**
+  footnote under each recap class grid (recap mode, non-DRIVERS, non-overall
+  only — rows must BE numbers), with the canonical side picked from the grid's
+  own row keys and an optional note; a change invalidates the recap cache so
+  the row updates in place. `RecapCarNumberAliasTest` builds the first full
+  recap fixture (championship + calendar + standings + two events) and proves
+  both shapes plus class isolation; verified live on the real season — Daytona
+  7/7 landed on the #5 GTP row, GTD #068 gathered rounds 1–4 as van der Steur
+  (both team spellings on the row) with GTDPRO's own #68 untouched. **Not
+  auto-detected on import by design**: it's a rare, judgment-carrying fact, so
+  it stays an explicit admin link. **Production: re-enter the two links via
+  the UI after deploy** (GTP 85→5, GTD 19→068).
 - **Confirm-and-commit grouping (`commit-group`) — ✅ DONE (2026-07-17).** After
   staging, both import modals (the file-upload `UploadFilesModal` and the
   `IRacingImportModal`) hand off to a shared **`ConfirmImportStep`**: proposed

@@ -1608,3 +1608,56 @@ td.lineup-changed {
 .stats-table .sub-head .is-sorted {
   color: var(--ink);
 }
+
+/* ==== linked car numbers (admin footnote under a recap grid) ==== */
+
+/* Deliberately quiet: a broadcast-facing page, so the affordance is one muted
+ * link-button until opened, and the open panel stays in the muted register. */
+.alias-admin {
+  margin: var(--space-2) 0 var(--space-4);
+  font-size: var(--text-sm);
+}
+
+.alias-admin > .drv-link {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.alias-admin-body {
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  max-width: 560px;
+}
+
+.alias-admin-body > .muted {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.alias-admin-list {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.alias-admin-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+/* The shared .users-form styles inputs only; the "counts as" select matches. */
+.alias-admin .users-form select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--text-sm);
+}

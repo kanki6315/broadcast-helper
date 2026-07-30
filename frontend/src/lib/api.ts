@@ -146,6 +146,17 @@ export interface Recap {
   rows: RecapRow[]
 }
 
+/** One "counts as" car-number link for a season + class (car_number_alias,
+ * V38): the rare entrant that raced under a second number. The recap and the
+ * sheet's championship column resolve through these; per-event pages never do. */
+export interface CarNumberAlias {
+  id: number
+  className: string
+  carNumber: string
+  canonicalNumber: string
+  note: string | null
+}
+
 /* -- lineups ------------------------------------------------------------ */
 
 export interface LineupRound {

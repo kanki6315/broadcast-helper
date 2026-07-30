@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Assembles the pit-lane entry list sheet for an event: per car, the crew with
@@ -174,6 +175,20 @@ public class SheetController {
                         .put(a.key(), new ChampRow(className, a.key(), pos, a.points()));
             }
         });
+
+        // The rare second number an entrant raced under (car_number_alias, V38),
+        // keyed class|normalized-number: resolved before the champ-column lookup,
+        // so the car whose number the standings source never printed still shows
+        // its entrant's standing going into this round.
+        Map<String, String> aliasCanonical = new HashMap<>();
+        if (!champByClass.isEmpty()) {
+            db.sql("SELECT class_name, car_number, canonical_number FROM car_number_alias WHERE season_id = :seasonId")
+                    .param("seasonId", seasonId)
+                    .query((rs, i) -> aliasCanonical.put(
+                            aliasLookupKey(rs.getString("class_name"), rs.getString("car_number")),
+                            rs.getString("canonical_number")))
+                    .list();
+        }
 
         // Qualifying result for this event (blank until a quali file is imported).
         Map<Long, Integer> quali = new HashMap<>();
@@ -400,6 +415,18 @@ public class SheetController {
                         }
                     } else {
                         ChampRow champ = classChamp.get(r.carNumber());
+                        if (champ == null) {
+                            String canonical = aliasCanonical.get(aliasLookupKey(r.className(), r.carNumber()));
+                            if (canonical != null) {
+                                // Tolerant of "068" vs "68" between the alias's
+                                // canonical spelling and the standings file's key.
+                                String norm = normalizeCarNumber(canonical);
+                                champ = classChamp.entrySet().stream()
+                                        .filter(e -> normalizeCarNumber(e.getKey()).equals(norm))
+                                        .map(Map.Entry::getValue)
+                                        .findFirst().orElse(null);
+                            }
+                        }
                         if (champ != null) {
                             champText = ordinal(champ.position()) + " (" + formatPoints(champ.points()) + " pts)";
                         }
@@ -466,6 +493,11 @@ public class SheetController {
     }
 
     // ---------------------------------------------------------------- helpers
+
+    /** Lookup key into a season's car-number aliases: class + normalized number. */
+    private static String aliasLookupKey(String className, String carNumber) {
+        return Objects.toString(className, "").trim().toLowerCase() + "|" + normalizeCarNumber(carNumber);
+    }
 
     /** "04" and "4" are the same car across documents; "0" stays "0". */
     public static String normalizeCarNumber(String carNumber) {
