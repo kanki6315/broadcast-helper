@@ -44,6 +44,9 @@ interface CarRef {
 interface RosterDiff {
   newCars: CarRef[]
   missingCars: CarRef[]
+  // Subset of missingCars anchored by nothing durable (no results, no
+  // drivers) — removable with the commit if the reviewer opts in.
+  orphanedCars: CarRef[]
   eventEntryCount: number
 }
 interface ImportReview {
@@ -80,6 +83,9 @@ interface TargetState {
   // Reviewer confirmed creating the rosterDiff's new cars as entries. Reset to
   // false whenever the target event changes — the confirmation was per-event.
   allowNewEntries: boolean
+  // Reviewer opted to delete the rosterDiff's orphaned entries with the
+  // commit. Same per-event reset discipline as allowNewEntries.
+  removeOrphanedEntries: boolean
 }
 
 function initTarget(r: ImportReview): TargetState {
@@ -103,6 +109,7 @@ function initTarget(r: ImportReview): TargetState {
     classMapping: {},
     gridBasis: '',
     allowNewEntries: false,
+    removeOrphanedEntries: false,
   }
 }
 
@@ -273,7 +280,7 @@ export default function ImportsPage() {
   // diff both depend on which event the file lands in. The new-entries
   // confirmation never survives an event change — it was per-event.
   async function chooseEvent(id: number, eventId: number | 'new' | '') {
-    patch(id, { eventId, allowNewEntries: false })
+    patch(id, { eventId, allowNewEntries: false, removeOrphanedEntries: false })
     if (typeof eventId !== 'number') return
     if (!EVENT_KINDS.includes(reviews[id]?.kind ?? '')) return
     await refetchReview(id, `eventId=${eventId}`)
@@ -333,7 +340,7 @@ export default function ImportsPage() {
     const resetEvent = EVENT_KINDS.includes(reviews[b.id]?.kind ?? '') && ev && ev.seriesName !== s.name
     patch(b.id, {
       seriesId: s.id,
-      ...(resetEvent ? { eventId: 'new' as const, allowNewEntries: false } : {}),
+      ...(resetEvent ? { eventId: 'new' as const, allowNewEntries: false, removeOrphanedEntries: false } : {}),
     })
   }
 
@@ -351,13 +358,13 @@ export default function ImportsPage() {
     patch(b.id, {
       seriesId: 'new',
       newSeriesName: name,
-      ...(resetEvent ? { eventId: 'new' as const, allowNewEntries: false } : {}),
+      ...(resetEvent ? { eventId: 'new' as const, allowNewEntries: false, removeOrphanedEntries: false } : {}),
     })
   }
 
   function pickEvent(b: ImportBatch, key: string) {
     if (key === 'new') {
-      patch(b.id, { eventId: 'new', allowNewEntries: false })
+      patch(b.id, { eventId: 'new', allowNewEntries: false, removeOrphanedEntries: false })
       return
     }
     const id = Number(key)
@@ -421,6 +428,7 @@ export default function ImportsPage() {
     if (EVENT_KINDS.includes(review.kind)) {
       body.eventId = t.eventId === 'new' || t.eventId === '' ? null : t.eventId
       body.allowNewEntries = t.allowNewEntries
+      body.removeOrphanedEntries = t.removeOrphanedEntries
     }
     if (review.needsSession) {
       body.sessionType = t.sessionType
@@ -608,6 +616,7 @@ export default function ImportsPage() {
                                         patch(b.id, {
                                           eventId: review.needsSession ? '' : 'new',
                                           allowNewEntries: false,
+                                          removeOrphanedEntries: false,
                                         })
                                     : undefined
                                 }
@@ -793,6 +802,25 @@ export default function ImportsPage() {
                                     Entered but not in this file: {carList(review.rosterDiff.missingCars)}{' '}
                                     — withdrawals and DNQs are normal.
                                   </span>
+                                )}
+                                {review.rosterDiff.orphanedCars.length > 0 && (
+                                  <label className="class-map-row target-checkbox">
+                                    <input
+                                      type="checkbox"
+                                      checked={t.removeOrphanedEntries}
+                                      disabled={busy}
+                                      onChange={(e) =>
+                                        patch(b.id, { removeOrphanedEntries: e.target.checked })
+                                      }
+                                    />
+                                    Also remove{' '}
+                                    {review.rosterDiff.orphanedCars.length === 1
+                                      ? 'the entry for'
+                                      : `the ${review.rosterDiff.orphanedCars.length} entries for`}{' '}
+                                    {carList(review.rosterDiff.orphanedCars)} — no results or drivers
+                                    reference {review.rosterDiff.orphanedCars.length === 1 ? 'it' : 'them'},
+                                    and nothing will after this commit
+                                  </label>
                                 )}
                               </div>
                             )}

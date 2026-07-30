@@ -833,8 +833,13 @@ public class ImportService {
      *  newCars would be created by the commit (the wrong-file fingerprint: a
      *  correct file rarely names a car the event never entered); missingCars
      *  are entered but absent from the file (normal for grids — withdrawals
-     *  and DNQs). Null when there is no roster to compare against. */
-    public record RosterDiff(List<CarRef> newCars, List<CarRef> missingCars, int eventEntryCount) {
+     *  and DNQs). orphanedCars is the subset of missingCars with no results
+     *  and no drivers — entries nothing durable references (a withdrawn car
+     *  keeps its entry-list drivers, so it never qualifies), which the
+     *  reviewer may opt to remove with the commit. Null when there is no
+     *  roster to compare against. */
+    public record RosterDiff(List<CarRef> newCars, List<CarRef> missingCars,
+                             List<CarRef> orphanedCars, int eventEntryCount) {
     }
 
     public record ImportReview(String kind, TargetGuess guess,
@@ -1063,7 +1068,22 @@ public class ImportService {
         List<CarRef> missingCars = roster.values().stream()
                 .filter(c -> !file.containsKey(c.number()))
                 .toList();
-        return new RosterDiff(newCars, missingCars, roster.size());
+        // Entries with results or drivers are anchored regardless of what this
+        // file says. Grid rows deliberately don't anchor: a commit may be about
+        // to replace them, and the delete re-checks all three at commit time.
+        java.util.Set<String> anchored = new java.util.HashSet<>(db.sql("""
+                        SELECT e.car_number FROM entry e
+                        WHERE e.event_id = :eventId
+                          AND (EXISTS (SELECT 1 FROM result r WHERE r.entry_id = e.id)
+                               OR EXISTS (SELECT 1 FROM driver_assignment da WHERE da.entry_id = e.id))
+                        """)
+                .param("eventId", eventId)
+                .query(String.class)
+                .list());
+        List<CarRef> orphanedCars = missingCars.stream()
+                .filter(c -> !anchored.contains(c.number()))
+                .toList();
+        return new RosterDiff(newCars, missingCars, orphanedCars, roster.size());
     }
 
     private static List<CarRef> carRefs(GridImport imp) {
@@ -1157,7 +1177,12 @@ public class ImportService {
             // Reviewer confirmed creating entries for cars absent from the target
             // event's roster (the review's rosterDiff.newCars). Null/false blocks
             // such a commit with a 422 — see requireNewEntriesAck.
-            Boolean allowNewEntries
+            Boolean allowNewEntries,
+            // Reviewer opted to delete entries this file doesn't list that end up
+            // with no results, no grid rows and no drivers once the commit's
+            // writes land (the review's rosterDiff.orphanedCars). Never implied:
+            // null/false leaves every entry in place.
+            Boolean removeOrphanedEntries
     ) {
         Map<String, String> mapping() {
             return classMapping == null ? Map.of() : classMapping;
@@ -1205,6 +1230,33 @@ public class ImportService {
                 + ". The event already has " + diff.eventEntryCount()
                 + " entries — check the file matches the event, or confirm adding new entries"
                 + " in review and commit again.");
+    }
+
+    /**
+     * Deletes the event's entries this file doesn't list, where nothing —
+     * result, grid row, driver assignment — references them anymore. Runs after
+     * the commit's writes so an entry whose only anchor was the replaced grid
+     * (the CTMP fabrication case) qualifies, and the zero-references check is
+     * evaluated against the final state, never the review's prediction. Opt-in
+     * per commit via the review's orphanedCars acknowledgment; a no-op without
+     * it, and cascade-safe by construction (there is nothing left to cascade).
+     */
+    private void removeOrphanedEntries(long eventId, List<CarRef> fileCars, ImportTarget target) {
+        if (!Boolean.TRUE.equals(target.removeOrphanedEntries()) || fileCars.isEmpty()) {
+            return;
+        }
+        List<String> fileNumbers = fileCars.stream().map(CarRef::number).distinct().toList();
+        db.sql("""
+                        DELETE FROM entry e
+                        WHERE e.event_id = :eventId
+                          AND e.car_number NOT IN (:fileNumbers)
+                          AND NOT EXISTS (SELECT 1 FROM result r WHERE r.entry_id = e.id)
+                          AND NOT EXISTS (SELECT 1 FROM grid_position g WHERE g.entry_id = e.id)
+                          AND NOT EXISTS (SELECT 1 FROM driver_assignment da WHERE da.entry_id = e.id)
+                        """)
+                .param("eventId", eventId)
+                .param("fileNumbers", fileNumbers)
+                .update();
     }
 
     @Transactional
@@ -1407,7 +1459,7 @@ public class ImportService {
         return new ImportTarget(t.seriesId(), t.newSeriesName(), eventId, eventName,
                 t.classCode(), t.kind(), t.isCup(), t.familyName(), t.seasonYear(),
                 t.sessionType(), t.sessionOrdinal(), t.classMapping(), t.gridBasis(),
-                t.allowNewEntries());
+                t.allowNewEntries(), t.removeOrphanedEntries());
     }
 
     private static String messageOf(RuntimeException ex) {
@@ -1555,6 +1607,7 @@ public class ImportService {
                     .param("pitStops", row.pitStops())
                     .update();
         }
+        removeOrphanedEntries(eventId, carRefs(imp), target);
         // The event's race shape may have changed (a new session appeared);
         // recompute AUTO format assignments within the same transaction.
         raceFormats.autoAssignEvent(eventId);
@@ -1707,6 +1760,7 @@ public class ImportService {
                     .param("qualifyingDriverId", resolveGridDriver(row.qualifyingDriverSeat(), roster, bySeat))
                     .update();
         }
+        removeOrphanedEntries(eventId, carRefs(imp), target);
         // A grid can find-or-create the session before its results arrive;
         // keep format assignments in step with the new shape.
         raceFormats.autoAssignEvent(eventId);
@@ -1942,6 +1996,7 @@ public class ImportService {
                         .update();
             }
         }
+        removeOrphanedEntries(eventId, carRefs(imp), target);
         teamAssignments.applySeason(seasonId);
     }
 
