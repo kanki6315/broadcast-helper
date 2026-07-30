@@ -54,6 +54,10 @@ pit-pass:
   # standings JSON shape, for the series that publish no points JSON.
   points-parser:
     script: ${POINTS_PARSER_SCRIPT:../parser/parse_points.py}
+  # Sibling sidecar (same python) turning a starting-grid PDF into grid JSON,
+  # for early-vintage events whose grids were never published as CSV.
+  grid-pdf-parser:
+    script: ${GRID_PDF_PARSER_SCRIPT:../parser/parse_grid_pdf.py}
   # iRacing Data API. Blank by default: local dev and CI import the exported
   # subsession file instead, which is byte-identical to what the API returns.
   # The client id is issued by iRacing on request and cannot be self-served —

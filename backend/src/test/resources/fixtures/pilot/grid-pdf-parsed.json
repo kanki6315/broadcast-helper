@@ -1,0 +1,15 @@
+{
+  "session": "Race 2",
+  "race": 2,
+  "revised": false,
+  "rows": [
+    {"position": 1, "class": "Pro", "number": "15", "driver": "Seb Priaulx(J)",
+     "team": "Kelly-Moss Road and Race", "car": "Porsche 992", "time": "1:20.709"},
+    {"position": 2, "class": "Pro", "number": "3", "driver": "Kay van Berlo(J)",
+     "team": "Kelly-Moss Road and Race", "car": "Porsche 992", "time": "1:21.013"},
+    {"position": 3, "class": "Pro-Am", "number": "99", "driver": "Alan Metni",
+     "team": "iFly/Kelly-Moss", "car": "Porsche 992", "time": "1:22.278"},
+    {"position": 4, "class": "Pro", "number": "08", "driver": "Test Driver",
+     "team": "Test Team", "car": "Porsche 992", "time": null}
+  ]
+}

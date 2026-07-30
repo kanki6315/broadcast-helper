@@ -16,6 +16,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -39,6 +40,7 @@ public class ImportService {
     private final String parserPython;
     private final String parserScript;
     private final String pointsParserScript;
+    private final String gridPdfParserScript;
 
     public ImportService(JdbcClient db, ObjectMapper json, IRacingClient iracing,
                          com.pitpass.formats.RaceFormatService raceFormats,
@@ -47,7 +49,8 @@ public class ImportService {
                          PlatformTransactionManager txManager,
                          @org.springframework.beans.factory.annotation.Value("${pit-pass.entry-list-parser.python:python3}") String parserPython,
                          @org.springframework.beans.factory.annotation.Value("${pit-pass.entry-list-parser.script:../parser/parse_entry_list.py}") String parserScript,
-                         @org.springframework.beans.factory.annotation.Value("${pit-pass.points-parser.script:../parser/parse_points.py}") String pointsParserScript) {
+                         @org.springframework.beans.factory.annotation.Value("${pit-pass.points-parser.script:../parser/parse_points.py}") String pointsParserScript,
+                         @org.springframework.beans.factory.annotation.Value("${pit-pass.grid-pdf-parser.script:../parser/parse_grid_pdf.py}") String gridPdfParserScript) {
         this.db = db;
         this.json = json;
         this.iracing = iracing;
@@ -58,6 +61,7 @@ public class ImportService {
         this.parserPython = parserPython;
         this.parserScript = parserScript;
         this.pointsParserScript = pointsParserScript;
+        this.gridPdfParserScript = gridPdfParserScript;
     }
 
     // ---------------------------------------------------------------- staging
@@ -78,6 +82,7 @@ public class ImportService {
             case IMSA_JSON -> List.of(stageImsaJson(content));
             case IMSA_PDF -> List.of(stageImsaPdf(filename, content));
             case IMSA_POINTS_PDF -> stageImsaPointsPdf(filename, content);
+            case IMSA_GRID_PDF -> List.of(stageImsaGridPdf(filename, content));
             case IMSA_CSV -> List.of(stageImsaCsv(filename, content));
             case IRACING_JSON -> stageIRacingJson(content);
         };
@@ -573,6 +578,68 @@ public class ImportService {
                 "Unrecognized file format: expected a results file (session + classification), "
                 + "a starting grid (session + grid), a flags report (session + flags), "
                 + "or a standings file (championship + classification)");
+    }
+
+    /** Stages a starting-grid PDF via the Python sidecar. Like the grid CSV,
+     *  the sheet names no event or date, so the batch goes through the
+     *  reviewer-supplies-the-target flow; the parsed race number rides along
+     *  as the session ordinal to pre-fill the reviewer's picker. */
+    private Staged stageImsaGridPdf(String filename, byte[] pdf) {
+        if (!isPdf(pdf)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Not a PDF file (expected an IMSA starting-grid PDF)");
+        }
+        JsonNode root;
+        try {
+            root = json.readTree(runGridPdfParser(filename, pdf));
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Grid parser returned invalid JSON: " + e.getMessage());
+        }
+        GridImport parsed = mapGridPdfJson(root);
+        String summary = "%s%s starting grid PDF — %d cars".formatted(
+                root.path("session").asText("Race"),
+                root.path("revised").asBoolean(false) ? " (Revised)" : "",
+                parsed.rows().size());
+        return new Staged("GRID", parsed, summary);
+    }
+
+    /**
+     * Maps the grid-PDF sidecar's JSON onto GridImport. Session metadata stays
+     * null (there is none in the sheet, so the reviewer flow fires) except the
+     * ordinal from the title's race number. The sheet names one driver per
+     * slot with no roster to resolve a seat against, so attribution stays
+     * null — readers fall back to the entry's sole crew member, which is
+     * always right in the single-driver series that publish these; the
+     * results import supplies the roster itself.
+     */
+    static GridImport mapGridPdfJson(JsonNode root) {
+        List<GridImport.Row> rows = new ArrayList<>();
+        Map<String, Integer> classCounters = new HashMap<>();
+        for (JsonNode r : root.path("rows")) {
+            String number = r.path("number").asText(null);
+            if (number == null || number.isBlank()) {
+                continue;
+            }
+            String className = r.path("class").asText(null);
+            Integer inClass = classCounters.merge(className, 1, Integer::sum);
+            rows.add(new GridImport.Row(
+                    r.path("position").asInt(),
+                    inClass,
+                    number,
+                    className,
+                    null,
+                    r.path("team").asText(null),
+                    r.path("car").asText(null),
+                    null,
+                    r.path("time").asText(null),
+                    null,
+                    null,
+                    List.of()
+            ));
+        }
+        return new GridImport(null, null, null, null,
+                root.path("race").asInt(1), null, null, null, null, rows);
     }
 
     /** The IMSA CSV family, told apart by header: the starting grid
@@ -1796,6 +1863,12 @@ public class ImportService {
      *  it names the row that didn't add up. */
     private byte[] runPointsParser(String filename, byte[] pdf) {
         return runPdfParser(pointsParserScript, "Points", "points", filename, pdf);
+    }
+
+    /** Runs the Python parser sidecar (parser/parse_grid_pdf.py): starting-grid
+     *  PDF in, grid JSON out. */
+    private byte[] runGridPdfParser(String filename, byte[] pdf) {
+        return runPdfParser(gridPdfParserScript, "Grid", "grid-pdf", filename, pdf);
     }
 
     private byte[] runPdfParser(String script, String label, String slug, String filename, byte[] pdf) {
