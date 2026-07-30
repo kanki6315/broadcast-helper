@@ -78,7 +78,7 @@ public class ImportService {
             case IMSA_JSON -> List.of(stageImsaJson(content));
             case IMSA_PDF -> List.of(stageImsaPdf(filename, content));
             case IMSA_POINTS_PDF -> stageImsaPointsPdf(filename, content);
-            case IMSA_CSV -> List.of(stageImsaCsv(content));
+            case IMSA_CSV -> List.of(stageImsaCsv(filename, content));
             case IRACING_JSON -> stageIRacingJson(content);
         };
         return persist(staged, resolved, filename);
@@ -411,10 +411,11 @@ public class ImportService {
         if (isPdf(content)) {
             return ImportFormat.IMSA_PDF;
         }
-        if (ImportParser.looksLikeGridCsv(content)) {
+        if (ImportParser.looksLikeGridCsv(content) || ImportParser.looksLikeResultsCsv(content)
+                || ImportParser.looksLikeQualifyingCsv(content)) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "This looks like a semicolon-delimited CSV — choose a format explicitly"
-                    + " (e.g. IMSA — Grid CSV) instead of Auto-detect");
+                    + " (e.g. IMSA — CSV) instead of Auto-detect");
         }
         if (looksLikeIRacingJson(content)) {
             return ImportFormat.IRACING_JSON;
@@ -574,21 +575,43 @@ public class ImportService {
                 + "or a standings file (championship + classification)");
     }
 
-    /** The IMSA CSV family. Today it recognizes one document kind: the starting
-     *  grid (POSITION;CLASS;NUMBER;... header). A results CSV later is a new
-     *  header branch here, not a new format. */
-    private Staged stageImsaCsv(byte[] content) {
-        if (!ImportParser.looksLikeGridCsv(content)) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Unrecognized IMSA CSV: expected a starting-grid header (POSITION;CLASS;NUMBER;...)");
-        }
-        GridImport parsed;
+    /** The IMSA CSV family, told apart by header: the starting grid
+     *  (POSITION;CLASS;NUMBER;...), race results (POSITION;NUMBER;STATUS;...),
+     *  and qualifying results (POS;NUMBER;LAP;TIME;...). None carry event or
+     *  session metadata; the reviewer supplies both at commit. */
+    private Staged stageImsaCsv(String filename, byte[] content) {
         try {
-            parsed = ImportParser.parseGridCsv(content);
+            if (ImportParser.looksLikeGridCsv(content)) {
+                GridImport parsed = ImportParser.parseGridCsv(content);
+                return new Staged("GRID", parsed,
+                        "Starting grid CSV — %d cars".formatted(parsed.rows().size()));
+            }
+            if (ImportParser.looksLikeResultsCsv(content)) {
+                RaceResultsImport parsed = ImportParser.parseResultsCsv(content);
+                return new Staged("RACE_RESULTS", parsed,
+                        "Race results CSV — %d entries".formatted(parsed.rows().size()));
+            }
+            if (ImportParser.looksLikeQualifyingCsv(content)) {
+                RaceResultsImport parsed = ImportParser.parseQualifyingCsv(content);
+                String summary = "Qualifying results CSV — %d entries".formatted(parsed.rows().size());
+                // The "Results by 2nd Fastest Lap" sheet shares this header. It is
+                // a secondary classification that only exists to set the next
+                // race's grid — which is imported as its own grid file — so it is
+                // normally skipped. Warn rather than reject: the filename is the
+                // only tell, and filenames lie.
+                if (filename != null && filename.toLowerCase().contains("2nd fastest")) {
+                    summary += " — looks like a 2nd-fastest-lap sheet; the race 2 grid"
+                            + " already carries these times, usually skip it";
+                }
+                return new Staged("RACE_RESULTS", parsed, summary);
+            }
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage());
         }
-        return new Staged("GRID", parsed, "Starting grid CSV — %d cars".formatted(parsed.rows().size()));
+        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "Unrecognized IMSA CSV: expected a starting-grid header (POSITION;CLASS;NUMBER;...),"
+                + " a race-results header (POSITION;NUMBER;STATUS;...),"
+                + " or a qualifying header (POS;NUMBER;LAP;TIME;...)");
     }
 
     public List<BatchSummary> list() {
@@ -741,7 +764,13 @@ public class ImportService {
     public record ImportReview(String kind, TargetGuess guess,
                                List<SeriesOption> seriesOptions, List<EventOption> eventOptions,
                                ClassReview classReview,
-                               boolean needsSession) {
+                               boolean needsSession,
+                               // Pre-fills for the reviewer's session picker when needsSession:
+                               // a results CSV knows race from qualifying by its header, and a
+                               // grid PDF names which race it starts. Null when the payload
+                               // carries no such hint.
+                               String sessionTypeHint,
+                               Integer sessionOrdinalHint) {
     }
 
     /** Everything the review screen needs: the guessed target, the options to pick
@@ -759,15 +788,33 @@ public class ImportService {
         String payload = payloadJson(id);
         try {
             boolean needsSession = false;
+            String sessionTypeHint = null;
+            Integer sessionOrdinalHint = null;
             TargetGuess guess;
             switch (batch.kind()) {
                 case "ENTRY_LIST" -> guess = guessEntryList(json.readValue(payload, EntryListImport.class));
-                case "RACE_RESULTS" -> guess = guessRaceResults(json.readValue(payload, RaceResultsImport.class));
+                case "RACE_RESULTS" -> {
+                    RaceResultsImport imp = json.readValue(payload, RaceResultsImport.class);
+                    guess = guessRaceResults(imp);
+                    needsSession = imp.sessionStart() == null;
+                    if (needsSession) {
+                        sessionTypeHint = normalizeSessionType(imp.sessionType(), imp.sessionName());
+                        sessionOrdinalHint = imp.sessionOrdinal();
+                        if (chosenEventId != null && "STAGED".equals(batch.status())) {
+                            cr = classReviewForSeason(seasonIdOfEvent(chosenEventId),
+                                    imp.rows().stream().map(RaceResultsImport.Row::className).toList());
+                        }
+                    }
+                }
                 case "FLAGS" -> guess = guessFlags(json.readValue(payload, FlagsImport.class));
                 case "GRID" -> {
                     GridImport imp = json.readValue(payload, GridImport.class);
                     guess = guessGrid(imp);
                     needsSession = imp.sessionStart() == null;
+                    if (needsSession) {
+                        sessionTypeHint = normalizeSessionType(imp.sessionType(), imp.sessionName());
+                        sessionOrdinalHint = imp.sessionOrdinal();
+                    }
                     if (chosenEventId != null && "STAGED".equals(batch.status())) {
                         cr = classReviewForSeason(seasonIdOfEvent(chosenEventId),
                                 imp.rows().stream().map(GridImport.Row::className).toList());
@@ -793,9 +840,10 @@ public class ImportService {
             } else {
                 events = allEvents();
             }
-            return new ImportReview(batch.kind(), guess, seriesOptions, events, cr, needsSession);
+            return new ImportReview(batch.kind(), guess, seriesOptions, events, cr, needsSession,
+                    sessionTypeHint, sessionOrdinalHint);
         } catch (JsonProcessingException e) {
-            return new ImportReview(batch.kind(), null, seriesOptions, List.of(), cr, false);
+            return new ImportReview(batch.kind(), null, seriesOptions, List.of(), cr, false, null, null);
         }
     }
 
@@ -1270,35 +1318,59 @@ public class ImportService {
     }
 
     private void commitRaceResults(RaceResultsImport imp, ImportTarget target) {
-        if (imp.sessionStart() == null) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Results file has no session date; cannot determine the season");
+        long seasonId;
+        long eventId;
+        String sessionType;
+        int sessionOrdinal;
+        String sessionName;
+        if (imp.sessionStart() != null) {
+            // Timing-provider JSON: the file names its own season/event/session.
+            long seriesId = resolveSeriesId(target);
+            seasonId = findOrCreateSeason(seriesId, imp.sessionStart().getYear());
+            eventId = target.eventId() != null ? target.eventId()
+                    : createEvent(seasonId, chosenEventName(target, imp.eventName()), imp.circuitName(),
+                    imp.circuitLengthM(), imp.circuitCountry(), imp.sessionStart().toLocalDate());
+            renumberSeasonRounds(seasonId);
+            sessionType = normalizeSessionType(imp.sessionType(), imp.sessionName());
+            sessionOrdinal = imp.sessionOrdinal();
+            sessionName = imp.sessionName();
+        } else {
+            // No session metadata (results CSVs): the reviewer chose an existing
+            // event — which pins the season — and the session. Same shape as the
+            // grid CSV path: the file has no date to create an event with. The
+            // payload knows race from qualifying by its own header, so its
+            // session type wins over the reviewer's; the ordinal is the
+            // reviewer's call (the file can't tell Race 1 from Race 2).
+            if (target.eventId() == null) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "Results file has no event/session metadata; choose an existing event in review");
+            }
+            eventId = target.eventId();
+            seasonId = seasonIdOfEvent(eventId);
+            sessionType = resolveCsvSessionType(imp.sessionType(), target.sessionType());
+            sessionOrdinal = target.sessionOrdinal() != null ? target.sessionOrdinal() : imp.sessionOrdinal();
+            sessionName = sessionDisplayName(sessionType, sessionOrdinal);
         }
-        long seriesId = resolveSeriesId(target);
-        long seasonId = findOrCreateSeason(seriesId, imp.sessionStart().getYear());
         // Read the canonical class set before upserting entries, so the file's
         // own rows don't seed it (see canonicalizeClass).
         List<String> knownClasses = seasonEntryClasses(seasonId);
         Map<String, String> classAliases = classAliasesForSeason(seasonId);
-        long eventId = target.eventId() != null ? target.eventId()
-                : createEvent(seasonId, chosenEventName(target, imp.eventName()), imp.circuitName(),
-                imp.circuitLengthM(), imp.circuitCountry(), imp.sessionStart().toLocalDate());
-        renumberSeasonRounds(seasonId);
         Map<String, String> mapping = target.mapping();
+        String context = imp.championshipName() != null && imp.sessionStart() != null
+                ? imp.championshipName() + " " + imp.sessionStart().getYear() : "results import";
 
         // Find-or-create the session by its stable (event, session_type, ordinal)
         // key — not the free-text name, so a source that renames "Race" to
         // "Race 1" updates its predecessor instead of adding a second RACE
         // session. Then replace only this session's results; a starting grid
         // imported separately hangs off the same session and must survive.
-        String sessionType = normalizeSessionType(imp.sessionType(), imp.sessionName());
-        long sessionId = findOrCreateRaceSession(eventId, sessionType, imp.sessionOrdinal(),
-                imp.sessionName(), imp.sessionStart(), imp.reportMark(), imp.reportMessage());
+        long sessionId = findOrCreateRaceSession(eventId, sessionType, sessionOrdinal,
+                sessionName, imp.sessionStart(), imp.reportMark(), imp.reportMessage());
         db.sql("DELETE FROM result WHERE session_id = :sessionId").param("sessionId", sessionId).update();
 
         for (RaceResultsImport.Row row : imp.rows()) {
             String className = canonicalizeClass(row.className(), knownClasses, mapping, classAliases,
-                    imp.championshipName() + " " + imp.sessionStart().getYear());
+                    context);
             long entryId = upsertEntry(eventId, row.number(), className, row.team(), row.vehicle(),
                     row.manufacturer(), row.group());
             replaceDriverAssignments(entryId, row.drivers());
@@ -1494,6 +1566,15 @@ public class ImportService {
             }
         }
         return bySeat.get(seat);
+    }
+
+    /** Session type for a metadata-less results file. The payload's own type
+     *  wins — a results CSV knows race from qualifying by its header, and the
+     *  reviewer shouldn't be able to file a qualifying sheet as a race by
+     *  leaving a dropdown on its default. The reviewer's choice covers
+     *  payloads that carry none. */
+    static String resolveCsvSessionType(String payloadType, String targetType) {
+        return normalizeSessionType(payloadType != null ? payloadType : targetType, null);
     }
 
     /** Display name for a reviewer-defined session, built so its trailing number
