@@ -38,7 +38,7 @@ interface QueueItem {
 // Only the formats Auto-detect can't reach on its own — mirrors ImportsPage.
 const FORMAT_OPTIONS: [string, string][] = [
   ['AUTO', 'Auto-detect'],
-  ['IMSA_CSV', 'IMSA — Grid CSV'],
+  ['IMSA_CSV', 'IMSA — CSV (grid/results)'],
   ['IMSA_POINTS_PDF', 'IMSA — Championship points PDF'],
 ]
 
@@ -292,7 +292,8 @@ export default function UploadFilesModal({
               ))}
             </select>
             <span className="uf-format-note">
-              Auto-detect reads JSON and PDF. Choose a format only for a grid CSV or a points PDF.
+              Auto-detect reads JSON and PDF. Choose a format only for a timing CSV (grid, race, or
+              qualifying results) or a points PDF.
             </span>
           </div>
         </details>
