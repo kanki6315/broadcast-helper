@@ -737,6 +737,11 @@ export default function ResultsPage() {
                 tabIndex={-1}
               >
                 <SessionNotesPanel session={active} />
+                {active.gridBasis && (
+                  // The reviewer's note on how this race's grid was set — shown
+                  // so nobody reads a points-set grid as a qualifying result.
+                  <p className="muted grid-basis-note">Grid set by: {active.gridBasis}</p>
+                )}
                 <ResultsTable session={active} />
                 {active.hasFlags && (
                   <RaceControl key={active.sessionId} sessionId={active.sessionId} />

@@ -577,6 +577,7 @@ public class SeasonViewController {
 
     public record SessionResults(long sessionId, String sessionType, String name, String reportMark,
                                  List<ReportNotes.SessionNote> notes, boolean hasFlags,
+                                 String gridBasis, // how the grid was set when not by qualifying
                                  List<ResultRow> results, List<GridRow> grid) {
     }
 
@@ -607,10 +608,11 @@ public class SeasonViewController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such event"));
 
         record Session(long id, String type, String name, int ordinal, String reportMark,
-                       String reportMessage, boolean hasFlags) {
+                       String reportMessage, boolean hasFlags, String gridBasis) {
         }
         List<Session> sessions = db.sql("""
                         SELECT rs.id, rs.session_type, rs.name, rs.ordinal, rs.report_mark, rs.report_message,
+                               rs.grid_basis,
                                EXISTS (SELECT 1 FROM session_flag f WHERE f.session_id = rs.id) AS has_flags
                         FROM race_session rs
                         WHERE rs.event_id = :id AND rs.session_type IN ('QUALIFYING', 'RACE')
@@ -619,7 +621,8 @@ public class SeasonViewController {
                 .param("id", id)
                 .query((rs, i) -> new Session(rs.getLong("id"), rs.getString("session_type"),
                         rs.getString("name"), rs.getInt("ordinal"), rs.getString("report_mark"),
-                        rs.getString("report_message"), rs.getBoolean("has_flags")))
+                        rs.getString("report_message"), rs.getBoolean("has_flags"),
+                        rs.getString("grid_basis")))
                 .list();
 
         for (Session s : sessions) {
@@ -682,7 +685,7 @@ public class SeasonViewController {
                     .list();
 
             header.sessions().add(new SessionResults(s.id(), s.type(), s.name(), s.reportMark(),
-                    ReportNotes.parse(s.reportMessage()), s.hasFlags(), results, grid));
+                    ReportNotes.parse(s.reportMessage()), s.hasFlags(), s.gridBasis(), results, grid));
         }
 
         return header;
