@@ -1,6 +1,9 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import Combobox, { type ComboOption } from '../components/Combobox'
 import IRacingImportModal from '../components/IRacingImportModal'
 import UploadFilesModal from '../components/UploadFilesModal'
+import { formatEventDate } from '../lib/importGroups'
+import { useSeriesEvents } from '../lib/useSeriesEvents'
 
 interface ImportBatch {
   id: number
@@ -66,7 +69,9 @@ interface TargetState {
   familyName: string
   seasonYear: string
   sessionType: string
-  sessionOrdinal: number
+  // Held as raw text so "1" can be deleted before "2" is typed; validated by
+  // canCommit rather than clamped on every keystroke.
+  sessionOrdinal: string
   classMapping: Record<string, string>
   gridBasis: string
 }
@@ -88,7 +93,7 @@ function initTarget(r: ImportReview): TargetState {
     familyName: g?.familyName ?? '',
     seasonYear: g?.seasonYear != null ? String(g.seasonYear) : '',
     sessionType: r.sessionTypeHint ?? 'RACE',
-    sessionOrdinal: r.sessionOrdinalHint ?? 1,
+    sessionOrdinal: String(r.sessionOrdinalHint ?? 1),
     classMapping: {},
     gridBasis: '',
   }
@@ -107,6 +112,10 @@ function needsYear(r: ImportReview | undefined): boolean {
 
 function validYear(value: string): boolean {
   return /^\d{4}$/.test(value.trim())
+}
+
+function validOrdinal(value: string): boolean {
+  return /^[1-9]\d*$/.test(value.trim())
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -146,6 +155,21 @@ export default function ImportsPage() {
   const [busy, setBusy] = useState(false)
   const [iracingOpen, setIracingOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
+
+  // One shared series/events fetch powers every review row's typeahead — the
+  // review payload's own option lists no longer drive the UI, so a file whose
+  // guess resolves nothing still gets a searchable list instead of a dump.
+  const { allSeries, allEvents } = useSeriesEvents((m) => setError(m))
+
+  const seriesComboOptions: ComboOption[] = useMemo(
+    () =>
+      (allSeries ?? []).map((s) => ({
+        key: String(s.id),
+        label: s.name,
+        hint: s.abbreviation ?? undefined,
+      })),
+    [allSeries],
+  )
 
   // A seed pins the just-staged batches to the series + event chosen in the
   // upload modal, so those rows land pre-targeted (their own guess still fills
@@ -241,6 +265,75 @@ export default function ImportsPage() {
     setReviews((r) => ({ ...r, [id]: review })) // target edits live in `targets`, untouched
   }
 
+  /** The event typeahead's options. With a series chosen the list narrows to
+   *  it (oldest first, like a season page); with none it spans every event,
+   *  newest first, hinted with its series so typing either name matches. */
+  function eventComboOptions(t: TargetState, review: ImportReview): ComboOption[] {
+    const series = typeof t.seriesId === 'number' ? allSeries?.find((s) => s.id === t.seriesId) : undefined
+    const events = allEvents ?? []
+    const list = series
+      ? events
+          .filter((e) => e.seriesName === series.name)
+          .sort((a, b) => (a.eventDate ?? '9999').localeCompare(b.eventDate ?? '9999'))
+      : [...events].sort((a, b) => (b.eventDate ?? '').localeCompare(a.eventDate ?? ''))
+    const opts: ComboOption[] = list.map((e) => ({
+      key: String(e.id),
+      label: e.name,
+      hint: [series ? e.circuitName : e.seriesName, formatEventDate(e.eventDate, e.year)]
+        .filter(Boolean)
+        .join(' · '),
+    }))
+    // A file with no metadata has no date to create an event from.
+    if (!review.needsSession) {
+      opts.unshift({
+        key: 'new',
+        label: `New event${review.guess?.eventName ? `: ${review.guess.eventName}` : ''}`,
+        variant: 'action',
+      })
+    }
+    return opts
+  }
+
+  function pickSeries(b: ImportBatch, key: string) {
+    const s = allSeries?.find((x) => x.id === Number(key))
+    if (!s) return
+    const t = targets[b.id]
+    const ev = typeof t?.eventId === 'number' ? allEvents?.find((e) => e.id === t.eventId) : undefined
+    // An event chosen from another series contradicts the pick; fall back to "new".
+    const resetEvent = EVENT_KINDS.includes(reviews[b.id]?.kind ?? '') && ev && ev.seriesName !== s.name
+    patch(b.id, { seriesId: s.id, ...(resetEvent ? { eventId: 'new' as const } : {}) })
+  }
+
+  /** The create-row keeps today's deferred semantics: the series is named now
+   *  and created at commit, so discarding the batch leaves nothing behind. */
+  function pickNewSeries(b: ImportBatch, name: string) {
+    const existing = allSeries?.find((s) => s.name.toLowerCase() === name.toLowerCase())
+    if (existing) {
+      pickSeries(b, String(existing.id))
+      return
+    }
+    const t = targets[b.id]
+    // A brand-new series has no events yet, so any picked event contradicts it.
+    const resetEvent = EVENT_KINDS.includes(reviews[b.id]?.kind ?? '') && typeof t?.eventId === 'number'
+    patch(b.id, { seriesId: 'new', newSeriesName: name, ...(resetEvent ? { eventId: 'new' as const } : {}) })
+  }
+
+  function pickEvent(b: ImportBatch, key: string) {
+    if (key === 'new') {
+      patch(b.id, { eventId: 'new' })
+      return
+    }
+    const id = Number(key)
+    const review = reviews[b.id]
+    const e = allEvents?.find((ev) => ev.id === id)
+    // Global search pays for itself here: the event names its series.
+    if (e && review && !review.needsSession) {
+      const s = allSeries?.find((x) => x.name === e.seriesName)
+      if (s) patch(b.id, { seriesId: s.id })
+    }
+    void chooseEvent(b.id, id)
+  }
+
   function unresolvedClasses(id: number): string[] {
     const unknown = reviews[id]?.classReview.unknownClasses ?? []
     const chosen = targets[id]?.classMapping ?? {}
@@ -261,7 +354,7 @@ export default function ImportsPage() {
     if (reviews[b.id]?.kind === 'STANDINGS' && !t.kind) return false
     // A metadata-less file commits against a chosen existing event (which
     // implies the series); other kinds need the series chosen.
-    if (reviews[b.id]?.needsSession) return typeof t.eventId === 'number'
+    if (reviews[b.id]?.needsSession) return typeof t.eventId === 'number' && validOrdinal(t.sessionOrdinal)
     return seriesChosen(t)
   }
 
@@ -280,7 +373,7 @@ export default function ImportsPage() {
     }
     if (review.needsSession) {
       body.sessionType = t.sessionType
-      body.sessionOrdinal = t.sessionOrdinal
+      body.sessionOrdinal = Number(t.sessionOrdinal.trim())
     }
     if (review.kind === 'GRID') {
       body.gridBasis = t.gridBasis.trim() || null
@@ -399,64 +492,72 @@ export default function ImportsPage() {
                       <td colSpan={6}>
                         <div className="import-target">
                           {!review.needsSession && (
-                            <label className="target-row">
+                            <div className="target-row">
                               <span className="target-label">Series</span>
-                              <select
-                                value={t.seriesId}
+                              <Combobox
+                                inputId={`imp-${b.id}-series`}
+                                label="Series"
+                                showLabel={false}
+                                className="target-combo"
+                                floating
                                 disabled={busy}
-                                onChange={(e) =>
-                                  patch(b.id, {
-                                    seriesId: e.target.value === 'new' ? 'new' : e.target.value === '' ? '' : Number(e.target.value),
-                                  })
+                                loading={allSeries === null}
+                                placeholder="Search series…"
+                                emptyText="No matching series."
+                                options={
+                                  t.seriesId === 'new'
+                                    ? [
+                                        ...seriesComboOptions,
+                                        { key: 'new', label: t.newSeriesName || 'New series', hint: 'new series' },
+                                      ]
+                                    : seriesComboOptions
                                 }
-                              >
-                                <option value="">choose…</option>
-                                {review.seriesOptions.map((s) => (
-                                  <option key={s.id} value={s.id}>
-                                    {s.name}
-                                  </option>
-                                ))}
-                                <option value="new">+ new series…</option>
-                              </select>
+                                selectedKey={t.seriesId === '' ? null : String(t.seriesId)}
+                                onPick={(key) => pickSeries(b, key)}
+                                onClear={t.seriesId !== '' ? () => patch(b.id, { seriesId: '' }) : undefined}
+                                onCreate={(name) => pickNewSeries(b, name)}
+                                createHint="new series"
+                              />
                               {t.seriesId === 'new' && (
                                 <input
+                                  aria-label="New series name"
                                   placeholder="New series name"
                                   value={t.newSeriesName}
                                   disabled={busy}
                                   onChange={(e) => patch(b.id, { newSeriesName: e.target.value })}
                                 />
                               )}
-                            </label>
+                            </div>
                           )}
 
                           {EVENT_KINDS.includes(review.kind) && (
-                            <label className="target-row">
+                            <div className="target-row">
                               <span className="target-label">Event</span>
-                              <select
-                                value={t.eventId}
+                              <Combobox
+                                inputId={`imp-${b.id}-event`}
+                                label="Event"
+                                showLabel={false}
+                                className="target-combo"
+                                floating
                                 disabled={busy}
-                                onChange={(e) =>
-                                  chooseEvent(
-                                    b.id,
-                                    e.target.value === 'new' ? 'new' : e.target.value === '' ? '' : Number(e.target.value),
-                                  )
+                                loading={allEvents === null}
+                                placeholder={
+                                  typeof t.seriesId === 'number' ? 'Search events…' : 'Search all events…'
                                 }
-                              >
-                                {review.needsSession && <option value="">choose…</option>}
-                                {review.eventOptions.map((ev) => (
-                                  <option key={ev.id} value={ev.id}>
-                                    {ev.name}
-                                    {ev.eventDate ? ` (${ev.eventDate})` : ''}
-                                  </option>
-                                ))}
-                                {/* A file with no metadata has no date to create an event from. */}
-                                {!review.needsSession && (
-                                  <option value="new">
-                                    + new event{review.guess?.eventName ? `: ${review.guess.eventName}` : ''}
-                                  </option>
-                                )}
-                              </select>
-                            </label>
+                                emptyText="No matching events."
+                                maxVisible={40}
+                                options={eventComboOptions(t, review)}
+                                selectedKey={
+                                  t.eventId === 'new' ? 'new' : t.eventId === '' ? null : String(t.eventId)
+                                }
+                                onPick={(key) => pickEvent(b, key)}
+                                onClear={
+                                  typeof t.eventId === 'number'
+                                    ? () => patch(b.id, { eventId: review.needsSession ? '' : 'new' })
+                                    : undefined
+                                }
+                              />
+                            </div>
                           )}
 
                           {review.needsSession && (
@@ -480,8 +581,11 @@ export default function ImportsPage() {
                                 title="Which race/session of the weekend (Race 2 → 2)"
                                 value={t.sessionOrdinal}
                                 disabled={busy}
-                                onChange={(e) => patch(b.id, { sessionOrdinal: Math.max(1, Number(e.target.value) || 1) })}
+                                onChange={(e) => patch(b.id, { sessionOrdinal: e.target.value })}
                               />
+                              {!validOrdinal(t.sessionOrdinal) && (
+                                <span className="target-hint">Which race of the weekend — 1, 2, …</span>
+                              )}
                             </label>
                           )}
 
@@ -603,11 +707,13 @@ export default function ImportsPage() {
                             title={
                               review.needsSession && typeof t.eventId !== 'number'
                                 ? 'Choose an event first'
-                                : !review.needsSession && !seriesChosen(t)
-                                  ? 'Choose a series first'
-                                  : review.kind === 'STANDINGS' && !t.kind
-                                    ? 'Choose what the championship ranks first'
-                                    : undefined
+                                : review.needsSession && !validOrdinal(t.sessionOrdinal)
+                                  ? 'Enter which race of the weekend (1, 2, …)'
+                                  : !review.needsSession && !seriesChosen(t)
+                                    ? 'Choose a series first'
+                                    : review.kind === 'STANDINGS' && !t.kind
+                                      ? 'Choose what the championship ranks first'
+                                      : undefined
                             }
                             onClick={() => commit(b)}
                           >

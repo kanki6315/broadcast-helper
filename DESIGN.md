@@ -459,16 +459,33 @@ isn't. Supporting surfaces:
   in normal flow (the page scrolls, the log doesn't), filterable by car via
   `.rc-car-chip`. Lazy-fetched on first open.
 
+### Combobox (`Combobox.tsx`, `.sep-*`)
+The shared typeahead — the `.sp` search grammar as a form field
+(`role="combobox"`, `aria-activedescendant`, arrow-key roving, Escape closes
+the list, never the host dialog). Matching is case- **and diacritic-**
+insensitive over label + hint ("nurburgring" finds Nürburgring), so a hint
+carrying the series name means typing either the event or its series narrows.
+Two render modes, chosen by the host's clipping context: **inline** (results
+in normal flow — a `<dialog>`'s own overflow can never clip them) and
+**`floating`** (absolute at `--z-dropdown` with the modal shadow — an overlay
+is a state response) for in-page hosts, where an inline list would shove the
+content below it on every keystroke. Row vocabulary: muted `auto` default,
+accent `+ Create "query"` (offered when the query matches nothing exactly),
+and pinned accent **action rows** that survive filtering ("+ New event: …" —
+they answer *none of these*). A `maxVisible` cap ends the list with a counted
+"n more — keep typing" row, never a silent truncation. Used by the
+`SeriesEventPicker` pair in the import modals (inline) and the Imports review
+rows (floating), where picking an event from the global list auto-fills its
+series — the reviewer types the thing they actually know.
+
 ### Import modals (`.uf` / `.ir` / `.cis`)
 The Imports page opens two native-`<dialog>` modals on the token layer, siblings
 of the search palette (`.sp`) and starting-grid modal (`.sg`): **`UploadFilesModal`
 (`.uf`)** — a dashed drag-and-drop dropzone (empty-state vocabulary; drag-over
 lifts to the amber accent), a per-file staged queue with a `ImportStatusIcon`
 glyph per row, and **`IRacingImportModal` (`.ir`)**. Both pin their target with
-the shared **`SeriesEventPicker`** — two typeahead comboboxes (series, then
-events filtered to it) built on the `.sp` search grammar (`role="combobox"`,
-`aria-activedescendant`, arrow-key roving); its results render **in normal flow,
-not `position:absolute`**, so the dialog's own overflow never clips them. After
+the shared **`SeriesEventPicker`** — two inline Comboboxes (series, then
+events filtered to it). After
 staging, both hand off to the shared **`ConfirmImportStep` (`.cis`)**: event
 group cards holding draggable session rows. **Drag feedback is a border/background
 token change only — no transform or motion** — so it survives `prefers-reduced-motion`
@@ -476,6 +493,21 @@ untouched; every draggable row carries a keyboard-and-touch **"Move to…"
 `<select>`** as the equivalent control (WCAG 2.5.7). Selection is amber
 (`--accent-tint`), never a class colour. A round-ordinal preview lists the
 season's events with `Rd n` chips, new ones in ink and existing ones muted.
+
+### Import review rows (`.import-target`)
+Each staged batch's confirm strip on the Imports page. Series and Event are
+floating Comboboxes (`.target-combo`, 360px) seeded from the parser's guess —
+accepting a right guess costs zero keystrokes. **With no series pinned the
+event search is global** (hint: series · date, newest first, capped with the
+counted overflow row) and picking an event auto-fills its series; pinning a
+series narrows the list to it (hint: circuit · date, oldest first), and a
+pick that contradicts the other field resets it rather than committing a
+mismatch. The series create-row defers creation to commit — discarding the
+batch leaves nothing behind — unlike the modal picker, which creates up front
+so the new id can pin the staged files. Number inputs (session ordinal) hold
+raw text and validate at commit, so "1" can be deleted before "2" is typed —
+never clamped on keystroke; the Commit button's tooltip names the first
+unmet requirement.
 
 ### Inputs / Fields
 `--bg` background, `--border-strong` 1px stroke, radius 6px, 6px 10px padding.

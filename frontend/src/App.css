@@ -1674,6 +1674,12 @@ h2 small {
   width: 6rem;
 }
 
+/* The review row's series/event typeahead — wide enough for a full event name,
+ * never wider than the row. */
+.target-combo {
+  width: min(360px, 100%);
+}
+
 .target-checkbox {
   display: inline-flex;
   align-items: center;
