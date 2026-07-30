@@ -1,0 +1,8 @@
+﻿POS;NUMBER;LAP;TIME;GAP_FIRST;GAP_PREVIOUS;KPH; LAPS;TEAM;CLASS;GROUP;DIVISION;VEHICLE;TIRES;IMSA_CarId;IMSA_TeamId;IMSA_ClassId;IMSA_CarTypeId;IMSA_ManufacturerId;IMSA_TireId;IMSA_SponsorId;IMSA_EventEntryId;*Extra 9;*Extra 10;DRIVER_FIRSTNAME;DRIVER_SECONDNAME;DRIVER_LICENSE;DRIVER_HOMETOWN;DRIVER_COUNTRY;DRIVER_SHORTNAME;DRIVER_IMSA_DriverId;DRIVER_IMSA_DriverPlugId;DRIVER_IMSA_DriverRatingLong;DRIVER_*Extra 4;DRIVER_*Extra 5;
+1;7;8;1:47.446;-;-;183.3;9;Moorespeed-Wright Motorsports;Pro;;;Porsche 992;M;1478;376;16;107;112;3;;11147;;;Maxwell;Root(J);Silver;San Diego, CA;;;1654;6;Silver;;;
+2;15;3;1:47.457;+0.011;+0.011;183.3;12;Kelly-Moss Road and Race;Pro;;;Porsche 992;M;1467;103;16;107;112;3;;11127;;;Seb;Priaulx(J);Silver;Guernsey, UK;;;2488;6;Silver;;;
+13;99;10;1:49.043;+1.597;+0.057;180.6;11;iFly/Kelly-Moss;Pro-Am;;;Porsche 992;M;1387;272;39;107;112;3;;11124;;;Alan;Metni;Bronze;Austin, TX;;;1344;6;Bronze;;;
+15;65;12;1:49.901;+2.455;+0.628;179.2;13;Team Hardpoint EBM;Pro-Am;;;Porsche 992;M;1389;346;39;107;112;3;;11129;;;Efrin;Castro;;Santiago, DR;;;1857;1;;;;
+;8;14;1:55.721;;;170.2;15;Goldcrest Motorsports;PA991;;;Porsche 991;M;1336;198;40;106;112;3;;11183;;;Joe;Still;Bronze;Huntsville, AL;;;2035;6;Bronze;;;
+;69;0;;;;;2;BGB Motorsports;Pro-Am;;;Porsche 992;M;1365;157;39;107;112;3;;11141;;;Thomas;Collingwood;;St. John's, NL;;;1796;6;;;;
+34;64;0;;;;;0;ACI Motorsports;PA991;;;Porsche 991;M;1370;269;40;106;112;3;;10596;;;Ted;Giovanis;;Highland, MD;;;489;;;;;

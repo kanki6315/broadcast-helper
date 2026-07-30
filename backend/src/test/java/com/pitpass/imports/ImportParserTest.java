@@ -480,4 +480,154 @@ class ImportParserTest {
             assertTrue(expected.getMessage().contains("POSITION"));
         }
     }
+
+    // ------------------------------------------------------------ results CSVs
+
+    @Test
+    void resultsCsvDetection() throws IOException {
+        // The three CSV kinds must sniff apart: the same family, three headers.
+        assertTrue(ImportParser.looksLikeResultsCsv(csvFixture("results-race-official.csv")));
+        assertTrue(!ImportParser.looksLikeResultsCsv(csvFixture("results-qualifying-official.csv")));
+        assertTrue(!ImportParser.looksLikeResultsCsv(csvFixture("grid-race-official.csv")));
+        assertTrue(ImportParser.looksLikeQualifyingCsv(csvFixture("results-qualifying-official.csv")));
+        assertTrue(!ImportParser.looksLikeQualifyingCsv(csvFixture("results-race-official.csv")));
+        assertTrue(!ImportParser.looksLikeQualifyingCsv(csvFixture("grid-race-official.csv")));
+        assertTrue(!ImportParser.looksLikeGridCsv(csvFixture("results-race-official.csv")));
+    }
+
+    @Test
+    void parsesResultsCsv() throws IOException {
+        RaceResultsImport imp = ImportParser.parseResultsCsv(csvFixture("results-race-official.csv"));
+        assertEquals(6, imp.rows().size());
+        assertEquals("RACE", imp.sessionType());
+        assertEquals(1, imp.sessionOrdinal());
+        // No session or event metadata; the reviewer supplies both at commit.
+        assertNull(imp.sessionStart());
+        assertNull(imp.sessionName());
+        assertNull(imp.championshipName());
+
+        RaceResultsImport.Row winner = imp.rows().get(0);
+        assertEquals(1, winner.positionOverall());
+        assertEquals(1, winner.positionInClass());
+        assertEquals("9", winner.number());
+        assertEquals("Pro", winner.className());
+        assertEquals("JDX Racing", winner.team());
+        assertEquals("Porsche 992", winner.vehicle());
+        assertEquals("Classified", winner.status());
+        assertTrue(!winner.notFinished());
+        assertEquals(17, winner.laps());
+        assertEquals("46:32.222", winner.elapsedTime());
+        assertNull(winner.gapFirst()); // published "-" on the leader's row
+        assertEquals("2:16.351", winner.fastestLapTime());
+        assertEquals(17, winner.fastestLapNumber());
+        assertEquals(144.5, winner.fastestLapKph());
+        assertEquals(1, winner.fastestLapDriverSeat());
+
+        RaceResultsImport.Row second = imp.rows().get(1);
+        assertEquals("+0.496", second.gapFirst());
+        assertEquals("+0.496", second.gapPrevious());
+    }
+
+    @Test
+    void resultsCsvBuildsSingleDriverRosterWithoutMarkers() throws IOException {
+        RaceResultsImport imp = ImportParser.parseResultsCsv(csvFixture("results-race-official.csv"));
+        RaceResultsImport.Row winner = imp.rows().get(0);
+        assertEquals(1, winner.drivers().size());
+        RaceResultsImport.DriverRow driver = winner.drivers().get(0);
+        assertEquals(1, driver.seatOrder());
+        assertEquals("Parker", driver.firstName());
+        // The junior marker "(J)" is glued to the surname in the file; entry
+        // lists split markers out, so it must not fork the identity key here.
+        assertEquals("Thompson", driver.surname());
+        assertEquals("Red Deer, AB", driver.hometown());
+    }
+
+    @Test
+    void resultsCsvHandlesNotStartedRows() throws IOException {
+        RaceResultsImport imp = ImportParser.parseResultsCsv(csvFixture("results-race-official.csv"));
+        RaceResultsImport.Row dns = imp.rows().stream()
+                .filter(r -> r.number().equals("72")).findFirst().orElseThrow();
+        // Blank POSITION + "Not started": the row stays (entry and driver
+        // matter) but both positions are null and nothing counts in class.
+        assertNull(dns.positionOverall());
+        assertNull(dns.positionInClass());
+        assertEquals("Not started", dns.status());
+        assertTrue(dns.notFinished());
+        assertEquals("Not started", dns.notFinishedCause());
+        assertEquals(0, dns.laps());
+        assertNull(dns.elapsedTime());
+        assertNull(dns.fastestLapTime());
+        assertNull(dns.fastestLapDriverSeat());
+        assertEquals("Phillip", dns.drivers().get(0).firstName());
+    }
+
+    @Test
+    void resultsCsvDerivesInClassPositions() throws IOException {
+        RaceResultsImport imp = ImportParser.parseResultsCsv(csvFixture("results-race-official.csv"));
+        // Pro counts 1..3 over the overall order; the first PA991 and Pro-Am
+        // cars each restart at 1; the DNS PA991 car advances no counter.
+        List<RaceResultsImport.Row> pro = imp.rows().stream()
+                .filter(r -> "Pro".equals(r.className())).toList();
+        assertEquals(3, pro.size());
+        assertEquals(3, pro.get(2).positionInClass());
+        RaceResultsImport.Row firstPa991 = imp.rows().stream()
+                .filter(r -> "PA991".equals(r.className())).findFirst().orElseThrow();
+        assertEquals(13, firstPa991.positionOverall());
+        assertEquals(1, firstPa991.positionInClass());
+        RaceResultsImport.Row firstProAm = imp.rows().stream()
+                .filter(r -> "Pro-Am".equals(r.className())).findFirst().orElseThrow();
+        assertEquals(1, firstProAm.positionInClass());
+    }
+
+    @Test
+    void parsesQualifyingCsv() throws IOException {
+        RaceResultsImport imp = ImportParser.parseQualifyingCsv(csvFixture("results-qualifying-official.csv"));
+        assertEquals(7, imp.rows().size());
+        assertEquals("QUALIFYING", imp.sessionType());
+        assertNull(imp.sessionStart());
+
+        RaceResultsImport.Row pole = imp.rows().get(0);
+        assertEquals(1, pole.positionOverall());
+        assertEquals(1, pole.positionInClass());
+        assertEquals("7", pole.number());
+        // The classifying lap lands in the fastest_lap_* fields, the same
+        // treatment the JSON "Qualifying Practice by Best Lap" spelling gets.
+        assertEquals("1:47.446", pole.fastestLapTime());
+        assertEquals(8, pole.fastestLapNumber());
+        assertEquals(183.3, pole.fastestLapKph());
+        assertEquals(1, pole.fastestLapDriverSeat());
+        assertEquals(9, pole.laps());
+        assertNull(pole.gapFirst());
+        assertNull(pole.elapsedTime());
+        assertEquals("Maxwell", pole.drivers().get(0).firstName());
+        assertEquals("Root", pole.drivers().get(0).surname());
+        assertEquals("Silver", pole.drivers().get(0).rating());
+    }
+
+    @Test
+    void qualifyingCsvKeepsUnclassifiedRows() throws IOException {
+        RaceResultsImport imp = ImportParser.parseQualifyingCsv(csvFixture("results-qualifying-official.csv"));
+        // A revised classification can drop a car's position but keep its lap:
+        // the row stays, unpositioned, and advances no class counter.
+        RaceResultsImport.Row excluded = imp.rows().stream()
+                .filter(r -> r.number().equals("8")).findFirst().orElseThrow();
+        assertNull(excluded.positionOverall());
+        assertNull(excluded.positionInClass());
+        assertEquals("1:55.721", excluded.fastestLapTime());
+
+        // Lap 0 with no time: the car never set a lap.
+        RaceResultsImport.Row noLap = imp.rows().stream()
+                .filter(r -> r.number().equals("69")).findFirst().orElseThrow();
+        assertNull(noLap.positionOverall());
+        assertNull(noLap.fastestLapTime());
+        assertNull(noLap.fastestLapNumber());
+        assertNull(noLap.fastestLapDriverSeat());
+
+        // A positioned car with no time still classifies (and counts in class).
+        RaceResultsImport.Row positionedNoTime = imp.rows().stream()
+                .filter(r -> r.number().equals("64")).findFirst().orElseThrow();
+        assertEquals(34, positionedNoTime.positionOverall());
+        assertEquals(1, positionedNoTime.positionInClass());
+        assertNull(positionedNoTime.fastestLapTime());
+    }
 }

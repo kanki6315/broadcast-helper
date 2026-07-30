@@ -227,6 +227,234 @@ public final class ImportParser {
         return new GridImport(null, null, null, null, 1, null, null, null, null, rows);
     }
 
+    /** Sniffs the IMSA race-results CSV by its header. Cells are trimmed before
+     *  comparing — real files carry stray spaces inside header cells. */
+    public static boolean looksLikeResultsCsv(byte[] content) {
+        return headerStartsWith(content,
+                "POSITION", "NUMBER", "STATUS", "LAPS", "TOTAL_TIME", "GAP_FIRST", "GAP_PREVIOUS");
+    }
+
+    /** Sniffs the IMSA qualifying-results CSV ("Results by (2nd) Fastest Lap"
+     *  shares this header) by its first cells. */
+    public static boolean looksLikeQualifyingCsv(byte[] content) {
+        return headerStartsWith(content,
+                "POS", "NUMBER", "LAP", "TIME", "GAP_FIRST", "GAP_PREVIOUS", "KPH", "LAPS");
+    }
+
+    private static boolean headerStartsWith(byte[] content, String... expected) {
+        String text = stripBom(new String(content, java.nio.charset.StandardCharsets.UTF_8));
+        int eol = text.indexOf('\n');
+        String[] cells = (eol >= 0 ? text.substring(0, eol) : text).split(";", -1);
+        if (cells.length < expected.length) {
+            return false;
+        }
+        for (int i = 0; i < expected.length; i++) {
+            if (!cells[i].trim().equalsIgnoreCase(expected[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Parses a published race-results CSV (semicolon-delimited, the same BOM /
+     * CRLF / trailing-semicolon conventions as the grid CSV). Columns are found
+     * by header name, never by position — the IMSA_* / *Extra block between the
+     * timing columns and the DRIVER_* block drifts across seasons. A car that
+     * did not start has a blank POSITION and status "Not started": it keeps its
+     * row (the entry and driver still matter) with both positions null. Like
+     * the grid CSV, the file carries no event or session metadata; the reviewer
+     * supplies the event and session at commit.
+     */
+    public static RaceResultsImport parseResultsCsv(byte[] content) {
+        List<String[]> lines = csvRows(content);
+        Map<String, Integer> header = headerIndex(lines.get(0),
+                "POSITION", "NUMBER", "STATUS", "LAPS", "TOTAL_TIME");
+
+        List<RaceResultsImport.Row> rows = new ArrayList<>();
+        Map<String, Integer> classCounters = new HashMap<>();
+        for (int i = 1; i < lines.size(); i++) {
+            String[] cells = lines.get(i);
+            String number = cellOrNull(cells, header.get("NUMBER"));
+            if (number == null) {
+                continue;
+            }
+            Integer position = parseIntOrNull(cellOrNull(cells, header.get("POSITION")));
+            String status = cellOrNull(cells, header.get("STATUS"));
+            boolean notFinished = status != null && !"Classified".equalsIgnoreCase(status);
+            String className = cellOrNull(cells, header.get("CLASS"));
+            Integer inClass = position == null || didNotStart(status)
+                    ? null
+                    : classCounters.merge(className, 1, Integer::sum);
+            String fastestLapTime = cellOrNull(cells, header.get("FL_TIME"));
+            rows.add(new RaceResultsImport.Row(
+                    position,
+                    inClass,
+                    number,
+                    className,
+                    cellOrNull(cells, header.get("GROUP")),
+                    cellOrNull(cells, header.get("TEAM")),
+                    cellOrNull(cells, header.get("VEHICLE")),
+                    null,
+                    status,
+                    notFinished,
+                    notFinished ? status : null,
+                    parseIntOrNull(cellOrNull(cells, header.get("LAPS"))),
+                    cellOrNull(cells, header.get("TOTAL_TIME")),
+                    dashToNull(cellOrNull(cells, header.get("GAP_FIRST"))),
+                    dashToNull(cellOrNull(cells, header.get("GAP_PREVIOUS"))),
+                    fastestLapTime,
+                    zeroToNull(parseIntOrNull(cellOrNull(cells, header.get("FL_LAPNUM")))),
+                    parseDoubleOrNull(cellOrNull(cells, header.get("FL_KPH"))),
+                    fastestLapTime != null ? 1 : null,
+                    null,
+                    csvDriver(cells, header)
+            ));
+        }
+        return new RaceResultsImport(null, null, null, "RACE", 1,
+                null, null, null, null, null, null, rows);
+    }
+
+    /**
+     * Parses a published qualifying-classification CSV. The LAP / TIME / KPH
+     * columns are the classifying lap and land in the fastest_lap_* fields —
+     * the same treatment {@link #parseRaceResults} gives the JSON "Qualifying
+     * Practice by Best Lap" spelling. Rows with a time but a blank POS (seen in
+     * a revised classification) and rows with a POS but no time (never set one)
+     * both keep their row; only positioned cars advance the class counters.
+     */
+    public static RaceResultsImport parseQualifyingCsv(byte[] content) {
+        List<String[]> lines = csvRows(content);
+        Map<String, Integer> header = headerIndex(lines.get(0),
+                "POS", "NUMBER", "LAP", "TIME", "KPH");
+
+        List<RaceResultsImport.Row> rows = new ArrayList<>();
+        Map<String, Integer> classCounters = new HashMap<>();
+        for (int i = 1; i < lines.size(); i++) {
+            String[] cells = lines.get(i);
+            String number = cellOrNull(cells, header.get("NUMBER"));
+            if (number == null) {
+                continue;
+            }
+            Integer position = parseIntOrNull(cellOrNull(cells, header.get("POS")));
+            String className = cellOrNull(cells, header.get("CLASS"));
+            Integer inClass = position == null ? null : classCounters.merge(className, 1, Integer::sum);
+            String classifyingTime = cellOrNull(cells, header.get("TIME"));
+            rows.add(new RaceResultsImport.Row(
+                    position,
+                    inClass,
+                    number,
+                    className,
+                    cellOrNull(cells, header.get("GROUP")),
+                    cellOrNull(cells, header.get("TEAM")),
+                    cellOrNull(cells, header.get("VEHICLE")),
+                    null,
+                    null,
+                    false,
+                    null,
+                    parseIntOrNull(cellOrNull(cells, header.get("LAPS"))),
+                    null,
+                    dashToNull(cellOrNull(cells, header.get("GAP_FIRST"))),
+                    dashToNull(cellOrNull(cells, header.get("GAP_PREVIOUS"))),
+                    classifyingTime,
+                    zeroToNull(parseIntOrNull(cellOrNull(cells, header.get("LAP")))),
+                    parseDoubleOrNull(cellOrNull(cells, header.get("KPH"))),
+                    classifyingTime != null ? 1 : null,
+                    null,
+                    csvDriver(cells, header)
+            ));
+        }
+        return new RaceResultsImport(null, null, null, "QUALIFYING", 1,
+                null, null, null, null, null, null, rows);
+    }
+
+    /** BOM-stripped, blank-line-free lines split on the semicolon delimiter. */
+    private static List<String[]> csvRows(byte[] content) {
+        String text = stripBom(new String(content, java.nio.charset.StandardCharsets.UTF_8));
+        List<String[]> rows = new ArrayList<>();
+        for (String line : text.split("\\R")) {
+            if (!line.isBlank()) {
+                rows.add(line.split(";", -1));
+            }
+        }
+        if (rows.isEmpty()) {
+            throw new IllegalArgumentException("Empty CSV file");
+        }
+        return rows;
+    }
+
+    /** Header-name -> column-index map from trimmed, uppercased header cells,
+     *  failing loud when a required column is missing. */
+    private static Map<String, Integer> headerIndex(String[] headerCells, String... required) {
+        Map<String, Integer> header = new HashMap<>();
+        for (int i = 0; i < headerCells.length; i++) {
+            header.put(headerCells[i].trim().toUpperCase(), i);
+        }
+        for (String column : required) {
+            if (!header.containsKey(column)) {
+                throw new IllegalArgumentException(
+                        "Not a recognized results CSV: no " + column + " column in the header");
+            }
+        }
+        return header;
+    }
+
+    /** The single DRIVER_* column block (one driver per car in these files). */
+    private static List<RaceResultsImport.DriverRow> csvDriver(String[] cells, Map<String, Integer> header) {
+        String firstName = cellOrNull(cells, header.get("DRIVER_FIRSTNAME"));
+        String surname = stripNameMarker(cellOrNull(cells, header.get("DRIVER_SECONDNAME")));
+        if (firstName == null && surname == null) {
+            return List.of();
+        }
+        return List.of(new RaceResultsImport.DriverRow(
+                1,
+                firstName,
+                surname,
+                cellOrNull(cells, header.get("DRIVER_LICENSE")),
+                cellOrNull(cells, header.get("DRIVER_HOMETOWN")),
+                cellOrNull(cells, header.get("DRIVER_COUNTRY"))
+        ));
+    }
+
+    /** Junior/class markers ride glued to the surname in these CSVs
+     *  ("Priaulx(J)"). Entry lists split markers out of the name, so keeping
+     *  one here would fork the driver identity key across sources. */
+    private static String stripNameMarker(String surname) {
+        return surname == null ? null : surname.replaceAll("\\s*\\([A-Z]{1,2}\\)$", "");
+    }
+
+    /** A published "-" gap (the leader's row) is no gap at all. */
+    private static String dashToNull(String value) {
+        return "-".equals(value) ? null : value;
+    }
+
+    /** Lap 0 means "never set a lap"; store the absence, not the zero. */
+    private static Integer zeroToNull(Integer value) {
+        return value != null && value == 0 ? null : value;
+    }
+
+    private static Integer parseIntOrNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static Double parseDoubleOrNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     private static String stripBom(String text) {
         return text.startsWith("\uFEFF") ? text.substring(1) : text;
     }

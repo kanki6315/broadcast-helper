@@ -1,0 +1,7 @@
+﻿POSITION;NUMBER;STATUS;LAPS;TOTAL_TIME;GAP_FIRST;GAP_PREVIOUS;FL_LAPNUM;FL_TIME;FL_KPH;TEAM;CLASS;GROUP;DIVISION;VEHICLE;TIRES;IMSA_CarId;IMSA_TeamId;IMSA_ClassId;IMSA_CarTypeId;IMSA_ManufacturerId;IMSA_TireId;IMSA_SponsorId;IMSA_EventEntryId;*Extra 9;*Extra 10;DRIVER_FIRSTNAME;DRIVER_SECONDNAME;DRIVER_LICENSE;DRIVER_HOMETOWN;DRIVER_COUNTRY;DRIVER_SHORTNAME;DRIVER_IMSA_DriverId;DRIVER_IMSA_DriverPlugId;DRIVER_IMSA_DriverRatingLong;DRIVER_*Extra 4;DRIVER_*Extra 5;
+1;9;Classified;17;46:32.222;-;-;17;2:16.351;144.5;JDX Racing;Pro;;;Porsche 992;M;1351;102;38;107;112;3;;10681;;;Parker;Thompson(J);;Red Deer, AB;;;1877;6;Silver;;;
+2;3;Classified;17;46:32.718;+0.496;+0.496;16;2:16.615;144.2;Kelly-Moss Road and Race;Pro;;;Porsche 992;M;1343;103;38;107;112;3;;10676;;;Kay;van Berlo(J);;Veghel, Netherlands;;;1759;6;Silver;;;
+3;15;Classified;17;46:34.545;+2.323;+1.827;17;2:15.738;145.1;Kelly-Moss Road and Race;Pro;;;Porsche 992;M;1345;103;38;107;112;3;;10675;;;Seb;Priaulx(J);;Guernsey, UK;;;2488;6;Silver;;;
+13;55;Classified;17;47:38.536;+1:06.314;+3.433;15;2:29.142;132.1;Goldcrest Motorsports;PA991;;;Porsche 991;M;1346;198;40;106;112;3;;10672;;;Matt;Halcome;;Dalls, GA;;;2489;6;;;;
+14;99;Classified;17;47:38.793;+1:06.571;+0.257;16;2:25.963;135.0;iFly/Kelly-Moss;Pro-Am;;;Porsche 992;M;1387;272;39;107;112;3;;10678;;;Alan;Metni;;Austin, TX;;;1344;6;Bronze;;;
+;72;Not started;0;;;;0;;;Goldcrest Motorsports;PA991;;;Porsche 991;M;1337;198;40;106;112;3;;10668;;;Phillip;Martien;;Finksburg, MD;;;1149;6;;;;

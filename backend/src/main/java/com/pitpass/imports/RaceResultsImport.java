@@ -23,7 +23,7 @@ public record RaceResultsImport(
 ) {
 
     public record Row(
-            int positionOverall,
+            Integer positionOverall, // null when the source classifies no position (CSV DNS rows)
             Integer positionInClass, // null when the car did not start (no class position)
             String number,
             String className,
