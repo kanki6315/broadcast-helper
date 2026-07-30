@@ -837,7 +837,11 @@ public class ImportService {
                                // grid PDF names which race it starts. Null when the payload
                                // carries no such hint.
                                String sessionTypeHint,
-                               Integer sessionOrdinalHint) {
+                               Integer sessionOrdinalHint,
+                               // GRID only: no slot has a time — the fingerprint of a grid set
+                               // by something other than qualifying. The UI uses it to suggest
+                               // filling in the grid basis.
+                               boolean gridTimesAllBlank) {
     }
 
     /** Everything the review screen needs: the guessed target, the options to pick
@@ -857,6 +861,7 @@ public class ImportService {
             boolean needsSession = false;
             String sessionTypeHint = null;
             Integer sessionOrdinalHint = null;
+            boolean gridTimesAllBlank = false;
             TargetGuess guess;
             switch (batch.kind()) {
                 case "ENTRY_LIST" -> guess = guessEntryList(json.readValue(payload, EntryListImport.class));
@@ -882,6 +887,8 @@ public class ImportService {
                         sessionTypeHint = normalizeSessionType(imp.sessionType(), imp.sessionName());
                         sessionOrdinalHint = imp.sessionOrdinal();
                     }
+                    gridTimesAllBlank = !imp.rows().isEmpty() && imp.rows().stream()
+                            .allMatch(r -> r.time() == null || r.time().isBlank());
                     if (chosenEventId != null && "STAGED".equals(batch.status())) {
                         cr = classReviewForSeason(seasonIdOfEvent(chosenEventId),
                                 imp.rows().stream().map(GridImport.Row::className).toList());
@@ -908,9 +915,9 @@ public class ImportService {
                 events = allEvents();
             }
             return new ImportReview(batch.kind(), guess, seriesOptions, events, cr, needsSession,
-                    sessionTypeHint, sessionOrdinalHint);
+                    sessionTypeHint, sessionOrdinalHint, gridTimesAllBlank);
         } catch (JsonProcessingException e) {
-            return new ImportReview(batch.kind(), null, seriesOptions, List.of(), cr, false, null, null);
+            return new ImportReview(batch.kind(), null, seriesOptions, List.of(), cr, false, null, null, false);
         }
     }
 
@@ -1103,7 +1110,8 @@ public class ImportService {
             String classCode, String kind, Boolean isCup, String familyName, // standings championship
             Integer seasonYear,                    // standings: overrides the year the payload claims
             String sessionType, Integer sessionOrdinal, // for files with no session metadata (grid CSVs)
-            Map<String, String> classMapping
+            Map<String, String> classMapping,
+            String gridBasis // grid commits: how the grid was set, when not by qualifying
     ) {
         Map<String, String> mapping() {
             return classMapping == null ? Map.of() : classMapping;
@@ -1321,7 +1329,7 @@ public class ImportService {
     private static ImportTarget withEvent(ImportTarget t, long eventId, String eventName) {
         return new ImportTarget(t.seriesId(), t.newSeriesName(), eventId, eventName,
                 t.classCode(), t.kind(), t.isCup(), t.familyName(), t.seasonYear(),
-                t.sessionType(), t.sessionOrdinal(), t.classMapping());
+                t.sessionType(), t.sessionOrdinal(), t.classMapping(), t.gridBasis());
     }
 
     private static String messageOf(RuntimeException ex) {
@@ -1564,6 +1572,16 @@ public class ImportService {
         // grid rows — the session's results, if any, are untouched.
         long sessionId = findOrCreateRaceSession(eventId, sessionType, sessionOrdinal,
                 sessionName, imp.sessionStart(), null, null);
+        // The reviewer's note on how this grid was set ("2nd fastest qualifying
+        // lap", "Championship points — qualifying cancelled"). A targeted
+        // UPDATE, not part of the shared session upsert: grid commits are the
+        // only writer, and blank means "leave whatever an earlier commit said".
+        if (target.gridBasis() != null && !target.gridBasis().isBlank()) {
+            db.sql("UPDATE race_session SET grid_basis = :basis WHERE id = :sessionId")
+                    .param("basis", target.gridBasis().trim())
+                    .param("sessionId", sessionId)
+                    .update();
+        }
         db.sql("DELETE FROM grid_position WHERE session_id = :sessionId").param("sessionId", sessionId).update();
 
         for (GridImport.Row row : imp.rows()) {
