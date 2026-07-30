@@ -32,6 +32,20 @@ interface ClassReview {
   knownClasses: string[]
   unknownClasses: string[]
 }
+interface CarRef {
+  number: string
+  className: string | null
+  teamName: string | null
+}
+// File cars vs the target event's entries. New cars are the wrong-file
+// fingerprint and gate the commit; missing cars are informational (withdrawals
+// and DNQs are normal). Null when no event is chosen/guessed or it has no
+// entries yet.
+interface RosterDiff {
+  newCars: CarRef[]
+  missingCars: CarRef[]
+  eventEntryCount: number
+}
 interface ImportReview {
   kind: string
   guess: TargetGuess | null
@@ -44,6 +58,7 @@ interface ImportReview {
   // GRID only: every slot is untimed — qualifying never ran, so the reviewer
   // should say what set the grid.
   gridTimesAllBlank: boolean
+  rosterDiff: RosterDiff | null
 }
 
 // The reviewer's editable choices for one batch, seeded from the guess.
@@ -62,6 +77,9 @@ interface TargetState {
   sessionOrdinal: string
   classMapping: Record<string, string>
   gridBasis: string
+  // Reviewer confirmed creating the rosterDiff's new cars as entries. Reset to
+  // false whenever the target event changes — the confirmation was per-event.
+  allowNewEntries: boolean
 }
 
 function initTarget(r: ImportReview): TargetState {
@@ -84,6 +102,7 @@ function initTarget(r: ImportReview): TargetState {
     sessionOrdinal: String(r.sessionOrdinalHint ?? 1),
     classMapping: {},
     gridBasis: '',
+    allowNewEntries: false,
   }
 }
 
@@ -104,6 +123,18 @@ function validYear(value: string): boolean {
 
 function validOrdinal(value: string): boolean {
   return /^[1-9]\d*$/.test(value.trim())
+}
+
+// "#89 TCR · HART, #4 GS · Medusa, … and 3 more" — capped so a wholly wrong
+// file doesn't paint the panel with 40 cars.
+function carList(cars: CarRef[]): string {
+  const shown = cars
+    .slice(0, 12)
+    .map((c) =>
+      ['#' + c.number, c.className, c.teamName ? '· ' + c.teamName : null].filter(Boolean).join(' '),
+    )
+  const extra = cars.length - shown.length
+  return shown.join(', ') + (extra > 0 ? ` and ${extra} more` : '')
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -134,6 +165,9 @@ const CHAMPIONSHIP_KINDS: [string, string][] = [
 
 // Kinds that attach to an event (vs. a championship) and so pick an event target.
 const EVENT_KINDS = ['RACE_RESULTS', 'ENTRY_LIST', 'GRID', 'FLAGS']
+
+// Kinds whose commit writes entry rows — the ones that get a roster diff.
+const ENTRY_KINDS = ['RACE_RESULTS', 'ENTRY_LIST', 'GRID']
 
 export default function ImportsPage() {
   const [batches, setBatches] = useState<ImportBatch[]>([])
@@ -172,7 +206,12 @@ export default function ImportsPage() {
     const staged = list.filter((b) => b.status === 'STAGED')
     const entries = await Promise.all(
       staged.map(async (b) => {
-        const r = await fetch(`/api/imports/${b.id}/review`)
+        // A row whose event was already chosen keeps its review (and so its
+        // roster diff) computed against that event across refreshes, not
+        // regressed to the guess's.
+        const chosen = targets[b.id]?.eventId
+        const query = typeof chosen === 'number' ? `?eventId=${chosen}` : ''
+        const r = await fetch(`/api/imports/${b.id}/review${query}`)
         return [b.id, r.ok ? ((await r.json()) as ImportReview) : null] as const
       }),
     )
@@ -229,11 +268,14 @@ export default function ImportsPage() {
     setTargets((t) => ({ ...t, [id]: { ...t[id], ...change } }))
   }
 
-  // A metadata-less batch can't resolve its season alone, so the class review
-  // is recomputed against the chosen event's season.
+  // Changing the event re-reviews against it: the class review (for a
+  // metadata-less batch that can't resolve its season alone) and the roster
+  // diff both depend on which event the file lands in. The new-entries
+  // confirmation never survives an event change — it was per-event.
   async function chooseEvent(id: number, eventId: number | 'new' | '') {
-    patch(id, { eventId })
-    if (!reviews[id]?.needsSession || typeof eventId !== 'number') return
+    patch(id, { eventId, allowNewEntries: false })
+    if (typeof eventId !== 'number') return
+    if (!EVENT_KINDS.includes(reviews[id]?.kind ?? '')) return
     await refetchReview(id, `eventId=${eventId}`)
   }
 
@@ -289,7 +331,10 @@ export default function ImportsPage() {
     const ev = typeof t?.eventId === 'number' ? allEvents?.find((e) => e.id === t.eventId) : undefined
     // An event chosen from another series contradicts the pick; fall back to "new".
     const resetEvent = EVENT_KINDS.includes(reviews[b.id]?.kind ?? '') && ev && ev.seriesName !== s.name
-    patch(b.id, { seriesId: s.id, ...(resetEvent ? { eventId: 'new' as const } : {}) })
+    patch(b.id, {
+      seriesId: s.id,
+      ...(resetEvent ? { eventId: 'new' as const, allowNewEntries: false } : {}),
+    })
   }
 
   /** The create-row keeps today's deferred semantics: the series is named now
@@ -303,12 +348,16 @@ export default function ImportsPage() {
     const t = targets[b.id]
     // A brand-new series has no events yet, so any picked event contradicts it.
     const resetEvent = EVENT_KINDS.includes(reviews[b.id]?.kind ?? '') && typeof t?.eventId === 'number'
-    patch(b.id, { seriesId: 'new', newSeriesName: name, ...(resetEvent ? { eventId: 'new' as const } : {}) })
+    patch(b.id, {
+      seriesId: 'new',
+      newSeriesName: name,
+      ...(resetEvent ? { eventId: 'new' as const, allowNewEntries: false } : {}),
+    })
   }
 
   function pickEvent(b: ImportBatch, key: string) {
     if (key === 'new') {
-      patch(b.id, { eventId: 'new' })
+      patch(b.id, { eventId: 'new', allowNewEntries: false })
       return
     }
     const id = Number(key)
@@ -333,9 +382,22 @@ export default function ImportsPage() {
     return t.seriesId !== ''
   }
 
+  // Committing would create entries for cars the event never entered — the
+  // wrong-file fingerprint — so it takes an explicit confirmation. Gated on a
+  // numeric eventId so a diff from a previously chosen event can't linger
+  // after switching to "New event" (a created event has no roster to guard).
+  function needsNewEntryAck(b: ImportBatch): boolean {
+    const review = reviews[b.id]
+    const t = targets[b.id]
+    if (!review || !t) return false
+    if (!ENTRY_KINDS.includes(review.kind) || typeof t.eventId !== 'number') return false
+    return (review.rosterDiff?.newCars.length ?? 0) > 0
+  }
+
   function canCommit(b: ImportBatch): boolean {
     const t = targets[b.id]
     if (!t || unresolvedClasses(b.id).length > 0) return false
+    if (needsNewEntryAck(b) && !t.allowNewEntries) return false
     if (needsYear(reviews[b.id]) && !validYear(t.seasonYear)) return false
     // Kind has no safe default — it decides how the standings are ranked and
     // matched — and the guess leaves it unset for a title it can't read.
@@ -358,6 +420,7 @@ export default function ImportsPage() {
     }
     if (EVENT_KINDS.includes(review.kind)) {
       body.eventId = t.eventId === 'new' || t.eventId === '' ? null : t.eventId
+      body.allowNewEntries = t.allowNewEntries
     }
     if (review.needsSession) {
       body.sessionType = t.sessionType
@@ -541,7 +604,11 @@ export default function ImportsPage() {
                                 onPick={(key) => pickEvent(b, key)}
                                 onClear={
                                   typeof t.eventId === 'number'
-                                    ? () => patch(b.id, { eventId: review.needsSession ? '' : 'new' })
+                                    ? () =>
+                                        patch(b.id, {
+                                          eventId: review.needsSession ? '' : 'new',
+                                          allowNewEntries: false,
+                                        })
                                     : undefined
                                 }
                               />
@@ -690,6 +757,46 @@ export default function ImportsPage() {
                             </div>
                           )}
 
+                          {ENTRY_KINDS.includes(review.kind) &&
+                            typeof t.eventId === 'number' &&
+                            review.rosterDiff &&
+                            (review.rosterDiff.newCars.length > 0 ||
+                              review.rosterDiff.missingCars.length > 0) && (
+                              <div className="class-review">
+                                {review.rosterDiff.newCars.length > 0 && (
+                                  <>
+                                    <strong>
+                                      {review.rosterDiff.newCars.length === 1
+                                        ? '1 car in this file isn’t'
+                                        : `${review.rosterDiff.newCars.length} cars in this file aren’t`}{' '}
+                                      on this event's entry list
+                                    </strong>{' '}
+                                    — committing would create {review.rosterDiff.newCars.length === 1
+                                      ? 'an entry'
+                                      : 'entries'}{' '}
+                                    for {carList(review.rosterDiff.newCars)}. If that's unexpected, the
+                                    file may belong to a different event.
+                                    <label className="class-map-row target-checkbox">
+                                      <input
+                                        type="checkbox"
+                                        checked={t.allowNewEntries}
+                                        disabled={busy}
+                                        onChange={(e) => patch(b.id, { allowNewEntries: e.target.checked })}
+                                      />
+                                      Add them as new entries — I've checked this file belongs to this
+                                      event
+                                    </label>
+                                  </>
+                                )}
+                                {review.rosterDiff.missingCars.length > 0 && (
+                                  <span className="target-hint">
+                                    Entered but not in this file: {carList(review.rosterDiff.missingCars)}{' '}
+                                    — withdrawals and DNQs are normal.
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
                           <button
                             disabled={busy || !canCommit(b)}
                             title={
@@ -701,7 +808,9 @@ export default function ImportsPage() {
                                     ? 'Choose a series first'
                                     : review.kind === 'STANDINGS' && !t.kind
                                       ? 'Choose what the championship ranks first'
-                                      : undefined
+                                      : needsNewEntryAck(b) && !t.allowNewEntries
+                                        ? 'Confirm adding the new cars first'
+                                        : undefined
                             }
                             onClick={() => commit(b)}
                           >
