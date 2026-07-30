@@ -237,6 +237,8 @@ export interface SessionResults {
   notes: SessionNote[]
   /** True when a flags/RC-message stream was imported for this session. */
   hasFlags: boolean
+  /** How this race's grid was set, when not by qualifying (reviewer's note). */
+  gridBasis: string | null
   results: ResultRow[]
   grid: GridRow[]
 }

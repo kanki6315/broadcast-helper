@@ -50,6 +50,9 @@ interface ImportReview {
   // by its header, a grid PDF names which race it starts. Null without a hint.
   sessionTypeHint: string | null
   sessionOrdinalHint: number | null
+  // GRID only: every slot is untimed — qualifying never ran, so the reviewer
+  // should say what set the grid.
+  gridTimesAllBlank: boolean
 }
 
 // The reviewer's editable choices for one batch, seeded from the guess.
@@ -65,6 +68,7 @@ interface TargetState {
   sessionType: string
   sessionOrdinal: number
   classMapping: Record<string, string>
+  gridBasis: string
 }
 
 function initTarget(r: ImportReview): TargetState {
@@ -86,6 +90,7 @@ function initTarget(r: ImportReview): TargetState {
     sessionType: r.sessionTypeHint ?? 'RACE',
     sessionOrdinal: r.sessionOrdinalHint ?? 1,
     classMapping: {},
+    gridBasis: '',
   }
 }
 
@@ -276,6 +281,9 @@ export default function ImportsPage() {
     if (review.needsSession) {
       body.sessionType = t.sessionType
       body.sessionOrdinal = t.sessionOrdinal
+    }
+    if (review.kind === 'GRID') {
+      body.gridBasis = t.gridBasis.trim() || null
     }
     if (review.kind === 'STANDINGS') {
       // Blank is the answer for a championship with no class of its own (an
@@ -474,6 +482,25 @@ export default function ImportsPage() {
                                 disabled={busy}
                                 onChange={(e) => patch(b.id, { sessionOrdinal: Math.max(1, Number(e.target.value) || 1) })}
                               />
+                            </label>
+                          )}
+
+                          {review.kind === 'GRID' && (
+                            <label className="target-row">
+                              <span className="target-label">Grid basis</span>
+                              <input
+                                title="How this grid was set, when not by qualifying"
+                                placeholder="e.g. 2nd fastest qualifying lap"
+                                value={t.gridBasis}
+                                disabled={busy}
+                                onChange={(e) => patch(b.id, { gridBasis: e.target.value })}
+                              />
+                              {review.gridTimesAllBlank && (
+                                <span className="target-hint">
+                                  No times on this grid — qualifying never ran, so note what set the
+                                  order (points, a prior race, …).
+                                </span>
+                              )}
                             </label>
                           )}
 
