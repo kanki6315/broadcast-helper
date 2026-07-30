@@ -80,6 +80,33 @@ class ImportRosterGuardTest {
         assertEquals(List.of("04"), diff.missingCars().stream().map(ImportService.CarRef::number).toList());
     }
 
+    /** Orphaned = missing AND anchored by nothing durable. A car with drivers
+     *  (any real entry-list entry, withdrawn or not) or results never
+     *  qualifies; a grid row alone doesn't anchor, because the commit may be
+     *  about to replace it — the CTMP fabrication shape. */
+    @Test
+    void reviewMarksOnlyUnanchoredMissingCarsAsOrphaned() throws Exception {
+        Seeded s = seedEvent();
+        long raceId = db.sql("""
+                        INSERT INTO race_session (event_id, session_type, ordinal, name)
+                        VALUES (:event, 'RACE', 1, 'Race') RETURNING id
+                        """)
+                .param("event", s.eventId()).query(Long.class).single();
+        // #85 anchored by a result; #77 fabricated — only a grid row.
+        db.sql("INSERT INTO result (session_id, entry_id, position_overall) SELECT :s, id, 1 FROM entry WHERE event_id = :e AND car_number = '85'")
+                .param("s", raceId).param("e", s.eventId()).update();
+        entry(s.eventId(), "77", "Fabricated Racing");
+        db.sql("INSERT INTO grid_position (session_id, entry_id, position_overall) SELECT :s, id, 9 FROM entry WHERE event_id = :e AND car_number = '77'")
+                .param("s", raceId).param("e", s.eventId()).update();
+
+        long batchId = stageGrid(gridCsv(List.of("5")));
+        RosterDiff diff = service.reviewTarget(batchId, s.eventId(), null).rosterDiff();
+
+        assertNotNull(diff);
+        assertEquals(List.of("77", "85"), diff.missingCars().stream().map(ImportService.CarRef::number).toList());
+        assertEquals(List.of("77"), diff.orphanedCars().stream().map(ImportService.CarRef::number).toList());
+    }
+
     // ------------------------------------------------------------ commit guard
 
     @Test
@@ -135,6 +162,36 @@ class ImportRosterGuardTest {
 
         service.commit(batchId, gridTarget(s.eventId(), null));
 
+        assertEquals("COMMITTED", batchStatus(batchId));
+        // No opt-in: the missing (and orphaned — it has no drivers) #85 stays.
+        assertEquals(1, entryCount(s.eventId(), "85"));
+    }
+
+    /** The CTMP fabrication replay: a fabricated entry's only anchor is a grid
+     *  row in the session the commit replaces. With the opt-in it is deleted;
+     *  anything with results or drivers survives even when missing from the
+     *  file, because the zero-references check runs after the writes. */
+    @Test
+    void commitRemovesOrphanedEntriesOnlyWithOptIn() throws Exception {
+        Seeded s = seedEvent();
+        long raceId = db.sql("""
+                        INSERT INTO race_session (event_id, session_type, ordinal, name)
+                        VALUES (:event, 'RACE', 1, 'Race') RETURNING id
+                        """)
+                .param("event", s.eventId()).query(Long.class).single();
+        // #85 anchored by a result; #77 fabricated — grid row in the target session only.
+        db.sql("INSERT INTO result (session_id, entry_id, position_overall) SELECT :s, id, 1 FROM entry WHERE event_id = :e AND car_number = '85'")
+                .param("s", raceId).param("e", s.eventId()).update();
+        entry(s.eventId(), "77", "Fabricated Racing");
+        db.sql("INSERT INTO grid_position (session_id, entry_id, position_overall) SELECT :s, id, 9 FROM entry WHERE event_id = :e AND car_number = '77'")
+                .param("s", raceId).param("e", s.eventId()).update();
+
+        long batchId = stageGrid(gridCsv(List.of("5")));
+        service.commit(batchId, target(null, s.eventId(), "RACE", 1, null, true));
+
+        assertEquals(0, entryCount(s.eventId(), "77")); // orphan gone, grid row cascaded away first
+        assertEquals(1, entryCount(s.eventId(), "85")); // result-anchored survives
+        assertEquals(1, entryCount(s.eventId(), "5"));
         assertEquals("COMMITTED", batchStatus(batchId));
     }
 
@@ -244,8 +301,14 @@ class ImportRosterGuardTest {
 
     private static ImportTarget target(Long seriesId, Long eventId, String sessionType,
                                        Integer sessionOrdinal, Boolean allowNewEntries) {
+        return target(seriesId, eventId, sessionType, sessionOrdinal, allowNewEntries, null);
+    }
+
+    private static ImportTarget target(Long seriesId, Long eventId, String sessionType,
+                                       Integer sessionOrdinal, Boolean allowNewEntries,
+                                       Boolean removeOrphanedEntries) {
         return new ImportTarget(seriesId, null, eventId, null, null, null, null, null, null,
-                sessionType, sessionOrdinal, null, null, allowNewEntries);
+                sessionType, sessionOrdinal, null, null, allowNewEntries, removeOrphanedEntries);
     }
 
     private static ImportTarget gridTarget(long eventId, Boolean allowNewEntries) {

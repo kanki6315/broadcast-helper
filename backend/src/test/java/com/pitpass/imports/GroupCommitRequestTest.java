@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class GroupCommitRequestTest {
 
     private static ImportTarget target(Long seriesId) {
-        return new ImportTarget(seriesId, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        return new ImportTarget(seriesId, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private static GroupCommitRequest req(List<ProposedEvent> events, List<GroupBatch> batches) {
@@ -32,12 +32,12 @@ class GroupCommitRequestTest {
     @Test
     void chosenEventNamePrefersOverrideThenPayload() {
         assertEquals("Rolex 24", ImportService.chosenEventName(
-                new ImportTarget(1L, null, null, "Rolex 24", null, null, null, null, null, null, null, null, null, null),
+                new ImportTarget(1L, null, null, "Rolex 24", null, null, null, null, null, null, null, null, null, null, null),
                 "Daytona"));
         assertEquals("Daytona", ImportService.chosenEventName(target(1L), "Daytona"));
         // Blank override falls through to the payload name.
         assertEquals("Daytona", ImportService.chosenEventName(
-                new ImportTarget(1L, null, null, "  ", null, null, null, null, null, null, null, null, null, null),
+                new ImportTarget(1L, null, null, "  ", null, null, null, null, null, null, null, null, null, null, null),
                 "Daytona"));
     }
 
