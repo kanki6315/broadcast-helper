@@ -46,6 +46,10 @@ interface ImportReview {
   eventOptions: EventOption[]
   classReview: ClassReview
   needsSession: boolean
+  // Pre-fills for the session picker: a results CSV knows race from qualifying
+  // by its header, a grid PDF names which race it starts. Null without a hint.
+  sessionTypeHint: string | null
+  sessionOrdinalHint: number | null
 }
 
 // The reviewer's editable choices for one batch, seeded from the guess.
@@ -79,8 +83,8 @@ function initTarget(r: ImportReview): TargetState {
     isCup: g?.isCup ?? false,
     familyName: g?.familyName ?? '',
     seasonYear: g?.seasonYear != null ? String(g.seasonYear) : '',
-    sessionType: 'RACE',
-    sessionOrdinal: 1,
+    sessionType: r.sessionTypeHint ?? 'RACE',
+    sessionOrdinal: r.sessionOrdinalHint ?? 1,
     classMapping: {},
   }
 }
@@ -313,9 +317,10 @@ export default function ImportsPage() {
       <h2>Imports</h2>
       <p>
         Upload results/standings JSON files, an iRacing subsession result, an entry list PDF, or a
-        starting-grid CSV. Each file is staged; confirm what it belongs to (series, event or
-        championship — pre-filled with a best guess) and commit. One file can stage several batches:
-        an iRacing subsession carries qualifying, every race, and each race's grid.
+        timing CSV (starting grid, race results, or qualifying results). Each file is staged; confirm
+        what it belongs to (series, event or championship — pre-filled with a best guess) and commit.
+        One file can stage several batches: an iRacing subsession carries qualifying, every race, and
+        each race's grid.
       </p>
       <div className="import-actions">
         <button type="button" className="btn btn-primary" disabled={busy} onClick={() => setUploadOpen(true)}>
