@@ -3,7 +3,9 @@
 Pit Pass is an installable Progressive Web App. On iPad/desktop it can be added
 to the home screen and runs standalone, and it keeps working **for reading**
 when the network drops — the trackside/travel case. It does **not** support
-offline writes or any notes/drawing features; those are explicitly out of scope.
+offline writes; those are explicitly out of scope. The sheet page's drawing
+scratchpad is an online feature — its saves need connectivity (a dropped save
+retries, but ink drawn while offline is lost if the tab closes first).
 
 Everything is frontend-only. There are **no backend or Dockerfile changes** for
 the PWA — the manifest and service worker are emitted into `frontend/dist/` by

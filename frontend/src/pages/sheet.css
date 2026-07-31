@@ -343,6 +343,19 @@
   color: var(--text-muted);
 }
 
+/* Floating scratchpad button: the pad is reached mid-scroll as often as from
+   the top, so it stays pinned to the page edge. Screen-only (no-print). */
+.sheet-fab {
+  position: fixed;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  z-index: var(--z-dropdown);
+  padding: 8px 16px;
+  background: var(--surface);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-modal);
+}
+
 /* ============================================================================
    Print: the compact light US-Letter sheet. The token overrides force the
    light palette even when the screen is in dark mode, so "Save as PDF" always

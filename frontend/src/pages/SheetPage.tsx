@@ -5,6 +5,7 @@ import { useIsAdmin } from '../lib/auth'
 import { flagCode } from '../lib/countries'
 import { finishText, finishTier, statusAbbr, type FormRace } from '../lib/raceForm'
 import TeamSheetsModal, { prefetchTeamSheets } from '../components/TeamSheetsModal'
+import ScratchpadModal from '../components/ScratchpadModal'
 import { useInfoModal } from '../components/infoModal'
 
 interface SheetDriver {
@@ -102,6 +103,7 @@ export default function SheetPage({ eventId }: { eventId: number }) {
   const [sheet, setSheet] = useState<Sheet | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [teamSheet, setTeamSheet] = useState<{ page: number; title: string } | null>(null)
+  const [scratchpadOpen, setScratchpadOpen] = useState(false)
 
   useEffect(() => {
     // Reset before fetching: a stale error (or sheet) from a previous eventId
@@ -387,6 +389,14 @@ export default function SheetPage({ eventId }: { eventId: number }) {
           </section>
         )
       })}
+
+      {/* Floating, not in the topbar: the pad is reached mid-scroll, deep in
+          a class table, as often as from the top of the page. */}
+      <button className="btn sheet-fab no-print" onClick={() => setScratchpadOpen(true)}>
+        Scratchpad
+      </button>
+
+      {scratchpadOpen && <ScratchpadModal eventId={eventId} onClose={() => setScratchpadOpen(false)} />}
 
       {teamSheet && teamSheetsUrl && (
         <TeamSheetsModal

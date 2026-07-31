@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.oidcLogin;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -108,6 +109,20 @@ class SecuredChainTest {
                 .andExpect(status().isForbidden());
         mvc.perform(get("/api/users").with(signedInAs(ADMIN)))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void signedInViewerCanWriteOwnScratchpad() throws Exception {
+        // 400 not 403: the PUT carve-out admits members, and the empty body is
+        // rejected only after authorization has already passed.
+        mvc.perform(put("/api/events/1/scratchpad").with(signedInAs(VIEWER)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void anonymousCannotWriteScratchpad() throws Exception {
+        mvc.perform(put("/api/events/1/scratchpad"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

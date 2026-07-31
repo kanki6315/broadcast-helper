@@ -61,6 +61,10 @@ public class SecurityConfig {
                         // The roster and denied-login lists are admin-only even
                         // for reads — must precede the general GET rule below.
                         .requestMatchers("/api/users/**").access(live.admin())
+                        // A viewer's scratchpad is their own writable surface —
+                        // the controller pins the row to the caller's email, so
+                        // member() is sufficient here.
+                        .requestMatchers(HttpMethod.PUT, "/api/events/*/scratchpad").access(live.member())
                         .requestMatchers(HttpMethod.GET, "/api/**").access(live.member())
                         .requestMatchers(HttpMethod.HEAD, "/api/**").access(live.member())
                         // Every other method — including OPTIONS and anything
