@@ -5,12 +5,23 @@
 // which halves the JSON overhead of nested pairs and keeps tokens short.
 
 export interface Stroke {
+  /** Client-generated, unique per stroke. The backend stores it as opaque
+   *  JSONB; it exists so two divergent copies of a pad can one day be merged
+   *  as a set union instead of a whole-document choice. Optional because
+   *  pre-offline-writes pads persisted strokes without it. */
+  id?: string
   /** Only 'pen' exists today; the field future-proofs highlighters etc.
    *  without a storage migration. */
   tool: 'pen'
   color: string
   size: number
   points: number[]
+}
+
+/** Compact unique stroke id (~11 chars beats a 36-char UUID against the
+ *  pad's 2 MB serialized cap). */
+export function newStrokeId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 }
 
 export type PadAction =

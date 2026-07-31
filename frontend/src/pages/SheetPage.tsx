@@ -1,7 +1,8 @@
 import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react'
 import 'flag-icons/css/flag-icons.min.css'
 import './sheet.css'
-import { useIsAdmin } from '../lib/auth'
+import { useIsAdmin, useMe } from '../lib/auth'
+import { loadLocalPad, subscribeLocalPads } from '../lib/scratchpadStore'
 import { flagCode } from '../lib/countries'
 import { finishText, finishTier, statusAbbr, type FormRace } from '../lib/raceForm'
 import TeamSheetsModal, { prefetchTeamSheets } from '../components/TeamSheetsModal'
@@ -101,6 +102,29 @@ function StripRace({ race, showLabel }: { race: FormRace; showLabel: boolean }) 
   )
 }
 
+/** Amber dot on the FAB while the pad holds unsynced offline ink; red when a
+ *  sync conflict needs a human. Re-checks whenever the local mirror changes
+ *  (modal edits, background sync completing). */
+function useScratchpadAttention(eventId: number): 'dirty' | 'conflict' | null {
+  const owner = useMe()?.email ?? 'local'
+  const [attention, setAttention] = useState<'dirty' | 'conflict' | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    const check = () =>
+      void loadLocalPad(eventId, owner).then((pad) => {
+        if (cancelled) return
+        setAttention(pad?.conflict ? 'conflict' : pad?.dirty ? 'dirty' : null)
+      })
+    check()
+    const unsubscribe = subscribeLocalPads(check)
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [eventId, owner])
+  return attention
+}
+
 export default function SheetPage({ eventId }: { eventId: number }) {
   const { openDriverByName } = useInfoModal()
   const isAdmin = useIsAdmin()
@@ -109,6 +133,7 @@ export default function SheetPage({ eventId }: { eventId: number }) {
   const [teamSheet, setTeamSheet] = useState<{ page: number; title: string } | null>(null)
   const [scratchpadOpen, setScratchpadOpen] = useState(false)
   const [pitLaneOpen, setPitLaneOpen] = useState(false)
+  const padAttention = useScratchpadAttention(eventId)
 
   useEffect(() => {
     // Reset before fetching: a stale error (or sheet) from a previous eventId
@@ -404,6 +429,16 @@ export default function SheetPage({ eventId }: { eventId: number }) {
           a class table, as often as from the top of the page. */}
       <button className="btn sheet-fab no-print" onClick={() => setScratchpadOpen(true)}>
         Scratchpad
+        {padAttention && (
+          <span
+            className={`sheet-fab-dot${padAttention === 'conflict' ? ' conflict' : ''}`}
+            title={
+              padAttention === 'conflict'
+                ? 'Scratchpad has a sync conflict'
+                : 'Scratchpad has unsynced ink'
+            }
+          />
+        )}
       </button>
 
       {scratchpadOpen && <ScratchpadModal eventId={eventId} onClose={() => setScratchpadOpen(false)} />}

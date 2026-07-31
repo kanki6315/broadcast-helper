@@ -1,11 +1,12 @@
-# PWA support (installable app + read-only offline)
+# PWA support (installable app + offline reading, offline scratchpad ink)
 
 Pit Pass is an installable Progressive Web App. On iPad/desktop it can be added
 to the home screen and runs standalone, and it keeps working **for reading**
-when the network drops — the trackside/travel case. It does **not** support
-offline writes; those are explicitly out of scope. The sheet page's drawing
-scratchpad is an online feature — its saves need connectivity (a dropped save
-retries, but ink drawn while offline is lost if the tab closes first).
+when the network drops — the trackside/travel case. General offline writes are
+out of scope, with one deliberate exception: the sheet page's drawing
+scratchpad. Its ink is mirrored to IndexedDB on every pen-up and replayed to
+the server when connectivity returns (see "Scratchpad offline ink" below), so
+drawing keeps working with the network down and survives iOS killing the tab.
 
 The manifest and service worker are emitted into `frontend/dist/` by the build
 and Spring Boot serves them as static assets like the rest of the bundle. One
@@ -23,6 +24,7 @@ changes.
 | "Newer data" nudge banner | `frontend/src/components/DataNudge.tsx` (mounted in `App.tsx`) |
 | Connectivity pill + freshness store | `frontend/src/components/ConnectivityPill.tsx` (in `Layout.tsx`) + `frontend/src/lib/connectivity.ts` |
 | API ETag fingerprints | `backend/.../web/ApiEtagConfig.java` (+ `ApiEtagTest`) |
+| Scratchpad offline ink | `frontend/src/lib/scratchpadStore.ts` (IndexedDB mirror) + `frontend/src/lib/scratchpadSync.ts` (replay) |
 | "Add to Home Screen" hint | `frontend/src/components/InstallHint.tsx` (mounted in `Layout.tsx`) |
 | On-device diagnostics | `frontend/src/pages/StoragePage.tsx` → **Manage → Diagnostics** (`/manage/storage`, admin-only) |
 | Home-screen icons | `frontend/public/icon.svg` (full-bleed square source) + generated `pwa-*.png`, `apple-touch-icon-180x180.png`, `maskable-*.png` |
@@ -100,6 +102,40 @@ refactor the matchers into named helpers.
 `/api/seasons/{id}/data` is JSON but also ends in `/data`, so the `api-images`
 matcher is path-specific (`/photo`, `/car-images/*/data`, `/logo/data`,
 `/manufacturer-logos/*/data`) rather than a blanket `/data$`. Don't loosen it.
+
+## Scratchpad offline ink (the one offline write)
+
+The pad was chosen as the first offline write because it is structurally safe:
+per-user (conflicts are only ever you-on-two-devices), whole-document PUT (no
+operation queue — replay is "send the latest state once"), and already guarded
+by an optimistic `revision`.
+
+- **Durability**: every completed mutation (pen-up, erase, undo/redo, extend)
+  mirrors the document into IndexedDB (`lib/scratchpadStore.ts`, DB
+  `pit-pass`, keyed event + owner email). iOS killing the tab costs at most
+  the stroke in progress. The debounced PUT is now merely sync, not the only
+  persistence. Store failures degrade silently to the old online-only
+  behavior — the pad must never break mid-broadcast because storage did.
+- **Replay**: no Background Sync API on iOS, so `lib/scratchpadSync.ts` is
+  foreground-driven — on app start and on every heartbeat flip back to
+  `live`, dirty pads are PUT even if the pad is never reopened. The open
+  modal registers itself so the background syncer skips it (a competing PUT
+  would bump the revision under the modal and manufacture a phantom 409).
+- **Conflicts**: a 409 (the pad moved on another device while this one was
+  dirty) is never auto-resolved. The modal's banner offers *keep this
+  device's ink* (rebase onto the server revision and overwrite) or *use other
+  version*; either way the losing copy goes into a one-slot local `backup` on
+  the IndexedDB record — recoverable via Web Inspector until the next
+  conflict overwrites the slot. Strokes carry client-generated `id`s (opaque
+  to the backend) so a future "keep both" can union-merge instead.
+- **Surfacing**: the modal badge says "Offline — saved on this device"; the
+  sheet page's FAB shows an amber dot while unsynced ink exists and a red one
+  for a conflict (`useScratchpadAttention` in `SheetPage.tsx`, live via
+  `subscribeLocalPads`).
+- **Caveats**: iOS may evict IndexedDB after ~7 days of app non-use —
+  unsynced ink older than that is at risk (Request persistent storage in
+  Diagnostics is the lever). A PUT that 401s (session expired) just stays
+  dirty locally and syncs after the next sign-in.
 
 ## Updates
 

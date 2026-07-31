@@ -102,11 +102,19 @@ export function startConnectivityMonitor() {
   })
 }
 
-function subscribe(notify: () => void) {
+/** Non-React subscription (scratchpadSync replays offline ink on the
+ *  offline→live flip). Returns the unsubscribe. */
+export function subscribeConnectivity(notify: () => void): () => void {
   listeners.add(notify)
-  return () => listeners.delete(notify)
+  return () => {
+    listeners.delete(notify)
+  }
+}
+
+export function getConnectivity(): Connectivity {
+  return snapshot
 }
 
 export function useConnectivity(): Connectivity {
-  return useSyncExternalStore(subscribe, () => snapshot)
+  return useSyncExternalStore(subscribeConnectivity, getConnectivity)
 }

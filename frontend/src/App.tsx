@@ -1,5 +1,7 @@
+import { useEffect } from 'react'
 import { HashRouter, Navigate, Routes, Route, useParams } from 'react-router-dom'
 import './App.css'
+import { startScratchpadSync } from './lib/scratchpadSync'
 import Layout from './components/Layout'
 import ManageLayout from './components/ManageLayout'
 import InfoModalProvider from './components/InfoModalProvider'
@@ -32,6 +34,9 @@ function SheetRoute() {
 }
 
 export default function App() {
+  // Replays any scratchpad ink stranded offline (by this or a previous
+  // session) whenever connectivity returns — see lib/scratchpadSync.
+  useEffect(() => startScratchpadSync(), [])
   return (
     <HashRouter>
       {/* Providers sit outside the routes so the info modals open from the
