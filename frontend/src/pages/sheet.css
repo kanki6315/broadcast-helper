@@ -226,11 +226,27 @@
   padding: 2px 5px;
 }
 
+/* Marks flagged invert_on_dark are monochrome: recolour them white instead of
+   the pill. brightness(0) flattens every fill to black, invert(1) flips it to
+   white; transparency survives. Multi-colour badges keep the pill — inverting
+   collapses them into a silhouette. */
+:root[data-theme='dark'] .sheet-mfr-logo--invert {
+  background: none;
+  padding: 0;
+  filter: brightness(0) invert(1);
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) .sheet-mfr-logo {
     background: #fff;
     border-radius: var(--radius-sm);
     padding: 2px 5px;
+  }
+
+  :root:not([data-theme='light']) .sheet-mfr-logo--invert {
+    background: none;
+    padding: 0;
+    filter: brightness(0) invert(1);
   }
 }
 
@@ -487,6 +503,8 @@
     max-height: calc(0.3in * var(--row-scale));
     background: none;
     padding: 0;
+    /* Paper is white; the original dark-on-transparent mark is the right one. */
+    filter: none;
   }
 
   .sheet-mfr-name {

@@ -48,7 +48,8 @@ public class SheetController {
     }
 
     public record SheetEntry(long entryId, String carNumber, String teamName, String vehicle,
-                             String manufacturer, Long manufacturerLogoVersion, boolean isGuest,
+                             String manufacturer, Long manufacturerLogoVersion,
+                             boolean manufacturerLogoInvert, boolean isGuest,
                              List<SheetDriver> drivers, String qualifying, String startingDriver,
                              String championship,
                              Map<Integer, List<FormRace>> form, String priorYearNote, boolean priorYearAuto,
@@ -362,13 +363,13 @@ public class SheetController {
                 .orElse(null);
 
         record EntryRow(long entryId, String carNumber, String className, String teamName, String vehicle,
-                        String manufacturer, OffsetDateTime logoUploadedAt, boolean isGuest,
+                        String manufacturer, OffsetDateTime logoUploadedAt, boolean logoInvert, boolean isGuest,
                         String priorYearNote, OffsetDateTime imageUploadedAt) {
         }
         List<EntryRow> entryRows = db.sql("""
                         SELECT en.id, en.car_number, en.class_name, en.team_name, en.vehicle, en.manufacturer,
                                en.is_guest, en.prior_year_note, ci.uploaded_at AS image_uploaded_at,
-                               ml.uploaded_at AS logo_uploaded_at
+                               ml.uploaded_at AS logo_uploaded_at, ml.invert_on_dark AS logo_invert
                         FROM entry en
                                  LEFT JOIN car_image ci ON ci.season_id = :seasonId AND ci.car_number = en.car_number
                                  LEFT JOIN manufacturer_logo ml ON ml.name = lower(trim(en.manufacturer))
@@ -379,7 +380,7 @@ public class SheetController {
                 .query((rs, i) -> new EntryRow(rs.getLong("id"), rs.getString("car_number"),
                         rs.getString("class_name"), rs.getString("team_name"), rs.getString("vehicle"),
                         rs.getString("manufacturer"), rs.getObject("logo_uploaded_at", OffsetDateTime.class),
-                        rs.getBoolean("is_guest"), rs.getString("prior_year_note"),
+                        rs.getBoolean("logo_invert"), rs.getBoolean("is_guest"), rs.getString("prior_year_note"),
                         rs.getObject("image_uploaded_at", OffsetDateTime.class)))
                 .list();
 
@@ -464,6 +465,7 @@ public class SheetController {
                             .add(new SheetEntry(r.entryId(), r.carNumber(), r.teamName(), r.vehicle(),
                                     r.manufacturer(),
                                     r.logoUploadedAt() != null ? r.logoUploadedAt().toInstant().toEpochMilli() : null,
+                                    r.logoInvert(),
                                     r.isGuest(), driversByEntry.getOrDefault(r.entryId(), List.of()),
                                     qualiPos != null ? ordinal(qualiPos) : null,
                                     startingDriverByEntry.get(r.entryId()),
