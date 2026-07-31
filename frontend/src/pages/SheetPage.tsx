@@ -23,6 +23,8 @@ interface SheetEntry {
   vehicle: string | null
   manufacturer: string | null
   manufacturerLogoVersion: number | null
+  /** Monochrome mark: recolour it white in dark theme instead of the white pill. */
+  manufacturerLogoInvert: boolean
   isGuest: boolean
   drivers: SheetDriver[]
   qualifying: string | null
@@ -277,7 +279,7 @@ export default function SheetPage({ eventId }: { eventId: number }) {
                         <td className="col-mfr">
                           {e.manufacturerLogoVersion != null ? (
                             <img
-                              className="sheet-mfr-logo"
+                              className={`sheet-mfr-logo${e.manufacturerLogoInvert ? ' sheet-mfr-logo--invert' : ''}`}
                               src={`/api/manufacturer-logos/${encodeURIComponent(
                                 (e.manufacturer ?? '').toLowerCase(),
                               )}/data?v=${e.manufacturerLogoVersion}`}

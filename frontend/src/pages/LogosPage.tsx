@@ -4,6 +4,8 @@ interface ManufacturerRow {
   name: string
   entryCount: number
   logoVersion: number | null
+  /** Dark theme: recolour the mark white instead of the white pill. Null until a logo exists. */
+  invertOnDark: boolean | null
 }
 
 export default function LogosPage() {
@@ -38,6 +40,20 @@ export default function LogosPage() {
     setBusy(false)
   }
 
+  async function setInvert(name: string, value: boolean) {
+    setError(null)
+    const res = await fetch(`/api/manufacturer-logos/${encodeURIComponent(name.toLowerCase())}/invert`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ invertOnDark: value }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => null)
+      setError(`${name}: ${body?.message ?? `update failed (${res.status})`}`)
+    }
+    await load()
+  }
+
   const missing = rows.filter((r) => r.logoVersion == null).length
 
   return (
@@ -46,7 +62,9 @@ export default function LogosPage() {
       <p>
         Upload a logo per manufacturer (SVG or PNG recommended). Logos are matched to entries by
         manufacturer name and reused on every sheet, replacing the car-model text. Until a logo is
-        uploaded, the sheet shows the manufacturer name.
+        uploaded, the sheet shows the manufacturer name. Tick &ldquo;White on dark&rdquo; for
+        single-colour wordmarks: the dark theme then recolours them white instead of painting a
+        white pill behind them. Leave multi-colour badges unticked — inverting flattens them.
       </p>
       {error && <p className="error">{error}</p>}
 
@@ -59,6 +77,7 @@ export default function LogosPage() {
             <th>Manufacturer</th>
             <th>Entries</th>
             <th>Logo</th>
+            <th>White on dark</th>
             <th></th>
           </tr>
         </thead>
@@ -70,11 +89,24 @@ export default function LogosPage() {
               <td>
                 {r.logoVersion != null ? (
                   <img
-                    className="logo-thumb"
+                    className={`logo-thumb${r.invertOnDark ? ' logo-thumb--invert' : ''}`}
                     src={`/api/manufacturer-logos/${encodeURIComponent(
                       r.name.toLowerCase(),
                     )}/data?v=${r.logoVersion}`}
                     alt={r.name}
+                  />
+                ) : (
+                  <span className="muted">—</span>
+                )}
+              </td>
+              <td>
+                {r.logoVersion != null ? (
+                  <input
+                    type="checkbox"
+                    checked={r.invertOnDark ?? false}
+                    disabled={busy}
+                    aria-label={`Recolour ${r.name} logo white on the dark theme`}
+                    onChange={(e) => setInvert(r.name, e.target.checked)}
                   />
                 ) : (
                   <span className="muted">—</span>

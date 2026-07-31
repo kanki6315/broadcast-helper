@@ -8,6 +8,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -34,24 +36,25 @@ public class ManufacturerLogoController {
         this.db = db;
     }
 
-    public record ManufacturerRow(String name, long entryCount, Long logoVersion) {
+    public record ManufacturerRow(String name, long entryCount, Long logoVersion, Boolean invertOnDark) {
     }
 
     /** Every manufacturer seen on an entry, with whether a logo is uploaded. */
     @GetMapping("/manufacturers")
     public List<ManufacturerRow> manufacturers() {
         return db.sql("""
-                        SELECT en.manufacturer AS name, count(*) AS entry_count, ml.uploaded_at
+                        SELECT en.manufacturer AS name, count(*) AS entry_count, ml.uploaded_at, ml.invert_on_dark
                         FROM entry en
                                  LEFT JOIN manufacturer_logo ml ON ml.name = lower(trim(en.manufacturer))
                         WHERE en.manufacturer IS NOT NULL AND en.manufacturer <> ''
-                        GROUP BY en.manufacturer, ml.uploaded_at
+                        GROUP BY en.manufacturer, ml.uploaded_at, ml.invert_on_dark
                         ORDER BY en.manufacturer
                         """)
                 .query((rs, i) -> {
                     OffsetDateTime uploaded = rs.getObject("uploaded_at", OffsetDateTime.class);
                     return new ManufacturerRow(rs.getString("name"), rs.getLong("entry_count"),
-                            uploaded != null ? uploaded.toInstant().toEpochMilli() : null);
+                            uploaded != null ? uploaded.toInstant().toEpochMilli() : null,
+                            rs.getObject("invert_on_dark", Boolean.class));
                 })
                 .list();
     }
@@ -86,16 +89,37 @@ public class ManufacturerLogoController {
                 .param("data", data)
                 .update();
         return db.sql("""
-                        SELECT en.manufacturer AS name, count(*) AS entry_count, ml.uploaded_at
+                        SELECT en.manufacturer AS name, count(*) AS entry_count, ml.uploaded_at, ml.invert_on_dark
                         FROM entry en JOIN manufacturer_logo ml ON ml.name = lower(trim(en.manufacturer))
                         WHERE lower(trim(en.manufacturer)) = :name
-                        GROUP BY en.manufacturer, ml.uploaded_at
+                        GROUP BY en.manufacturer, ml.uploaded_at, ml.invert_on_dark
                         """)
                 .param("name", display.toLowerCase(Locale.ROOT))
                 .query((rs, i) -> new ManufacturerRow(rs.getString("name"), rs.getLong("entry_count"),
-                        rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli()))
+                        rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli(),
+                        rs.getBoolean("invert_on_dark")))
                 .optional()
-                .orElse(new ManufacturerRow(display, 0, System.currentTimeMillis()));
+                .orElse(new ManufacturerRow(display, 0, System.currentTimeMillis(), false));
+    }
+
+    public record InvertRequest(boolean invertOnDark) {
+    }
+
+    /**
+     * Dark-theme treatment for one logo: recolour it white (monochrome
+     * wordmarks) instead of the default white pill (multi-colour badges).
+     * Survives a re-upload — the flag describes the mark, not the file.
+     */
+    @PutMapping("/manufacturer-logos/{name}/invert")
+    public void setInvert(@org.springframework.web.bind.annotation.PathVariable String name,
+                          @RequestBody InvertRequest request) {
+        int updated = db.sql("UPDATE manufacturer_logo SET invert_on_dark = :invert WHERE name = :name")
+                .param("invert", request.invertOnDark())
+                .param("name", name.toLowerCase(Locale.ROOT))
+                .update();
+        if (updated == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such logo");
+        }
     }
 
     @GetMapping("/manufacturer-logos/{name}/data")

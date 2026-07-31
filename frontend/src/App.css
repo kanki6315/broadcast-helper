@@ -1791,6 +1791,19 @@ h2 small {
   object-fit: contain;
 }
 
+/* Previews the sheet's dark-theme treatment for marks flagged invert_on_dark
+   (see sheet.css .sheet-mfr-logo--invert), so the checkbox's effect is
+   visible right where it's toggled. */
+:root[data-theme='dark'] .logo-thumb--invert {
+  filter: brightness(0) invert(1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .logo-thumb--invert {
+    filter: brightness(0) invert(1);
+  }
+}
+
 /* Manage-tab series logo cell: current thumbnail over an upload/replace control. */
 .series-logo-cell {
   display: flex;
