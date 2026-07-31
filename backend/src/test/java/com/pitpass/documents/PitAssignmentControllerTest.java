@@ -220,6 +220,82 @@ class PitAssignmentControllerTest {
                 assertThrows(ResponseStatusException.class, () -> controller.delete(event)).getStatusCode());
     }
 
+    // --------------------------------------------------------------- anchors
+
+    @Test
+    void anchorUpsertRoundtripsAndRecaptureOverwrites() {
+        long event = eventId();
+        document(event, null);
+
+        var one = controller.putAnchor(event, 1,
+                new PitAssignmentController.AnchorRequest(43.7976, -87.9902, 4.5));
+        assertEquals(1, one.anchors().size());
+        assertEquals(4.5, one.anchors().getFirst().accuracyM());
+
+        controller.putAnchor(event, 66, new PitAssignmentController.AnchorRequest(43.8021, -87.9895, null));
+        var recaptured = controller.putAnchor(event, 1,
+                new PitAssignmentController.AnchorRequest(43.7977, -87.9903, 8.0));
+
+        // Ordered by box number, and box 1 holds the re-captured fix.
+        assertEquals(List.of(1, 66),
+                recaptured.anchors().stream().map(PitAssignmentController.Anchor::boxNumber).toList());
+        assertEquals(43.7977, recaptured.anchors().getFirst().lat());
+        assertEquals(8.0, recaptured.anchors().getFirst().accuracyM());
+        assertNull(recaptured.anchors().getLast().accuracyM());
+    }
+
+    @Test
+    void anchorValidation() {
+        long event = eventId();
+        document(event, null);
+
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, assertThrows(ResponseStatusException.class,
+                () -> controller.putAnchor(event, 0,
+                        new PitAssignmentController.AnchorRequest(43.0, -88.0, null))).getStatusCode());
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, assertThrows(ResponseStatusException.class,
+                () -> controller.putAnchor(event, 1,
+                        new PitAssignmentController.AnchorRequest(91.0, -88.0, null))).getStatusCode());
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, assertThrows(ResponseStatusException.class,
+                () -> controller.putAnchor(event, 1,
+                        new PitAssignmentController.AnchorRequest(43.0, -181.0, null))).getStatusCode());
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, assertThrows(ResponseStatusException.class,
+                () -> controller.putAnchor(event, 1,
+                        new PitAssignmentController.AnchorRequest(null, -88.0, null))).getStatusCode());
+    }
+
+    @Test
+    void anchorWithoutAnUploadedPdfIs404() {
+        long event = eventId();
+        ResponseStatusException e = assertThrows(ResponseStatusException.class,
+                () -> controller.putAnchor(event, 1,
+                        new PitAssignmentController.AnchorRequest(43.0, -88.0, null)));
+        assertEquals(HttpStatus.NOT_FOUND, e.getStatusCode());
+    }
+
+    @Test
+    void anchorDelete() {
+        long event = eventId();
+        document(event, null);
+        controller.putAnchor(event, 1, new PitAssignmentController.AnchorRequest(43.0, -88.0, null));
+
+        var afterDelete = controller.deleteAnchor(event, 1);
+        assertTrue(afterDelete.anchors().isEmpty());
+        assertEquals(HttpStatus.NOT_FOUND,
+                assertThrows(ResponseStatusException.class, () -> controller.deleteAnchor(event, 1))
+                        .getStatusCode());
+    }
+
+    @Test
+    void removeClearsAnchorsToo() {
+        long event = eventId();
+        document(event, null);
+        controller.putAnchor(event, 1, new PitAssignmentController.AnchorRequest(43.0, -88.0, null));
+
+        controller.delete(event);
+        assertEquals(0, db.sql("SELECT count(*) FROM pit_lane_anchor WHERE event_id = :e")
+                .param("e", event).query(Long.class).single());
+    }
+
     @Test
     void unknownEventIs404() {
         ResponseStatusException e = assertThrows(ResponseStatusException.class,

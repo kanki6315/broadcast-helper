@@ -78,8 +78,13 @@ public class PitAssignmentController {
                                 String entryTeam, String className) {
     }
 
+    /** A GPS fix captured standing at the center of a box; a handful of these
+     *  let the client interpolate every box's position. */
+    public record Anchor(int boxNumber, double lat, double lng, Double accuracyM, OffsetDateTime capturedAt) {
+    }
+
     public record PitAssignments(String filename, OffsetDateTime uploadedAt, long version, String versionNote,
-                                 List<AssignmentRow> rows, List<Landmark> landmarks) {
+                                 List<AssignmentRow> rows, List<Landmark> landmarks, List<Anchor> anchors) {
     }
 
     @GetMapping("/events/{eventId}/pit-assignments")
@@ -116,8 +121,18 @@ public class PitAssignmentController {
                 .param("id", eventId)
                 .query((rs, i) -> new Landmark(rs.getInt("after_box"), rs.getString("label")))
                 .list();
+        List<Anchor> anchors = db.sql("""
+                        SELECT box_number, lat, lng, accuracy_m, captured_at FROM pit_lane_anchor
+                        WHERE event_id = :id ORDER BY box_number
+                        """)
+                .param("id", eventId)
+                .query((rs, i) -> new Anchor(rs.getInt("box_number"), rs.getDouble("lat"), rs.getDouble("lng"),
+                        rs.getObject("accuracy_m", Float.class) != null
+                                ? rs.getObject("accuracy_m", Float.class).doubleValue() : null,
+                        rs.getObject("captured_at", OffsetDateTime.class)))
+                .list();
         return new PitAssignments(doc.filename(), doc.uploadedAt(), doc.uploadedAt().toInstant().toEpochMilli(),
-                doc.note(), rows, landmarks);
+                doc.note(), rows, landmarks, anchors);
     }
 
     /**
@@ -174,12 +189,7 @@ public class PitAssignmentController {
     @Transactional
     public PitAssignments save(@PathVariable long eventId, @RequestBody SaveRequest request) {
         requireEvent(eventId);
-        db.sql("SELECT 1 FROM event_document WHERE event_id = :id AND kind = :kind")
-                .param("id", eventId).param("kind", KIND)
-                .query(Integer.class)
-                .optional()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                        "Upload the pit-assignments PDF before saving"));
+        requireDocument(eventId);
         List<SaveRow> rows = request.rows() == null ? List.of() : request.rows();
         List<Landmark> landmarks = request.landmarks() == null ? List.of() : request.landmarks();
 
@@ -236,6 +246,51 @@ public class PitAssignmentController {
         return get(eventId);
     }
 
+    public record AnchorRequest(Double lat, Double lng, Double accuracyM) {
+    }
+
+    /** Capture (or re-capture) the admin's GPS fix standing at a box. */
+    @PutMapping("/events/{eventId}/pit-assignments/anchors/{boxNumber}")
+    public PitAssignments putAnchor(@PathVariable long eventId, @PathVariable int boxNumber,
+                                    @RequestBody AnchorRequest request) {
+        requireDocument(eventId);
+        if (boxNumber < 1) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Box numbers must be positive");
+        }
+        if (request.lat() == null || request.lng() == null
+                || Math.abs(request.lat()) > 90 || Math.abs(request.lng()) > 180) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Anchor needs a latitude in [-90, 90] and a longitude in [-180, 180]");
+        }
+        db.sql("""
+                        INSERT INTO pit_lane_anchor (event_id, box_number, lat, lng, accuracy_m)
+                        VALUES (:eventId, :box, :lat, :lng, :accuracy)
+                        ON CONFLICT (event_id, box_number) DO UPDATE
+                            SET lat = EXCLUDED.lat,
+                                lng = EXCLUDED.lng,
+                                accuracy_m = EXCLUDED.accuracy_m,
+                                captured_at = now()
+                        """)
+                .param("eventId", eventId)
+                .param("box", boxNumber)
+                .param("lat", request.lat())
+                .param("lng", request.lng())
+                .param("accuracy", request.accuracyM())
+                .update();
+        return get(eventId);
+    }
+
+    @DeleteMapping("/events/{eventId}/pit-assignments/anchors/{boxNumber}")
+    public PitAssignments deleteAnchor(@PathVariable long eventId, @PathVariable int boxNumber) {
+        int deleted = db.sql("DELETE FROM pit_lane_anchor WHERE event_id = :id AND box_number = :box")
+                .param("id", eventId).param("box", boxNumber)
+                .update();
+        if (deleted == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No anchor at box " + boxNumber);
+        }
+        return get(eventId);
+    }
+
     @GetMapping("/events/{eventId}/pit-assignments/data")
     public ResponseEntity<byte[]> data(@PathVariable long eventId,
                                        @RequestParam(required = false) String v) {
@@ -256,6 +311,7 @@ public class PitAssignmentController {
     public void delete(@PathVariable long eventId) {
         db.sql("DELETE FROM pit_box_assignment WHERE event_id = :id").param("id", eventId).update();
         db.sql("DELETE FROM pit_lane_landmark WHERE event_id = :id").param("id", eventId).update();
+        db.sql("DELETE FROM pit_lane_anchor WHERE event_id = :id").param("id", eventId).update();
         int deleted = db.sql("DELETE FROM event_document WHERE event_id = :id AND kind = :kind")
                 .param("id", eventId).param("kind", KIND)
                 .update();
@@ -353,6 +409,16 @@ public class PitAssignmentController {
                 : java.util.Arrays.stream(name.toLowerCase(Locale.ROOT).split("\\W+"))
                         .filter(t -> !t.isBlank())
                         .collect(java.util.stream.Collectors.toSet());
+    }
+
+    /** Assignments and anchors both index the uploaded PDF's box numbering. */
+    private void requireDocument(long eventId) {
+        db.sql("SELECT 1 FROM event_document WHERE event_id = :id AND kind = :kind")
+                .param("id", eventId).param("kind", KIND)
+                .query(Integer.class)
+                .optional()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Upload the pit-assignments PDF before saving"));
     }
 
     private void requireEvent(long eventId) {

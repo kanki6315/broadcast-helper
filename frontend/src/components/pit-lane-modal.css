@@ -93,14 +93,30 @@
 }
 
 /* Class colour arrives as the sheet's zebra idiom — a quiet tint mixed into
-   the ground — plus the class pill; no accent borders. */
+   the ground — plus the class pill; no accent borders. The whole row is a
+   button: tapping a car starts walk-to-box guidance. */
 .pl-row {
+  background: color-mix(in oklab, var(--class-color, var(--text-muted)) 8%, var(--surface));
+}
+
+.pl-rowbtn {
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
+  width: 100%;
   padding: 3px var(--space-2);
-  background: color-mix(in oklab, var(--class-color, var(--text-muted)) 8%, var(--surface));
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
   font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.pl-rowbtn:hover {
+  background: color-mix(in oklab, var(--class-color, var(--text-muted)) 10%, var(--surface-2));
 }
 
 .pl-box {
@@ -248,6 +264,81 @@
 
 .pl-unmatched td {
   background: color-mix(in oklab, oklch(85% 0.16 95) 30%, var(--surface));
+}
+
+/* ------------------------------------------------------ walk-to-box guide */
+
+.pl-guide {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: var(--text-sm);
+}
+
+.pl-guide-line strong {
+  color: var(--ink);
+}
+
+.pl-guide-line + .pl-guide-line {
+  flex: 1;
+  min-width: 0;
+}
+
+.pl-guide-weak {
+  color: var(--error);
+}
+
+.pl-guide .pl-close {
+  margin-left: auto;
+}
+
+/* ------------------------------------------------------------ GPS anchors */
+
+.pl-anchors {
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+
+.pl-anchor-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.pl-anchor {
+  font-variant-numeric: tabular-nums;
+}
+
+.pl-anchor-acc,
+.pl-anchor-hint {
+  color: var(--text-muted);
+}
+
+.pl-anchor button {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.pl-anchor button:hover {
+  color: var(--ink);
+}
+
+.pl-anchor-add {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pl-anchor-add input {
+  width: 5em;
 }
 
 /* ---------------------------------------------------------------- footer */

@@ -1,4 +1,5 @@
-import { useEffect, useState, type ChangeEvent, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
+import { guide, guidanceText } from '../lib/pitLaneGeo'
 import './pit-lane-modal.css'
 
 interface Landmark {
@@ -15,6 +16,13 @@ interface AssignmentRow {
   className: string | null
 }
 
+interface Anchor {
+  boxNumber: number
+  lat: number
+  lng: number
+  accuracyM: number | null
+}
+
 interface PitAssignments {
   filename: string | null
   uploadedAt: string
@@ -22,6 +30,20 @@ interface PitAssignments {
   versionNote: string | null
   rows: AssignmentRow[]
   landmarks: Landmark[]
+  anchors: Anchor[]
+}
+
+interface Fix {
+  lat: number
+  lng: number
+  accuracy: number
+}
+
+/** Guidance target: a saved row the user tapped. */
+interface Target {
+  boxNumber: number
+  carNumber: string
+  team: string
 }
 
 interface Proposal {
@@ -107,6 +129,13 @@ export default function PitLaneModal({
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [anchorsOpen, setAnchorsOpen] = useState(false)
+  const [anchorBox, setAnchorBox] = useState('')
+  const [anchorError, setAnchorError] = useState<string | null>(null)
+  const [target, setTarget] = useState<Target | null>(null)
+  const [fix, setFix] = useState<Fix | null>(null)
+  const [geoError, setGeoError] = useState<string | null>(null)
+  const watchRef = useRef<number | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -223,8 +252,100 @@ export default function PitLaneModal({
       .finally(() => setBusy(false))
   }
 
+  // One position watch for as long as a guidance target is set; released on
+  // dismiss/close so the modal never drains a battery in a pocket.
+  useEffect(() => {
+    if (!target) {
+      setFix(null)
+      setGeoError(null)
+      return
+    }
+    if (!('geolocation' in navigator)) {
+      setGeoError('This device offers no location access.')
+      return
+    }
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        setGeoError(null)
+        setFix({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy })
+      },
+      (err) =>
+        setGeoError(
+          err.code === err.PERMISSION_DENIED
+            ? 'Location is blocked — allow it for this site to get guidance.'
+            : 'No GPS fix yet — step away from the garage overhang and retry.',
+        ),
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 },
+    )
+    watchRef.current = id
+    return () => {
+      navigator.geolocation.clearWatch(id)
+      watchRef.current = null
+    }
+  }, [target])
+
+  function markAnchor() {
+    const box = Number(anchorBox)
+    if (!Number.isInteger(box) || box < 1) {
+      setAnchorError('Enter the box number you are standing at.')
+      return
+    }
+    if (!('geolocation' in navigator)) {
+      setAnchorError('This device offers no location access.')
+      return
+    }
+    setBusy(true)
+    setAnchorError(null)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        void fetch(`/api/events/${eventId}/pit-assignments/anchors/${box}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracyM: pos.coords.accuracy,
+          }),
+        })
+          .then(async (r) => {
+            if (!r.ok) {
+              const body = await r.json().catch(() => null)
+              throw new Error(body?.message ?? `Backend returned ${r.status}`)
+            }
+            setSaved(await r.json())
+            setAnchorBox('')
+          })
+          .catch((e) => setAnchorError(e instanceof Error ? e.message : 'Save failed'))
+          .finally(() => setBusy(false))
+      },
+      (err) => {
+        setBusy(false)
+        setAnchorError(
+          err.code === err.PERMISSION_DENIED
+            ? 'Location is blocked — allow it for this site to mark anchors.'
+            : 'No GPS fix — try again in the open.',
+        )
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    )
+  }
+
+  function removeAnchor(box: number) {
+    setBusy(true)
+    setAnchorError(null)
+    void fetch(`/api/events/${eventId}/pit-assignments/anchors/${box}`, { method: 'DELETE' })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`Backend returned ${r.status}`)
+        setSaved(await r.json())
+      })
+      .catch((e) => setAnchorError(e instanceof Error ? e.message : 'Delete failed'))
+      .finally(() => setBusy(false))
+  }
+
   const confirmed = saved != null && saved.rows.length > 0
   const unmatched = proposal?.rows.filter((r) => r.entryId == null).length ?? 0
+  const anchors = saved?.anchors ?? []
+  const guidance = target && fix && anchors.length >= 2 ? guide(anchors, fix, target.boxNumber) : null
 
   return (
     <div className="pl-overlay no-print" onClick={onClose}>
@@ -322,12 +443,20 @@ export default function PitLaneModal({
                 }
                 const r = item.row
                 const color = r.className != null ? classColors[r.className] : undefined
+                const team = r.entryTeam ?? r.teamName ?? ''
                 return (
                   <li key={i} className="pl-row" style={{ '--class-color': color ?? 'var(--border)' } as CSSProperties}>
-                    <span className="pl-box">{r.boxNumber}</span>
-                    <span className="pl-car">#{r.carNumber}</span>
-                    <span className="pl-team">{r.entryTeam ?? r.teamName ?? ''}</span>
-                    {r.className && <span className="pl-class">{r.className}</span>}
+                    <button
+                      type="button"
+                      className="pl-rowbtn"
+                      aria-label={`Guide me to box ${r.boxNumber}, #${r.carNumber} ${team}`}
+                      onClick={() => setTarget({ boxNumber: r.boxNumber, carNumber: r.carNumber, team })}
+                    >
+                      <span className="pl-box">{r.boxNumber}</span>
+                      <span className="pl-car">#{r.carNumber}</span>
+                      <span className="pl-team">{team}</span>
+                      {r.className && <span className="pl-class">{r.className}</span>}
+                    </button>
                   </li>
                 )
               })}
@@ -342,6 +471,81 @@ export default function PitLaneModal({
             </p>
           )}
         </div>
+
+        {target && (
+          <div className="pl-guide" role="status">
+            <div className="pl-guide-line">
+              <strong>
+                #{target.carNumber} {target.team}
+              </strong>
+              {' · box '}
+              {target.boxNumber}
+            </div>
+            <div className="pl-guide-line">
+              {anchors.length < 2 ? (
+                isAdmin ? (
+                  'Set at least two GPS anchors below to enable guidance.'
+                ) : (
+                  'GPS guidance is not set up for this event yet.'
+                )
+              ) : geoError ? (
+                geoError
+              ) : !guidance ? (
+                'Locating…'
+              ) : guidance.arrived ? (
+                <strong>You're at box {target.boxNumber}</strong>
+              ) : (
+                <>
+                  {guidanceText(guidance)} toward <strong>{guidance.direction === 'pit-in' ? 'pit in' : 'pit out'}</strong>
+                  {' · '}you're near box {Math.round(guidance.currentBox)}
+                  {fix && fix.accuracy > 25 && (
+                    <span className="pl-guide-weak"> · GPS weak (±{Math.round(fix.accuracy * 3.28084)} ft)</span>
+                  )}
+                </>
+              )}
+            </div>
+            <button className="pl-close" onClick={() => setTarget(null)} aria-label="Stop guidance">
+              ✕
+            </button>
+          </div>
+        )}
+
+        {isAdmin && anchorsOpen && !proposal && saved != null && (
+          <div className="pl-anchors">
+            <div className="pl-anchor-list">
+              {anchors.length === 0 && <span className="pl-anchor-hint">No anchors yet — stand at a box and mark it.</span>}
+              {anchors.map((a) => (
+                <span key={a.boxNumber} className="pl-anchor">
+                  box {a.boxNumber}
+                  {a.accuracyM != null && <span className="pl-anchor-acc"> ±{Math.round(a.accuracyM)} m</span>}
+                  <button
+                    type="button"
+                    onClick={() => removeAnchor(a.boxNumber)}
+                    disabled={busy}
+                    aria-label={`Remove anchor at box ${a.boxNumber}`}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="pl-anchor-add">
+              <input
+                type="number"
+                min={1}
+                placeholder="box #"
+                value={anchorBox}
+                onChange={(ev) => setAnchorBox(ev.target.value)}
+                disabled={busy}
+                aria-label="Box number you are standing at"
+              />
+              <button className="btn" onClick={markAnchor} disabled={busy}>
+                Mark my location
+              </button>
+            </div>
+            {anchorError && <p className="pl-error">{anchorError}</p>}
+          </div>
+        )}
 
         {isAdmin && (
           <footer className="pl-footer">
@@ -362,6 +566,9 @@ export default function PitLaneModal({
                 </label>
                 {saved != null && (
                   <>
+                    <button className="btn" onClick={() => setAnchorsOpen((open) => !open)} aria-expanded={anchorsOpen}>
+                      GPS anchors ({anchors.length})
+                    </button>
                     <a href={`/api/events/${eventId}/pit-assignments/data?v=${saved.version}`} target="_blank" rel="noreferrer">
                       open PDF
                     </a>
