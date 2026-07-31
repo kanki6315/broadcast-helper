@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { reportApiResponse } from './connectivity'
 
 /** A series row from GET /api/series. */
 export interface Series {
@@ -33,6 +34,8 @@ export function useSeriesEvents(onError?: (msg: string) => void) {
     void (async () => {
       try {
         const [sRes, eRes] = await Promise.all([fetch('/api/series'), fetch('/api/events')])
+        if (sRes.ok) reportApiResponse(sRes)
+        if (eRes.ok) reportApiResponse(eRes)
         setAllSeries(sRes.ok ? ((await sRes.json()) as Series[]) : [])
         setAllEvents(eRes.ok ? ((await eRes.json()) as EventOption[]) : [])
       } catch {

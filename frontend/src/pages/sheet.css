@@ -372,6 +372,22 @@
   box-shadow: var(--shadow-modal);
 }
 
+/* Unsynced-ink marker: amber while offline strokes await sync, error-red
+   when a conflict needs the user to pick a side inside the pad. */
+.sheet-fab-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: var(--space-2);
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 1px;
+}
+
+.sheet-fab-dot.conflict {
+  background: var(--error);
+}
+
 /* ============================================================================
    Print: the compact light US-Letter sheet. The token overrides force the
    light palette even when the screen is in dark mode, so "Save as PDF" always

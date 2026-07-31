@@ -4,6 +4,7 @@ import { useMe } from '../lib/auth'
 import { getTheme, setTheme, type Theme } from '../lib/theme'
 import SearchPalette, { SearchIcon, isMacLike } from './SearchPalette'
 import InstallHint from './InstallHint'
+import ConnectivityPill from './ConnectivityPill'
 
 const TABS = [
   { to: '/', label: 'Series', end: true },
@@ -107,6 +108,7 @@ export default function Layout() {
           <span className="wordmark-name">Pit <strong>Pass</strong></span>
         </Link>
         <div className="topbar-side">
+          <ConnectivityPill />
           <button
             type="button"
             className="search-trigger"

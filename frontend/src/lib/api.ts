@@ -1,5 +1,7 @@
 // Typed fetch layer for the browse/season endpoints. All read-only.
 
+import { reportApiResponse } from './connectivity'
+
 export interface SeasonSummary {
   id: number
   year: number
@@ -542,5 +544,8 @@ export interface TeamProfile {
 export async function getJson<T>(url: string): Promise<T> {
   const r = await fetch(url)
   if (!r.ok) throw new Error(`Backend returned ${r.status}`)
+  // The service worker answers /api reads from cache (stale-while-revalidate);
+  // the Date header tells the connectivity pill how old this copy really is.
+  reportApiResponse(r)
   return (await r.json()) as T
 }

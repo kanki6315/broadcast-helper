@@ -1,5 +1,7 @@
+import { useEffect } from 'react'
 import { HashRouter, Navigate, Routes, Route, useParams } from 'react-router-dom'
 import './App.css'
+import { startScratchpadSync } from './lib/scratchpadSync'
 import Layout from './components/Layout'
 import ManageLayout from './components/ManageLayout'
 import InfoModalProvider from './components/InfoModalProvider'
@@ -23,6 +25,7 @@ import UsersPage from './pages/UsersPage'
 import SessionsPage from './pages/SessionsPage'
 import StoragePage from './pages/StoragePage'
 import UpdatePrompt from './components/UpdatePrompt'
+import DataNudge from './components/DataNudge'
 
 // The sheet renders standalone (no app chrome) so the printed page is clean.
 function SheetRoute() {
@@ -31,6 +34,9 @@ function SheetRoute() {
 }
 
 export default function App() {
+  // Replays any scratchpad ink stranded offline (by this or a previous
+  // session) whenever connectivity returns — see lib/scratchpadSync.
+  useEffect(() => startScratchpadSync(), [])
   return (
     <HashRouter>
       {/* Providers sit outside the routes so the info modals open from the
@@ -39,6 +45,7 @@ export default function App() {
       <AuthProvider>
         <InfoModalProvider>
           <UpdatePrompt />
+          <DataNudge />
           <Routes>
             <Route path="/sheet/:eventId" element={<SheetRoute />} />
             <Route element={<Layout />}>

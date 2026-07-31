@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import './scratchpad-modal.css'
 import { getJson } from '../lib/api'
+import { useMe } from '../lib/auth'
+import { getConnectivity, subscribeConnectivity } from '../lib/connectivity'
 import {
   PAD_WIDTH,
   TILE_HEIGHT,
@@ -8,6 +10,7 @@ import {
   applyRedo,
   applyUndo,
   eraserHits,
+  newStrokeId,
   strokeBBox,
   strokeIntersectsTile,
   thinAppend,
@@ -17,6 +20,8 @@ import {
   type PadAction,
   type Stroke,
 } from '../lib/scratchpad'
+import { loadLocalPad, saveLocalPad, type PadBackup } from '../lib/scratchpadStore'
+import { registerActivePad } from '../lib/scratchpadSync'
 
 interface PadResponse {
   eventId: number
@@ -49,7 +54,7 @@ const PAGE_EXTEND_STEP = 1000
 const MAX_PAGE_HEIGHT = 50000
 
 type Phase = 'loading' | 'error' | 'ready'
-type SaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'full' | 'conflict'
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'full' | 'conflict' | 'offline'
 
 /** Backing stores cost width × height × dpr² × 4 bytes; 2× is visually
  *  indistinguishable from 3× at pen widths and keeps tile memory bounded. */
@@ -58,6 +63,9 @@ function dpr(): number {
 }
 
 export default function ScratchpadModal({ eventId, onClose }: { eventId: number; onClose: () => void }) {
+  // Keys the IndexedDB mirror. 'local' covers dev (auth off → email null);
+  // the backend keys its own row on the session principal regardless.
+  const owner = useMe()?.email ?? 'local'
   const [phase, setPhase] = useState<Phase>('loading')
   const [tool, setTool] = useState<'pen' | 'eraser'>('pen')
   const [color, setColor] = useState(COLORS[0].value)
@@ -87,6 +95,7 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
   const dirtyRef = useRef(false)
   const savingRef = useRef(false)
   const conflictRef = useRef(false)
+  const backupRef = useRef<PadBackup | undefined>(undefined)
   const debounceTimer = useRef<number | undefined>(undefined)
   const statusTimer = useRef<number | undefined>(undefined)
 
@@ -213,6 +222,26 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
     statusTimer.current = window.setTimeout(() => setStatus('idle'), 1600)
   }, [])
 
+  /** Mirror the current document into IndexedDB. This is the durability
+   *  layer: it runs on every completed mutation, so iOS killing the tab
+   *  costs at most the stroke in progress — the server PUT is merely sync. */
+  const persistLocal = useCallback(
+    (dirty: boolean) => {
+      void saveLocalPad({
+        eventId,
+        owner,
+        strokes: strokesRef.current,
+        pageHeight: pageHeightRef.current,
+        baseRevision: revisionRef.current,
+        dirty,
+        conflict: conflictRef.current,
+        updatedAt: Date.now(),
+        backup: backupRef.current,
+      })
+    },
+    [eventId, owner],
+  )
+
   const flush = useCallback(() => {
     if (!dirtyRef.current || savingRef.current || conflictRef.current) return
     dirtyRef.current = false
@@ -232,6 +261,9 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
         if (r.status === 409) {
           conflictRef.current = true
           setStatus('conflict')
+          // Record the conflict so the FAB badge shows it and the background
+          // syncer knows not to retry a doomed baseRevision.
+          persistLocal(true)
           return
         }
         if (r.status === 413) {
@@ -242,15 +274,20 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
         if (!r.ok) throw new Error(`Backend returned ${r.status}`)
         const body = (await r.json()) as { revision: number }
         revisionRef.current = body.revision
+        persistLocal(dirtyRef.current)
         if (dirtyRef.current) flushRef.current()
         else showSaved()
       })
       .catch(() => {
         savingRef.current = false
         dirtyRef.current = true
-        setStatus('error')
+        // The ink is already mirrored locally (markDirty), so a dead network
+        // is calm news, not an error: it syncs on the next 'live' flip.
+        setStatus(
+          !navigator.onLine || getConnectivity().status !== 'live' ? 'offline' : 'error',
+        )
       })
-  }, [eventId, showSaved])
+  }, [eventId, persistLocal, showSaved])
 
   // Stable identity for event listeners and the trailing-save recursion.
   const flushRef = useRef(flush)
@@ -260,9 +297,23 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
 
   const markDirty = useCallback(() => {
     dirtyRef.current = true
+    persistLocal(true)
     window.clearTimeout(debounceTimer.current)
     debounceTimer.current = window.setTimeout(() => flushRef.current(), SAVE_DEBOUNCE_MS)
-  }, [])
+  }, [persistLocal])
+
+  // While the pad is open, its ink is this component's to sync — the
+  // background syncer skips registered pads — so retry on reconnect here.
+  useEffect(() => {
+    const unregister = registerActivePad(eventId, owner)
+    const unsubscribe = subscribeConnectivity(() => {
+      if (getConnectivity().status === 'live' && dirtyRef.current) flushRef.current()
+    })
+    return () => {
+      unregister()
+      unsubscribe()
+    }
+  }, [eventId, owner])
 
   /* ---- document mutations ----------------------------------------------- */
 
@@ -339,7 +390,10 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
         erasingRef.current = { removed: [], last: [x, y] }
         eraseAt(x, y)
       } else {
-        drawingRef.current = { stroke: { tool: 'pen', color, size, points: [x, y] }, drawnPieces: 0 }
+        drawingRef.current = {
+          stroke: { id: newStrokeId(), tool: 'pen', color, size, points: [x, y] },
+          drawnPieces: 0,
+        }
       }
     },
     [color, eraseAt, size, toLogical, tool],
@@ -444,30 +498,126 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
 
   /* ---- load / reload ----------------------------------------------------- */
 
+  /** Install a document as the pad. Callers must have set phase 'loading'
+   *  first — the loading→ready transition remounts every tile, which is what
+   *  triggers the repaint effect above. */
+  const adopt = useCallback((strokes: Stroke[], revision: number, height: number) => {
+    strokesRef.current = strokes
+    revisionRef.current = revision
+    pageHeightRef.current = height
+    undoRef.current = []
+    redoRef.current = []
+    setPageHeight(height)
+    setActionCount((n) => n + 1)
+    setPhase('ready')
+  }, [])
+
   const load = useCallback(() => {
     setPhase('loading')
-    getJson<PadResponse>(`/api/events/${eventId}/scratchpad`)
-      .then((pad) => {
-        strokesRef.current = pad.strokes
-        revisionRef.current = pad.revision
-        pageHeightRef.current = pad.pageHeight
-        undoRef.current = []
-        redoRef.current = []
+    void (async () => {
+      const local = await loadLocalPad(eventId, owner)
+      backupRef.current = local?.backup
+      let server: PadResponse | null = null
+      try {
+        // NetworkFirst: fresh online, the last-seen copy offline.
+        server = await getJson<PadResponse>(`/api/events/${eventId}/scratchpad`)
+      } catch {
+        server = null
+      }
+
+      if (server && (!local || !local.dirty)) {
+        // Nothing unsent: the server (or its offline cache) is the document.
         dirtyRef.current = false
         conflictRef.current = false
-        setPageHeight(pad.pageHeight)
         setStatus('idle')
-        setActionCount((n) => n + 1)
-        // Tiles remount from scratch (phase went through 'loading'), and the
-        // paint effect above repaints them once this lands.
-        setPhase('ready')
-      })
-      .catch(() => setPhase('error'))
-  }, [eventId])
+        adopt(server.strokes, server.revision, server.pageHeight)
+        persistLocal(false)
+      } else if (server && local) {
+        // Unsent local ink. Same base revision means it's simply server +
+        // strokes the network never got: adopt it and sync. A moved-on server
+        // is the conflict case — show THIS device's ink with the banner, so
+        // "keep this device's ink" describes what's on screen.
+        dirtyRef.current = true
+        conflictRef.current = local.conflict || server.revision !== local.baseRevision
+        setStatus(conflictRef.current ? 'conflict' : 'idle')
+        adopt(local.strokes, local.baseRevision, local.pageHeight)
+        if (!conflictRef.current) {
+          debounceTimer.current = window.setTimeout(() => flushRef.current(), 400)
+        }
+      } else if (local) {
+        // Offline with a mirror: draw on the local copy; sync comes later.
+        dirtyRef.current = local.dirty
+        conflictRef.current = local.conflict
+        setStatus(local.conflict ? 'conflict' : local.dirty ? 'offline' : 'idle')
+        adopt(local.strokes, local.baseRevision, local.pageHeight)
+      } else if (getConnectivity().status !== 'live') {
+        // Offline, no mirror, no cached copy: open an empty pad rather than a
+        // dead end. If a server pad exists after all, the first sync 409s and
+        // the conflict flow sorts it out — the revision guard is the net.
+        dirtyRef.current = false
+        conflictRef.current = false
+        setStatus('offline')
+        adopt([], 0, 2000)
+      } else {
+        // Online and the backend refused: that's a real error, not a shrug.
+        setPhase('error')
+      }
+    })()
+  }, [adopt, eventId, owner, persistLocal])
 
   useEffect(() => {
     load()
   }, [load])
+
+  /** Both choices fetch the server copy first — the loser of the choice is
+   *  always stashed in the one-slot local backup, never destroyed. */
+  const resolveConflict = useCallback(
+    (keep: 'mine' | 'other') => {
+      void (async () => {
+        let server: PadResponse
+        try {
+          server = await getJson<PadResponse>(`/api/events/${eventId}/scratchpad`)
+        } catch {
+          setStatus('conflict') // still unreachable; resolve needs the other copy
+          return
+        }
+        if (keep === 'mine') {
+          backupRef.current = {
+            strokes: server.strokes,
+            pageHeight: server.pageHeight,
+            savedAt: Date.now(),
+            reason: 'overwritten-by-this-device',
+          }
+          // Rebase: adopt the server's revision as the new base and overwrite.
+          revisionRef.current = server.revision
+          conflictRef.current = false
+          dirtyRef.current = true
+          setStatus('idle')
+          persistLocal(true)
+          flushRef.current()
+        } else {
+          backupRef.current = {
+            strokes: strokesRef.current,
+            pageHeight: pageHeightRef.current,
+            savedAt: Date.now(),
+            reason: 'replaced-by-other',
+          }
+          conflictRef.current = false
+          dirtyRef.current = false
+          setStatus('idle')
+          // Through 'loading' so every tile remounts and repaints with the
+          // other document — but adopt() must land on a LATER tick: batched
+          // with setPhase it would collapse to one render and no remount.
+          setPhase('loading')
+          window.setTimeout(() => {
+            adopt(server.strokes, server.revision, server.pageHeight)
+            persistLocal(false)
+          }, 0)
+        }
+      })()
+    },
+    [adopt, eventId, persistLocal],
+  )
 
   /* ---- lifecycle: keys, scroll lock, flush-on-hide ------------------------ */
 
@@ -560,6 +710,7 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
             {status === 'error' && 'Save failed — will retry'}
             {status === 'full' && 'Pad full — erase some strokes'}
             {status === 'conflict' && 'Changed elsewhere'}
+            {status === 'offline' && 'Offline — saved on this device'}
           </span>
           <button className="sp-close" onClick={close} aria-label="Close">
             ✕
@@ -623,9 +774,13 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
 
         {status === 'conflict' && (
           <div className="sp-conflict">
-            This pad was changed in another tab or on another device — reload it to keep drawing.
-            <button className="btn" onClick={load}>
-              Reload
+            This pad changed in another tab or on another device. Keep one — the other is kept
+            as a local backup.
+            <button className="btn" onClick={() => resolveConflict('mine')}>
+              Keep this device’s ink
+            </button>
+            <button className="btn" onClick={() => resolveConflict('other')}>
+              Use other version
             </button>
           </div>
         )}
