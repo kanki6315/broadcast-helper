@@ -152,6 +152,41 @@ class RecapCarNumberAliasTest {
     }
 
     @Test
+    void aLinkStoredEitherWayRoundMatchesTheRow() {
+        // LAP's renumbering: rounds raced as #30, then as #6. The standings
+        // still key the row "30" (imported before the renumbering), but the
+        // user stored the link in surviving-identity order: 30 counts as 6.
+        // Symmetric resolution must land every round on the "30" row anyway.
+        Fixture f = fixture("GX", "30", "LAP Test", "30", "LAP Test", "6", "LAP Test");
+        db.sql("""
+                        INSERT INTO car_number_alias (season_id, class_name, car_number, canonical_number)
+                        VALUES (:s, 'GX', '30', '6')
+                        """)
+                .param("s", f.seasonId()).update();
+
+        SeasonViewController.RecapRow row = onlyRow(f.champId());
+        assertTrue(row.cells().containsKey(1));
+        assertTrue(row.cells().containsKey(2));
+    }
+
+    @Test
+    void theSameLinkSurvivesTheStandingsKeyFlippingToTheNewNumber() {
+        // The season after the next standings import: the source now keys the
+        // row by the NEW number, the link is unchanged. Old-number rounds must
+        // follow the row to its new key.
+        Fixture f = fixture("GY", "6", "LAP Test", "30", "LAP Test", "6", "LAP Test");
+        db.sql("""
+                        INSERT INTO car_number_alias (season_id, class_name, car_number, canonical_number)
+                        VALUES (:s, 'GY', '30', '6')
+                        """)
+                .param("s", f.seasonId()).update();
+
+        SeasonViewController.RecapRow row = onlyRow(f.champId());
+        assertTrue(row.cells().containsKey(1));
+        assertTrue(row.cells().containsKey(2));
+    }
+
+    @Test
     void anAliasInAnotherClassNeverBleedsIn() {
         Fixture f = fixture("PY", "5", "JDC Test", "85", "JDC Test", "5", "JDC Test");
         db.sql("""

@@ -276,7 +276,7 @@ function SeriesManagementDialog({
                 <SettingsSection title="Championship groups" description="A cup is a side award over a subset of the rounds, published under its own name. Uncheck a group the importer mistook for a cup so it sorts as a full-season championship and can feed the sheet's points column.">
                   <CupGroupEditor seriesId={series.id} onError={setError} />
                 </SettingsSection>
-                <SettingsSection title="Linked car numbers" description="When one entrant raced under a second number — a one-off renumbering or an entry handed to a new team mid-season — link that number to the entrant's standings number for the season and class. The recap then gathers every weekend onto the one row; event pages keep the number as raced.">
+                <SettingsSection title="Linked car numbers" description="When one entrant raced under two numbers — a one-off renumbering, a permanent renumbering, or an entry handed to a new team mid-season — link the two numbers for the season and class. Either order works: the recap gathers every weekend onto the entrant's standings row, whichever number the standings key it by. Event pages keep numbers as raced.">
                   <CarNumberAliasEditor seriesId={series.id} seasons={seasons} onError={setError} />
                 </SettingsSection>
               </div>
@@ -980,7 +980,7 @@ function CarNumberAliasEditor({
             .map((a) => (
               <div key={a.id} className="class-alias-row">
                 <span className="class-alias-name">#{a.carNumber}</span>
-                <span className="muted">counts as</span>
+                <span className="muted">=</span>
                 <span className="class-alias-name">#{a.canonicalNumber}</span>
                 <span className="muted class-alias-scope">
                   {a.className}
@@ -1022,14 +1022,14 @@ function CarNumberAliasEditor({
         <input
           value={carNumber}
           onChange={(e) => setCarNumber(e.target.value)}
-          placeholder="Raced as #…"
-          aria-label="Car number as raced"
+          placeholder="Number…"
+          aria-label="One of the entrant's car numbers"
         />
         <input
           value={canonical}
           onChange={(e) => setCanonical(e.target.value)}
-          placeholder="Counts as #…"
-          aria-label="Standings car number"
+          placeholder="Same car as #…"
+          aria-label="The entrant's other car number"
         />
         <input
           value={note}

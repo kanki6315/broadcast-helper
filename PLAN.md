@@ -791,8 +791,25 @@ display size.)
   7/7 landed on the #5 GTP row, GTD #068 gathered rounds 1–4 as van der Steur
   (both team spellings on the row) with GTDPRO's own #68 untouched. **Not
   auto-detected on import by design**: it's a rare, judgment-carrying fact, so
-  it stays an explicit admin link. **Production: re-enter the two links via
-  the UI after deploy** (GTP 85→5, GTD 19→068).
+  it stays an explicit admin link. **Production: re-enter the links via the
+  UI after deploy** (GTP 85=5, GTD 19=068, IMPC GS 30=6).
+  **The link is SYMMETRIC (2026-07-30, follow-up).** The first cut resolved
+  only the entry side to `canonical_number`, so direction mattered — storing
+  LAP Motorsports' permanent renumbering as "30 counts as 6" while the
+  standings still keyed the row "30" resolved the row's own entries AWAY from
+  it and emptied it (the user hit exactly this). A direction guard was tried
+  and discarded the same day: the real fix is that a link declares "these two
+  numbers are the same entrant", not a mapping. Both consumers now resolve
+  BOTH sides — the recap resolves the standings key through a Java-side map
+  (`resolveNumber`; class championships only — overall grids skip it, their
+  keys span classes) against the SQL-resolved cell number, and the sheet's
+  champ column compares `resolveAlias(entry#) == resolveAlias(key)`. Either
+  stored direction matches, and when a later standings import flips which
+  number keys the row (IMSA will key LAP "6" after the renumbering), the row
+  relabels itself and keeps its history with no relink. One-hop resolution —
+  chains (A→B plus B→C) are not followed; the per-season+class unique index
+  already keeps a number from meaning two things. `RecapCarNumberAliasTest`
+  covers both stored directions and the key-flip future.
 - **Confirm-and-commit grouping (`commit-group`) — ✅ DONE (2026-07-17).** After
   staging, both import modals (the file-upload `UploadFilesModal` and the
   `IRacingImportModal`) hand off to a shared **`ConfirmImportStep`**: proposed

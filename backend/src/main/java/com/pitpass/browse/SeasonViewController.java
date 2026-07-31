@@ -287,7 +287,10 @@ public class SeasonViewController {
         // car_number resolves through car_number_alias (V38): the rare entrant
         // that raced under a second number (JDC-Miller's #5 running Daytona as
         // #85) matches its standings row by the canonical number, so its cells
-        // land on the one row the standings source published.
+        // land on the one row the standings source published. Standings keys
+        // resolve through the same map below, which makes the link symmetric:
+        // a renumbered entrant (LAP's #30 becoming #6) keeps matching when a
+        // later standings import flips which number keys the row.
         List<Cell> cells = roundByEventId.isEmpty() ? List.of() : db.sql("""
                         SELECT en.id AS entry_id,
                                COALESCE(cna.canonical_number, en.car_number) AS car_number,
@@ -319,6 +322,24 @@ public class SeasonViewController {
                 .stream()
                 .filter(c -> c.start() != null || c.finish() != null || c.status() != null)
                 .toList();
+
+        // The class's aliases again, Java-side, to resolve the standings-key
+        // half of the match the same way the SQL resolved the entry half —
+        // whichever way round the link was stored, both sides meet at the same
+        // number. Only class championships need it: their rows ARE car numbers.
+        Map<String, String> aliasByNumber = new HashMap<>();
+        if (!champ.isOverall() && champ.className() != null) {
+            db.sql("""
+                            SELECT car_number, canonical_number FROM car_number_alias
+                            WHERE season_id = :seasonId AND lower(trim(class_name)) = lower(trim(:className))
+                            """)
+                    .param("seasonId", champ.seasonId())
+                    .param("className", champ.className())
+                    .query((rs, i) -> aliasByNumber.put(
+                            SheetController.normalizeCarNumber(rs.getString("car_number")),
+                            SheetController.normalizeCarNumber(rs.getString("canonical_number"))))
+                    .list();
+        }
 
         boolean driversKind = "DRIVERS".equals(champ.kind());
         Map<Long, List<String>> driverNamesByEntry = new HashMap<>();
@@ -357,10 +378,11 @@ public class SeasonViewController {
                 distinctTeamNames.put(teamName.trim().toLowerCase(Locale.ROOT), teamName.trim());
             }
             int latestRound = -1;
+            String resolvedKey = resolveNumber(aliasByNumber, h.key());
             for (Cell c : cells) {
                 boolean mine = driversKind
                         ? matchesDriver(driverNamesByEntry.get(c.entryId()), h.key(), h.name())
-                        : sameCarNumber(c.carNumber(), h.key())
+                        : resolveNumber(aliasByNumber, c.carNumber()).equals(resolvedKey)
                           || sameTeamName(c.team(), h.key());
                 if (!mine) {
                     continue;
@@ -406,8 +428,13 @@ public class SeasonViewController {
         return new Recap(champ, rounds, rows);
     }
 
-    private static boolean sameCarNumber(String a, String b) {
-        return SheetController.normalizeCarNumber(a).equals(SheetController.normalizeCarNumber(b));
+    /** One hop through the class's car-number aliases, normalized. Applied to
+     *  BOTH sides of the cell↔row match, so the link works whichever way it
+     *  was stored and survives a standings import that changes which of the
+     *  two numbers keys the row. */
+    private static String resolveNumber(Map<String, String> aliases, String number) {
+        String norm = SheetController.normalizeCarNumber(number);
+        return aliases.getOrDefault(norm, norm);
     }
 
     /**

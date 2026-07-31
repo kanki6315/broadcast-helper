@@ -416,16 +416,16 @@ public class SheetController {
                     } else {
                         ChampRow champ = classChamp.get(r.carNumber());
                         if (champ == null) {
-                            String canonical = aliasCanonical.get(aliasLookupKey(r.className(), r.carNumber()));
-                            if (canonical != null) {
-                                // Tolerant of "068" vs "68" between the alias's
-                                // canonical spelling and the standings file's key.
-                                String norm = normalizeCarNumber(canonical);
-                                champ = classChamp.entrySet().stream()
-                                        .filter(e -> normalizeCarNumber(e.getKey()).equals(norm))
-                                        .map(Map.Entry::getValue)
-                                        .findFirst().orElse(null);
-                            }
+                            // Resolve BOTH sides through the class's aliases, so
+                            // the link matches whichever way round it was stored
+                            // and however the standings file spelled the key
+                            // ("068" vs "68").
+                            String resolved = resolveAlias(aliasCanonical, r.className(), r.carNumber());
+                            champ = classChamp.entrySet().stream()
+                                    .filter(e -> resolveAlias(aliasCanonical, r.className(), e.getKey())
+                                            .equals(resolved))
+                                    .map(Map.Entry::getValue)
+                                    .findFirst().orElse(null);
                         }
                         if (champ != null) {
                             champText = ordinal(champ.position()) + " (" + formatPoints(champ.points()) + " pts)";
@@ -497,6 +497,13 @@ public class SheetController {
     /** Lookup key into a season's car-number aliases: class + normalized number. */
     private static String aliasLookupKey(String className, String carNumber) {
         return Objects.toString(className, "").trim().toLowerCase() + "|" + normalizeCarNumber(carNumber);
+    }
+
+    /** One hop through the class's aliases, normalized — the shared meeting
+     *  point for both sides of an entry↔standings-key comparison. */
+    private static String resolveAlias(Map<String, String> aliasCanonical, String className, String number) {
+        String canonical = aliasCanonical.get(aliasLookupKey(className, number));
+        return canonical != null ? normalizeCarNumber(canonical) : normalizeCarNumber(number);
     }
 
     /** "04" and "4" are the same car across documents; "0" stays "0". */

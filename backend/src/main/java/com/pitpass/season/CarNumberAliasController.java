@@ -20,14 +20,17 @@ import java.util.List;
 
 /**
  * Car-number aliases (see {@code car_number_alias}, V38): the rare entrant
- * that raced under a second number — a one-off renumbering (JDC-Miller's #5
- * running Daytona as #85) or a mid-season entry transfer to a new
- * organization (van der Steur's #19 GTD becoming Car Blanche's #068). The
- * alias maps the other number onto the one the standings source keys the row
- * by, scoped to one season and one class; the recap and the sheet's
- * championship column resolve through it, per-event surfaces never do.
- * Managed from the Series settings modal (Classes tab), which reads the
- * series-wide listing; writes stay season-scoped.
+ * that raced under two numbers — a one-off renumbering (JDC-Miller's #5
+ * running Daytona as #85), a mid-season entry transfer to a new organization
+ * (van der Steur's #19 GTD becoming Car Blanche's #068), or a permanent
+ * renumbering (LAP Motorsports' #30 becoming #6). The link is SYMMETRIC:
+ * consumers (the recap and the sheet's championship column) resolve both the
+ * entry's number and the standings key through it, so either stored
+ * direction matches, and a later standings import that changes which of the
+ * two numbers keys the row needs no relink. Scoped to one season and one
+ * class; per-event surfaces never resolve. Managed from the Series settings
+ * modal (Classes tab), which reads the series-wide listing; writes stay
+ * season-scoped.
  */
 @RestController
 @RequestMapping("/api")
