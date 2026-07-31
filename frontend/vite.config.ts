@@ -142,13 +142,21 @@ export default defineConfig({
             },
           },
           {
-            // Read-only offline for prep content: GET /api/* served
-            // stale-while-revalidate — the cached copy answers instantly (no
-            // multi-second network stall on trackside internet) while a
-            // background refetch updates the cache for next time. When the
-            // refetch actually changed the payload, BroadcastUpdate posts
-            // CACHE_UPDATED to every open page, which shows a "newer data"
-            // nudge (DataNudge.tsx) rather than re-rendering mid-read.
+            // Read-only offline for prep content — INSTALLED APP ONLY: GET
+            // /api/* served stale-while-revalidate — the cached copy answers
+            // instantly (no multi-second network stall on trackside internet)
+            // while a background refetch updates the cache for next time.
+            // When the refetch actually changed the payload, BroadcastUpdate
+            // posts CACHE_UPDATED to every open page, which shows a "newer
+            // data" nudge (DataNudge.tsx) rather than re-rendering mid-read.
+            // Browser tabs opt OUT per request: all editing happens there,
+            // and stale-first turns every write into "commit, see the old
+            // list, get nudged to refresh". lib/browserTabReads.ts tags
+            // non-standalone /api reads with X-Pit-Pass-Browser-Tab and this
+            // matcher declines them → plain network, like a normal web app.
+            // (Per-request because a service worker is origin-scoped — once
+            // the installed app registers it, browser tabs are controlled by
+            // the same worker; there is no registration-level split.)
             // Only 200s cached (never a 401, so the auth gate still works
             // online). Excluded (→ straight to network, uncached): search
             // typeaheads (a new URL per keystroke would thrash the LRU) and the
@@ -156,6 +164,7 @@ export default defineConfig({
             // the image matcher, this must stay self-contained (.toString()).
             urlPattern: ({ url, request }) =>
               request.method === 'GET' &&
+              !request.headers.has('x-pit-pass-browser-tab') &&
               url.pathname.startsWith('/api/') &&
               !/^\/api\/(search|drivers\/search|users\/sessions)/.test(url.pathname),
             handler: 'StaleWhileRevalidate',
