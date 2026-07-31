@@ -195,11 +195,11 @@
   border-block: 1px solid var(--border);
 }
 
-/* Yellow like the sheet's own penalty-box band, mixed into the surface so it
-   holds in both themes. */
+/* The PDF prints this band yellow; in-app it speaks broadcast amber — the
+   design system's one voiced accent — mixed into the surface for both themes. */
 .pl-mark-penalty {
   color: var(--ink);
-  background: color-mix(in oklab, oklch(85% 0.16 95) 45%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 45%, var(--surface));
 }
 
 .pl-mark-end {
@@ -263,7 +263,7 @@
 }
 
 .pl-unmatched td {
-  background: color-mix(in oklab, oklch(85% 0.16 95) 30%, var(--surface));
+  background: color-mix(in oklab, var(--accent) 25%, var(--surface));
 }
 
 /* ------------------------------------------------------ walk-to-box guide */
@@ -339,6 +339,11 @@
 
 .pl-anchor-add input {
   width: 5em;
+}
+
+.pl-sampling {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------------------------------------------------------------- footer */

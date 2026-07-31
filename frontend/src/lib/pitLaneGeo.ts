@@ -129,3 +129,60 @@ export function guidanceText(g: Guidance): string {
   const boxes = g.boxesAway === 1 ? '1 box' : `${g.boxesAway} boxes`
   return `~${boxes} (${feet} ft)`
 }
+
+export interface FixSample {
+  lat: number
+  lng: number
+  /** Reported 1-sigma-ish radius in metres; smaller = trusted more. */
+  accuracy: number
+}
+
+export interface AveragedFix {
+  lat: number
+  lng: number
+  /** Honest quality figure: the worse of the mean reported accuracy and the
+   *  actual scatter of the samples. A multipath-shifted capture can report
+   *  ±4 m while jumping 10 m between fixes — the scatter exposes it. */
+  accuracyM: number
+  /** Samples that survived outlier rejection. */
+  used: number
+}
+
+/**
+ * Inverse-variance weighted average of a sampling window's fixes. Samples
+ * reporting worse than 2.5x the window's best accuracy (min 25 m) are
+ * dropped as outliers unless that would leave fewer than three. Averaging
+ * cancels fix-to-fix jitter; it cannot cancel a bias shared by the whole
+ * window, which is why accuracyM folds the observed scatter in.
+ */
+export function averageFixes(samples: FixSample[]): AveragedFix | null {
+  if (samples.length === 0) return null
+  const best = Math.min(...samples.map((s) => s.accuracy))
+  const cutoff = Math.max(25, best * 2.5)
+  const kept0 = samples.filter((s) => s.accuracy <= cutoff)
+  const kept = kept0.length >= 3 || kept0.length === samples.length ? kept0 : samples
+
+  let wSum = 0
+  let lat = 0
+  let lng = 0
+  let accSum = 0
+  for (const s of kept) {
+    const w = 1 / Math.max(1, s.accuracy * s.accuracy)
+    wSum += w
+    lat += s.lat * w
+    lng += s.lng * w
+    accSum += s.accuracy * w
+  }
+  lat /= wSum
+  lng /= wSum
+
+  const mPerDegLng = M_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180)
+  let scatterSq = 0
+  for (const s of kept) {
+    const dx = (s.lng - lng) * mPerDegLng
+    const dy = (s.lat - lat) * M_PER_DEG_LAT
+    scatterSq += dx * dx + dy * dy
+  }
+  const rms = Math.sqrt(scatterSq / kept.length)
+  return { lat, lng, accuracyM: Math.max(accSum / wSum, rms), used: kept.length }
+}
