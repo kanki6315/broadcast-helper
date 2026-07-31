@@ -44,7 +44,31 @@ keeps the SW simple. Routes are matched **in order, first match wins**:
 | `api-images` | CacheFirst | driver photos, car images, series + manufacturer logos | all display URLs carry a `?v=` buster → immutable per URL → never revalidate |
 | `pdfjs` | CacheFirst | the pdfjs worker chunk | cached on first use, not precached |
 | `api-me` | NetworkFirst | `/api/me` only | **1-day** TTL — offline restores the real identity (see auth note below) |
-| `api-data` | StaleWhileRevalidate | all other `GET /api/*` | cache answers **instantly**, a background refetch updates the cache; a changed payload triggers the DataNudge banner |
+| `api-data` | StaleWhileRevalidate | all other `GET /api/*` — **installed app only** | cache answers **instantly**, a background refetch updates the cache; a changed payload triggers the DataNudge banner. Browser tabs bypass this route entirely (below) |
+
+### Browser tabs vs the installed app
+
+Usage model: all **editing** happens in normal browser tabs at a desk; the
+installed iPad PWA is a **read-only** device (plus the scratchpad). Stale-first
+is right on the iPad and wrong in a browser tab, where a commit must be
+followed by reading your own write — not a cached snapshot plus a "newer data"
+nudge (that was the Imports-page complaint, 2026-07-31).
+
+A service worker is **origin-scoped**: once the installed app registers it,
+browser tabs are controlled by the same worker, so there is no
+registration-level split. The split is per-request instead:
+`lib/browserTabReads.ts` (installed in `main.tsx`, same pattern as
+`authRedirect`) detects non-standalone display mode and tags every same-origin
+GET/HEAD `/api` read with `X-Pit-Pass-Browser-Tab`; the `api-data` matcher
+declines tagged requests → no route match → plain network. Polarity is
+deliberate: **untagged = cached**, so if the tag ever fails to install the app
+degrades to offline-capable, never offline-broken at the track.
+
+Not gated, on purpose: `api-images` (URLs are `?v=`-stamped, can never be
+stale), `api-me` and the scratchpad route (NetworkFirst never serves stale
+while online), and the precached shell (content-hashed). The DataNudge never
+fires in browser tabs (no SWR revalidation happens there), and browser tabs
+lose offline API reads — which is the point.
 
 Current tuning (in `vite.config.ts`): `api-data`/`api-images` are **3000 entries,
 30-day TTL**, `purgeOnQuotaError: true`. The 38 GB quota on a real iPad makes
