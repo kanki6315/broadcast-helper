@@ -120,6 +120,28 @@ export default defineConfig({
             },
           },
           {
+            // The scratchpad is a writable document, so its GET must NOT be
+            // stale-while-revalidate: serving a stale pad while online means
+            // drawing on an old baseRevision and a guaranteed 409 at first
+            // save. NetworkFirst = fresh base online, last-seen pad offline —
+            // the pre-SWR semantics, kept only for this route. Must sit
+            // before the api-data catch-all (first match wins).
+            urlPattern: ({ url, request }) =>
+              request.method === 'GET' &&
+              /^\/api\/events\/[^/]+\/scratchpad$/.test(url.pathname),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'api-scratchpad',
+              networkTimeoutSeconds: 4,
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+                purgeOnQuotaError: true,
+              },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
             // Read-only offline for prep content: GET /api/* served
             // stale-while-revalidate — the cached copy answers instantly (no
             // multi-second network stall on trackside internet) while a
