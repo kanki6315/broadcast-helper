@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
-import { guide, guidanceText } from '../lib/pitLaneGeo'
+import { averageFixes, guide, guidanceText, type FixSample } from '../lib/pitLaneGeo'
 import './pit-lane-modal.css'
 
 interface Landmark {
@@ -136,6 +136,9 @@ export default function PitLaneModal({
   const [fix, setFix] = useState<Fix | null>(null)
   const [geoError, setGeoError] = useState<string | null>(null)
   const watchRef = useRef<number | null>(null)
+  const [sampling, setSampling] = useState<{ box: number; secondsLeft: number; count: number; acc: number | null } | null>(null)
+  const samplesRef = useRef<FixSample[]>([])
+  const sampleTimersRef = useRef<{ watch: number; tick: ReturnType<typeof setInterval> } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -284,6 +287,42 @@ export default function PitLaneModal({
     }
   }, [target])
 
+  /** How long "Mark my location" samples before averaging. Long enough for
+   *  the receiver to settle and jitter to cancel, short enough to stand still
+   *  for in a working pit lane. */
+  const SAMPLE_SECONDS = 10
+
+  function stopSampling() {
+    const timers = sampleTimersRef.current
+    if (timers) {
+      navigator.geolocation.clearWatch(timers.watch)
+      clearInterval(timers.tick)
+      sampleTimersRef.current = null
+    }
+    setSampling(null)
+  }
+
+  function saveAnchor(box: number, lat: number, lng: number, accuracyM: number) {
+    setBusy(true)
+    void fetch(`/api/events/${eventId}/pit-assignments/anchors/${box}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat, lng, accuracyM }),
+    })
+      .then(async (r) => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => null)
+          throw new Error(body?.message ?? `Backend returned ${r.status}`)
+        }
+        setSaved(await r.json())
+        setAnchorBox('')
+      })
+      .catch((e) => setAnchorError(e instanceof Error ? e.message : 'Save failed'))
+      .finally(() => setBusy(false))
+  }
+
+  /** Sample fixes for SAMPLE_SECONDS and save the weighted average — one
+   *  snapshot fix proved too jumpy against pit-building multipath. */
   function markAnchor() {
     const box = Number(anchorBox)
     if (!Number.isInteger(box) || box < 1) {
@@ -294,41 +333,51 @@ export default function PitLaneModal({
       setAnchorError('This device offers no location access.')
       return
     }
-    setBusy(true)
     setAnchorError(null)
-    navigator.geolocation.getCurrentPosition(
+    samplesRef.current = []
+    const watch = navigator.geolocation.watchPosition(
       (pos) => {
-        void fetch(`/api/events/${eventId}/pit-assignments/anchors/${box}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            accuracyM: pos.coords.accuracy,
-          }),
+        samplesRef.current.push({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
         })
-          .then(async (r) => {
-            if (!r.ok) {
-              const body = await r.json().catch(() => null)
-              throw new Error(body?.message ?? `Backend returned ${r.status}`)
-            }
-            setSaved(await r.json())
-            setAnchorBox('')
-          })
-          .catch((e) => setAnchorError(e instanceof Error ? e.message : 'Save failed'))
-          .finally(() => setBusy(false))
-      },
-      (err) => {
-        setBusy(false)
-        setAnchorError(
-          err.code === err.PERMISSION_DENIED
-            ? 'Location is blocked — allow it for this site to mark anchors.'
-            : 'No GPS fix — try again in the open.',
+        setSampling((s) =>
+          s && { ...s, count: samplesRef.current.length, acc: pos.coords.accuracy },
         )
       },
-      { enableHighAccuracy: true, timeout: 10000 },
+      (err) => {
+        // A transient timeout mid-window shouldn't void the fixes already
+        // collected; only a hard denial ends the capture.
+        if (err.code === err.PERMISSION_DENIED) {
+          stopSampling()
+          setAnchorError('Location is blocked — allow it for this site to mark anchors.')
+        }
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 },
     )
+    let secondsLeft = SAMPLE_SECONDS
+    const tick = setInterval(() => {
+      secondsLeft -= 1
+      if (secondsLeft > 0) {
+        setSampling((s) => s && { ...s, secondsLeft })
+        return
+      }
+      stopSampling()
+      const averaged = averageFixes(samplesRef.current)
+      if (!averaged) {
+        setAnchorError('No GPS fixes arrived — try again in the open.')
+        return
+      }
+      saveAnchor(box, averaged.lat, averaged.lng, averaged.accuracyM)
+    }, 1000)
+    sampleTimersRef.current = { watch, tick }
+    setSampling({ box, secondsLeft: SAMPLE_SECONDS, count: 0, acc: null })
   }
+
+  // A capture abandoned by closing the modal must not leave a GPS watch (and
+  // a pending save) running behind the sheet.
+  useEffect(() => stopSampling, [])
 
   function removeAnchor(box: number) {
     setBusy(true)
@@ -530,18 +579,34 @@ export default function PitLaneModal({
               ))}
             </div>
             <div className="pl-anchor-add">
-              <input
-                type="number"
-                min={1}
-                placeholder="box #"
-                value={anchorBox}
-                onChange={(ev) => setAnchorBox(ev.target.value)}
-                disabled={busy}
-                aria-label="Box number you are standing at"
-              />
-              <button className="btn" onClick={markAnchor} disabled={busy}>
-                Mark my location
-              </button>
+              {sampling ? (
+                <>
+                  <span className="pl-sampling" role="status">
+                    Sampling box {sampling.box}… {sampling.secondsLeft}s · {sampling.count}{' '}
+                    {sampling.count === 1 ? 'fix' : 'fixes'}
+                    {sampling.acc != null && <> · ±{Math.round(sampling.acc)} m</>}
+                    {' — '}stand still
+                  </span>
+                  <button className="btn" onClick={stopSampling}>
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder="box #"
+                    value={anchorBox}
+                    onChange={(ev) => setAnchorBox(ev.target.value)}
+                    disabled={busy}
+                    aria-label="Box number you are standing at"
+                  />
+                  <button className="btn" onClick={markAnchor} disabled={busy}>
+                    Mark my location
+                  </button>
+                </>
+              )}
             </div>
             {anchorError && <p className="pl-error">{anchorError}</p>}
           </div>
