@@ -6,6 +6,7 @@ import { flagCode } from '../lib/countries'
 import { finishText, finishTier, statusAbbr, type FormRace } from '../lib/raceForm'
 import TeamSheetsModal, { prefetchTeamSheets } from '../components/TeamSheetsModal'
 import ScratchpadModal from '../components/ScratchpadModal'
+import PitLaneModal from '../components/PitLaneModal'
 import { useInfoModal } from '../components/infoModal'
 
 interface SheetDriver {
@@ -59,6 +60,7 @@ interface Sheet {
   championshipLabel: string
   priorYearLabel: string
   teamSheetsVersion: number | null
+  pitAssignmentsVersion: number | null
   formRounds: FormRound[]
   classes: SheetClass[]
 }
@@ -104,6 +106,7 @@ export default function SheetPage({ eventId }: { eventId: number }) {
   const [error, setError] = useState<string | null>(null)
   const [teamSheet, setTeamSheet] = useState<{ page: number; title: string } | null>(null)
   const [scratchpadOpen, setScratchpadOpen] = useState(false)
+  const [pitLaneOpen, setPitLaneOpen] = useState(false)
 
   useEffect(() => {
     // Reset before fetching: a stale error (or sheet) from a previous eventId
@@ -175,6 +178,11 @@ export default function SheetPage({ eventId }: { eventId: number }) {
         <span className="sheet-hint">
           Prior-year cells are editable — click, type, and they save automatically.
         </span>
+        {(sheet.pitAssignmentsVersion != null || isAdmin) && (
+          <button className="btn" onClick={() => setPitLaneOpen(true)}>
+            Pit lane
+          </button>
+        )}
         <button className="btn" onClick={() => window.print()}>
           Print / Save PDF
         </button>
@@ -397,6 +405,30 @@ export default function SheetPage({ eventId }: { eventId: number }) {
       </button>
 
       {scratchpadOpen && <ScratchpadModal eventId={eventId} onClose={() => setScratchpadOpen(false)} />}
+
+      {pitLaneOpen && (
+        <PitLaneModal
+          eventId={eventId}
+          entries={sheet.classes.flatMap((cls) =>
+            cls.entries.map((e) => ({
+              entryId: e.entryId,
+              carNumber: e.carNumber,
+              teamName: e.teamName,
+              className: cls.className,
+            })),
+          )}
+          classColors={Object.fromEntries(sheet.classes.map((cls) => [cls.className, cls.color]))}
+          isAdmin={isAdmin}
+          onClose={() => setPitLaneOpen(false)}
+          onDataChanged={() => {
+            // Saves/deletes flip whether the button shows for viewers; the
+            // cheap refetch keeps the cached sheet honest.
+            void fetch(`/api/events/${eventId}/sheet`)
+              .then((r) => (r.ok ? r.json() : null))
+              .then((s) => s && setSheet(s))
+          }}
+        />
+      )}
 
       {teamSheet && teamSheetsUrl && (
         <TeamSheetsModal

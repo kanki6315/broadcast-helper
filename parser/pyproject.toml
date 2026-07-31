@@ -17,10 +17,11 @@ parse-entry-list = "parse_entry_list:main"
 parse-points = "parse_points:main"
 parse-grid-pdf = "parse_grid_pdf:main"
 extract-team-sheet-pages = "extract_team_sheet_pages:main"
+parse-pit-assignments = "parse_pit_assignments:main"
 
 # Explicit py-modules, not auto-discovery: the flat multi-module layout would
 # otherwise error out, and listing the three scripts keeps tests and samples/
 # out of the wheel. The scripts stay runnable as plain files too — the backend's
 # ProcessBuilder invocation (`python parse_entry_list.py <pdf>`) is unchanged.
 [tool.setuptools]
-py-modules = ["parse_entry_list", "parse_points", "parse_grid_pdf", "extract_team_sheet_pages"]
+py-modules = ["parse_entry_list", "parse_points", "parse_grid_pdf", "extract_team_sheet_pages", "parse_pit_assignments"]
