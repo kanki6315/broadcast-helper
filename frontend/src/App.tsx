@@ -23,6 +23,7 @@ import UsersPage from './pages/UsersPage'
 import SessionsPage from './pages/SessionsPage'
 import StoragePage from './pages/StoragePage'
 import UpdatePrompt from './components/UpdatePrompt'
+import DataNudge from './components/DataNudge'
 
 // The sheet renders standalone (no app chrome) so the printed page is clean.
 function SheetRoute() {
@@ -39,6 +40,7 @@ export default function App() {
       <AuthProvider>
         <InfoModalProvider>
           <UpdatePrompt />
+          <DataNudge />
           <Routes>
             <Route path="/sheet/:eventId" element={<SheetRoute />} />
             <Route element={<Layout />}>

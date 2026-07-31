@@ -7,10 +7,12 @@ offline writes; those are explicitly out of scope. The sheet page's drawing
 scratchpad is an online feature — its saves need connectivity (a dropped save
 retries, but ink drawn while offline is lost if the tab closes first).
 
-Everything is frontend-only. There are **no backend or Dockerfile changes** for
-the PWA — the manifest and service worker are emitted into `frontend/dist/` by
-the build and Spring Boot serves them as static assets like the rest of the
-bundle.
+The manifest and service worker are emitted into `frontend/dist/` by the build
+and Spring Boot serves them as static assets like the rest of the bundle. One
+backend piece exists expressly for the PWA: `web/ApiEtagConfig` stamps weak
+content-hash ETags on `/api` JSON GETs, which is what lets the service worker
+detect "the payload actually changed" (see Freshness below). No Dockerfile
+changes.
 
 ## Pieces
 
@@ -18,6 +20,9 @@ bundle.
 |---|---|
 | Plugin / SW / manifest config | `frontend/vite.config.ts` (`VitePWA({...})`) |
 | SW registration + update banner | `frontend/src/components/UpdatePrompt.tsx` (mounted in `App.tsx`) |
+| "Newer data" nudge banner | `frontend/src/components/DataNudge.tsx` (mounted in `App.tsx`) |
+| Connectivity pill + freshness store | `frontend/src/components/ConnectivityPill.tsx` (in `Layout.tsx`) + `frontend/src/lib/connectivity.ts` |
+| API ETag fingerprints | `backend/.../web/ApiEtagConfig.java` (+ `ApiEtagTest`) |
 | "Add to Home Screen" hint | `frontend/src/components/InstallHint.tsx` (mounted in `Layout.tsx`) |
 | On-device diagnostics | `frontend/src/pages/StoragePage.tsx` → **Manage → Diagnostics** (`/manage/storage`, admin-only) |
 | Home-screen icons | `frontend/public/icon.svg` (full-bleed square source) + generated `pwa-*.png`, `apple-touch-icon-180x180.png`, `maskable-*.png` |
@@ -37,14 +42,44 @@ keeps the SW simple. Routes are matched **in order, first match wins**:
 | `api-images` | CacheFirst | driver photos, car images, series + manufacturer logos | all display URLs carry a `?v=` buster → immutable per URL → never revalidate |
 | `pdfjs` | CacheFirst | the pdfjs worker chunk | cached on first use, not precached |
 | `api-me` | NetworkFirst | `/api/me` only | **1-day** TTL — offline restores the real identity (see auth note below) |
-| `api-data` | NetworkFirst | all other `GET /api/*` | the read-only-offline story |
+| `api-data` | StaleWhileRevalidate | all other `GET /api/*` | cache answers **instantly**, a background refetch updates the cache; a changed payload triggers the DataNudge banner |
 
 Current tuning (in `vite.config.ts`): `api-data`/`api-images` are **3000 entries,
 30-day TTL**, `purgeOnQuotaError: true`. The 38 GB quota on a real iPad makes
 entry caps a non-issue; the 30-day age keeps a prepped weekend available offline
-for weeks. `networkTimeoutSeconds: 4` on the NetworkFirst caches is the
-trackside-feel knob (how long to wait on a flaky-but-alive connection before
-falling back to cache) — tune against real paddock connectivity.
+for weeks. `api-data` was NetworkFirst until 2026-07-31 — on real paddock
+internet the 4s-per-request wait before cache fallback stalled every page, so it
+now serves stale-first and revalidates behind the paint. `/api/me` deliberately
+stays NetworkFirst (`networkTimeoutSeconds: 4`): identity/role freshness is
+worth one short wait at launch.
+
+## Freshness signals (who tells the user what)
+
+Stale-while-revalidate made loads instant but silent — these three pieces make
+cache-vs-live visible. They are coupled; change one, re-check the others:
+
+- **Change detection**: the SW's `broadcastUpdate` on `api-data` posts
+  `CACHE_UPDATED` to open pages when the revalidated response differs from the
+  cached one. Workbox only compares **headers** (`etag`, `content-length`,
+  `last-modified`) — and if *none* of them exist on both copies it silently
+  assumes "unchanged". Spring's chunked JSON has none of them naturally, which
+  is exactly why `ApiEtagConfig` exists (weak content-hash ETag on `/api` JSON
+  GETs; weak because gzipping proxies strip strong ETags; it also overrides
+  the stock filter's refusal to tag Spring Security's `no-store` responses).
+- **The nudge** (`DataNudge.tsx`): on `CACHE_UPDATED` for `api-data`, shows
+  "Newer data is available — Refresh / Dismiss" (5-minute snooze on dismiss).
+  Deliberately a nudge, **never a silent re-render** — a standings table must
+  not shuffle under the broadcaster mid-sentence. Refresh reloads, which
+  repaints instantly from the already-updated cache.
+- **The pill** (`ConnectivityPill.tsx` + `lib/connectivity.ts`): topbar
+  Live/Slow/Offline dot from a heartbeat — `HEAD /api/me` every 30s (HEAD
+  bypasses every SW route, they match GET only; 502/503/504 counts as offline
+  since that's what a proxy answers for a dead backend; `navigator.onLine` is
+  not trusted because it reports "online" on unusably bad connections). Plus
+  "cached Xm": `getJson` reports each response's preserved `Date` header, and
+  anything already >90s old when served must have come from cache. Resets per
+  route. iOS foregrounding pings immediately (`visibilitychange`), so the pill
+  is honest within a beat of the app reappearing.
 
 **Deliberately never cached** (excluded in the `api-data` matcher → straight to
 network): `/api/search` and `/api/drivers/search` (typeaheads fire a new URL per
@@ -117,10 +152,11 @@ Use this on the actual iPad; the numbers are device/browser-specific.
   env → `application.yml`), not per-user — `email` is what says "signed in".
 - **Cache versioning across deploys.** The precache auto-versions by content hash,
   but the runtime caches (`api-data`, etc.) persist across deploys and are *not*
-  invalidated by content. NetworkFirst hides this online (it refetches), but if
-  you ship a **breaking API response-shape change**, bump the runtime `cacheName`s
-  (e.g. `api-data` → `api-data-v2`) so stale-shape JSON can't feed the new UI
-  offline.
+  invalidated by content. StaleWhileRevalidate makes this **stricter than the old
+  NetworkFirst days**: the first paint after a deploy comes from the old cache
+  even online. If you ship a **breaking API response-shape change**, bump the
+  runtime `cacheName`s (e.g. `api-data` → `api-data-v2`) so stale-shape JSON
+  can't feed the new UI at all.
 - **iOS eviction.** WebKit can clear a PWA's storage after ~7 days of non-use, and
   quota is a fraction of free disk (measure via Diagnostics, don't hardcode).
   Home-screen install plus **Request persistent storage** (Diagnostics) is the

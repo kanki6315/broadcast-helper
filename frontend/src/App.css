@@ -64,6 +64,41 @@
   font-size: var(--text-sm);
 }
 
+/* Live/Slow/Offline heartbeat pill, plus a "cached Xm" age when the page is
+   showing data the service worker answered from cache (ConnectivityPill.tsx). */
+.conn-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.conn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.conn-degraded .conn-dot {
+  background: var(--accent);
+}
+
+.conn-offline .conn-dot {
+  background: var(--error);
+}
+
+.conn-offline {
+  color: var(--error);
+}
+
+.conn-age {
+  font-weight: 400;
+}
+
 /* -- tab nav ----------------------------------------------------------------- */
 
 .tabs {
@@ -2113,6 +2148,19 @@ h2 small {
 
 .update-banner-dismiss:hover {
   color: var(--text);
+}
+
+/* When the new-version banner and the data nudge are visible at once they
+   share the same bottom-center anchor; lift the nudge clear of the banner. */
+.update-banner ~ .data-nudge {
+  bottom: calc(var(--space-4) + 56px);
+}
+
+/* Fixed-position banners have no business on paper (the sheet prints). */
+@media print {
+  .update-banner {
+    display: none;
+  }
 }
 
 /* -- offline storage diagnostics (Manage → Offline storage) ----------------- */

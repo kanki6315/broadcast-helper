@@ -7,8 +7,10 @@ export default defineConfig({
   plugins: [
     react(),
     // Installable PWA + read-only offline resilience (trackside connectivity is
-    // flaky). The app shell is precached; API reads are NetworkFirst so a page
-    // you've opened online reopens offline from cache. No offline writes.
+    // flaky). The app shell is precached; API reads are stale-while-revalidate
+    // so pages paint instantly from cache while a background refetch keeps the
+    // cache current (a changed payload triggers the DataNudge banner). No
+    // offline writes.
     VitePWA({
       // 'prompt' (not autoUpdate): a new deploy installs but WAITS — the app
       // shows a "reload to update" banner instead of refreshing itself, so a
@@ -119,7 +121,12 @@ export default defineConfig({
           },
           {
             // Read-only offline for prep content: GET /api/* served
-            // network-first, falling back to the last-seen response offline.
+            // stale-while-revalidate — the cached copy answers instantly (no
+            // multi-second network stall on trackside internet) while a
+            // background refetch updates the cache for next time. When the
+            // refetch actually changed the payload, BroadcastUpdate posts
+            // CACHE_UPDATED to every open page, which shows a "newer data"
+            // nudge (DataNudge.tsx) rather than re-rendering mid-read.
             // Only 200s cached (never a 401, so the auth gate still works
             // online). Excluded (→ straight to network, uncached): search
             // typeaheads (a new URL per keystroke would thrash the LRU) and the
@@ -129,10 +136,19 @@ export default defineConfig({
               request.method === 'GET' &&
               url.pathname.startsWith('/api/') &&
               !/^\/api\/(search|drivers\/search|users\/sessions)/.test(url.pathname),
-            handler: 'NetworkFirst',
+            handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'api-data',
-              networkTimeoutSeconds: 4,
+              broadcastUpdate: {
+                // Fires only when one of these headers differs between the
+                // cached and fresh response. ETag is the workhorse: the API's
+                // JSON is chunked (no Content-Length), so the backend stamps a
+                // weak content-hash ETag on /api GETs expressly for this
+                // comparison (backend ApiEtagConfig). If NONE of the headers
+                // exist on both copies, Workbox assumes "unchanged" and stays
+                // silent — keep these two files in sync.
+                options: { headersToCheck: ['etag', 'content-length', 'last-modified'] },
+              },
               expiration: {
                 maxEntries: 3000,
                 maxAgeSeconds: 60 * 60 * 24 * 30, // 30d: keep prep available offline for weeks
