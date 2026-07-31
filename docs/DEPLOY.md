@@ -178,6 +178,8 @@ like everything else. Two deploy-relevant facts:
 | `PARSER_SCRIPT` | `../parser/parse_entry_list.py` | In-image path (`/app/parser/parse_entry_list.py`) |
 | `TEAM_SHEET_PARSER_SCRIPT` | `../parser/extract_team_sheet_pages.py` | In-image path (`/app/parser/extract_team_sheet_pages.py`) |
 | `POINTS_PARSER_SCRIPT` | `../parser/parse_points.py` | In-image path (`/app/parser/parse_points.py`) |
+| `GRID_PDF_PARSER_SCRIPT` | `../parser/parse_grid_pdf.py` | In-image path (`/app/parser/parse_grid_pdf.py`) |
+| `PIT_ASSIGNMENTS_PARSER_SCRIPT` | `../parser/parse_pit_assignments.py` | In-image path (`/app/parser/parse_pit_assignments.py`) |
 | `AUTH_ENABLED` | `false` | Set `true` on the deployment to require Google login; who may sign in lives in the `app_user` table (Manage → Users) |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | — | Google OAuth client id (when auth on) |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret (when auth on) |

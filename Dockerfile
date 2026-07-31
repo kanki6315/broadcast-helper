@@ -36,7 +36,8 @@ ENV PARSER_PYTHON=/opt/venv/bin/python3 \
     PARSER_SCRIPT=/app/parser/parse_entry_list.py \
     TEAM_SHEET_PARSER_SCRIPT=/app/parser/extract_team_sheet_pages.py \
     POINTS_PARSER_SCRIPT=/app/parser/parse_points.py \
-    GRID_PDF_PARSER_SCRIPT=/app/parser/parse_grid_pdf.py
+    GRID_PDF_PARSER_SCRIPT=/app/parser/parse_grid_pdf.py \
+    PIT_ASSIGNMENTS_PARSER_SCRIPT=/app/parser/parse_pit_assignments.py
 # Documentation only, and only meaningful when $PORT is unset — Railway injects
 # it. Kept in step with the application.yml fallback so the two never disagree.
 EXPOSE 8731
