@@ -13,6 +13,7 @@ import {
   thinAppend,
   tileCount,
   tilesForBBox,
+  traceStroke,
   type PadAction,
   type Stroke,
 } from '../lib/scratchpad'
@@ -75,7 +76,7 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
   const strokesRef = useRef<Stroke[]>([])
   const undoRef = useRef<PadAction[]>([])
   const redoRef = useRef<PadAction[]>([])
-  const drawingRef = useRef<{ stroke: Stroke; drawnCoords: number } | null>(null)
+  const drawingRef = useRef<{ stroke: Stroke; drawnPieces: number } | null>(null)
   const erasingRef = useRef<{
     removed: { index: number; stroke: Stroke }[]
     last: [number, number]
@@ -109,13 +110,7 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
     ctx.strokeStyle = s.color
     ctx.lineWidth = s.size
     ctx.beginPath()
-    ctx.moveTo(s.points[0], s.points[1])
-    if (s.points.length === 2) {
-      // Round caps turn a zero-length line into a dot.
-      ctx.lineTo(s.points[0], s.points[1])
-    } else {
-      for (let i = 2; i < s.points.length; i += 2) ctx.lineTo(s.points[i], s.points[i + 1])
-    }
+    traceStroke(ctx, s.points)
     ctx.stroke()
   }, [])
 
@@ -161,18 +156,24 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
     [replayTile],
   )
 
-  /** Draw only the segments appended since the last call — nothing replays
-   *  while the pen is down, so ink latency tracks the pointer. */
+  /** Draw only the curve pieces completed since the last call — nothing
+   *  replays while the pen is down, so ink latency tracks the pointer.
+   *  Piece j of traceStroke's path (control = point j, ending at the j/j+1
+   *  midpoint) becomes drawable once point j+1 exists; the straight tail to
+   *  the final point is painted by the commit-time replay. */
   const drawNewSegments = useCallback(
-    (d: { stroke: Stroke; drawnCoords: number }) => {
+    (d: { stroke: Stroke; drawnPieces: number }) => {
       const p = d.stroke.points
-      if (p.length < 4 || d.drawnCoords >= p.length) return
-      const from = Math.max(2, d.drawnCoords)
+      const count = p.length / 2
+      const lastPiece = count - 2
+      if (lastPiece <= d.drawnPieces) return
+      const first = d.drawnPieces + 1
       let minY = Infinity
       let maxY = -Infinity
-      for (let i = from - 2; i < p.length; i += 2) {
-        if (p[i + 1] < minY) minY = p[i + 1]
-        if (p[i + 1] > maxY) maxY = p[i + 1]
+      for (let j = first - 1; j < count; j++) {
+        const y = p[2 * j + 1]
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
       }
       const pad = d.stroke.size / 2 + 1
       for (const [tile] of canvasesRef.current) {
@@ -182,11 +183,24 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
         ctx.strokeStyle = d.stroke.color
         ctx.lineWidth = d.stroke.size
         ctx.beginPath()
-        ctx.moveTo(p[from - 2], p[from - 1])
-        for (let i = from; i < p.length; i += 2) ctx.lineTo(p[i], p[i + 1])
+        if (first === 1) {
+          ctx.moveTo(p[0], p[1])
+        } else {
+          // Consecutive pieces share midpoint endpoints, so one chained path
+          // starting at the previous piece's end covers the whole batch.
+          ctx.moveTo((p[2 * first - 2] + p[2 * first]) / 2, (p[2 * first - 1] + p[2 * first + 1]) / 2)
+        }
+        for (let j = first; j <= lastPiece; j++) {
+          ctx.quadraticCurveTo(
+            p[2 * j],
+            p[2 * j + 1],
+            (p[2 * j] + p[2 * j + 2]) / 2,
+            (p[2 * j + 1] + p[2 * j + 3]) / 2,
+          )
+        }
         ctx.stroke()
       }
-      d.drawnCoords = p.length
+      d.drawnPieces = lastPiece
     },
     [tileCtx],
   )
@@ -288,8 +302,9 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
   const toLogical = useCallback((e: { clientX: number; clientY: number }): [number, number] => {
     const rect = padRef.current!.getBoundingClientRect()
     const k = PAD_WIDTH / rect.width
-    const x = Math.min(PAD_WIDTH, Math.max(0, Math.round((e.clientX - rect.left) * k)))
-    const y = Math.min(pageHeightRef.current, Math.max(0, Math.round((e.clientY - rect.top) * k)))
+    // Tenth-of-a-px precision: whole-px rounding staircases slow handwriting.
+    const x = Math.min(PAD_WIDTH, Math.max(0, Math.round((e.clientX - rect.left) * k * 10) / 10))
+    const y = Math.min(pageHeightRef.current, Math.max(0, Math.round((e.clientY - rect.top) * k * 10) / 10))
     return [x, y]
   }, [])
 
@@ -324,7 +339,7 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
         erasingRef.current = { removed: [], last: [x, y] }
         eraseAt(x, y)
       } else {
-        drawingRef.current = { stroke: { tool: 'pen', color, size, points: [x, y] }, drawnCoords: 2 }
+        drawingRef.current = { stroke: { tool: 'pen', color, size, points: [x, y] }, drawnPieces: 0 }
       }
     },
     [color, eraseAt, size, toLogical, tool],
@@ -365,12 +380,10 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
     const drawing = drawingRef.current
     if (drawing) {
       drawingRef.current = null
-      if (drawing.stroke.points.length === 2) {
-        // A tap: duplicate the point so replay draws a round-cap dot.
-        drawing.stroke.points.push(drawing.stroke.points[0], drawing.stroke.points[1])
-        redrawForStrokes([drawing.stroke])
-      }
       strokesRef.current.push(drawing.stroke)
+      // Replay the affected tiles: paints the curve's final straight tail
+      // (and a tap's round-cap dot), which incremental drawing leaves out.
+      redrawForStrokes([drawing.stroke])
       pushAction({ type: 'add', stroke: drawing.stroke })
     }
     const erasing = erasingRef.current

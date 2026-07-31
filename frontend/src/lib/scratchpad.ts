@@ -1,7 +1,8 @@
 // Pure geometry and document helpers for the drawing scratchpad. The pad's
 // coordinate space is a fixed 800-wide logical column (y grows downward to
-// pageHeight); strokes store flat integer [x0,y0,x1,y1,...] pairs, which
-// halves the JSON overhead of nested pairs and keeps payload tokens short.
+// pageHeight); strokes store flat [x0,y0,x1,y1,...] pairs rounded to a tenth
+// of a logical px — whole-px rounding staircased slow Pencil handwriting —
+// which halves the JSON overhead of nested pairs and keeps tokens short.
 
 export interface Stroke {
   /** Only 'pen' exists today; the field future-proofs highlighters etc.
@@ -32,6 +33,26 @@ export interface BBox {
   minY: number
   maxX: number
   maxY: number
+}
+
+/**
+ * Append a stroke's path to the current one: quadratic curves through
+ * consecutive segment midpoints with the samples as control points — the
+ * standard smooth-ink construction, so polyline chords never show as facets.
+ * The pen starts exactly at the first point and finishes exactly at the last
+ * (a straight half-chord tail); a single pair draws a round-cap dot. Caller
+ * owns beginPath/stroke and styling.
+ */
+export function traceStroke(ctx: CanvasRenderingContext2D, p: number[]): void {
+  ctx.moveTo(p[0], p[1])
+  if (p.length <= 4) {
+    ctx.lineTo(p[p.length - 2], p[p.length - 1])
+    return
+  }
+  for (let i = 2; i <= p.length - 4; i += 2) {
+    ctx.quadraticCurveTo(p[i], p[i + 1], (p[i] + p[i + 2]) / 2, (p[i + 1] + p[i + 3]) / 2)
+  }
+  ctx.lineTo(p[p.length - 2], p[p.length - 1])
 }
 
 /** Stroke bounds inflated by half the pen width (plus a hair of antialias). */
