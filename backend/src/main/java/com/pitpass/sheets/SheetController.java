@@ -60,8 +60,8 @@ public class SheetController {
 
     public record Sheet(long eventId, String eventName, String circuitName, LocalDate eventDate,
                         int year, Integer roundOrdinal, String seriesName, String championshipLabel,
-                        String priorYearLabel, Long teamSheetsVersion, List<FormRound> formRounds,
-                        List<SheetClass> classes) {
+                        String priorYearLabel, Long teamSheetsVersion, Long pitAssignmentsVersion,
+                        List<FormRound> formRounds, List<SheetClass> classes) {
     }
 
     @GetMapping("/events/{id}/sheet")
@@ -348,6 +348,19 @@ public class SheetController {
                     .list();
         }
 
+        // Non-null only once a reviewed pit-lane mapping is saved: an uploaded
+        // PDF whose proposal was never confirmed doesn't light the button up.
+        Long pitAssignmentsVersion = db.sql("""
+                        SELECT d.uploaded_at FROM event_document d
+                        WHERE d.event_id = :id AND d.kind = 'PIT_ASSIGNMENTS'
+                          AND EXISTS (SELECT 1 FROM pit_box_assignment a WHERE a.event_id = :id)
+                        """)
+                .param("id", id)
+                .query(OffsetDateTime.class)
+                .optional()
+                .map(t -> t.toInstant().toEpochMilli())
+                .orElse(null);
+
         record EntryRow(long entryId, String carNumber, String className, String teamName, String vehicle,
                         String manufacturer, OffsetDateTime logoUploadedAt, boolean isGuest,
                         String priorYearNote, OffsetDateTime imageUploadedAt) {
@@ -475,7 +488,8 @@ public class SheetController {
         String priorYearLabel = "'" + String.format("%02d", (year - 1) % 100) + " "
                                 + venueAbbrev(eventName, circuitName);
         return new Sheet(id, eventName, circuitName, eventDate, year, roundOrdinal, seriesName,
-                seriesName + " " + year + " Teams", priorYearLabel, teamSheetsVersion, formRounds, classes);
+                seriesName + " " + year + " Teams", priorYearLabel, teamSheetsVersion, pitAssignmentsVersion,
+                formRounds, classes);
     }
 
     public record NoteRequest(String note) {
