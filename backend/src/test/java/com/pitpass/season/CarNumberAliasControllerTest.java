@@ -63,6 +63,31 @@ class CarNumberAliasControllerTest {
     }
 
     @Test
+    void seriesListingSpansSeasonsNewestFirstAndOffersClassesInUse() {
+        long seriesId = db.sql("INSERT INTO series (name) VALUES (:n) RETURNING id")
+                .param("n", "Alias series " + UUID.randomUUID()).query(Long.class).single();
+        long s2098 = db.sql("INSERT INTO season (series_id, year) VALUES (:s, 2098) RETURNING id")
+                .param("s", seriesId).query(Long.class).single();
+        long s2099 = db.sql("INSERT INTO season (series_id, year) VALUES (:s, 2099) RETURNING id")
+                .param("s", seriesId).query(Long.class).single();
+        long eventId = db.sql("INSERT INTO event (season_id, name) VALUES (:s, 'Round') RETURNING id")
+                .param("s", s2099).query(Long.class).single();
+        db.sql("INSERT INTO entry (event_id, car_number, class_name, team_name) VALUES (:e, '5', 'GTP', 'T')")
+                .param("e", eventId).update();
+
+        controller.create(s2098, new CarNumberAliasController.CreateRequest("GTD", "19", "068", null));
+        controller.create(s2099, new CarNumberAliasController.CreateRequest("GTP", "85", "5", null));
+
+        CarNumberAliasController.SeriesCarNumberAliases listed = controller.listForSeries(seriesId);
+        assertEquals(2, listed.aliases().size());
+        assertEquals(2099, listed.aliases().get(0).year());
+        assertEquals("85", listed.aliases().get(0).carNumber());
+        assertEquals(s2099, listed.aliases().get(0).seasonId());
+        assertEquals(2098, listed.aliases().get(1).year());
+        assertEquals(java.util.List.of("GTP"), listed.classesInUse());
+    }
+
+    @Test
     void selfMappingIsRejected() {
         long season = seasonId();
         ResponseStatusException e = assertThrows(ResponseStatusException.class,

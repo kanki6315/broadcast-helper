@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import TeamAssignmentEditor from '../components/TeamAssignmentEditor'
-import { invalidateRecap } from './season/ChampionshipGrid'
+import { invalidateAllRecaps, invalidateRecap } from './season/ChampionshipGrid'
 
 interface Series {
   id: number
@@ -275,6 +275,9 @@ function SeriesManagementDialog({
                 </SettingsSection>
                 <SettingsSection title="Championship groups" description="A cup is a side award over a subset of the rounds, published under its own name. Uncheck a group the importer mistook for a cup so it sorts as a full-season championship and can feed the sheet's points column.">
                   <CupGroupEditor seriesId={series.id} onError={setError} />
+                </SettingsSection>
+                <SettingsSection title="Linked car numbers" description="When one entrant raced under a second number — a one-off renumbering or an entry handed to a new team mid-season — link that number to the entrant's standings number for the season and class. The recap then gathers every weekend onto the one row; event pages keep the number as raced.">
+                  <CarNumberAliasEditor seriesId={series.id} seasons={seasons} onError={setError} />
                 </SettingsSection>
               </div>
             )}
@@ -861,6 +864,187 @@ function ClassAliasEditor({
         as an alias. Renaming onto an existing class merges them.
       </p>
       {note && <p className="muted">{note}</p>}
+    </div>
+  )
+}
+
+interface SeriesCarNumberAlias {
+  id: number
+  seasonId: number
+  year: number
+  className: string
+  carNumber: string
+  canonicalNumber: string
+  note: string | null
+}
+
+interface SeriesCarNumberAliases {
+  aliases: SeriesCarNumberAlias[]
+  classesInUse: string[]
+}
+
+/**
+ * The season+class "counts as" links (car_number_alias, V38) for the rare
+ * entrant that raced under a second number. Listing is series-wide, grouped
+ * by year; writes go through the season-scoped endpoints, so the add form
+ * picks the year explicitly.
+ */
+function CarNumberAliasEditor({
+  seriesId,
+  seasons,
+  onError,
+}: {
+  seriesId: number
+  seasons: SeasonSummary[]
+  onError: (message: string | null) => void
+}) {
+  const [data, setData] = useState<SeriesCarNumberAliases>({ aliases: [], classesInUse: [] })
+  const [seasonId, setSeasonId] = useState('')
+  const [className, setClassName] = useState('')
+  const [carNumber, setCarNumber] = useState('')
+  const [canonical, setCanonical] = useState('')
+  const [note, setNote] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  async function load() {
+    try {
+      const res = await fetch(`/api/series/${seriesId}/car-number-aliases`)
+      if (!res.ok) throw new Error(`Backend returned ${res.status}`)
+      setData((await res.json()) as SeriesCarNumberAliases)
+      onError(null)
+    } catch (e) {
+      onError(e instanceof Error ? e.message : 'Failed to reach backend')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seriesId])
+
+  async function add() {
+    if (!seasonId || !className.trim() || !carNumber.trim() || !canonical.trim()) return
+    const res = await fetch(`/api/seasons/${seasonId}/car-number-aliases`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        className: className.trim(),
+        carNumber: carNumber.trim(),
+        canonicalNumber: canonical.trim(),
+        note: note.trim() || null,
+      }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => null)
+      onError(err?.message ?? `Backend returned ${res.status}`)
+      return
+    }
+    onError(null)
+    setCarNumber('')
+    setCanonical('')
+    setNote('')
+    // Recaps cache per championship id for the session and the alias changes
+    // how a whole season's worth of them match cells — this editor only knows
+    // the season, so drop them all.
+    invalidateAllRecaps()
+    await load()
+  }
+
+  async function remove(a: SeriesCarNumberAlias) {
+    const res = await fetch(`/api/seasons/${a.seasonId}/car-number-aliases/${a.id}`, { method: 'DELETE' })
+    if (!res.ok && res.status !== 404) {
+      onError(`Backend returned ${res.status}`)
+      return
+    }
+    onError(null)
+    invalidateAllRecaps()
+    await load()
+  }
+
+  if (loading) return <span className="muted">Loading…</span>
+
+  // Newest season first, matching the backend's ordering.
+  const years = [...new Set(data.aliases.map((a) => a.year))]
+  const seasonOptions = [...seasons].sort((a, b) => b.year - a.year)
+
+  return (
+    <div className="class-alias-editor">
+      {data.aliases.length === 0 && <p className="muted">No linked numbers yet.</p>}
+      {years.map((year) => (
+        <div key={year} className="overall-champ-year">
+          <h4>{year}</h4>
+          {data.aliases
+            .filter((a) => a.year === year)
+            .map((a) => (
+              <div key={a.id} className="class-alias-row">
+                <span className="class-alias-name">#{a.carNumber}</span>
+                <span className="muted">counts as</span>
+                <span className="class-alias-name">#{a.canonicalNumber}</span>
+                <span className="muted class-alias-scope">
+                  {a.className}
+                  {a.note ? ` — ${a.note}` : ''}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void remove(a)}
+                  aria-label={`Unlink #${a.carNumber} from #${a.canonicalNumber} in ${a.year} ${a.className}`}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+        </div>
+      ))}
+
+      <div className="class-alias-add">
+        <select value={seasonId} onChange={(e) => setSeasonId(e.target.value)} aria-label="Season">
+          <option value="">Season…</option>
+          {seasonOptions.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.year}
+            </option>
+          ))}
+        </select>
+        <input
+          value={className}
+          onChange={(e) => setClassName(e.target.value)}
+          placeholder="Class…"
+          aria-label="Class"
+          list={`car-number-alias-classes-${seriesId}`}
+        />
+        <datalist id={`car-number-alias-classes-${seriesId}`}>
+          {data.classesInUse.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+        <input
+          value={carNumber}
+          onChange={(e) => setCarNumber(e.target.value)}
+          placeholder="Raced as #…"
+          aria-label="Car number as raced"
+        />
+        <input
+          value={canonical}
+          onChange={(e) => setCanonical(e.target.value)}
+          placeholder="Counts as #…"
+          aria-label="Standings car number"
+        />
+        <input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Note (optional)…"
+          aria-label="Note"
+        />
+        <button
+          type="button"
+          onClick={() => void add()}
+          disabled={!seasonId || !className.trim() || !carNumber.trim() || !canonical.trim()}
+        >
+          Link
+        </button>
+      </div>
     </div>
   )
 }

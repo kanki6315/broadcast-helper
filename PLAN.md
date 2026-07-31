@@ -776,12 +776,16 @@ display size.)
   number the standings file never printed. **Per-event surfaces (lineups,
   results, entries, the sheet's entry list) deliberately stay as-raced** —
   "#85 at Daytona" is real history; only standings identity resolves. CRUD at
-  `/api/seasons/{id}/car-number-aliases` (`CarNumberAliasController`,
-  ClassAliasController conventions); UI is an admin-only **"Linked numbers"**
-  footnote under each recap class grid (recap mode, non-DRIVERS, non-overall
-  only — rows must BE numbers), with the canonical side picked from the grid's
-  own row keys and an optional note; a change invalidates the recap cache so
-  the row updates in place. `RecapCarNumberAliasTest` builds the first full
+  `/api/seasons/{id}/car-number-aliases` plus a series-wide listing at
+  `/api/series/{id}/car-number-aliases` (`CarNumberAliasController`,
+  ClassAliasController conventions; the series response carries
+  `classesInUse` so the class picker only offers real classes). UI is a
+  **"Linked car numbers"** section on the Series settings modal's Classes tab
+  (moved there from a recap-grid footnote the same day, at the user's
+  request): rows grouped by season, add form = season select + class datalist
+  + raced/canonical numbers + optional note; a change clears the whole recap
+  cache (`invalidateAllRecaps` — the editor knows the season, not which
+  championship ids are cached). `RecapCarNumberAliasTest` builds the first full
   recap fixture (championship + calendar + standings + two events) and proves
   both shapes plus class isolation; verified live on the real season — Daytona
   7/7 landed on the #5 GTP row, GTD #068 gathered rounds 1–4 as van der Steur

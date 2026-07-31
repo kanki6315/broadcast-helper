@@ -1971,6 +1971,15 @@ h2 small {
   margin-top: var(--space-2);
 }
 
+/* The linked-numbers row reuses the class-alias row; the scope tail (class +
+ * optional note) stays quiet and may truncate before the unlink button. */
+.class-alias-scope {
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .overall-champ-year + .overall-champ-year {
   margin-top: var(--space-4);
 }

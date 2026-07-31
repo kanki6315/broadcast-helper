@@ -19,16 +19,18 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 
 /**
- * The season's car-number aliases (see {@code car_number_alias}, V38): the
- * rare entrant that raced under a second number — a one-off renumbering
- * (JDC-Miller's #5 running Daytona as #85) or a mid-season entry transfer to
- * a new organization (van der Steur's #19 GTD becoming Car Blanche's #068).
- * The alias maps the other number onto the one the standings source keys the
- * row by, scoped to this season and one class; the recap and the sheet's
+ * Car-number aliases (see {@code car_number_alias}, V38): the rare entrant
+ * that raced under a second number — a one-off renumbering (JDC-Miller's #5
+ * running Daytona as #85) or a mid-season entry transfer to a new
+ * organization (van der Steur's #19 GTD becoming Car Blanche's #068). The
+ * alias maps the other number onto the one the standings source keys the row
+ * by, scoped to one season and one class; the recap and the sheet's
  * championship column resolve through it, per-event surfaces never do.
+ * Managed from the Series settings modal (Classes tab), which reads the
+ * series-wide listing; writes stay season-scoped.
  */
 @RestController
-@RequestMapping("/api/seasons/{seasonId}/car-number-aliases")
+@RequestMapping("/api")
 public class CarNumberAliasController {
 
     private final JdbcClient db;
@@ -41,11 +43,23 @@ public class CarNumberAliasController {
                                  String canonicalNumber, String note) {
     }
 
+    /** One row of the series-wide listing: the alias plus which year it
+     *  belongs to, so the modal can group by season. */
+    public record SeriesCarNumberAlias(long id, long seasonId, int year, String className,
+                                       String carNumber, String canonicalNumber, String note) {
+    }
+
+    /** classesInUse mirrors ClassAliasController's list — the class picker's
+     *  options, so a link can only target a class the series has seen. */
+    public record SeriesCarNumberAliases(List<SeriesCarNumberAlias> aliases,
+                                         List<String> classesInUse) {
+    }
+
     public record CreateRequest(@NotBlank String className, @NotBlank String carNumber,
                                 @NotBlank String canonicalNumber, String note) {
     }
 
-    @GetMapping
+    @GetMapping("/seasons/{seasonId}/car-number-aliases")
     public List<CarNumberAlias> list(@PathVariable long seasonId) {
         requireSeason(seasonId);
         return db.sql("""
@@ -61,7 +75,37 @@ public class CarNumberAliasController {
                 .list();
     }
 
-    @PostMapping
+    @GetMapping("/series/{seriesId}/car-number-aliases")
+    public SeriesCarNumberAliases listForSeries(@PathVariable long seriesId) {
+        requireSeries(seriesId);
+        List<SeriesCarNumberAlias> aliases = db.sql("""
+                        SELECT cna.id, cna.season_id, s.year, cna.class_name,
+                               cna.car_number, cna.canonical_number, cna.note
+                        FROM car_number_alias cna
+                                 JOIN season s ON s.id = cna.season_id
+                        WHERE s.series_id = :seriesId
+                        ORDER BY s.year DESC, lower(cna.class_name), cna.canonical_number, cna.car_number
+                        """)
+                .param("seriesId", seriesId)
+                .query((rs, i) -> new SeriesCarNumberAlias(rs.getLong("id"), rs.getLong("season_id"),
+                        rs.getInt("year"), rs.getString("class_name"), rs.getString("car_number"),
+                        rs.getString("canonical_number"), rs.getString("note")))
+                .list();
+        List<String> classesInUse = db.sql("""
+                        SELECT DISTINCT en.class_name
+                        FROM entry en
+                                 JOIN event e ON e.id = en.event_id
+                                 JOIN season s ON s.id = e.season_id
+                        WHERE s.series_id = :seriesId AND en.class_name IS NOT NULL
+                        ORDER BY en.class_name
+                        """)
+                .param("seriesId", seriesId)
+                .query(String.class)
+                .list();
+        return new SeriesCarNumberAliases(aliases, classesInUse);
+    }
+
+    @PostMapping("/seasons/{seasonId}/car-number-aliases")
     public CarNumberAlias create(@PathVariable long seasonId, @Valid @RequestBody CreateRequest request) {
         requireSeason(seasonId);
         String className = request.className().trim();
@@ -93,7 +137,7 @@ public class CarNumberAliasController {
         }
     }
 
-    @DeleteMapping("/{aliasId}")
+    @DeleteMapping("/seasons/{seasonId}/car-number-aliases/{aliasId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable long seasonId, @PathVariable long aliasId) {
         int deleted = db.sql("DELETE FROM car_number_alias WHERE id = :id AND season_id = :seasonId")
@@ -113,6 +157,17 @@ public class CarNumberAliasController {
                 .orElse(null);
         if (found == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such season");
+        }
+    }
+
+    private void requireSeries(long seriesId) {
+        Integer found = db.sql("SELECT 1 FROM series WHERE id = :id")
+                .param("id", seriesId)
+                .query(Integer.class)
+                .optional()
+                .orElse(null);
+        if (found == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such series");
         }
     }
 }

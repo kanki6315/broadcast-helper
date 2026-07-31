@@ -11,7 +11,6 @@ import {
 import { useInfoModal } from '../../components/infoModal'
 import { raceTagsByOrdinal, sessionTagList } from '../../lib/raceForm'
 import RaceLine from '../../components/RaceLine'
-import CarNumberAliasAdmin from './CarNumberAliasAdmin'
 import { useSeason } from './SeasonLayout'
 
 /* Recaps are immutable between imports; cache per championship for the session
@@ -38,6 +37,13 @@ export function fetchRecap(id: number): Promise<Recap> {
  *  SPA navigation back to the season would otherwise serve the stale promise. */
 export function invalidateRecap(id: number) {
   recapCache.delete(id)
+}
+
+/** Drop every cached recap. The car-number-alias editor changes how a whole
+ *  season's recaps match cells but only knows the season, not which
+ *  championship ids are cached — clearing everything is cheap and correct. */
+export function invalidateAllRecaps() {
+  recapCache.clear()
 }
 
 export function formatPoints(points: number): string {
@@ -655,7 +661,6 @@ function ClassGrid({
   }`
 
   return (
-    <>
     <div className="grid-scroll">
       <table className="grid-table">
       <caption className="sr-only">{gridLabel}</caption>
@@ -854,21 +859,6 @@ function ClassGrid({
       </tbody>
       </table>
     </div>
-    {/* Car-number links only make sense where rows ARE car numbers: never for
-      * drivers (matched by name), never on an overall grid (manage them from
-      * the class's own championship). */}
-    {mode === 'recap' && !drivers && !recap.championship.isOverall && champ.className != null && (
-      <CarNumberAliasAdmin
-        seasonId={recap.championship.seasonId}
-        className={champ.className}
-        rowKeys={recap.rows.map((r) => r.competitorKey)}
-        onChanged={() => {
-          invalidateRecap(champ.id)
-          setAttempt((n) => n + 1)
-        }}
-      />
-    )}
-    </>
   )
 }
 
