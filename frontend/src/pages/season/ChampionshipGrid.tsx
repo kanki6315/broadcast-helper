@@ -151,7 +151,7 @@ function PtsLine({
   )
 }
 
-interface Family {
+export interface Family {
   family: string
   label: string
   isCup: boolean
@@ -187,6 +187,51 @@ export interface ChampSelection {
   selected: ChampionshipSummary[]
 }
 
+/* Pure selection derivations, shared by the hook (URL-backed, season pages)
+ * and the sheet's recap modal (local-state-backed — a modal's selection should
+ * not rewrite the sheet's URL). */
+
+export function champFamilies(withRows: ChampionshipSummary[], seriesName: string): Family[] {
+  const seen = new Map<string, Family>()
+  for (const c of withRows) {
+    const family = c.groupTitle ?? c.title
+    if (!seen.has(family)) {
+      seen.set(family, {
+        family,
+        label: familyLabel(family, seriesName),
+        isCup: c.isCup,
+      })
+    }
+  }
+  return [...seen.values()]
+}
+
+export function champKinds(withRows: ChampionshipSummary[], family: string | null): string[] {
+  const seen: string[] = []
+  for (const c of withRows) {
+    if ((c.groupTitle ?? c.title) === family && c.kind && !seen.includes(c.kind)) {
+      seen.push(c.kind)
+    }
+  }
+  // Teams first — matches the sheet's champ-column preference.
+  return seen.sort((a, b) => rank(a) - rank(b))
+}
+
+export function selectedChamps(
+  withRows: ChampionshipSummary[],
+  family: string | null,
+  kind: string | null,
+  classes: { name: string }[],
+): ChampionshipSummary[] {
+  const classOrder = new Map(classes.map((c, i) => [c.name, i]))
+  return withRows
+    .filter((c) => (c.groupTitle ?? c.title) === family && c.kind === kind)
+    .sort(
+      (a, b) =>
+        (classOrder.get(a.className ?? '') ?? 99) - (classOrder.get(b.className ?? '') ?? 99),
+    )
+}
+
 export function useChampSelection(): ChampSelection {
   const { hub, classes } = useSeason()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -196,48 +241,24 @@ export function useChampSelection(): ChampSelection {
     [hub.championships],
   )
 
-  const families = useMemo<Family[]>(() => {
-    const seen = new Map<string, Family>()
-    for (const c of withRows) {
-      const family = c.groupTitle ?? c.title
-      if (!seen.has(family)) {
-        seen.set(family, {
-          family,
-          label: familyLabel(family, hub.seriesName),
-          isCup: c.isCup,
-        })
-      }
-    }
-    return [...seen.values()]
-  }, [withRows, hub.seriesName])
+  const families = useMemo<Family[]>(
+    () => champFamilies(withRows, hub.seriesName),
+    [withRows, hub.seriesName],
+  )
 
   const familyParam = searchParams.get('champ')
   const family =
     families.find((f) => f.family === familyParam)?.family ?? families[0]?.family ?? null
 
-  const kinds = useMemo(() => {
-    const seen: string[] = []
-    for (const c of withRows) {
-      if ((c.groupTitle ?? c.title) === family && c.kind && !seen.includes(c.kind)) {
-        seen.push(c.kind)
-      }
-    }
-    // Teams first — matches the sheet's champ-column preference.
-    return seen.sort((a, b) => rank(a) - rank(b))
-  }, [withRows, family])
+  const kinds = useMemo(() => champKinds(withRows, family), [withRows, family])
 
   const kindParam = searchParams.get('kind')
   const kind = kinds.includes(kindParam ?? '') ? kindParam : (kinds[0] ?? null)
 
-  const selected = useMemo(() => {
-    const classOrder = new Map(classes.map((c, i) => [c.name, i]))
-    return withRows
-      .filter((c) => (c.groupTitle ?? c.title) === family && c.kind === kind)
-      .sort(
-        (a, b) =>
-          (classOrder.get(a.className ?? '') ?? 99) - (classOrder.get(b.className ?? '') ?? 99),
-      )
-  }, [withRows, family, kind, classes])
+  const selected = useMemo(
+    () => selectedChamps(withRows, family, kind, classes),
+    [withRows, family, kind, classes],
+  )
 
   function put(key: string, value: string) {
     const next = new URLSearchParams(searchParams)
@@ -346,9 +367,9 @@ function PointsLegend({ f }: { f: PtsLegendFlags }) {
 
 /** Whether the chips on screen are in-class positions, whole-field positions
  *  (overall championships), or a mix of grids showing each. */
-type PosScope = 'class' | 'overall' | 'mixed'
+export type PosScope = 'class' | 'overall' | 'mixed'
 
-function posScopeOf(recaps: Recap[]): PosScope {
+export function posScopeOf(recaps: Recap[]): PosScope {
   if (recaps.every((r) => r.championship.isOverall)) return 'overall'
   if (recaps.every((r) => !r.championship.isOverall)) return 'class'
   return 'mixed'
@@ -360,7 +381,7 @@ const POS_SCOPE_NOTE: Record<PosScope, string> = {
   mixed: 'start/finish in class · overall standings: whole field',
 }
 
-function RecapLegend({ tags, scope }: { tags: Map<string, string>; scope: PosScope }) {
+export function RecapLegend({ tags, scope }: { tags: Map<string, string>; scope: PosScope }) {
   return (
     <div className="legend" aria-label="Cell colours">
       <span className="l-win">
@@ -398,7 +419,7 @@ function RecapLegend({ tags, scope }: { tags: Map<string, string>; scope: PosSco
 /** Session words present in the shown recaps' multi-race rounds, keyed by the
  * tag letter — the recap legend names what it actually shows, like the points
  * one. Empty where every round ran a single race. */
-function raceLegendTags(recaps: Recap[]): Map<string, string> {
+export function raceLegendTags(recaps: Recap[]): Map<string, string> {
   const tags = new Map<string, string>()
   for (const recap of recaps) {
     for (const r of recap.rounds) {
@@ -505,18 +526,25 @@ export function ChampFilterBar({
  * total — the high-level read for a quick championship glance. */
 type PtsView = 'breakdown' | 'total'
 
-function ClassGrid({
+export function ClassGrid({
   champ,
   mode,
   showTeams,
   view,
+  classColor,
+  currentEventId,
 }: {
   champ: ChampionshipSummary
   mode: 'recap' | 'points'
   showTeams: boolean
   view: PtsView
+  /** Injected rather than read from the season outlet context, so the sheet's
+   *  recap modal (outside any season route) can render the same grid. */
+  classColor: (className: string | null | undefined) => string
+  /** When the grid is opened from an event's sheet, that event's round column
+   *  is marked — the amber selection vocabulary, never a class colour. */
+  currentEventId?: number
 }) {
-  const { classColor } = useSeason()
   const { openDriverByName, openTeam } = useInfoModal()
   const [recap, setRecap] = useState<Recap | null>(null)
   const [failed, setFailed] = useState(false)
@@ -677,12 +705,21 @@ function ClassGrid({
               {c.label}
             </th>
           ))}
-          {rounds.map((r) => (
-            <th key={r.round} className="round-head" scope="col">
-              <span className="venue">{r.venue}</span>
-              <span className="rd">Rd {r.round}</span>
-            </th>
-          ))}
+          {rounds.map((r) => {
+            const current = currentEventId != null && r.eventId === currentEventId
+            return (
+              <th
+                key={r.round}
+                className={current ? 'round-head current' : 'round-head'}
+                scope="col"
+                title={current ? 'This event’s round' : undefined}
+              >
+                <span className="venue">{r.venue}</span>
+                <span className="rd">Rd {r.round}</span>
+                {current && <span className="sr-only">(this event)</span>}
+              </th>
+            )
+          })}
           {mode === 'points' && (
             <>
               <th className="num-cell">Total</th>
@@ -863,7 +900,7 @@ function ClassGrid({
 }
 
 export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' }) {
-  const { classFilter } = useSeason()
+  const { classFilter, classColor } = useSeason()
   const sel = useChampSelection()
   const [searchParams, setSearchParams] = useSearchParams()
   const [ptsFlags, setPtsFlags] = useState<PtsLegendFlags | null>(null)
@@ -949,7 +986,9 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
           No {classFilter} standings in this championship — pick another class or championship.
         </div>
       ) : (
-        shown.map((c) => <ClassGrid key={c.id} champ={c} mode={mode} showTeams={showTeams} view={view} />)
+        shown.map((c) => (
+          <ClassGrid key={c.id} champ={c} mode={mode} showTeams={showTeams} view={view} classColor={classColor} />
+        ))
       )}
     </div>
   )

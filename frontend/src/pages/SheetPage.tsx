@@ -8,6 +8,7 @@ import { finishText, finishTier, statusAbbr, type FormRace } from '../lib/raceFo
 import TeamSheetsModal, { prefetchTeamSheets } from '../components/TeamSheetsModal'
 import ScratchpadModal from '../components/ScratchpadModal'
 import PitLaneModal from '../components/PitLaneModal'
+import RecapModal from '../components/RecapModal'
 import { useInfoModal } from '../components/infoModal'
 
 interface SheetDriver {
@@ -54,6 +55,9 @@ interface FormRound {
 
 interface Sheet {
   eventId: number
+  /** Absent on sheet payloads cached by the service worker before the field
+   *  shipped — the Recap button hides until a fresh copy arrives. */
+  seasonId?: number
   eventName: string
   circuitName: string | null
   eventDate: string | null
@@ -133,6 +137,7 @@ export default function SheetPage({ eventId }: { eventId: number }) {
   const [teamSheet, setTeamSheet] = useState<{ page: number; title: string } | null>(null)
   const [scratchpadOpen, setScratchpadOpen] = useState(false)
   const [pitLaneOpen, setPitLaneOpen] = useState(false)
+  const [recapOpen, setRecapOpen] = useState(false)
   const padAttention = useScratchpadAttention(eventId)
 
   useEffect(() => {
@@ -420,11 +425,17 @@ export default function SheetPage({ eventId }: { eventId: number }) {
         )
       })}
 
-      {/* Floating, not in the topbar: both are reached mid-scroll, deep in a
-          class table, as often as from the top of the page. Pit lane is
-          always shown — its modal explains (or, for admins, fixes) an empty
-          state better than a missing button does. */}
+      {/* Floating, not in the topbar: all of these are reached mid-scroll,
+          deep in a class table, as often as from the top of the page. Pit lane
+          is always shown — its modal explains (or, for admins, fixes) an empty
+          state better than a missing button does. Recap joins at the top so
+          Pit lane and Scratchpad keep their positions from the screen edge. */}
       <div className="sheet-fabs no-print">
+        {sheet.seasonId != null && (
+          <button className="btn sheet-fab" onClick={() => setRecapOpen(true)}>
+            Recap
+          </button>
+        )}
         <button className="btn sheet-fab" onClick={() => setPitLaneOpen(true)}>
           Pit lane
         </button>
@@ -444,6 +455,14 @@ export default function SheetPage({ eventId }: { eventId: number }) {
       </div>
 
       {scratchpadOpen && <ScratchpadModal eventId={eventId} onClose={() => setScratchpadOpen(false)} />}
+
+      {recapOpen && sheet.seasonId != null && (
+        <RecapModal
+          seasonId={sheet.seasonId}
+          currentEventId={eventId}
+          onClose={() => setRecapOpen(false)}
+        />
+      )}
 
       {pitLaneOpen && (
         <PitLaneModal

@@ -726,6 +726,19 @@
   color: var(--text-muted);
 }
 
+/* The round the open sheet belongs to, when the recap is viewed from an event
+ * sheet (the modal). Selection is amber, never a class colour — and mixed into
+ * the surface (not an alpha wash) so the sticky header stays opaque over the
+ * rows scrolling beneath it. */
+.grid-table .round-head.current {
+  background: color-mix(in oklab, var(--accent) 12%, var(--surface));
+}
+
+.grid-table .round-head.current .venue,
+.grid-table .round-head.current .rd {
+  color: var(--accent-ink);
+}
+
 
 /* Class band separating stacked class sections. Class colour is data; the
  * name is always printed on it. */
