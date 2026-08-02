@@ -205,11 +205,6 @@ export default function SheetPage({ eventId }: { eventId: number }) {
         <span className="sheet-hint">
           Prior-year cells are editable — click, type, and they save automatically.
         </span>
-        {(sheet.pitAssignmentsVersion != null || isAdmin) && (
-          <button className="btn" onClick={() => setPitLaneOpen(true)}>
-            Pit lane
-          </button>
-        )}
         <button className="btn" onClick={() => window.print()}>
           Print / Save PDF
         </button>
@@ -425,21 +420,28 @@ export default function SheetPage({ eventId }: { eventId: number }) {
         )
       })}
 
-      {/* Floating, not in the topbar: the pad is reached mid-scroll, deep in
-          a class table, as often as from the top of the page. */}
-      <button className="btn sheet-fab no-print" onClick={() => setScratchpadOpen(true)}>
-        Scratchpad
-        {padAttention && (
-          <span
-            className={`sheet-fab-dot${padAttention === 'conflict' ? ' conflict' : ''}`}
-            title={
-              padAttention === 'conflict'
-                ? 'Scratchpad has a sync conflict'
-                : 'Scratchpad has unsynced ink'
-            }
-          />
-        )}
-      </button>
+      {/* Floating, not in the topbar: both are reached mid-scroll, deep in a
+          class table, as often as from the top of the page. Pit lane is
+          always shown — its modal explains (or, for admins, fixes) an empty
+          state better than a missing button does. */}
+      <div className="sheet-fabs no-print">
+        <button className="btn sheet-fab" onClick={() => setPitLaneOpen(true)}>
+          Pit lane
+        </button>
+        <button className="btn sheet-fab" onClick={() => setScratchpadOpen(true)}>
+          Scratchpad
+          {padAttention && (
+            <span
+              className={`sheet-fab-dot${padAttention === 'conflict' ? ' conflict' : ''}`}
+              title={
+                padAttention === 'conflict'
+                  ? 'Scratchpad has a sync conflict'
+                  : 'Scratchpad has unsynced ink'
+              }
+            />
+          )}
+        </button>
+      </div>
 
       {scratchpadOpen && <ScratchpadModal eventId={eventId} onClose={() => setScratchpadOpen(false)} />}
 
