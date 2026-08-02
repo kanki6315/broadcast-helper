@@ -33,7 +33,36 @@ export function useSeason(): SeasonContext {
   return useOutletContext<SeasonContext>()
 }
 
-const DEFAULT_CLASS_COLOR = '#5e626e'
+export const DEFAULT_CLASS_COLOR = '#5e626e'
+
+/** The season's classes in configured order (class_style first, then any the
+ * config doesn't know, in neutral colour) — but only classes that actually
+ * have data this season (entries or standings). A class configured in
+ * class_style with no data would otherwise be a permanent dead-end button
+ * whose empty states read as "import failed". Shared with the sheet's recap
+ * modal, which builds the same chips outside the season route. */
+export function seasonClasses(hub: SeasonHub, styles: ClassStylesResponse | null): ClassInfo[] {
+  const present = new Set<string>(hub.entryClasses ?? [])
+  for (const c of hub.championships) {
+    if (c.className) present.add(c.className)
+  }
+  const known = new Map<string, string>()
+  for (const st of styles?.styles ?? []) known.set(st.classCode, st.color)
+  const seen = new Set<string>()
+  const out: ClassInfo[] = []
+  for (const st of styles?.styles ?? []) {
+    if (!present.has(st.classCode)) continue
+    out.push({ name: st.classCode, color: st.color })
+    seen.add(st.classCode)
+  }
+  for (const name of present) {
+    if (!seen.has(name)) {
+      seen.add(name)
+      out.push({ name, color: known.get(name) ?? DEFAULT_CLASS_COLOR })
+    }
+  }
+  return out
+}
 
 const SUB_PAGES = [
   { to: '', label: 'Overview', end: true },
@@ -76,34 +105,7 @@ export default function SeasonLayout() {
     }
   }, [seasonId])
 
-  // The season's classes in configured order (class_style first, then any the
-  // config doesn't know, in neutral colour) — but only classes that actually
-  // have data this season (entries or standings). A class configured in
-  // class_style with no data would otherwise be a permanent dead-end button
-  // whose empty states read as "import failed".
-  const classes = useMemo<ClassInfo[]>(() => {
-    if (!hub) return []
-    const present = new Set<string>(hub.entryClasses ?? [])
-    for (const c of hub.championships) {
-      if (c.className) present.add(c.className)
-    }
-    const known = new Map<string, string>()
-    for (const st of styles?.styles ?? []) known.set(st.classCode, st.color)
-    const seen = new Set<string>()
-    const out: ClassInfo[] = []
-    for (const st of styles?.styles ?? []) {
-      if (!present.has(st.classCode)) continue
-      out.push({ name: st.classCode, color: st.color })
-      seen.add(st.classCode)
-    }
-    for (const name of present) {
-      if (!seen.has(name)) {
-        seen.add(name)
-        out.push({ name, color: known.get(name) ?? DEFAULT_CLASS_COLOR })
-      }
-    }
-    return out
-  }, [hub, styles])
+  const classes = useMemo<ClassInfo[]>(() => (hub ? seasonClasses(hub, styles) : []), [hub, styles])
 
   // Name the tab. Prepping an event means several seasons open at once, and
   // every tab reading "Pit Pass" means clicking each one to find out which is

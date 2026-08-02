@@ -1,0 +1,150 @@
+/* Season-recap modal on the event sheet — token layer (index.css), the recap's
+ * own grid/filter vocabulary (season.css, App.css). Native <dialog>, so no
+ * z-index management. Opened from the sheet's floating stack; interior
+ * scrolling is allowed here because this is a modal, not a page. */
+
+.rm {
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow-modal);
+  /* Recap grids are wide: give the dialog most of the viewport and let each
+   * grid's own scroller absorb whatever a long season still overflows. */
+  width: min(1400px, calc(100vw - 32px));
+  max-height: min(94vh, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.rm::backdrop {
+  background: var(--scrim);
+}
+
+.rm[open] {
+  animation: rm-in var(--t-med) var(--ease-out);
+}
+
+.rm[open]::backdrop {
+  animation: rm-fade var(--t-med) var(--ease-out);
+}
+
+@keyframes rm-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+@keyframes rm-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rm[open],
+  .rm[open]::backdrop {
+    animation: none;
+  }
+}
+
+/* ---- chrome ---- */
+
+.rm-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.rm-title {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.rm-sub {
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.rm-close {
+  border: none;
+  background: none;
+  font-size: var(--text-base);
+  line-height: 1;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-radius: var(--radius-sm);
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.rm-close:hover {
+  color: var(--ink);
+}
+
+.rm-close:active {
+  color: var(--text-muted);
+}
+
+/* ---- filters ---- */
+
+/* Outside the scroller: mid-broadcast the class chips are reached again and
+ * again, so they stay put while the grids scroll beneath. */
+.rm-filters {
+  padding: 10px 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* The bar brings its page margins along; the modal owns its rhythm. */
+.rm-filters .filter-bar {
+  margin: var(--space-2) 0 var(--space-3);
+}
+
+/* ---- body ---- */
+
+.rm-body {
+  overflow-y: auto;
+  /* No bottom padding: the last grid's own margin closes the space, and the
+   * empty/error panels carry their own. */
+  padding: var(--space-4) var(--space-4) 0;
+}
+
+.rm-body > .error-panel,
+.rm-body > .empty-state,
+.rm-body > .skeleton-block {
+  margin-bottom: var(--space-4);
+}
+
+/* Phones: the dialog takes the whole screen minus a sliver, and the chrome
+ * tightens — the grids need every column they can get. */
+@media (max-width: 35em) {
+  .rm {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .rm-head,
+  .rm-filters {
+    padding-inline: 10px;
+  }
+
+  .rm-body {
+    padding: var(--space-3) var(--space-3) 0;
+  }
+}
+
+@media print {
+  .rm {
+    display: none !important;
+  }
+}

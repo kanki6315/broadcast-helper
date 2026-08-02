@@ -59,7 +59,7 @@ public class SheetController {
     public record SheetClass(String className, String color, List<SheetEntry> entries) {
     }
 
-    public record Sheet(long eventId, String eventName, String circuitName, LocalDate eventDate,
+    public record Sheet(long eventId, long seasonId, String eventName, String circuitName, LocalDate eventDate,
                         int year, Integer roundOrdinal, String seriesName, String championshipLabel,
                         String priorYearLabel, Long teamSheetsVersion, Long pitAssignmentsVersion,
                         List<FormRound> formRounds, List<SheetClass> classes) {
@@ -489,7 +489,7 @@ public class SheetController {
                 .toList();
         String priorYearLabel = "'" + String.format("%02d", (year - 1) % 100) + " "
                                 + venueAbbrev(eventName, circuitName);
-        return new Sheet(id, eventName, circuitName, eventDate, year, roundOrdinal, seriesName,
+        return new Sheet(id, seasonId, eventName, circuitName, eventDate, year, roundOrdinal, seriesName,
                 seriesName + " " + year + " Teams", priorYearLabel, teamSheetsVersion, pitAssignmentsVersion,
                 formRounds, classes);
     }
