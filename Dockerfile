@@ -41,5 +41,8 @@ ENV PARSER_PYTHON=/opt/venv/bin/python3 \
 # Documentation only, and only meaningful when $PORT is unset — Railway injects
 # it. Kept in step with the application.yml fallback so the two never disagree.
 EXPOSE 8731
-# Size the heap to the container's memory limit (PaaS instances are small).
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
+# Hard-cap the heap: Railway's limit is the plan ceiling (8 GB), so a
+# percentage would let G1 grow ~6 GB and RAM-hours are what we're billed for.
+# SerialGC has the smallest native footprint at this heap size, and 512k
+# stacks halve the per-thread reservation.
+ENTRYPOINT ["java", "-Xms64m", "-Xmx256m", "-XX:+UseSerialGC", "-Xss512k", "-jar", "app.jar"]
