@@ -21,6 +21,11 @@ server:
     min-response-size: 1024
   error:
     include-message: always
+  # A handful of concurrent users at most; the default 200-thread pool just
+  # reserves stacks we pay for. Memory cap, not a throughput tune.
+  tomcat:
+    threads:
+      max: 25
   servlet:
     session:
       # Idle window: the login survives up to this long between requests (sliding
@@ -108,6 +113,10 @@ spring:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5532/pit_pass}
     username: ${SPRING_DATASOURCE_USERNAME:pitpass}
     password: ${SPRING_DATASOURCE_PASSWORD:pitpass}
+    # Same reasoning as the Tomcat cap: few users, so the default 10
+    # connections mostly sit idle holding memory on both ends.
+    hikari:
+      maximum-pool-size: 5
   jpa:
     # Flyway owns the schema; Hibernate only checks that entities match it.
     hibernate:
