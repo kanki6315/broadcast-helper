@@ -5,7 +5,12 @@ import { reportApiResponse } from './connectivity'
 export interface SeasonSummary {
   id: number
   year: number
+  seriesId: number
   seriesName: string
+  /** MAIN is the series proper; QUALIFIER is a stage run to select its grid. */
+  kind: 'MAIN' | 'QUALIFIER'
+  /** Stage name for qualifiers ("Regional — Europe"); null on MAIN seasons. */
+  label: string | null
   roundCount: number
   championshipCount: number
 }
@@ -58,6 +63,8 @@ export interface SeasonHub {
   year: number
   seriesId: number
   seriesName: string
+  kind: 'MAIN' | 'QUALIFIER'
+  label: string | null
   events: CalendarEvent[]
   championships: ChampionshipSummary[]
   /** Distinct entry class names present this season — the UI only offers
@@ -413,6 +420,9 @@ export interface SeasonStatLine {
   year: number
   seriesName: string
   className: string
+  /** True for qualifying stages — shown badged, excluded from every rollup. */
+  qualifier: boolean
+  seasonLabel: string | null
   byFormat: NamedFormatLine[]
   quali: QualiLine
 }

@@ -252,6 +252,7 @@ public class SheetController {
                                  JOIN season s ON s.id = e.season_id
                         WHERE s.series_id = (SELECT series_id FROM season WHERE id = :seasonId)
                           AND s.year = :priorYear
+                          AND s.kind = 'MAIN'
                         ORDER BY e.event_date
                         """)
                 .param("seasonId", seasonId)

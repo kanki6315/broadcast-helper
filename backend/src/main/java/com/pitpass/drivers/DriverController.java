@@ -233,6 +233,7 @@ public class DriverController {
     }
 
     public record SeasonStatLine(long seasonId, int year, String seriesName, String className,
+                                 boolean qualifier, String seasonLabel,
                                  List<NamedFormatLine> byFormat, QualiLine quali) {
     }
 
@@ -263,11 +264,13 @@ public class DriverController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such driver"));
 
         record RaceAgg(long seasonId, int year, long seriesId, String seriesName, String className,
+                       boolean qualifier, String seasonLabel,
                        Long formatId, String formatName, int formatOrdinal,
                        int starts, int wins, int podiums, int top5s, int dnfs) {
         }
         List<RaceAgg> raceAggs = db.sql("""
                         SELECT s.id AS season_id, s.year, sr.id AS series_id, sr.name AS series_name,
+                               s.kind = 'QUALIFIER' AS qualifier, s.label AS season_label,
                                en.class_name, rs.format_id,
                                COALESCE(rf.name, 'Unassigned') AS format_name,
                                COALESCE(rf.ordinal, 99) AS format_ordinal,
@@ -292,23 +295,26 @@ public class DriverController {
                 .param("id", id)
                 .query((rs, i) -> new RaceAgg(rs.getLong("season_id"), rs.getInt("year"),
                         rs.getLong("series_id"), rs.getString("series_name"), rs.getString("class_name"),
+                        rs.getBoolean("qualifier"), rs.getString("season_label"),
                         rs.getObject("format_id", Long.class), rs.getString("format_name"),
                         rs.getInt("format_ordinal"), rs.getInt("starts"), rs.getInt("wins"),
                         rs.getInt("podiums"), rs.getInt("top5s"), rs.getInt("dnfs")))
                 .list();
 
-        record QualiAgg(long seasonId, long seriesId, String className, int sessions, int poles, int top5s) {
+        record QualiAgg(long seasonId, long seriesId, String className, boolean qualifier,
+                        int sessions, int poles, int top5s) {
         }
         // Quali claims go to the qualifying driver of record (grid attribution,
         // else a solo entry's sole crew member) — same rule as the season stats,
         // so this profile can never disagree with the leaderboards.
         List<QualiAgg> qualiAggs = db.sql("""
-                        SELECT q.season_id, q.series_id, q.class_name,
+                        SELECT q.season_id, q.series_id, q.class_name, q.qualifier,
                                count(*) FILTER (WHERE q.position_in_class IS NOT NULL) AS sessions,
                                count(*) FILTER (WHERE q.position_in_class = 1)  AS poles,
                                count(*) FILTER (WHERE q.position_in_class <= 5) AS top5s
                         FROM (
-                            SELECT s.id AS season_id, s.series_id, en.class_name, r.position_in_class,
+                            SELECT s.id AS season_id, s.series_id, s.kind = 'QUALIFIER' AS qualifier,
+                                   en.class_name, r.position_in_class,
                                    COALESCE(
                                        (SELECT gp.qualifying_driver_id
                                         FROM grid_position gp
@@ -326,12 +332,12 @@ public class DriverController {
                                      JOIN entry en ON en.id = r.entry_id
                         ) q
                         WHERE q.driver_id = :id
-                        GROUP BY q.season_id, q.series_id, q.class_name
+                        GROUP BY q.season_id, q.series_id, q.class_name, q.qualifier
                         """)
                 .param("id", id)
                 .query((rs, i) -> new QualiAgg(rs.getLong("season_id"), rs.getLong("series_id"),
-                        rs.getString("class_name"), rs.getInt("sessions"), rs.getInt("poles"),
-                        rs.getInt("top5s")))
+                        rs.getString("class_name"), rs.getBoolean("qualifier"), rs.getInt("sessions"),
+                        rs.getInt("poles"), rs.getInt("top5s")))
                 .list();
 
         // Per-season lines: one per season × class, formats in ordinal order.
@@ -356,17 +362,23 @@ public class DriverController {
                     .map(q -> new QualiLine(q.sessions(), q.poles(), q.top5s()))
                     .orElse(new QualiLine(0, 0, 0));
             seasons.add(new SeasonStatLine(e.getKey().seasonId(), aggs.get(0).year(),
-                    aggs.get(0).seriesName(), e.getKey().className(), lines, quali));
+                    aggs.get(0).seriesName(), e.getKey().className(),
+                    aggs.get(0).qualifier(), aggs.get(0).seasonLabel(), lines, quali));
         }
 
         // All-time per series: the same buckets rolled up across its seasons
         // (formats are per-series, so they merge cleanly), classes combined.
+        // Qualifying stages keep their per-season lines above but never roll
+        // up — a regional qualifier is not a start in the series proper.
         record FormatKey(long seriesId, Long formatId) {
         }
         Map<FormatKey, int[]> seriesFormatSums = new LinkedHashMap<>();
         Map<FormatKey, String> seriesFormatNames = new LinkedHashMap<>();
         Map<Long, String> seriesNames = new LinkedHashMap<>();
         for (RaceAgg a : raceAggs) {
+            if (a.qualifier()) {
+                continue;
+            }
             FormatKey k = new FormatKey(a.seriesId(), a.formatId());
             int[] sums = seriesFormatSums.computeIfAbsent(k, x -> new int[5]);
             sums[0] += a.starts();
@@ -389,7 +401,7 @@ public class DriverController {
             int qp = 0;
             int qt = 0;
             for (QualiAgg q : qualiAggs) {
-                if (q.seriesId() == se.getKey()) {
+                if (q.seriesId() == se.getKey() && !q.qualifier()) {
                     qs += q.sessions();
                     qp += q.poles();
                     qt += q.top5s();
@@ -398,14 +410,18 @@ public class DriverController {
             bySeries.add(new SeriesStatLine(se.getKey(), se.getValue(), lines, new QualiLine(qs, qp, qt)));
         }
 
+        // Career headline counts qualifying stages out too: on a broadcast,
+        // "career starts" means real series starts.
+        List<RaceAgg> mainRace = raceAggs.stream().filter(a -> !a.qualifier()).toList();
+        List<QualiAgg> mainQuali = qualiAggs.stream().filter(q -> !q.qualifier()).toList();
         CareerTotals career = new CareerTotals(
-                raceAggs.stream().mapToInt(RaceAgg::starts).sum(),
-                raceAggs.stream().mapToInt(RaceAgg::wins).sum(),
-                raceAggs.stream().mapToInt(RaceAgg::podiums).sum(),
-                raceAggs.stream().mapToInt(RaceAgg::top5s).sum(),
-                qualiAggs.stream().mapToInt(QualiAgg::poles).sum(),
-                qualiAggs.stream().mapToInt(QualiAgg::top5s).sum(),
-                raceAggs.stream().mapToInt(RaceAgg::dnfs).sum());
+                mainRace.stream().mapToInt(RaceAgg::starts).sum(),
+                mainRace.stream().mapToInt(RaceAgg::wins).sum(),
+                mainRace.stream().mapToInt(RaceAgg::podiums).sum(),
+                mainRace.stream().mapToInt(RaceAgg::top5s).sum(),
+                mainQuali.stream().mapToInt(QualiAgg::poles).sum(),
+                mainQuali.stream().mapToInt(QualiAgg::top5s).sum(),
+                mainRace.stream().mapToInt(RaceAgg::dnfs).sum());
         return new DriverStats(id, career, bySeries, seasons);
     }
 

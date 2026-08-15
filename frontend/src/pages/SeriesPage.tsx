@@ -68,6 +68,8 @@ interface SeasonSummary {
   year: number
   seriesId: number
   seriesName: string
+  kind: 'MAIN' | 'QUALIFIER'
+  label: string | null
   roundCount: number
   championshipCount: number
 }
@@ -152,7 +154,13 @@ export default function SeriesPage() {
                 </span>
                 <span className="series-directory-years">
                   {years.length > 0 ? years.map((season) => (
-                    <span className="series-year" key={season.id}>{season.year}</span>
+                    <span
+                      className={season.kind === 'QUALIFIER' ? 'series-year series-year-qualifier' : 'series-year'}
+                      key={season.id}
+                      title={season.kind === 'QUALIFIER' ? `${season.year} qualifying — ${season.label ?? 'unnamed stage'}` : undefined}
+                    >
+                      {season.kind === 'QUALIFIER' ? (season.label ?? `${season.year} Q`) : season.year}
+                    </span>
                   )) : <span className="muted">No championship years</span>}
                 </span>
                 <span className="series-directory-arrow" aria-hidden="true">›</span>
@@ -395,6 +403,38 @@ function SeasonDataEditor({ seasons, onError, onRefresh }: {
   const [confirming, setConfirming] = useState<SeasonSummary | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [note, setNote] = useState<string | null>(null)
+  const [editing, setEditing] = useState<SeasonSummary | null>(null)
+  const [kindDraft, setKindDraft] = useState<'MAIN' | 'QUALIFIER'>('MAIN')
+  const [labelDraft, setLabelDraft] = useState('')
+  const [savingKind, setSavingKind] = useState(false)
+
+  function startKindEdit(s: SeasonSummary) {
+    setEditing(s)
+    setKindDraft(s.kind)
+    setLabelDraft(s.label ?? '')
+  }
+
+  async function saveKind() {
+    if (!editing) return
+    setSavingKind(true)
+    try {
+      const res = await fetch(`/api/seasons/${editing.id}/kind`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: kindDraft, label: labelDraft.trim() || null }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        onError(err?.message ?? `Backend returned ${res.status}`)
+        return
+      }
+      onError(null)
+      setEditing(null)
+      await onRefresh()
+    } finally {
+      setSavingKind(false)
+    }
+  }
 
   async function deleteData(s: SeasonSummary) {
     setDeleting(true)
@@ -423,7 +463,9 @@ function SeasonDataEditor({ seasons, onError, onRefresh }: {
     <SettingsSection title="Championship years" description="Review imported seasons or clear a year before reimporting it from scratch.">
       <p>
         Deleting a year removes its rounds, results, grids, flags, entry lists and standings. Car
-        images and series settings are kept.
+        images and series settings are kept. Marking a season as a qualifier keeps its results out
+        of the series&apos; all-time stats and career totals — import a qualifying stage&apos;s data first,
+        then flip it here (the importer only ever adds to main seasons).
       </p>
       {note && <p className="season-data-note">{note}</p>}
       {seasons.length === 0 ? (
@@ -433,6 +475,7 @@ function SeasonDataEditor({ seasons, onError, onRefresh }: {
           <thead>
             <tr>
               <th>Year</th>
+              <th>Type</th>
               <th>Rounds</th>
               <th>Championships</th>
               <th></th>
@@ -442,6 +485,45 @@ function SeasonDataEditor({ seasons, onError, onRefresh }: {
             {seasons.map((s) => (
               <tr key={s.id}>
                 <td>{s.year}</td>
+                <td>
+                  {editing?.id === s.id ? (
+                    <span className="season-kind-editor">
+                      <select
+                        value={kindDraft}
+                        onChange={(e) => setKindDraft(e.target.value as 'MAIN' | 'QUALIFIER')}
+                        aria-label="Season type"
+                      >
+                        <option value="MAIN">Main season</option>
+                        <option value="QUALIFIER">Qualifier</option>
+                      </select>
+                      {kindDraft === 'QUALIFIER' && (
+                        <input
+                          value={labelDraft}
+                          onChange={(e) => setLabelDraft(e.target.value)}
+                          placeholder="Stage name, e.g. Regional — Europe"
+                          aria-label="Qualifying stage name"
+                        />
+                      )}
+                      <button type="button" onClick={() => void saveKind()} disabled={savingKind}>
+                        {savingKind ? 'Saving…' : 'Save'}
+                      </button>
+                      <button type="button" onClick={() => setEditing(null)} disabled={savingKind}>
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <>
+                      {s.kind === 'QUALIFIER' ? (
+                        <span className="qualifier-badge">{s.label ?? 'Qualifying'}</span>
+                      ) : (
+                        'Main'
+                      )}{' '}
+                      <button type="button" onClick={() => startKindEdit(s)}>
+                        Edit…
+                      </button>
+                    </>
+                  )}
+                </td>
                 <td>{s.roundCount}</td>
                 <td>{s.championshipCount}</td>
                 <td>
@@ -1003,7 +1085,7 @@ function CarNumberAliasEditor({
           <option value="">Season…</option>
           {seasonOptions.map((s) => (
             <option key={s.id} value={s.id}>
-              {s.year}
+              {s.kind === 'QUALIFIER' ? `${s.year} — ${s.label ?? 'Qualifying'}` : s.year}
             </option>
           ))}
         </select>

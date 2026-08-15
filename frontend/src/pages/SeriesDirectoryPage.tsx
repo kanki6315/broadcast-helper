@@ -15,6 +15,8 @@ interface SeriesGroup {
   logoVersion: number | null
   latest: SeasonSummary
   past: SeasonSummary[]
+  /** Qualifying stages, badged separately — never the card's current season. */
+  qualifiers: SeasonSummary[]
   classes: { code: string; color: string }[]
 }
 
@@ -46,23 +48,40 @@ export default function SeriesDirectoryPage() {
         getJson<SeriesInfo[]>('/api/series').catch(() => [] as SeriesInfo[]),
       ])
 
-      // /api/seasons is already year-desc; first season per series is current.
+      // /api/seasons is already year-desc; the first MAIN season per series is
+      // current. Qualifying stages collect separately so a freshly imported
+      // regional can never take over the card (a series with only qualifiers
+      // falls back to the newest stage).
       const byName = new Map<string, SeriesGroup>()
       for (const s of seasons) {
-        const g = byName.get(s.seriesName)
+        let g = byName.get(s.seriesName)
         if (!g) {
           const info = series.find((x) => x.name === s.seriesName)
-          byName.set(s.seriesName, {
+          g = {
             name: s.seriesName,
             seriesId: info?.id ?? null,
             abbreviation: info?.abbreviation ?? null,
             logoVersion: info?.logoVersion ?? null,
             latest: s,
             past: [],
+            qualifiers: [],
             classes: [],
-          })
+          }
+          byName.set(s.seriesName, g)
+          if (s.kind !== 'QUALIFIER') continue
+        }
+        if (s.kind === 'QUALIFIER') {
+          g.qualifiers.push(s)
+        } else if (g.latest.kind === 'QUALIFIER') {
+          // First MAIN season displaces a qualifier that arrived earlier.
+          g.latest = s
         } else {
           g.past.push(s)
+        }
+      }
+      for (const g of byName.values()) {
+        if (g.latest.kind === 'QUALIFIER') {
+          g.qualifiers = g.qualifiers.filter((q) => q.id !== g.latest.id)
         }
       }
       // Active seasons first (year desc), then alphabetical — the current field
@@ -193,6 +212,9 @@ export default function SeriesDirectoryPage() {
               <div className="dir-card-foot">
                 <div className="dir-card-season">
                   <span className="dir-card-year">{g.latest.year}</span>
+                  {g.latest.kind === 'QUALIFIER' && (
+                    <span className="qualifier-badge">{g.latest.label ?? 'Qualifying'}</span>
+                  )}
                   <span className="dir-card-meta">
                     {g.latest.roundCount} round{g.latest.roundCount !== 1 ? 's' : ''} ·{' '}
                     {g.latest.championshipCount} championship
@@ -213,10 +235,25 @@ export default function SeriesDirectoryPage() {
                         </Link>
                       ))}
                     </>
-                  ) : (
+                  ) : g.qualifiers.length === 0 ? (
                     <span className="dir-card-earlier-empty">No earlier seasons</span>
-                  )}
+                  ) : null}
                 </div>
+                {g.qualifiers.length > 0 && (
+                  <div className="dir-card-earlier">
+                    <span className="dir-card-earlier-label">Qualifying</span>
+                    {g.qualifiers.map((q) => (
+                      <Link
+                        key={q.id}
+                        to={`/seasons/${q.id}`}
+                        className="dir-season-chip dir-season-chip-qualifier"
+                        title={`${q.year} qualifying — ${q.label ?? 'unnamed stage'}`}
+                      >
+                        {q.label ?? `${q.year} Q`}
+                      </Link>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <Link
