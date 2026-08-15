@@ -26,13 +26,16 @@ public class BrowseController {
     }
 
     public record EventSummary(long id, String name, String circuitName, LocalDate eventDate,
-                               int year, long seasonId, String seriesName, long sessionCount, long entryCount) {
+                               int year, long seasonId, String seriesName,
+                               String seasonKind, String seasonLabel,
+                               long sessionCount, long entryCount) {
     }
 
     @GetMapping("/events")
     public List<EventSummary> events() {
         return db.sql("""
                         SELECT e.id, e.name, e.circuit_name, e.event_date, s.year, s.id AS season_id, sr.name AS series_name,
+                               s.kind AS season_kind, s.label AS season_label,
                                (SELECT count(*) FROM race_session rs WHERE rs.event_id = e.id)  AS session_count,
                                (SELECT count(*) FROM entry en WHERE en.event_id = e.id)         AS entry_count
                         FROM event e
@@ -43,6 +46,7 @@ public class BrowseController {
                 .query((rs, i) -> new EventSummary(rs.getLong("id"), rs.getString("name"),
                         rs.getString("circuit_name"), rs.getObject("event_date", LocalDate.class),
                         rs.getInt("year"), rs.getLong("season_id"), rs.getString("series_name"),
+                        rs.getString("season_kind"), rs.getString("season_label"),
                         rs.getLong("session_count"), rs.getLong("entry_count")))
                 .list();
     }
@@ -65,6 +69,7 @@ public class BrowseController {
     public EventDetail event(@PathVariable long id) {
         EventSummary summary = db.sql("""
                         SELECT e.id, e.name, e.circuit_name, e.event_date, s.year, s.id AS season_id, sr.name AS series_name,
+                               s.kind AS season_kind, s.label AS season_label,
                                (SELECT count(*) FROM race_session rs WHERE rs.event_id = e.id)  AS session_count,
                                (SELECT count(*) FROM entry en WHERE en.event_id = e.id)         AS entry_count
                         FROM event e
@@ -76,6 +81,7 @@ public class BrowseController {
                 .query((rs, i) -> new EventSummary(rs.getLong("id"), rs.getString("name"),
                         rs.getString("circuit_name"), rs.getObject("event_date", LocalDate.class),
                         rs.getInt("year"), rs.getLong("season_id"), rs.getString("series_name"),
+                        rs.getString("season_kind"), rs.getString("season_label"),
                         rs.getLong("session_count"), rs.getLong("entry_count")))
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such event"));

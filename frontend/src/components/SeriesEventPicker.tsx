@@ -67,7 +67,11 @@ export default function SeriesEventPicker({
       ...inSeries.map((e) => ({
         key: String(e.id),
         label: e.name,
-        hint: [e.circuitName, formatEventDate(e.eventDate, e.year)].filter(Boolean).join(' · '),
+        hint: [
+          e.circuitName,
+          formatEventDate(e.eventDate, e.year),
+          e.seasonKind === 'QUALIFIER' ? `Qualifying — ${e.seasonLabel ?? 'unnamed stage'}` : null,
+        ].filter(Boolean).join(' · '),
       })),
     ]
   }, [allEvents, series, autoLabel])
