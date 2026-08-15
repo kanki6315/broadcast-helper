@@ -1,13 +1,19 @@
 package com.pitpass.season;
 
 import com.pitpass.browse.BrowseController;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -31,20 +37,22 @@ public class SeasonController {
     }
 
     public record SeasonSummary(long id, int year, long seriesId, String seriesName,
+                                String kind, String label,
                                 long roundCount, long championshipCount) {
     }
 
     @GetMapping
     public List<SeasonSummary> seasons() {
         return db.sql("""
-                        SELECT s.id, s.year, sr.id AS series_id, sr.name AS series_name,
+                        SELECT s.id, s.year, sr.id AS series_id, sr.name AS series_name, s.kind, s.label,
                                (SELECT count(*) FROM event e WHERE e.season_id = s.id)          AS round_count,
                                (SELECT count(*) FROM championship c WHERE c.season_id = s.id)   AS championship_count
                         FROM season s JOIN series sr ON sr.id = s.series_id
-                        ORDER BY s.year DESC, sr.name
+                        ORDER BY s.year DESC, sr.name, s.kind, s.label NULLS FIRST
                         """)
                 .query((rs, i) -> new SeasonSummary(rs.getLong("id"), rs.getInt("year"),
-                        rs.getLong("series_id"), rs.getString("series_name"), rs.getLong("round_count"),
+                        rs.getLong("series_id"), rs.getString("series_name"),
+                        rs.getString("kind"), rs.getString("label"), rs.getLong("round_count"),
                         rs.getLong("championship_count")))
                 .list();
     }
@@ -54,6 +62,7 @@ public class SeasonController {
     }
 
     public record SeasonHub(long id, int year, long seriesId, String seriesName,
+                            String kind, String label,
                             List<CalendarEvent> events,
                             List<BrowseController.ChampionshipSummary> championships,
                             List<String> entryClasses) {
@@ -61,16 +70,17 @@ public class SeasonController {
 
     @GetMapping("/{id}")
     public SeasonHub season(@PathVariable long id) {
-        record Header(long id, int year, long seriesId, String seriesName) {
+        record Header(long id, int year, long seriesId, String seriesName, String kind, String label) {
         }
         Header season = db.sql("""
-                        SELECT s.id, s.year, sr.id AS series_id, sr.name AS series_name
+                        SELECT s.id, s.year, sr.id AS series_id, sr.name AS series_name, s.kind, s.label
                         FROM season s JOIN series sr ON sr.id = s.series_id
                         WHERE s.id = :id
                         """)
                 .param("id", id)
                 .query((rs, i) -> new Header(rs.getLong("id"), rs.getInt("year"),
-                        rs.getLong("series_id"), rs.getString("series_name")))
+                        rs.getLong("series_id"), rs.getString("series_name"),
+                        rs.getString("kind"), rs.getString("label")))
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such season"));
 
@@ -122,7 +132,43 @@ public class SeasonController {
                 .list();
 
         return new SeasonHub(season.id(), season.year(), season.seriesId(), season.seriesName(),
-                events, championships, entryClasses);
+                season.kind(), season.label(), events, championships, entryClasses);
+    }
+
+    public record KindUpdate(@NotNull String kind, String label) {
+    }
+
+    /**
+     * Flips a season between the series proper and a qualifying stage. Set by
+     * hand after import because no payload says which one it is (see V43). The
+     * label names the stage ("Regional — Europe"); a MAIN season carries none,
+     * so flipping back clears it.
+     */
+    @PutMapping("/{id}/kind")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void setKind(@PathVariable long id, @Valid @RequestBody KindUpdate request) {
+        if (!"MAIN".equals(request.kind()) && !"QUALIFIER".equals(request.kind())) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Season kind must be MAIN or QUALIFIER");
+        }
+        String label = request.label() != null && !request.label().isBlank() && "QUALIFIER".equals(request.kind())
+                ? request.label().trim() : null;
+        try {
+            int updated = db.sql("UPDATE season SET kind = :kind, label = :label WHERE id = :id")
+                    .param("kind", request.kind()).param("label", label).param("id", id)
+                    .update();
+            if (updated == 0) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such season");
+            }
+        } catch (DuplicateKeyException e) {
+            // Either a second MAIN season for the year, or two qualifying
+            // stages sharing a label — both mean "pick a different label"
+            // (or flip the other season first), not a retry.
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "MAIN".equals(request.kind())
+                            ? "This series already has a main season for that year"
+                            : "This series already has a qualifying stage with that label for that year");
+        }
     }
 
     public record SeasonDataDeleted(int roundsDeleted, int championshipsDeleted) {

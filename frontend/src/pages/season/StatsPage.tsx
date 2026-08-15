@@ -341,10 +341,14 @@ export default function StatsPage() {
             className={scope === 'alltime' ? 'seg-btn active' : 'seg-btn'}
             aria-pressed={scope === 'alltime'}
             onClick={() => setScope('alltime')}
+            title="Every main season of the series; qualifying stages excluded"
           >
             All-time
           </button>
         </div>
+        {scope === 'alltime' && (
+          <p className="muted stats-scope-note">Main seasons only — qualifying stages excluded.</p>
+        )}
         {groupCount > 1 && (
           <div className="seg" role="group" aria-label="Formats shown">
             {allFormats.map((f) => {

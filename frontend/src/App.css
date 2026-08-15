@@ -497,6 +497,20 @@ tr.clickable:hover td {
   border-radius: var(--radius-sm);
 }
 
+/* A season that fed the grid rather than raced for it. Muted, so the mark
+ * reads as metadata beside a series name, never as the identity itself. */
+.qualifier-badge {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 1px 8px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
 a {
   color: var(--accent-ink);
   text-decoration: none;
@@ -699,6 +713,13 @@ h2 small {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
+}
+
+/* Qualifying stages carry a worded label, not a bare year: prose face, muted. */
+.series-year-qualifier {
+  font-family: inherit;
+  font-variant-numeric: normal;
+  color: var(--text-muted);
 }
 
 .series-directory-arrow {
@@ -1313,6 +1334,25 @@ h2 small {
 
 .series-years-table {
   width: 100%;
+}
+
+/* Inline kind editor inside a Championship-years row: everything on one
+ * line, the stage-name input taking whatever width the row can spare. */
+.season-kind-editor {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.season-kind-editor input {
+  min-width: 0;
+  width: 220px;
+  padding: 4px 8px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
 }
 
 .series-years-table th,

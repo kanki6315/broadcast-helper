@@ -9,6 +9,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
 @Transactional
@@ -50,6 +52,46 @@ class TeamCareerStatsTest {
         assertEquals(2, seriesLine.byFormat().stream().mapToInt(l -> l.starts()).sum());
         assertEquals(1, seriesLine.byFormat().stream().mapToInt(l -> l.wins()).sum());
         assertEquals(1, seriesLine.quali().poles());
+    }
+
+    /** A regional qualifying stage keeps its own season line but never leaks
+     *  into the career headline or the series all-time rollup. */
+    @Test
+    void qualifierSeasonsStayOutOfCareerAndSeriesRollups() {
+        String suffix = UUID.randomUUID().toString();
+        long teamId = resolver.resolveOrCreate("Qualifier team " + suffix);
+
+        long seriesId = db.sql("INSERT INTO series (name) VALUES (:n) RETURNING id")
+                .param("n", "Qualifier series " + suffix).query(Long.class).single();
+        long main = season(seriesId, 2099);
+        long qualifier = db.sql("""
+                        INSERT INTO season (series_id, year, kind, label)
+                        VALUES (:s, 2099, 'QUALIFIER', 'Regional — Test') RETURNING id
+                        """)
+                .param("s", seriesId).query(Long.class).single();
+
+        // A win-and-pole weekend in each; only the main season's may count.
+        raceWeekend(main, teamId, 1, 1);
+        raceWeekend(qualifier, teamId, 1, 1);
+
+        TeamController.TeamStats stats = controller.stats(teamId);
+
+        assertEquals(1, stats.career().starts());
+        assertEquals(1, stats.career().wins());
+        assertEquals(1, stats.career().poles());
+
+        assertEquals(1, stats.bySeries().size());
+        assertEquals(1, stats.bySeries().get(0).byFormat().stream().mapToInt(l -> l.starts()).sum());
+        assertEquals(1, stats.bySeries().get(0).quali().poles());
+
+        assertEquals(2, stats.seasons().size());
+        var qualifierLine = stats.seasons().stream()
+                .filter(s -> s.seasonId() == qualifier).findFirst().orElseThrow();
+        assertTrue(qualifierLine.qualifier());
+        assertEquals("Regional — Test", qualifierLine.seasonLabel());
+        var mainLine = stats.seasons().stream()
+                .filter(s -> s.seasonId() == main).findFirst().orElseThrow();
+        assertFalse(mainLine.qualifier());
     }
 
     private long season(long seriesId, int year) {

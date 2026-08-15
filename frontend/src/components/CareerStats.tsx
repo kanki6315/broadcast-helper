@@ -26,7 +26,9 @@ function formatSplit(byFormat: NamedFormatLine[], quali: QualiLine): string {
 /** Career chips + per-series all-time and per-season lines, shared by the
  * driver and team modals so the two read identically. */
 export default function CareerStats({ stats }: { stats: CareerStatsData }) {
-  if (stats.career.starts === 0) return null
+  // Career totals count main seasons only, so a driver seen solely in
+  // qualifying stages has zero starts but still owns season lines below.
+  if (stats.career.starts === 0 && stats.seasons.length === 0) return null
   const chips: { label: string; value: number }[] = [
     { label: 'Starts', value: stats.career.starts },
     { label: 'Wins', value: stats.career.wins },
@@ -37,21 +39,28 @@ export default function CareerStats({ stats }: { stats: CareerStatsData }) {
   ]
   // A per-series all-time line only earns its place once the series spans more
   // than one season here; otherwise it restates the single season line below.
+  // Qualifying stages don't count toward the span — their lines are badged
+  // extras, not seasons the rollup covers.
   const multiSeason = new Set(
     stats.bySeries
-      .filter((s) => stats.seasons.filter((x) => x.seriesName === s.seriesName).length > 1)
+      .filter(
+        (s) =>
+          stats.seasons.filter((x) => x.seriesName === s.seriesName && !x.qualifier).length > 1,
+      )
       .map((s) => s.seriesId),
   )
   return (
     <section className="dm-stats" aria-label="Career stats">
-      <dl className="dm-stat-chips">
-        {chips.map((c) => (
-          <div key={c.label} className="dm-stat-chip">
-            <dd className="num">{c.value}</dd>
-            <dt>{c.label}</dt>
-          </div>
-        ))}
-      </dl>
+      {stats.career.starts > 0 && (
+        <dl className="dm-stat-chips">
+          {chips.map((c) => (
+            <div key={c.label} className="dm-stat-chip">
+              <dd className="num">{c.value}</dd>
+              <dt>{c.label}</dt>
+            </div>
+          ))}
+        </dl>
+      )}
       <ul className="dm-stat-lines">
         {stats.bySeries
           .filter((s) => multiSeason.has(s.seriesId))
@@ -65,6 +74,9 @@ export default function CareerStats({ stats }: { stats: CareerStatsData }) {
           <li key={`se-${s.seasonId}-${s.className}`}>
             <span className="dm-stat-when">
               {s.year} {s.seriesName}
+              {s.qualifier && (
+                <span className="qualifier-badge">{s.seasonLabel ?? 'Qualifying'}</span>
+              )}
             </span>
             <span className="dm-stat-what">{formatSplit(s.byFormat, s.quali)}</span>
           </li>

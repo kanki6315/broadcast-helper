@@ -113,7 +113,8 @@ export default function SeasonLayout() {
   // separates 2026 from 2025 of the same series at a glance.
   useEffect(() => {
     if (!hub) return
-    document.title = `${hub.year} · ${hub.seriesName} · Pit Pass`
+    const stage = hub.kind === 'QUALIFIER' ? ` · ${hub.label ?? 'Qualifying'}` : ''
+    document.title = `${hub.year}${stage} · ${hub.seriesName} · Pit Pass`
     return () => {
       document.title = 'Pit Pass'
     }
@@ -149,14 +150,22 @@ export default function SeasonLayout() {
     )
   }
 
+  // Main seasons first (year desc), then qualifying stages — a strip like
+  // "2026 2025 | R-EU R-NA" reads as the series then its feeder stages, and
+  // two stages sharing a year stay tellable-apart by their labels.
   const sameSeries = seasons
     .filter((s) => s.seriesName === hub.seriesName)
-    .sort((a, b) => b.year - a.year)
+    .sort(
+      (a, b) =>
+        Number(a.kind === 'QUALIFIER') - Number(b.kind === 'QUALIFIER') ||
+        b.year - a.year ||
+        (a.label ?? '').localeCompare(b.label ?? ''),
+    )
   // Keep the current year visible if the seasons index could not be fetched.
-  const visibleSeasons: Array<Pick<SeasonSummary, 'id' | 'year'>> =
+  const visibleSeasons: Array<Pick<SeasonSummary, 'id' | 'year' | 'kind' | 'label'>> =
     sameSeries.length > 0
       ? sameSeries
-      : [{ id: hub.id, year: hub.year }]
+      : [{ id: hub.id, year: hub.year, kind: hub.kind, label: hub.label }]
   const context: SeasonContext = {
     hub,
     classes,
@@ -171,18 +180,26 @@ export default function SeasonLayout() {
         <div className="season-toolbar">
           <div className="season-title-row">
             <h1>{hub.seriesName}</h1>
+            {hub.kind === 'QUALIFIER' && (
+              <span className="qualifier-badge">{hub.label ?? 'Qualifying'}</span>
+            )}
             <div className="seg season-year-strip" role="group" aria-label="Season year">
               {visibleSeasons.map((s) => {
                 const active = s.id === hub.id
+                const qualifier = s.kind === 'QUALIFIER'
                 return (
                   <button
                     key={s.id}
                     type="button"
-                    className={active ? 'seg-btn active' : 'seg-btn'}
+                    className={
+                      (active ? 'seg-btn active' : 'seg-btn') +
+                      (qualifier ? ' seg-btn-qualifier' : '')
+                    }
                     aria-pressed={active}
+                    title={qualifier ? `${s.year} qualifying — ${s.label ?? 'unnamed stage'}` : undefined}
                     onClick={() => switchSeason(String(s.id))}
                   >
-                    {s.year}
+                    {qualifier ? (s.label ?? `${s.year} Q`) : s.year}
                   </button>
                 )
               })}

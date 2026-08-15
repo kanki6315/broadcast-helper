@@ -2160,8 +2160,16 @@ public class ImportService {
         return best;
     }
 
+    /**
+     * MAIN seasons only: a season already flipped to QUALIFIER is invisible
+     * here, so a later import for the same year starts a fresh MAIN season
+     * instead of merging into a qualifying stage. The workflow is therefore
+     * import-then-flip — bring in all of a stage's data while its season is
+     * still MAIN, then mark it a qualifier on the Series page.
+     */
     private long findOrCreateSeason(long seriesId, int year) {
-        Optional<Long> existing = db.sql("SELECT id FROM season WHERE series_id = :seriesId AND year = :year")
+        Optional<Long> existing = db.sql(
+                        "SELECT id FROM season WHERE series_id = :seriesId AND year = :year AND kind = 'MAIN'")
                 .param("seriesId", seriesId).param("year", year).query(Long.class).optional();
         return existing.orElseGet(() ->
                 db.sql("INSERT INTO season (series_id, year) VALUES (:seriesId, :year) RETURNING id")
@@ -2559,8 +2567,10 @@ public class ImportService {
                 .param("name", name).query(Long.class).optional();
     }
 
+    /** MAIN seasons only, mirroring findOrCreateSeason: review guesses must
+     *  point at the season a commit would actually land in. */
     private Optional<Long> findSeasonId(long seriesId, int year) {
-        return db.sql("SELECT id FROM season WHERE series_id = :seriesId AND year = :year")
+        return db.sql("SELECT id FROM season WHERE series_id = :seriesId AND year = :year AND kind = 'MAIN'")
                 .param("seriesId", seriesId).param("year", year).query(Long.class).optional();
     }
 

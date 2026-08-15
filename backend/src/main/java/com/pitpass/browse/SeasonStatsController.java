@@ -65,11 +65,12 @@ public class SeasonStatsController {
     }
 
     /** All seasons of the series combined — formats are per-series, so the
-     *  same buckets aggregate cleanly across its seasons. */
+     *  same buckets aggregate cleanly across its seasons. Qualifying stages
+     *  stay out: their fields never raced the series proper. */
     @GetMapping("/series/{id}/stats")
     public StatsTable seriesStats(@PathVariable long id) {
         requireSeries(id);
-        return statsTable("s.series_id = :id", id);
+        return statsTable("s.series_id = :id AND s.kind = 'MAIN'", id);
     }
 
     @GetMapping("/seasons/{id}/team-stats")
@@ -81,7 +82,7 @@ public class SeasonStatsController {
     @GetMapping("/series/{id}/team-stats")
     public TeamStatsTable seriesTeamStats(@PathVariable long id) {
         requireSeries(id);
-        return teamStatsTable("s.series_id = :id", id);
+        return teamStatsTable("s.series_id = :id AND s.kind = 'MAIN'", id);
     }
 
     private void requireSeason(long id) {

@@ -241,6 +241,13 @@
   color: var(--text);
 }
 
+/* A qualifying stage's chip carries a worded label, not a year. */
+.dir-season-chip-qualifier {
+  font-family: inherit;
+  font-variant-numeric: normal;
+  color: var(--text-muted);
+}
+
 .dir-season-chip:hover {
   border-color: var(--accent);
   color: var(--ink);
@@ -288,6 +295,14 @@
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   padding: 3px 10px;
+}
+
+/* Qualifying stages sit at the strip's end under worded labels; the prose
+ * face separates them from the years at a glance. */
+.season-year-strip .seg-btn-qualifier {
+  font-family: inherit;
+  font-variant-numeric: normal;
+  font-weight: 500;
 }
 
 .season-toolbar {
@@ -562,6 +577,13 @@
   gap: var(--space-3);
   flex-wrap: wrap;
   margin: var(--space-4) 0 var(--space-3);
+}
+
+/* One-line scope caveat under the All-time toggle. */
+.stats-scope-note {
+  flex-basis: 100%;
+  margin: calc(-1 * var(--space-2)) 0 0;
+  font-size: var(--text-xs);
 }
 
 .filter-bar .spacer {
