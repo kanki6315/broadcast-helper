@@ -150,22 +150,31 @@ export default function SeasonLayout() {
     )
   }
 
-  // Main seasons first (year desc), then qualifying stages — a strip like
-  // "2026 2025 | R-EU R-NA" reads as the series then its feeder stages, and
-  // two stages sharing a year stay tellable-apart by their labels.
-  const sameSeries = seasons
-    .filter((s) => s.seriesName === hub.seriesName)
-    .sort(
-      (a, b) =>
-        Number(a.kind === 'QUALIFIER') - Number(b.kind === 'QUALIFIER') ||
-        b.year - a.year ||
-        (a.label ?? '').localeCompare(b.label ?? ''),
-    )
+  // Two levels: the strip stays pure years — skimmable tabular numerals —
+  // and the selected year's qualifying stages get their own smaller row.
+  // A year that only has stages so far (qualifying runs before the season
+  // proper exists) still earns its year button.
+  type SeasonRef = Pick<SeasonSummary, 'id' | 'year' | 'kind' | 'label'>
+  const sameSeries = seasons.filter((s) => s.seriesName === hub.seriesName)
   // Keep the current year visible if the seasons index could not be fetched.
-  const visibleSeasons: Array<Pick<SeasonSummary, 'id' | 'year' | 'kind' | 'label'>> =
+  const knownSeasons: SeasonRef[] =
     sameSeries.length > 0
       ? sameSeries
       : [{ id: hub.id, year: hub.year, kind: hub.kind, label: hub.label }]
+  const byLabel = (a: SeasonRef, b: SeasonRef) => (a.label ?? '').localeCompare(b.label ?? '')
+  const byYear = new Map<number, { main: SeasonRef | null; stages: SeasonRef[] }>()
+  for (const s of knownSeasons) {
+    let y = byYear.get(s.year)
+    if (!y) {
+      y = { main: null, stages: [] }
+      byYear.set(s.year, y)
+    }
+    if (s.kind === 'QUALIFIER') y.stages.push(s)
+    else y.main = s
+  }
+  const years = [...byYear.keys()].sort((a, b) => b - a)
+  const currentYear = byYear.get(hub.year)
+  const currentStages = currentYear ? [...currentYear.stages].sort(byLabel) : []
   const context: SeasonContext = {
     hub,
     classes,
@@ -180,26 +189,24 @@ export default function SeasonLayout() {
         <div className="season-toolbar">
           <div className="season-title-row">
             <h1>{hub.seriesName}</h1>
-            {hub.kind === 'QUALIFIER' && (
-              <span className="qualifier-badge">{hub.label ?? 'Qualifying'}</span>
-            )}
             <div className="seg season-year-strip" role="group" aria-label="Season year">
-              {visibleSeasons.map((s) => {
-                const active = s.id === hub.id
-                const qualifier = s.kind === 'QUALIFIER'
+              {years.map((year) => {
+                const y = byYear.get(year)!
+                const active = year === hub.year
+                // A stage-only year lands on its first stage until the season
+                // proper is imported.
+                const target = y.main ?? [...y.stages].sort(byLabel)[0]
                 return (
                   <button
-                    key={s.id}
+                    key={year}
                     type="button"
-                    className={
-                      (active ? 'seg-btn active' : 'seg-btn') +
-                      (qualifier ? ' seg-btn-qualifier' : '')
-                    }
+                    className={active ? 'seg-btn active' : 'seg-btn'}
                     aria-pressed={active}
-                    title={qualifier ? `${s.year} qualifying — ${s.label ?? 'unnamed stage'}` : undefined}
-                    onClick={() => switchSeason(String(s.id))}
+                    onClick={() => {
+                      if (!active) switchSeason(String(target.id))
+                    }}
                   >
-                    {qualifier ? (s.label ?? `${s.year} Q`) : s.year}
+                    {year}
                   </button>
                 )
               })}
@@ -231,6 +238,35 @@ export default function SeasonLayout() {
             </div>
           )}
         </div>
+        {currentStages.length > 0 && (
+          <div
+            className="seg season-stage-strip"
+            role="group"
+            aria-label={`${hub.year} season stage`}
+          >
+            {currentYear?.main && (
+              <button
+                type="button"
+                className={hub.id === currentYear.main.id ? 'seg-btn active' : 'seg-btn'}
+                aria-pressed={hub.id === currentYear.main.id}
+                onClick={() => switchSeason(String(currentYear.main!.id))}
+              >
+                Season
+              </button>
+            )}
+            {currentStages.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className={s.id === hub.id ? 'seg-btn active' : 'seg-btn'}
+                aria-pressed={s.id === hub.id}
+                onClick={() => switchSeason(String(s.id))}
+              >
+                {s.label ?? 'Qualifying'}
+              </button>
+            ))}
+          </div>
+        )}
         <nav className="seg" aria-label="Season pages">
           {SUB_PAGES.map((p) => (
             <NavLink

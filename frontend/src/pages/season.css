@@ -297,12 +297,19 @@
   padding: 3px 10px;
 }
 
-/* Qualifying stages sit at the strip's end under worded labels; the prose
- * face separates them from the years at a glance. */
-.season-year-strip .seg-btn-qualifier {
-  font-family: inherit;
-  font-variant-numeric: normal;
+/* The selected year's qualifying stages: same seg vocabulary one size down,
+ * on its own row, so the year strip keeps its instrument-key skim and the
+ * stages read as the year's detail rather than more years. */
+.season-stage-strip {
+  align-self: flex-start;
+  flex-wrap: wrap;
+}
+
+.season-stage-strip .seg-btn {
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
   font-weight: 500;
+  padding: 2px 9px;
 }
 
 .season-toolbar {
