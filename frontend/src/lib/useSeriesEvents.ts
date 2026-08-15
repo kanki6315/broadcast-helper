@@ -18,6 +18,11 @@ export interface EventOption {
   eventDate: string | null
   year: number
   seriesName: string
+  /** The owning season's kind: events in a QUALIFIER season never mix into
+   *  round previews or name de-collision (imports land in MAIN seasons), but
+   *  stay pickable — attaching to one is how a flipped season gets more data. */
+  seasonKind: 'MAIN' | 'QUALIFIER'
+  seasonLabel: string | null
 }
 
 /**

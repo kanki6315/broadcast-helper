@@ -277,11 +277,13 @@ export default function ConfirmImportStep({
   }
 
   // Suffix a create-group's name with its date when it collides with a sibling
-  // create-group or an existing event in the same season.
+  // create-group or an existing event in the same season. Qualifier-season
+  // events don't count: names are only unique within the target MAIN season.
   function decollide(drafts: EventGroupDraft[], events: EventOption[], series: number | null): EventGroupDraft[] {
     const existingNames = new Set(
       events
-        .filter((e) => series == null || allSeries?.find((s) => s.id === series)?.name === e.seriesName)
+        .filter((e) => e.seasonKind !== 'QUALIFIER'
+          && (series == null || allSeries?.find((s) => s.id === series)?.name === e.seriesName))
         .map((e) => e.name.toLowerCase()),
     )
     const seen = new Map<string, number>()
@@ -352,8 +354,11 @@ export default function ConfirmImportStep({
     const years = new Set(createGroups.map((g) => yearOf(g.date)).filter((y): y is number => y != null))
     const rows: { year: number; entries: { name: string; date: string | null; isNew: boolean }[] }[] = []
     for (const year of [...years].sort()) {
+      // Qualifier-season events stay out: create-groups land in the year's
+      // MAIN season, so only its rounds renumber alongside the new ones.
       const existing = allEvents
-        .filter((e) => e.seriesName === sName && (e.eventDate ? new Date(e.eventDate).getFullYear() : e.year) === year)
+        .filter((e) => e.seriesName === sName && e.seasonKind !== 'QUALIFIER'
+          && (e.eventDate ? new Date(e.eventDate).getFullYear() : e.year) === year)
         .map((e) => ({ name: e.name, date: e.eventDate, isNew: false }))
       const created = createGroups
         .filter((g) => yearOf(g.date) === year)
@@ -591,7 +596,9 @@ export default function ConfirmImportStep({
                   <option value="">New event</option>
                   {eventsForSeries.map((e) => (
                     <option key={e.id} value={e.id}>
-                      {e.name}
+                      {e.seasonKind === 'QUALIFIER'
+                        ? `${e.name} — ${e.seasonLabel ?? 'Qualifying'}`
+                        : e.name}
                     </option>
                   ))}
                 </select>
