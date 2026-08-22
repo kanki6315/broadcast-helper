@@ -62,7 +62,7 @@ public class SheetController {
     public record Sheet(long eventId, long seasonId, String eventName, String circuitName, LocalDate eventDate,
                         int year, Integer roundOrdinal, String seriesName, String championshipLabel,
                         String priorYearLabel, Long teamSheetsVersion, Long pitAssignmentsVersion,
-                        List<FormRound> formRounds, List<SheetClass> classes) {
+                        Long storylinesVersion, List<FormRound> formRounds, List<SheetClass> classes) {
     }
 
     @GetMapping("/events/{id}/sheet")
@@ -363,6 +363,17 @@ public class SheetController {
                 .map(t -> t.toInstant().toEpochMilli())
                 .orElse(null);
 
+        // Storylines PDF: shown whole, so mere existence lights the button.
+        Long storylinesVersion = db.sql("""
+                        SELECT uploaded_at FROM event_document
+                        WHERE event_id = :id AND kind = 'STORYLINES'
+                        """)
+                .param("id", id)
+                .query(OffsetDateTime.class)
+                .optional()
+                .map(t -> t.toInstant().toEpochMilli())
+                .orElse(null);
+
         record EntryRow(long entryId, String carNumber, String className, String teamName, String vehicle,
                         String manufacturer, OffsetDateTime logoUploadedAt, boolean logoInvert, boolean isGuest,
                         String priorYearNote, OffsetDateTime imageUploadedAt) {
@@ -492,7 +503,7 @@ public class SheetController {
                                 + venueAbbrev(eventName, circuitName);
         return new Sheet(id, seasonId, eventName, circuitName, eventDate, year, roundOrdinal, seriesName,
                 seriesName + " " + year + " Teams", priorYearLabel, teamSheetsVersion, pitAssignmentsVersion,
-                formRounds, classes);
+                storylinesVersion, formRounds, classes);
     }
 
     public record NoteRequest(String note) {

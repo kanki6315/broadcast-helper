@@ -66,6 +66,12 @@ interface TeamSheets {
   pages: TeamSheetPageMapping[]
 }
 
+interface Storylines {
+  filename: string | null
+  uploadedAt: string
+  version: number
+}
+
 /** "04" and "4" are the same car across documents; "0" stays "0". */
 function normalizeCar(n: string): string {
   return n.trim().replace(/^0+(?=\d)/, '')
@@ -208,6 +214,7 @@ export default function EventDetailPage() {
         }}
       />
       <TeamSheetsSection eventId={detail.event.id} entries={detail.entries} />
+      <StorylinesSection eventId={detail.event.id} />
       {classes.map((cls) => (
         <div key={cls}>
           <h3>{cls}</h3>
@@ -417,6 +424,96 @@ function TeamSheetsSection({ eventId, entries }: { eventId: number; entries: Eve
             </p>
           )}
         </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The event's storylines PDF (the series' pre-race narrative notes): upload,
+ * replace, remove. Rendered whole by the sheet page's Storylines button — no
+ * per-car mapping to manage.
+ */
+function StorylinesSection({ eventId }: { eventId: number }) {
+  const isAdmin = useIsAdmin()
+  const [storylines, setStorylines] = useState<Storylines | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void fetch(`/api/events/${eventId}/storylines`)
+      .then((r) => (r.ok ? r.json() : r.status === 404 ? null : Promise.reject(new Error(`Backend returned ${r.status}`))))
+      .then(setStorylines)
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load storylines'))
+  }, [eventId])
+
+  async function call(path: string, init: RequestInit): Promise<void> {
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await fetch(path, init)
+      if (r.status === 404 && init.method === 'DELETE') {
+        setStorylines(null)
+        return
+      }
+      if (!r.ok) {
+        const body = await r.json().catch(() => null)
+        throw new Error(body?.message ?? `Backend returned ${r.status}`)
+      }
+      setStorylines(init.method === 'DELETE' ? null : await r.json())
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Request failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function upload(ev: ChangeEvent<HTMLInputElement>) {
+    const file = ev.target.files?.[0]
+    ev.target.value = '' // allow re-selecting the same file
+    if (!file) return
+    const form = new FormData()
+    form.append('file', file)
+    void call(`/api/events/${eventId}/storylines`, { method: 'POST', body: form })
+  }
+
+  // Viewers with no PDF attached have nothing to see or do here.
+  if (!isAdmin && !storylines) return null
+
+  return (
+    <div className="storylines">
+      <h3>Storylines PDF</h3>
+      {error && <p className="error">{error}</p>}
+      {!storylines ? (
+        <p>
+          <label>
+            Attach the event's storylines PDF (the sheet page gets a Storylines button):{' '}
+            <input type="file" accept="application/pdf" onChange={upload} disabled={busy} />
+          </label>
+        </p>
+      ) : (
+        <p>
+          <strong>{storylines.filename ?? 'storylines.pdf'}</strong>
+          {' · uploaded '}
+          {new Date(storylines.uploadedAt).toLocaleString()}{' '}
+          <a href={`/api/events/${eventId}/storylines/data?v=${storylines.version}`} target="_blank" rel="noreferrer">
+            open
+          </a>
+          {isAdmin && (
+            <>
+              {' '}
+              <label>
+                Replace: <input type="file" accept="application/pdf" onChange={upload} disabled={busy} />
+              </label>{' '}
+              <button
+                disabled={busy}
+                onClick={() => void call(`/api/events/${eventId}/storylines`, { method: 'DELETE' })}
+              >
+                Remove
+              </button>
+            </>
+          )}
+        </p>
       )}
     </div>
   )

@@ -1,9 +1,9 @@
-/* Team-sheets PDF modal, opened from a sheet row. Screen-only (hidden in
-   print). Chrome on the token layer; the pages well stays a fixed dark
-   neutral in both themes — the PDF-viewer convention that makes white pages
-   read as pages. */
+/* PDF viewer modal (team sheets, storylines), opened from the sheet page.
+   Screen-only (hidden in print). Chrome on the token layer; the pages well
+   stays a fixed dark neutral in both themes — the PDF-viewer convention that
+   makes white pages read as pages. */
 
-.ts-overlay {
+.pdf-overlay {
   position: fixed;
   inset: 0;
   z-index: var(--z-modal);
@@ -14,7 +14,7 @@
   padding: var(--space-5);
 }
 
-.ts-dialog {
+.pdf-dialog {
   display: flex;
   flex-direction: column;
   width: min(820px, 100%);
@@ -26,7 +26,7 @@
   box-shadow: var(--shadow-modal);
 }
 
-.ts-header {
+.pdf-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -36,13 +36,13 @@
   background: var(--surface);
 }
 
-.ts-title {
+.pdf-title {
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--ink);
 }
 
-.ts-close {
+.pdf-close {
   border: none;
   background: none;
   font-size: var(--text-base);
@@ -54,11 +54,11 @@
   transition: color var(--t-fast) var(--ease-out);
 }
 
-.ts-close:hover {
+.pdf-close:hover {
   color: var(--ink);
 }
 
-.ts-pages {
+.pdf-pages {
   /* Anchor for the pages' offsetTop, which drives lazy rasterisation. */
   position: relative;
   flex: 1;
@@ -71,7 +71,7 @@
   align-items: center;
 }
 
-.ts-page {
+.pdf-page {
   width: min(760px, 100%);
   background: #fff;
   box-shadow: 0 2px 8px oklch(0% 0 0 / 40%);
@@ -79,25 +79,25 @@
   scroll-margin-top: 4px;
 }
 
-.ts-page canvas {
+.pdf-page canvas {
   display: block;
   width: 100%;
   height: auto;
 }
 
 /* Status text sits on the fixed dark well, so its colours are fixed too. */
-.ts-status {
+.pdf-status {
   color: oklch(90% 0.005 260);
   font-size: var(--text-sm);
   margin: var(--space-5) 0;
 }
 
-.ts-status.error {
+.pdf-status.error {
   color: var(--error);
 }
 
 @media print {
-  .ts-overlay {
+  .pdf-overlay {
     display: none !important;
   }
 }
