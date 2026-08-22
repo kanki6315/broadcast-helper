@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
-import './team-sheets-modal.css'
+import './pdf-modal.css'
 
 // pdf.js is ~400 kB minified — load it (and its worker) only when a sheet
-// page actually has team sheets, not in the app bundle.
+// page actually has a PDF attached, not in the app bundle.
 let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null
 
 function loadPdfjs() {
@@ -33,8 +33,8 @@ function loadDoc(url: string): Promise<PDFDocumentProxy> {
   return doc
 }
 
-/** Warm the cache so the first row click opens without a spinner. */
-export function prefetchTeamSheets(url: string) {
+/** Warm the cache so the first open happens without a spinner. */
+export function prefetchPdf(url: string) {
   void loadDoc(url).catch(() => docCache.delete(url))
 }
 
@@ -95,21 +95,22 @@ function PdfPage({
   return (
     <div
       ref={holderRef}
-      className="ts-page"
+      className="pdf-page"
       data-page={pageNo}
       style={{ aspectRatio: `${1 / ratio}` }}
     />
   )
 }
 
-export default function TeamSheetsModal({
+export default function PdfModal({
   url,
-  page,
+  page = 1,
   title,
   onClose,
 }: {
   url: string
-  page: number
+  /** Page to scroll to on open; whole-document viewers omit it. */
+  page?: number
   title: string
   onClose: () => void
 }) {
@@ -131,7 +132,7 @@ export default function TeamSheetsModal({
       })
       .catch((e) => {
         docCache.delete(url)
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load the team sheets PDF')
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load the PDF')
       })
     return () => {
       cancelled = true
@@ -147,7 +148,7 @@ export default function TeamSheetsModal({
     const top = scroller.scrollTop - RENDER_MARGIN
     const bottom = scroller.scrollTop + scroller.clientHeight + RENDER_MARGIN
     const next = new Set<number>()
-    for (const el of scroller.querySelectorAll<HTMLElement>('.ts-page')) {
+    for (const el of scroller.querySelectorAll<HTMLElement>('.pdf-page')) {
       if (el.offsetTop + el.offsetHeight >= top && el.offsetTop <= bottom) {
         next.add(Number(el.dataset.page))
       }
@@ -185,17 +186,17 @@ export default function TeamSheetsModal({
   }, [onClose])
 
   return (
-    <div className="ts-overlay no-print" onClick={onClose}>
-      <div className="ts-dialog" onClick={(e) => e.stopPropagation()}>
-        <header className="ts-header">
-          <span className="ts-title">{title}</span>
-          <button className="ts-close" onClick={onClose} aria-label="Close">
+    <div className="pdf-overlay no-print" onClick={onClose}>
+      <div className="pdf-dialog" onClick={(e) => e.stopPropagation()}>
+        <header className="pdf-header">
+          <span className="pdf-title">{title}</span>
+          <button className="pdf-close" onClick={onClose} aria-label="Close">
             ✕
           </button>
         </header>
-        <div className="ts-pages" ref={pagesRef} onScroll={recomputeActive}>
-          {error && <p className="ts-status error">{error}</p>}
-          {!error && (!doc || ratio == null) && <p className="ts-status">Loading team sheets…</p>}
+        <div className="pdf-pages" ref={pagesRef} onScroll={recomputeActive}>
+          {error && <p className="pdf-status error">{error}</p>}
+          {!error && (!doc || ratio == null) && <p className="pdf-status">Loading PDF…</p>}
           {doc &&
             ratio != null &&
             Array.from({ length: doc.numPages }, (_, i) => (

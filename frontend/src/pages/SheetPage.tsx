@@ -5,7 +5,7 @@ import { useIsAdmin, useMe } from '../lib/auth'
 import { loadLocalPad, subscribeLocalPads } from '../lib/scratchpadStore'
 import { flagCode } from '../lib/countries'
 import { finishText, finishTier, statusAbbr, type FormRace } from '../lib/raceForm'
-import TeamSheetsModal, { prefetchTeamSheets } from '../components/TeamSheetsModal'
+import PdfModal, { prefetchPdf } from '../components/PdfModal'
 import ScratchpadModal from '../components/ScratchpadModal'
 import PitLaneModal from '../components/PitLaneModal'
 import RecapModal from '../components/RecapModal'
@@ -68,6 +68,8 @@ interface Sheet {
   priorYearLabel: string
   teamSheetsVersion: number | null
   pitAssignmentsVersion: number | null
+  /** Absent on sheet payloads cached before the field shipped. */
+  storylinesVersion?: number | null
   formRounds: FormRound[]
   classes: SheetClass[]
 }
@@ -137,6 +139,7 @@ export default function SheetPage({ eventId }: { eventId: number }) {
   const [teamSheet, setTeamSheet] = useState<{ page: number; title: string } | null>(null)
   const [scratchpadOpen, setScratchpadOpen] = useState(false)
   const [pitLaneOpen, setPitLaneOpen] = useState(false)
+  const [storylinesOpen, setStorylinesOpen] = useState(false)
   const [recapOpen, setRecapOpen] = useState(false)
   const padAttention = useScratchpadAttention(eventId)
 
@@ -155,12 +158,19 @@ export default function SheetPage({ eventId }: { eventId: number }) {
     sheet?.teamSheetsVersion != null
       ? `/api/events/${eventId}/team-sheets/data?v=${sheet.teamSheetsVersion}`
       : null
+  const storylinesUrl =
+    sheet?.storylinesVersion != null
+      ? `/api/events/${eventId}/storylines/data?v=${sheet.storylinesVersion}`
+      : null
 
-  // Warm the PDF while the broadcaster reads the sheet, so the first row
+  // Warm the PDFs while the broadcaster reads the sheet, so the first
   // click opens instantly.
   useEffect(() => {
-    if (teamSheetsUrl) prefetchTeamSheets(teamSheetsUrl)
+    if (teamSheetsUrl) prefetchPdf(teamSheetsUrl)
   }, [teamSheetsUrl])
+  useEffect(() => {
+    if (storylinesUrl) prefetchPdf(storylinesUrl)
+  }, [storylinesUrl])
 
   function openTeamSheet(ev: MouseEvent, entry: SheetEntry) {
     // The prior-year cell is contentEditable; clicks there are edits, not
@@ -428,9 +438,15 @@ export default function SheetPage({ eventId }: { eventId: number }) {
       {/* Floating, not in the topbar: all of these are reached mid-scroll,
           deep in a class table, as often as from the top of the page. Pit lane
           is always shown — its modal explains (or, for admins, fixes) an empty
-          state better than a missing button does. Recap joins at the top so
-          Pit lane and Scratchpad keep their positions from the screen edge. */}
+          state better than a missing button does. Newer buttons join at the
+          top so Pit lane and Scratchpad keep their positions from the screen
+          edge. */}
       <div className="sheet-fabs no-print">
+        {storylinesUrl != null && (
+          <button className="btn sheet-fab" onClick={() => setStorylinesOpen(true)}>
+            Storylines
+          </button>
+        )}
         {sheet.seasonId != null && (
           <button className="btn sheet-fab" onClick={() => setRecapOpen(true)}>
             Recap
@@ -489,12 +505,16 @@ export default function SheetPage({ eventId }: { eventId: number }) {
       )}
 
       {teamSheet && teamSheetsUrl && (
-        <TeamSheetsModal
+        <PdfModal
           url={teamSheetsUrl}
           page={teamSheet.page}
           title={teamSheet.title}
           onClose={() => setTeamSheet(null)}
         />
+      )}
+
+      {storylinesOpen && storylinesUrl && (
+        <PdfModal url={storylinesUrl} title="Storylines" onClose={() => setStorylinesOpen(false)} />
       )}
     </div>
   )
