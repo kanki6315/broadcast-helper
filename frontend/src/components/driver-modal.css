@@ -280,6 +280,7 @@
 
 .dm-scroll {
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: var(--space-4) 0 var(--space-5);
   display: flex;
   flex-direction: column;

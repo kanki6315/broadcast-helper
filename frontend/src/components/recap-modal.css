@@ -114,6 +114,7 @@
 
 .rm-body {
   overflow-y: auto;
+  overscroll-behavior: contain;
   /* No bottom padding: the last grid's own margin closes the space, and the
    * empty/error panels carry their own. */
   padding: var(--space-4) var(--space-4) 0;

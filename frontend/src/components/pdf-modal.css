@@ -63,6 +63,7 @@
   position: relative;
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior: contain;
   background: oklch(38% 0.008 277);
   padding: var(--space-3);
   display: flex;
