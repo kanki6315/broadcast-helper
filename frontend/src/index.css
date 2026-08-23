@@ -199,6 +199,13 @@
 }
 
 /* -- base ------------------------------------------------------------------ */
+html {
+  /* iOS Safari rubber-bands the document even under body{overflow:hidden},
+     and the bounce drags position:fixed chrome (modals, the sheet FABs) with
+     it. No root overscroll — pull-to-refresh isn't a gesture this app uses. */
+  overscroll-behavior-y: none;
+}
+
 body {
   margin: 0;
   background: var(--bg);

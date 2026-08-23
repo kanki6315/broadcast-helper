@@ -126,6 +126,9 @@
   position: relative;
   flex: 1;
   overflow-y: auto;
+  /* A finger pan that reaches the end of the pad must not chain into the
+     document and bounce the whole modal. */
+  overscroll-behavior: contain;
   background: oklch(38% 0.008 277);
   padding: var(--space-3);
   display: flex;
