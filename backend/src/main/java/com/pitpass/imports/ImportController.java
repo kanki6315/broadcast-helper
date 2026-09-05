@@ -138,12 +138,15 @@ public class ImportController {
     /** The guessed target, selectable options, and class-mapping review.
      *  eventId / seasonYear recompute the class review against the season the
      *  reviewer picked — needed for files with no session metadata (grid CSVs)
-     *  or that only guess their season (championship-points PDFs). */
+     *  or that only guess their season (championship-points PDFs). seriesId +
+     *  seasonYear (no eventId) name the season a metadata-less file's new event
+     *  will be created in. */
     @GetMapping("/{id}/review")
     public ImportService.ImportReview review(@PathVariable long id,
                                              @RequestParam(required = false) Long eventId,
+                                             @RequestParam(required = false) Long seriesId,
                                              @RequestParam(required = false) Integer seasonYear) {
-        return imports.reviewTarget(id, eventId, seasonYear);
+        return imports.reviewTarget(id, eventId, seriesId, seasonYear);
     }
 
     /** Commit to the reviewer-confirmed target (series/event/championship + class map). */

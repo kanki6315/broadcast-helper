@@ -308,7 +308,7 @@ class ImportRosterGuardTest {
                                        Integer sessionOrdinal, Boolean allowNewEntries,
                                        Boolean removeOrphanedEntries) {
         return new ImportTarget(seriesId, null, eventId, null, null, null, null, null, null,
-                sessionType, sessionOrdinal, null, null, allowNewEntries, removeOrphanedEntries);
+                sessionType, sessionOrdinal, null, null, allowNewEntries, removeOrphanedEntries, null, null);
     }
 
     private static ImportTarget gridTarget(long eventId, Boolean allowNewEntries) {
