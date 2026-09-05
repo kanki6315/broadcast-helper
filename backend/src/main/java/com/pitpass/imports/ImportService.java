@@ -869,7 +869,16 @@ public class ImportService {
      *  season the reviewer actually picked, for payloads that can't resolve one by
      *  themselves (grid CSVs) or only guess it (points PDFs). */
     public ImportReview reviewTarget(long id, Long chosenEventId, Integer chosenYear) {
+        return reviewTarget(id, chosenEventId, null, chosenYear);
+    }
+
+    /** As above; seriesId + seasonYear together name the season a metadata-less
+     *  file's *new* event will land in, so its classes get checked against that
+     *  season's (when it already exists) instead of against nothing. */
+    public ImportReview reviewTarget(long id, Long chosenEventId, Long chosenSeriesId, Integer chosenYear) {
         BatchSummary batch = get(id);
+        Optional<Long> describedSeason = chosenEventId == null && chosenSeriesId != null && chosenYear != null
+                ? findSeasonId(chosenSeriesId, chosenYear) : Optional.empty();
         ClassReview cr = classReview(id);
         String payload = payloadJson(id);
         try {
@@ -896,6 +905,9 @@ public class ImportService {
                         if (chosenEventId != null && "STAGED".equals(batch.status())) {
                             cr = classReviewForSeason(seasonIdOfEvent(chosenEventId),
                                     imp.rows().stream().map(RaceResultsImport.Row::className).toList());
+                        } else if (describedSeason.isPresent() && "STAGED".equals(batch.status())) {
+                            cr = classReviewForSeason(describedSeason.get(),
+                                    imp.rows().stream().map(RaceResultsImport.Row::className).toList());
                         }
                     }
                 }
@@ -913,6 +925,9 @@ public class ImportService {
                             .allMatch(r -> r.time() == null || r.time().isBlank());
                     if (chosenEventId != null && "STAGED".equals(batch.status())) {
                         cr = classReviewForSeason(seasonIdOfEvent(chosenEventId),
+                                imp.rows().stream().map(GridImport.Row::className).toList());
+                    } else if (needsSession && describedSeason.isPresent() && "STAGED".equals(batch.status())) {
+                        cr = classReviewForSeason(describedSeason.get(),
                                 imp.rows().stream().map(GridImport.Row::className).toList());
                     }
                 }
@@ -1182,7 +1197,13 @@ public class ImportService {
             // with no results, no grid rows and no drivers once the commit's
             // writes land (the review's rosterDiff.orphanedCars). Never implied:
             // null/false leaves every entry in place.
-            Boolean removeOrphanedEntries
+            Boolean removeOrphanedEntries,
+            // For a file with no session metadata (results/grid CSVs) landing in a
+            // brand-new event: the CSV carries no date or venue, so the reviewer
+            // supplies them. The date pins the season (its year) and the round
+            // order; the circuit is optional. Ignored when eventId is set.
+            LocalDate eventDate,
+            String circuitName
     ) {
         Map<String, String> mapping() {
             return classMapping == null ? Map.of() : classMapping;
@@ -1459,7 +1480,7 @@ public class ImportService {
         return new ImportTarget(t.seriesId(), t.newSeriesName(), eventId, eventName,
                 t.classCode(), t.kind(), t.isCup(), t.familyName(), t.seasonYear(),
                 t.sessionType(), t.sessionOrdinal(), t.classMapping(), t.gridBasis(),
-                t.allowNewEntries(), t.removeOrphanedEntries());
+                t.allowNewEntries(), t.removeOrphanedEntries(), t.eventDate(), t.circuitName());
     }
 
     private static String messageOf(RuntimeException ex) {
@@ -1541,17 +1562,18 @@ public class ImportService {
             sessionName = imp.sessionName();
         } else {
             // No session metadata (results CSVs): the reviewer chose an existing
-            // event — which pins the season — and the session. Same shape as the
-            // grid CSV path: the file has no date to create an event with. The
+            // event — which pins the season — or described a new one (the file
+            // has no date or venue of its own), and named the session. The
             // payload knows race from qualifying by its own header, so its
             // session type wins over the reviewer's; the ordinal is the
             // reviewer's call (the file can't tell Race 1 from Race 2).
-            if (target.eventId() == null) {
-                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                        "Results file has no event/session metadata; choose an existing event in review");
+            if (target.eventId() != null) {
+                eventId = target.eventId();
+                seasonId = seasonIdOfEvent(eventId);
+            } else {
+                seasonId = seasonForDescribedEvent(target, "Results file");
+                eventId = createDescribedEvent(seasonId, target);
             }
-            eventId = target.eventId();
-            seasonId = seasonIdOfEvent(eventId);
             sessionType = resolveCsvSessionType(imp.sessionType(), target.sessionType());
             sessionOrdinal = target.sessionOrdinal() != null ? target.sessionOrdinal() : imp.sessionOrdinal();
             sessionName = sessionDisplayName(sessionType, sessionOrdinal);
@@ -1680,15 +1702,16 @@ public class ImportService {
             sessionName = imp.sessionName();
         } else {
             // No session metadata (grid CSVs): the reviewer chose an existing
-            // event — which pins the season — and named the session. No new
-            // event: the file has no date to create one with, and the entry
-            // list imported first creates it in the normal workflow.
-            if (target.eventId() == null) {
-                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                        "Grid file has no event/session metadata; choose an existing event in review");
+            // event — which pins the season — or described a new one (the file
+            // has no date or venue of its own; normally the entry list imported
+            // first creates the event), and named the session.
+            if (target.eventId() != null) {
+                eventId = target.eventId();
+                seasonId = seasonIdOfEvent(eventId);
+            } else {
+                seasonId = seasonForDescribedEvent(target, "Grid file");
+                eventId = createDescribedEvent(seasonId, target);
             }
-            eventId = target.eventId();
-            seasonId = seasonIdOfEvent(eventId);
             sessionType = normalizeSessionType(target.sessionType(), null); // null -> RACE
             sessionOrdinal = target.sessionOrdinal() != null ? target.sessionOrdinal() : 1;
             sessionName = sessionDisplayName(sessionType, sessionOrdinal);
@@ -2247,6 +2270,40 @@ public class ImportService {
                         """)
                 .param("seasonId", seasonId).param("circuit", circuit).param("date", date)
                 .query(Long.class).optional();
+    }
+
+    /**
+     * The season a reviewer-described event lands in: the chosen series (existing
+     * or newly named) at the year of the date the reviewer typed. Only for files
+     * whose payload carries no session metadata — everything the event needs
+     * comes from the target, so it is validated here rather than trusted.
+     */
+    private long seasonForDescribedEvent(ImportTarget target, String fileLabel) {
+        if (target.eventName() == null || target.eventName().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    fileLabel + " has no event/session metadata; choose an existing event in review, "
+                    + "or name the new event to create");
+        }
+        if (target.eventDate() == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    fileLabel + " has no date of its own; give the new event a date in review");
+        }
+        if (target.seriesId() == null && (target.newSeriesName() == null || target.newSeriesName().isBlank())) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Choose the series the new event belongs to");
+        }
+        long seriesId = resolveSeriesId(target);
+        return findOrCreateSeason(seriesId, target.eventDate().getYear());
+    }
+
+    /** Create the event a metadata-less file described in review (see
+     *  {@link #seasonForDescribedEvent}) and slot it into the season's round order. */
+    private long createDescribedEvent(long seasonId, ImportTarget target) {
+        String circuit = target.circuitName() == null || target.circuitName().isBlank()
+                ? null : target.circuitName().trim();
+        long eventId = createEvent(seasonId, target.eventName().trim(), circuit, null, null, target.eventDate());
+        renumberSeasonRounds(seasonId);
+        return eventId;
     }
 
     private long createEvent(long seasonId, String name, String circuit,

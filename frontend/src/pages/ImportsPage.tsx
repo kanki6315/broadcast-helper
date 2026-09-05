@@ -86,6 +86,12 @@ interface TargetState {
   // Reviewer opted to delete the rosterDiff's orphaned entries with the
   // commit. Same per-event reset discipline as allowNewEntries.
   removeOrphanedEntries: boolean
+  // A metadata-less file (results/grid CSV) landing in a new event: the file
+  // carries no name, date or venue, so the reviewer types them. The date pins
+  // the season (its year) and the round order; the circuit is optional.
+  newEventName: string
+  newEventDate: string
+  newEventCircuit: string
 }
 
 function initTarget(r: ImportReview): TargetState {
@@ -110,6 +116,9 @@ function initTarget(r: ImportReview): TargetState {
     gridBasis: '',
     allowNewEntries: false,
     removeOrphanedEntries: false,
+    newEventName: '',
+    newEventDate: '',
+    newEventCircuit: '',
   }
 }
 
@@ -130,6 +139,16 @@ function validYear(value: string): boolean {
 
 function validOrdinal(value: string): boolean {
   return /^[1-9]\d*$/.test(value.trim())
+}
+
+function validDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value.trim())
+}
+
+// A metadata-less file creating its own event: every fact the event needs has
+// to be typed, since the file has none.
+function describedEventComplete(t: TargetState): boolean {
+  return t.eventId === 'new' && t.newEventName.trim().length > 0 && validDate(t.newEventDate)
 }
 
 // "#89 TCR · HART, #4 GS · Medusa, … and 3 more" — capped so a wholly wrong
@@ -302,6 +321,16 @@ export default function ImportsPage() {
     setReviews((r) => ({ ...r, [id]: review })) // target edits live in `targets`, untouched
   }
 
+  // A metadata-less file creating a new event lands in the season of the
+  // chosen series at the typed date's year; once both are known, re-check the
+  // file's classes against that season (if it exists yet) so a mapping the
+  // commit will demand is offered here. Takes the values in hand — `targets`
+  // may not have caught up with the patch that triggered this.
+  async function reviewDescribedEvent(id: number, seriesId: number | 'new' | '', date: string) {
+    if (!reviews[id]?.needsSession || typeof seriesId !== 'number' || !validDate(date)) return
+    await refetchReview(id, `seriesId=${seriesId}&seasonYear=${date.trim().slice(0, 4)}`)
+  }
+
   /** The event typeahead's options. With a series chosen the list narrows to
    *  it (oldest first, like a season page); with none it spans every event,
    *  newest first, hinted with its series so typing either name matches. */
@@ -320,14 +349,16 @@ export default function ImportsPage() {
         .filter(Boolean)
         .join(' · '),
     }))
-    // A file with no metadata has no date to create an event from.
-    if (!review.needsSession) {
-      opts.unshift({
-        key: 'new',
-        label: `New event${review.guess?.eventName ? `: ${review.guess.eventName}` : ''}`,
-        variant: 'action',
-      })
-    }
+    // A file with no metadata has no name or date of its own to create an
+    // event from — the reviewer types them in the row that appears on picking
+    // this — so its option is unnamed.
+    opts.unshift({
+      key: 'new',
+      label: review.needsSession
+        ? 'New event…'
+        : `New event${review.guess?.eventName ? `: ${review.guess.eventName}` : ''}`,
+      variant: 'action',
+    })
     return opts
   }
 
@@ -342,6 +373,7 @@ export default function ImportsPage() {
       seriesId: s.id,
       ...(resetEvent ? { eventId: 'new' as const, allowNewEntries: false, removeOrphanedEntries: false } : {}),
     })
+    if (t?.eventId === 'new') void reviewDescribedEvent(b.id, s.id, t.newEventDate)
   }
 
   /** The create-row keeps today's deferred semantics: the series is named now
@@ -410,8 +442,12 @@ export default function ImportsPage() {
     // matched — and the guess leaves it unset for a title it can't read.
     if (reviews[b.id]?.kind === 'STANDINGS' && !t.kind) return false
     // A metadata-less file commits against a chosen existing event (which
-    // implies the series); other kinds need the series chosen.
-    if (reviews[b.id]?.needsSession) return typeof t.eventId === 'number' && validOrdinal(t.sessionOrdinal)
+    // implies the series) or a fully described new one in a chosen series;
+    // other kinds need the series chosen.
+    if (reviews[b.id]?.needsSession) {
+      const eventReady = typeof t.eventId === 'number' || (describedEventComplete(t) && seriesChosen(t))
+      return eventReady && validOrdinal(t.sessionOrdinal)
+    }
     return seriesChosen(t)
   }
 
@@ -433,6 +469,11 @@ export default function ImportsPage() {
     if (review.needsSession) {
       body.sessionType = t.sessionType
       body.sessionOrdinal = Number(t.sessionOrdinal.trim())
+      if (t.eventId === 'new') {
+        body.eventName = t.newEventName.trim()
+        body.eventDate = t.newEventDate.trim()
+        body.circuitName = t.newEventCircuit.trim() || null
+      }
     }
     if (review.kind === 'GRID') {
       body.gridBasis = t.gridBasis.trim() || null
@@ -550,7 +591,7 @@ export default function ImportsPage() {
                       <td></td>
                       <td colSpan={6}>
                         <div className="import-target">
-                          {!review.needsSession && (
+                          {(!review.needsSession || t.eventId === 'new') && (
                             <div className="target-row">
                               <span className="target-label">Series</span>
                               <Combobox
@@ -611,7 +652,7 @@ export default function ImportsPage() {
                                 }
                                 onPick={(key) => pickEvent(b, key)}
                                 onClear={
-                                  typeof t.eventId === 'number'
+                                  typeof t.eventId === 'number' || (review.needsSession && t.eventId === 'new')
                                     ? () =>
                                         patch(b.id, {
                                           eventId: review.needsSession ? '' : 'new',
@@ -621,6 +662,43 @@ export default function ImportsPage() {
                                     : undefined
                                 }
                               />
+                            </div>
+                          )}
+
+                          {review.needsSession && t.eventId === 'new' && (
+                            <div className="target-row">
+                              <span className="target-label">New event</span>
+                              <input
+                                aria-label="New event name"
+                                className="target-combo"
+                                placeholder="Event name"
+                                value={t.newEventName}
+                                disabled={busy}
+                                onChange={(e) => patch(b.id, { newEventName: e.target.value })}
+                              />
+                              <input
+                                aria-label="New event date"
+                                type="date"
+                                title="Event date — sets the season and the round order"
+                                value={t.newEventDate}
+                                disabled={busy}
+                                onChange={(e) => {
+                                  patch(b.id, { newEventDate: e.target.value })
+                                  void reviewDescribedEvent(b.id, t.seriesId, e.target.value)
+                                }}
+                              />
+                              <input
+                                aria-label="New event circuit"
+                                placeholder="Circuit (optional)"
+                                value={t.newEventCircuit}
+                                disabled={busy}
+                                onChange={(e) => patch(b.id, { newEventCircuit: e.target.value })}
+                              />
+                              {!describedEventComplete(t) && (
+                                <span className="target-hint">
+                                  The file has no event details of its own — name and date are needed.
+                                </span>
+                              )}
                             </div>
                           )}
 
@@ -828,17 +906,21 @@ export default function ImportsPage() {
                           <button
                             disabled={busy || !canCommit(b)}
                             title={
-                              review.needsSession && typeof t.eventId !== 'number'
+                              review.needsSession && t.eventId === ''
                                 ? 'Choose an event first'
-                                : review.needsSession && !validOrdinal(t.sessionOrdinal)
-                                  ? 'Enter which race of the weekend (1, 2, …)'
-                                  : !review.needsSession && !seriesChosen(t)
-                                    ? 'Choose a series first'
-                                    : review.kind === 'STANDINGS' && !t.kind
-                                      ? 'Choose what the championship ranks first'
-                                      : needsNewEntryAck(b) && !t.allowNewEntries
-                                        ? 'Confirm adding the new cars first'
-                                        : undefined
+                                : review.needsSession && t.eventId === 'new' && !describedEventComplete(t)
+                                  ? 'Name and date the new event first'
+                                  : review.needsSession && t.eventId === 'new' && !seriesChosen(t)
+                                    ? 'Choose the new event’s series first'
+                                    : review.needsSession && !validOrdinal(t.sessionOrdinal)
+                                      ? 'Enter which race of the weekend (1, 2, …)'
+                                      : !review.needsSession && !seriesChosen(t)
+                                        ? 'Choose a series first'
+                                        : review.kind === 'STANDINGS' && !t.kind
+                                          ? 'Choose what the championship ranks first'
+                                          : needsNewEntryAck(b) && !t.allowNewEntries
+                                            ? 'Confirm adding the new cars first'
+                                            : undefined
                             }
                             onClick={() => commit(b)}
                           >
