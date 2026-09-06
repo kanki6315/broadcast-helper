@@ -1565,6 +1565,44 @@ td.lineup-changed {
   background: var(--res-top5);
 }
 
+/* Wins, podiums and top-5s carry their share of starts: a two-column pair so
+ * every count in the column sits on the same axis whether or not a rate
+ * follows it. The rate is caption-sized and muted — the count is the fact,
+ * the rate its context — and the slot is reserved even when empty so a zero
+ * doesn't drift toward the centre. */
+.stats-table .stat-pair {
+  display: inline-grid;
+  /* Fixed tracks, not max-content: each cell is its own grid, so a track that
+   * measured its own content would put one row's count on a different axis
+   * from the next. The count track is exactly a two-digit chip's box (22px
+   * content-box + 4px padding a side); a rarer three-digit chip overflows
+   * leftward into the cell padding and keeps its digits on the axis. */
+  grid-template-columns: 30px 4ch;
+  column-gap: 5px;
+  align-items: baseline;
+  justify-items: start;
+  white-space: nowrap;
+}
+
+.stats-table .stat-pair > :first-child {
+  justify-self: end;
+}
+
+/* A zero or "·" in the count slot takes the chip's exact box — same
+ * min-width, padding and centring — so its digit lands where a chip's digit
+ * does, not merely where the chip's edge would. */
+.stats-table .stat-pair > .stat-zero {
+  display: inline-block;
+  min-width: 22px;
+  padding: 0 4px;
+  text-align: center;
+}
+
+.stats-table .stat-rate {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
 .stats-table .name-cell {
   min-width: 180px;
 }
