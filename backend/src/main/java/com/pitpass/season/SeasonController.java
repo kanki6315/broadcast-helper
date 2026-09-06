@@ -61,7 +61,9 @@ public class SeasonController {
                                 Integer roundOrdinal, long entryCount, long sessionCount) {
     }
 
-    public record SeasonHub(long id, int year, long seriesId, String seriesName,
+    /** {@code primaryKind} is the series' headline championship kind (null =
+     *  the Teams-first default); the hub's kind chips lead with it. */
+    public record SeasonHub(long id, int year, long seriesId, String seriesName, String primaryKind,
                             String kind, String label,
                             List<CalendarEvent> events,
                             List<BrowseController.ChampionshipSummary> championships,
@@ -70,16 +72,18 @@ public class SeasonController {
 
     @GetMapping("/{id}")
     public SeasonHub season(@PathVariable long id) {
-        record Header(long id, int year, long seriesId, String seriesName, String kind, String label) {
+        record Header(long id, int year, long seriesId, String seriesName, String primaryKind,
+                      String kind, String label) {
         }
         Header season = db.sql("""
-                        SELECT s.id, s.year, sr.id AS series_id, sr.name AS series_name, s.kind, s.label
+                        SELECT s.id, s.year, sr.id AS series_id, sr.name AS series_name, sr.primary_kind,
+                               s.kind, s.label
                         FROM season s JOIN series sr ON sr.id = s.series_id
                         WHERE s.id = :id
                         """)
                 .param("id", id)
                 .query((rs, i) -> new Header(rs.getLong("id"), rs.getInt("year"),
-                        rs.getLong("series_id"), rs.getString("series_name"),
+                        rs.getLong("series_id"), rs.getString("series_name"), rs.getString("primary_kind"),
                         rs.getString("kind"), rs.getString("label")))
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such season"));
@@ -103,6 +107,7 @@ public class SeasonController {
         List<BrowseController.ChampionshipSummary> championships = db.sql("""
                         SELECT c.id, c.title, g.family AS group_title, c.class_name, g.kind, g.is_cup, s.year,
                                s.id AS season_id, sr.name AS series_name,
+                               COALESCE(g.kind_label, initcap(lower(g.kind))) AS kind_label,
                                (SELECT count(*) FROM standings_row r WHERE r.championship_id = c.id) AS row_count
                         FROM championship c
                                  JOIN championship_group g ON g.id = c.group_id
@@ -114,7 +119,7 @@ public class SeasonController {
                 .param("id", id)
                 .query((rs, i) -> new BrowseController.ChampionshipSummary(rs.getLong("id"), rs.getString("title"),
                         rs.getString("group_title"), rs.getString("class_name"), rs.getString("kind"),
-                        rs.getBoolean("is_cup"), rs.getInt("year"), rs.getLong("season_id"),
+                        rs.getString("kind_label"), rs.getBoolean("is_cup"), rs.getInt("year"), rs.getLong("season_id"),
                         rs.getString("series_name"), rs.getLong("row_count")))
                 .list();
 
@@ -132,7 +137,7 @@ public class SeasonController {
                 .list();
 
         return new SeasonHub(season.id(), season.year(), season.seriesId(), season.seriesName(),
-                season.kind(), season.label(), events, championships, entryClasses);
+                season.primaryKind(), season.kind(), season.label(), events, championships, entryClasses);
     }
 
     public record KindUpdate(@NotNull String kind, String label) {

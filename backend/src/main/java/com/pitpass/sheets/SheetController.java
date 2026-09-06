@@ -69,7 +69,7 @@ public class SheetController {
     public Sheet sheet(@PathVariable long id) {
         var header = db.sql("""
                         SELECT e.name, e.circuit_name, e.event_date, e.season_id, e.round_ordinal, s.year,
-                               sr.id AS series_id, sr.name AS series_name
+                               sr.id AS series_id, sr.name AS series_name, sr.primary_kind
                         FROM event e JOIN season s ON s.id = e.season_id JOIN series sr ON sr.id = s.series_id
                         WHERE e.id = :id
                         """)
@@ -77,7 +77,7 @@ public class SheetController {
                 .query((rs, i) -> new Object[]{rs.getString("name"), rs.getString("circuit_name"),
                         rs.getObject("event_date", LocalDate.class), rs.getLong("season_id"),
                         rs.getObject("round_ordinal", Integer.class), rs.getInt("year"), rs.getString("series_name"),
-                        rs.getLong("series_id")})
+                        rs.getLong("series_id"), rs.getString("primary_kind")})
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such event"));
         String eventName = (String) header[0];
@@ -88,6 +88,7 @@ public class SheetController {
         int year = (Integer) header[5];
         String seriesName = (String) header[6];
         long seriesId = (Long) header[7];
+        String primaryKind = (String) header[8];
 
         // Per-series class display config (order + header colour); classes with
         // no row fall back to a neutral colour sorted last.
@@ -110,23 +111,34 @@ public class SheetController {
         }
         record ChampAgg(String className, String key, double points) {
         }
-        // The primary (non-cup) championship to show per class: teams points for a
-        // team-based series, drivers points for a single-driver series. Prefer a
-        // TEAMS championship when one exists, else DRIVERS. Its kind decides how a
-        // car is matched to a standings row (car number vs driver name).
-        record PrimaryChamp(long id, String className, String kind) {
+        // The primary (non-cup) championship to show per class: the series'
+        // own headline kind when it has said which (series.primary_kind —
+        // drivers points for a one-make series whose drivers' title is the
+        // story), else teams points for a team-based series, else DRIVERS.
+        // Its kind decides how a car is matched to a standings row (car
+        // number vs driver name); its kindLabel is the series' wording for
+        // the column heading.
+        record PrimaryChamp(long id, String className, String kind, String kindLabel) {
         }
         Map<String, PrimaryChamp> chosenByClass = new HashMap<>();
         db.sql("""
-                        SELECT c.id, c.class_name, g.kind
+                        SELECT c.id, c.class_name, g.kind, COALESCE(g.kind_label, initcap(lower(g.kind))) AS kind_label
                         FROM championship c JOIN championship_group g ON g.id = c.group_id
                         WHERE c.season_id = :seasonId AND g.is_cup = false
                         """)
                 .param("seasonId", seasonId)
-                .query((rs, i) -> new PrimaryChamp(rs.getLong("id"), rs.getString("class_name"), rs.getString("kind")))
+                .query((rs, i) -> new PrimaryChamp(rs.getLong("id"), rs.getString("class_name"),
+                        rs.getString("kind"), rs.getString("kind_label")))
                 .list()
                 .forEach(pc -> chosenByClass.merge(pc.className(), pc,
-                        (a, b) -> champKindRank(a.kind()) <= champKindRank(b.kind()) ? a : b));
+                        (a, b) -> champKindRank(a.kind(), primaryKind) <= champKindRank(b.kind(), primaryKind)
+                                ? a : b));
+        // The champ column's heading names what it ranks, in the series' own
+        // words: the best-ranked chosen kind, "Teams" when nothing is imported.
+        String champKindLabel = chosenByClass.values().stream()
+                .min(Comparator.comparingInt(pc -> champKindRank(pc.kind(), primaryKind)))
+                .map(pc -> pc.kindLabel() != null ? pc.kindLabel() : "Teams")
+                .orElse("Teams");
         Map<String, String> champKindByClass = new HashMap<>();
         java.util.Set<Long> champIds = new java.util.HashSet<>();
         chosenByClass.forEach((cls, pc) -> {
@@ -502,7 +514,7 @@ public class SheetController {
         String priorYearLabel = "'" + String.format("%02d", (year - 1) % 100) + " "
                                 + venueAbbrev(eventName, circuitName);
         return new Sheet(id, seasonId, eventName, circuitName, eventDate, year, roundOrdinal, seriesName,
-                seriesName + " " + year + " Teams", priorYearLabel, teamSheetsVersion, pitAssignmentsVersion,
+                seriesName + " " + year + " " + champKindLabel, priorYearLabel, teamSheetsVersion, pitAssignmentsVersion,
                 storylinesVersion, formRounds, classes);
     }
 
@@ -550,8 +562,12 @@ public class SheetController {
         }
     }
 
-    /** Championship kind preference for the sheet's champ column: teams first. */
-    private static int champKindRank(String kind) {
+    /** Championship kind preference for the sheet's champ column: the series'
+     *  declared headline kind first, then the historical Teams-first order. */
+    static int champKindRank(String kind, String primaryKind) {
+        if (kind != null && kind.equals(primaryKind)) {
+            return -1;
+        }
         return switch (kind == null ? "" : kind) {
             case "TEAMS" -> 0;
             case "DRIVERS" -> 1;

@@ -2090,6 +2090,39 @@ h2 small {
   font-weight: 600;
 }
 
+/* A group row: the cup checkbox + label on the left, the series' wording for
+ * the kind ("Entrants") as a small text box on the right. */
+.group-row {
+  cursor: default;
+  flex-wrap: wrap;
+}
+
+.group-row-cup {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.group-row-wording {
+  width: 9rem;
+  padding: 2px 6px;
+  font-size: var(--text-xs);
+}
+
+.primary-kind-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.primary-kind-field > span {
+  font-weight: 600;
+}
+
 .overall-champ-meta {
   font-size: var(--text-xs);
 }
