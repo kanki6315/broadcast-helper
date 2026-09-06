@@ -6,7 +6,6 @@ import ChampionshipGrid, {
   fetchRecap,
   formatPoints,
   invalidateRecap,
-  kindLabel,
   useChampSelection,
 } from './ChampionshipGrid'
 import { useSeason } from './SeasonLayout'
@@ -249,12 +248,13 @@ function useLeaders() {
   // The title names BOTH axes of what's actually shown. The family was already
   // named (Endurance Cup points under a "Championship" heading would invite an
   // on-air misquote) but the kind is the more misquotable one: the board defaults
-  // to Teams, and "Cadillac Whelen · 2145" read out under a bare "Championship
-  // leaders" is the drivers' title to anyone listening.
+  // to the series' headline kind (Teams unless it says otherwise), and "Cadillac
+  // Whelen · 2145" read out under a bare "Championship leaders" is the drivers'
+  // title to anyone listening. The kind prints in the series' own words.
   const familyLabel = sel.families.find((f) => f.family === sel.family)?.label
   const scope =
     familyLabel && familyLabel !== 'Championship' ? `${familyLabel} leaders` : 'Championship leaders'
-  const title = sel.kind ? `${scope} · ${kindLabel(sel.kind)}` : scope
+  const title = sel.kind ? `${scope} · ${sel.kindLabel(sel.kind)}` : scope
 
   // "No standings imported" is only true when the SEASON has none; a filtered
   // class with none gets copy that says so.

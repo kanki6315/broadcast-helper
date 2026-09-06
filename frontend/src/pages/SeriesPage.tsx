@@ -6,6 +6,7 @@ interface Series {
   id: number
   name: string
   abbreviation: string | null
+  primaryKind: string | null
   aliases: string[]
   logoVersion: number | null
 }
@@ -59,8 +60,24 @@ interface SeriesGroup {
   family: string
   kind: string | null
   label: string
+  /** The series' own wording for the kind ("Entrants"); null = title-cased kind. */
+  kindLabel: string | null
   isCup: boolean
   championshipCount: number
+}
+
+// What a championship ranks — the closed set the importer accepts. The
+// wording a series uses for each is a per-group setting (kindLabel).
+const CHAMPIONSHIP_KINDS: [string, string][] = [
+  ['DRIVERS', 'Drivers'],
+  ['TEAMS', 'Teams'],
+  ['MANUFACTURERS', 'Manufacturers'],
+]
+
+function defaultKindLabel(kind: string | null): string {
+  if (!kind) return 'Overall'
+  const lower = kind.toLowerCase()
+  return lower.charAt(0).toUpperCase() + lower.slice(1)
 }
 
 interface SeasonSummary {
@@ -278,10 +295,13 @@ function SeriesManagementDialog({
                 <SettingsSection title="Class names" description="Map source spellings and rename a class across every imported season.">
                   <ClassAliasEditor seriesId={series.id} onError={setError} />
                 </SettingsSection>
+                <SettingsSection title="Headline championship" description="Which championship leads: the season hub's chips, the recap modal and the sheet's points column all put it first. Left unset, Teams leads where it exists — right for a team-based series, not for a one-make series whose drivers' title is the story.">
+                  <PrimaryKindEditor series={series} onError={setError} onRefresh={onRefresh} />
+                </SettingsSection>
                 <SettingsSection title="Overall championships" description="Mark a championship that scores the whole field rather than one class. Its recap then shows every class's drivers, with start and finish positions read overall instead of in class.">
                   <OverallChampionshipEditor seriesId={series.id} onError={setError} />
                 </SettingsSection>
-                <SettingsSection title="Championship groups" description="A cup is a side award over a subset of the rounds, published under its own name. Uncheck a group the importer mistook for a cup so it sorts as a full-season championship and can feed the sheet's points column.">
+                <SettingsSection title="Championship groups" description="A cup is a side award over a subset of the rounds, published under its own name. Uncheck a group the importer mistook for a cup so it sorts as a full-season championship and can feed the sheet's points column. The wording box is what this series calls the kind — Mustang Challenge says Entrants where IMSA says Teams; it prints on chips and headings, and the next season imported inherits it.">
                   <CupGroupEditor seriesId={series.id} onError={setError} />
                 </SettingsSection>
                 <SettingsSection title="Linked car numbers" description="When one entrant raced under two numbers — a one-off renumbering, a permanent renumbering, or an entry handed to a new team mid-season — link the two numbers for the season and class. Either order works: the recap gathers every weekend onto the entrant's standings row, whichever number the standings key it by. Event pages keep numbers as raced.">
@@ -1223,6 +1243,50 @@ function OverallChampionshipEditor({
   )
 }
 
+function PrimaryKindEditor({ series, onError, onRefresh }: {
+  series: Series
+  onError: (message: string | null) => void
+  onRefresh: () => Promise<void>
+}) {
+  const [saving, setSaving] = useState(false)
+
+  async function save(primaryKind: string) {
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/series/${series.id}/primary-kind`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ primaryKind: primaryKind || null }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        onError(err?.message ?? `Backend returned ${res.status}`)
+        return
+      }
+      onError(null)
+      await onRefresh()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <label className="primary-kind-field">
+      <span>Leads with</span>
+      <select
+        value={series.primaryKind ?? ''}
+        disabled={saving}
+        onChange={(e) => void save(e.target.value)}
+      >
+        <option value="">Teams first (default)</option>
+        {CHAMPIONSHIP_KINDS.map(([value, label]) => (
+          <option key={value} value={value}>{label}</option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
 function CupGroupEditor({
   seriesId,
   onError,
@@ -1253,13 +1317,13 @@ function CupGroupEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seriesId])
 
-  async function setCup(g: SeriesGroup, isCup: boolean) {
+  async function put(g: SeriesGroup, path: string, body: unknown) {
     setSaving(g.id)
     try {
-      const res = await fetch(`/api/series/${seriesId}/groups/${g.id}/cup`, {
+      const res = await fetch(`/api/series/${seriesId}/groups/${g.id}/${path}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isCup }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => null)
@@ -1271,6 +1335,18 @@ function CupGroupEditor({
     } finally {
       setSaving(null)
     }
+  }
+
+  function setCup(g: SeriesGroup, isCup: boolean) {
+    return put(g, 'cup', { isCup })
+  }
+
+  // Saved on blur / Enter, and only when it actually changed — every keystroke
+  // would otherwise be a round trip and a list reload under the cursor.
+  function setKindLabel(g: SeriesGroup, raw: string) {
+    const next = raw.trim() || null
+    if (next === (g.kindLabel ?? null)) return Promise.resolve()
+    return put(g, 'kind-label', { kindLabel: next })
   }
 
   if (loading) return <span className="muted">Loading…</span>
@@ -1289,21 +1365,38 @@ function CupGroupEditor({
           {groups
             .filter((g) => g.year === year)
             .map((g) => (
-              <label key={g.id} className="overall-champ-row">
-                <input
-                  type="checkbox"
-                  checked={g.isCup}
-                  disabled={saving === g.id}
-                  aria-label={`${g.label} is a cup`}
-                  onChange={(e) => void setCup(g, e.target.checked)}
-                />
-                <span className="overall-champ-title">{g.label}</span>
-                <span className="muted overall-champ-meta">
-                  {g.championshipCount === 1
-                    ? '1 championship'
-                    : `${g.championshipCount} championships`}
-                </span>
-              </label>
+              <div key={g.id} className="overall-champ-row group-row">
+                <label className="group-row-cup">
+                  <input
+                    type="checkbox"
+                    checked={g.isCup}
+                    disabled={saving === g.id}
+                    aria-label={`${g.label} is a cup`}
+                    onChange={(e) => void setCup(g, e.target.checked)}
+                  />
+                  <span className="overall-champ-title">{g.label}</span>
+                  <span className="muted overall-champ-meta">
+                    {g.championshipCount === 1
+                      ? '1 championship'
+                      : `${g.championshipCount} championships`}
+                  </span>
+                </label>
+                {g.kind && (
+                  <input
+                    className="group-row-wording"
+                    type="text"
+                    key={g.kindLabel ?? ''}
+                    defaultValue={g.kindLabel ?? ''}
+                    placeholder={defaultKindLabel(g.kind)}
+                    disabled={saving === g.id}
+                    aria-label={`What this series calls ${defaultKindLabel(g.kind)} in ${g.year}`}
+                    onBlur={(e) => void setKindLabel(g, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                    }}
+                  />
+                )}
+              </div>
             ))}
         </div>
       ))}

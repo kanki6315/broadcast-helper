@@ -46,6 +46,28 @@ class SeriesGroupControllerTest {
     }
 
     @Test
+    void setsAndClearsTheKindWordingAndRebuildsTheLabel() {
+        long seriesId = series("Wording test");
+        long seasonId = season(seriesId, 2099);
+        long teams = group(seasonId, "TEAMS", 1, false);
+
+        controller.setKindLabel(seriesId, teams, new SeriesGroupController.KindLabelRequest("  Entrants "));
+        var listed = controller.list(seriesId).groups().get(0);
+        assertEquals("Entrants", listed.kindLabel());
+        assertTrue(listed.label().endsWith(" — Entrants"), "label follows the wording: " + listed.label());
+        assertEquals("TEAMS", listed.kind(), "the kind itself is untouched");
+
+        controller.setKindLabel(seriesId, teams, new SeriesGroupController.KindLabelRequest(" "));
+        listed = controller.list(seriesId).groups().get(0);
+        assertEquals(null, listed.kindLabel());
+        assertTrue(listed.label().endsWith(" — Teams"), "blank restores the title-cased kind: " + listed.label());
+
+        long otherGroup = group(season(series("Owning series"), 2099), "TEAMS", 1, false);
+        assertThrows(ResponseStatusException.class,
+                () -> controller.setKindLabel(seriesId, otherGroup, new SeriesGroupController.KindLabelRequest("X")));
+    }
+
+    @Test
     void refusesAGroupBelongingToAnotherSeries() {
         long seriesId = series("Asking series");
         long otherSeasonId = season(series("Owning series"), 2099);

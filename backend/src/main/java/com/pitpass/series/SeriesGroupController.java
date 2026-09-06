@@ -28,6 +28,13 @@ import java.util.List;
  * group — so a group mis-flagged at import (Carrera Cup Asia's Dealer Trophy
  * shares the series' own title yet arrived as a cup) could only be corrected by
  * hand-written SQL. This endpoint is that correction.
+ *
+ * <p>{@code kind_label} is what this series calls the kind — Mustang Challenge
+ * prints "Entrants" for what IWSC calls "Teams". The kind itself stays one of
+ * the closed set (it decides how standings rows match entries); only the
+ * wording is the series' own. Null means the title-cased kind. New seasons
+ * inherit it from the previous season's group ({@code ImportService}), so it
+ * is set once per series, not once per year.
  */
 @RestController
 @RequestMapping("/api/series/{seriesId}/groups")
@@ -40,7 +47,10 @@ public class SeriesGroupController {
     }
 
     public record SeriesGroup(long id, long seasonId, int year, String family, String kind,
-                              String label, boolean isCup, long championshipCount) {
+                              String label, String kindLabel, boolean isCup, long championshipCount) {
+    }
+
+    public record KindLabelRequest(String kindLabel) {
     }
 
     public record SeriesGroupsResponse(List<SeriesGroup> groups) {
@@ -53,7 +63,7 @@ public class SeriesGroupController {
     public SeriesGroupsResponse list(@PathVariable long seriesId) {
         requireSeries(seriesId);
         List<SeriesGroup> groups = db.sql("""
-                        SELECT g.id, g.season_id, s.year, g.family, g.kind, g.label, g.is_cup,
+                        SELECT g.id, g.season_id, s.year, g.family, g.kind, g.label, g.kind_label, g.is_cup,
                                (SELECT count(*) FROM championship c WHERE c.group_id = g.id) AS championship_count
                         FROM championship_group g
                                  JOIN season s ON s.id = g.season_id
@@ -63,7 +73,8 @@ public class SeriesGroupController {
                 .param("seriesId", seriesId)
                 .query((rs, i) -> new SeriesGroup(rs.getLong("id"), rs.getLong("season_id"),
                         rs.getInt("year"), rs.getString("family"), rs.getString("kind"),
-                        rs.getString("label"), rs.getBoolean("is_cup"), rs.getLong("championship_count")))
+                        rs.getString("label"), rs.getString("kind_label"), rs.getBoolean("is_cup"),
+                        rs.getLong("championship_count")))
                 .list();
         return new SeriesGroupsResponse(groups);
     }
@@ -81,6 +92,35 @@ public class SeriesGroupController {
                           AND season_id IN (SELECT id FROM season WHERE series_id = :seriesId)
                         """)
                 .param("isCup", request.isCup())
+                .param("id", groupId)
+                .param("seriesId", seriesId)
+                .update();
+        if (updated == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such group in this series");
+        }
+    }
+
+    /**
+     * Rename what the group's kind is called. The display label is rebuilt from
+     * it so the two never disagree ("Mustang Challenge — Entrants"); a blank
+     * clears the override back to the title-cased kind.
+     */
+    @PutMapping("/{groupId}/kind-label")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void setKindLabel(@PathVariable long seriesId, @PathVariable long groupId,
+                             @RequestBody KindLabelRequest request) {
+        requireSeries(seriesId);
+        String label = request.kindLabel() == null || request.kindLabel().isBlank()
+                ? null : request.kindLabel().trim();
+        int updated = db.sql("""
+                        UPDATE championship_group
+                        SET kind_label = :kindLabel,
+                            label = family || ' — ' || COALESCE(:kindLabel,
+                                CASE WHEN kind IS NULL THEN 'Overall' ELSE initcap(lower(kind)) END)
+                        WHERE id = :id
+                          AND season_id IN (SELECT id FROM season WHERE series_id = :seriesId)
+                        """)
+                .param("kindLabel", label)
                 .param("id", groupId)
                 .param("seriesId", seriesId)
                 .update();

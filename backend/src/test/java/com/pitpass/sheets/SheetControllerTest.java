@@ -38,6 +38,18 @@ class SheetControllerTest {
     }
 
     @Test
+    void champColumnPrefersTheSeriesHeadlineKindThenTeams() {
+        // No headline declared: the historical Teams-first order.
+        assertTrue(SheetController.champKindRank("TEAMS", null) < SheetController.champKindRank("DRIVERS", null));
+        assertTrue(SheetController.champKindRank("DRIVERS", null) < SheetController.champKindRank("MANUFACTURERS", null));
+        // A one-make series that names Drivers as its headline puts it ahead of Teams.
+        assertTrue(SheetController.champKindRank("DRIVERS", "DRIVERS") < SheetController.champKindRank("TEAMS", "DRIVERS"));
+        // Declaring Teams changes nothing about the order.
+        assertTrue(SheetController.champKindRank("TEAMS", "TEAMS") < SheetController.champKindRank("DRIVERS", "TEAMS"));
+        assertEquals(2, SheetController.champKindRank(null, "DRIVERS"));
+    }
+
+    @Test
     void ordinals() {
         assertEquals("1st", SheetController.ordinal(1));
         assertEquals("2nd", SheetController.ordinal(2));

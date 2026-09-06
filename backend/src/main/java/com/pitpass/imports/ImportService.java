@@ -2215,19 +2215,49 @@ public class ImportService {
         if (existing.isPresent()) {
             return existing.get();
         }
-        String label = family + " — " + (kind == null || kind.isBlank()
+        // The series' own wording for the kind carries over from last season's
+        // group ("Entrants" stays "Entrants" without re-typing it every year).
+        String kindLabel = inheritedKindLabel(seasonId, family, kind);
+        String label = family + " — " + (kindLabel != null ? kindLabel : kind == null || kind.isBlank()
                 ? "Overall"
                 : kind.charAt(0) + kind.substring(1).toLowerCase());
         int ordinal = db.sql("SELECT COALESCE(max(ordinal), 0) + 1 FROM championship_group WHERE season_id = :seasonId")
                 .param("seasonId", seasonId).query(Integer.class).single();
         return db.sql("""
-                        INSERT INTO championship_group (season_id, family, kind, label, ordinal, is_cup)
-                        VALUES (:seasonId, :family, :kind, :label, :ordinal, :isCup)
+                        INSERT INTO championship_group (season_id, family, kind, label, kind_label, ordinal, is_cup)
+                        VALUES (:seasonId, :family, :kind, :label, :kindLabel, :ordinal, :isCup)
                         RETURNING id
                         """)
                 .param("seasonId", seasonId).param("family", family).param("kind", kind)
-                .param("label", label).param("ordinal", ordinal).param("isCup", isCup)
+                .param("label", label).param("kindLabel", kindLabel).param("ordinal", ordinal).param("isCup", isCup)
                 .query(Long.class).single();
+    }
+
+    /**
+     * The kind wording the series last used for this kind, or null. Set once in
+     * Manage → Series on any season's group, it follows the series forward:
+     * the most recent season's group of the same kind wins, preferring the
+     * same family, then the primary over a cup (a cup can word its kind
+     * differently from the primary, and must not lend that wording to a new
+     * primary).
+     * Package-private for its test.
+     */
+    String inheritedKindLabel(long seasonId, String family, String kind) {
+        if (kind == null || kind.isBlank()) {
+            return null;
+        }
+        return db.sql("""
+                        SELECT g.kind_label
+                        FROM championship_group g
+                                 JOIN season s ON s.id = g.season_id
+                        WHERE s.series_id = (SELECT series_id FROM season WHERE id = :seasonId)
+                          AND g.kind = :kind
+                          AND g.kind_label IS NOT NULL
+                        ORDER BY (g.family = :family) DESC, g.is_cup, s.year DESC, g.id DESC
+                        LIMIT 1
+                        """)
+                .param("seasonId", seasonId).param("family", family).param("kind", kind)
+                .query(String.class).optional().orElse(null);
     }
 
     /**

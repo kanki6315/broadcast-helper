@@ -424,6 +424,16 @@ display size.)
   prefix of the championship calendar, so `event.round_ordinal` aligns with the
   championship round position (Mid-Ohio round 3 → standings through round 4).
   Verified: Cole Loftsgard 1st (1350 pts) going into Mid-Ohio; IMSA unchanged.
+- **Headline kind + kind wording — ✅ DONE (V44).** The Teams-first preference
+  above was hard-coded in three places (sheet champ column, hub kind chips,
+  recap modal). It is now `series.primary_kind` (Manage → Series → Classes →
+  "Headline championship"; NULL keeps Teams-first, so IMSA is untouched) —
+  Mustang Challenge leads with Drivers. Kind stays the closed set
+  (DRIVERS | TEAMS | MANUFACTURERS, it decides how rows match entries); what
+  a series *calls* a kind is `championship_group.kind_label` (the wording box
+  on each group row — "Entrants" for Mustang's TEAMS groups), printed on chips,
+  headings and the sheet's champ label, and inherited by the next season's
+  group at import. A legacy `ENTRANTS` kind is migrated to TEAMS + "Entrants".
 - **Per-series class colours + order — ✅ DONE.** The hardcoded IMSA class
   colours (sheet.css) and `classRank` order (SheetController) are replaced by a
   `class_style(series_id, class_code, ordinal, color)` table (V15, seeded IMSA +

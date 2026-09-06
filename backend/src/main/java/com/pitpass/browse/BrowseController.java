@@ -144,8 +144,12 @@ public class BrowseController {
         return new EventDetail(summary, entries, seriesId, sessions);
     }
 
+    /** {@code kindLabel} is the series' own wording for the kind ("Entrants" for
+     *  a TEAMS group in Mustang Challenge), falling back to the title-cased kind.
+     *  Chips and headings print it; nothing branches on it. */
     public record ChampionshipSummary(long id, String title, String groupTitle, String className, String kind,
-                                      boolean isCup, int year, long seasonId, String seriesName, long rowCount) {
+                                      String kindLabel, boolean isCup, int year, long seasonId, String seriesName,
+                                      long rowCount) {
     }
 
     @GetMapping("/championships")
@@ -154,6 +158,7 @@ public class BrowseController {
         return db.sql("""
                         SELECT c.id, c.title, g.family AS group_title, c.class_name, g.kind, g.is_cup, s.year,
                                s.id AS season_id, sr.name AS series_name,
+                               COALESCE(g.kind_label, initcap(lower(g.kind))) AS kind_label,
                                (SELECT count(*) FROM standings_row r WHERE r.championship_id = c.id) AS row_count
                         FROM championship c
                                  JOIN championship_group g ON g.id = c.group_id
@@ -163,7 +168,7 @@ public class BrowseController {
                         """)
                 .query((rs, i) -> new ChampionshipSummary(rs.getLong("id"), rs.getString("title"),
                         rs.getString("group_title"), rs.getString("class_name"), rs.getString("kind"),
-                        rs.getBoolean("is_cup"), rs.getInt("year"), rs.getLong("season_id"),
+                        rs.getString("kind_label"), rs.getBoolean("is_cup"), rs.getInt("year"), rs.getLong("season_id"),
                         rs.getString("series_name"), rs.getLong("row_count")))
                 .list();
     }
@@ -179,6 +184,7 @@ public class BrowseController {
         ChampionshipSummary summary = db.sql("""
                         SELECT c.id, c.title, g.family AS group_title, c.class_name, g.kind, g.is_cup, s.year,
                                s.id AS season_id, sr.name AS series_name,
+                               COALESCE(g.kind_label, initcap(lower(g.kind))) AS kind_label,
                                (SELECT count(*) FROM standings_row r WHERE r.championship_id = c.id) AS row_count
                         FROM championship c
                                  JOIN championship_group g ON g.id = c.group_id
@@ -189,7 +195,7 @@ public class BrowseController {
                 .param("id", id)
                 .query((rs, i) -> new ChampionshipSummary(rs.getLong("id"), rs.getString("title"),
                         rs.getString("group_title"), rs.getString("class_name"), rs.getString("kind"),
-                        rs.getBoolean("is_cup"), rs.getInt("year"), rs.getLong("season_id"),
+                        rs.getString("kind_label"), rs.getBoolean("is_cup"), rs.getInt("year"), rs.getLong("season_id"),
                         rs.getString("series_name"), rs.getLong("row_count")))
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such championship"));

@@ -9,6 +9,7 @@ import {
   champFamilies,
   champKinds,
   fetchRecap,
+  kindLabelOf,
   posScopeOf,
   raceLegendTags,
   selectedChamps,
@@ -117,7 +118,10 @@ export default function RecapModal({
   )
   const [familySel, setFamilySel] = useState<string | null>(null)
   const family = families.find((f) => f.family === familySel)?.family ?? families[0]?.family ?? null
-  const kinds = useMemo(() => champKinds(withRows, family), [withRows, family])
+  const kinds = useMemo(
+    () => champKinds(withRows, family, hub?.primaryKind ?? null),
+    [withRows, family, hub?.primaryKind],
+  )
   const [kindSel, setKindSel] = useState<string | null>(null)
   const kind = kinds.includes(kindSel ?? '') ? kindSel : (kinds[0] ?? null)
   const selected = useMemo(
@@ -142,6 +146,7 @@ export default function RecapModal({
     kinds,
     kind,
     setKind: setKindSel,
+    kindLabel: (k) => kindLabelOf(withRows, k),
     selected,
   }
 
