@@ -914,6 +914,28 @@
   color: var(--text-muted);
 }
 
+/* A team-keyed row that ran several cars in one round reads one line per car:
+ * the car number leads, then that car's races in running order. The chips drop
+ * their auto margins here — the row, not the chip, does the centering. */
+.race-car-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+}
+
+.race-car-row .race-line {
+  margin: 1px 0;
+}
+
+.race-car {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 2.5ch;
+  text-align: right;
+}
+
 .race-line.res-win {
   background: var(--res-win);
 }
