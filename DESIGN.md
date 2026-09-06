@@ -358,6 +358,12 @@ each group so five-wide runs of digits stay scannable. Non-zero win, podium
 and top-5 counts wear the recap's result tints as `.stat-chip`s; zeros recede
 to `--text-muted` at reduced opacity, and a format a driver never contested
 prints "·", not 0 — never entered and finished-nowhere are different facts.
+The W / P3 / T5 cells pair the count with its **share of starts** (`.stat-pair`,
+a two-column inline grid: the chip right-aligned, then a caption-sized muted
+`33%` in a reserved `4ch` slot). The slot is kept even when empty so every
+count in a column sits on one axis; a zero shows no rate because 0% beside 0
+says nothing twice. The rate is derived in the browser from the counts already
+fetched — never a second request — and sorting stays on the count.
 This grid runs **denser than the standard Data Grid** (tighter cell padding,
 narrower chips, centered values) because up to six column groups have to fit
 one screen; the ident columns keep normal padding so names don't crowd. Class

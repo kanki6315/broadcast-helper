@@ -18,6 +18,11 @@ import { useInfoModal } from '../../components/infoModal'
  * chips. The All-time scope aggregates every season of the series into the
  * same format buckets. Team counting is per car-entry (a two-car team scores
  * two starts a race), and a team's quali claim needs no driver attribution.
+ *
+ * Wins, podiums and top-5s print their share of starts beside the count. The
+ * rate is derived here from the counts already fetched, so the endpoints stay
+ * cheap; only DNS leaves position_in_class null, so a DNF is still a start and
+ * starts is the honest denominator.
  */
 
 type Scope = 'season' | 'alltime'
@@ -38,13 +43,20 @@ interface TableData {
   rows: Row[]
 }
 
+/** `rated` columns carry their share of starts beside the count. */
 const RACE_COLS = [
-  { key: 'starts', label: 'St', title: 'Starts (classified entries)' },
-  { key: 'wins', label: 'W', title: 'Wins' },
-  { key: 'podiums', label: 'P3', title: 'Podiums (top 3)' },
-  { key: 'top5s', label: 'T5', title: 'Top 5s' },
-  { key: 'dnfs', label: 'DNF', title: 'Did not finish' },
+  { key: 'starts', label: 'St', title: 'Starts (classified entries)', rated: false },
+  { key: 'wins', label: 'W', title: 'Wins, with share of starts', rated: true },
+  { key: 'podiums', label: 'P3', title: 'Podiums (top 3), with share of starts', rated: true },
+  { key: 'top5s', label: 'T5', title: 'Top 5s, with share of starts', rated: true },
+  { key: 'dnfs', label: 'DNF', title: 'Did not finish', rated: false },
 ] as const
+
+/** A tally as a whole-percent share of starts. Nearest-percent rounding means
+ * a lone all-time win in 250 starts prints 0% — a true near-nothing. */
+function pct(count: number, starts: number): number {
+  return Math.round((count / starts) * 100)
+}
 
 /* -- sorting -------------------------------------------------------------- */
 
@@ -116,6 +128,37 @@ function StatValue({
   value: number | null
 }) {
   if (value == null) return <span className="stat-zero">·</span>
+  return <StatFigure col={col} value={value} />
+}
+
+/** A count beside its share of starts. The pair is a two-column grid rendered
+ * even when the rate slot is empty (a zero, or a format never contested), so
+ * the counts line up down the column instead of each cell centring its own
+ * width. A zero shows no rate — 0% beside 0 says nothing twice. */
+function StatPair({
+  col,
+  line,
+}: {
+  col: 'wins' | 'podiums' | 'top5s'
+  line: FormatLine | undefined
+}) {
+  const value = line ? line[col] : null
+  const rate = line && line[col] > 0 && line.starts > 0 ? pct(line[col], line.starts) : null
+  return (
+    <span className="stat-pair">
+      {value == null ? <span className="stat-zero">·</span> : <StatFigure col={col} value={value} />}
+      <span className="stat-rate">{rate == null ? '' : `${rate}%`}</span>
+    </span>
+  )
+}
+
+function StatFigure({
+  col,
+  value,
+}: {
+  col: 'starts' | 'wins' | 'podiums' | 'top5s' | 'dnfs' | 'poles' | 'qualiTop5s'
+  value: number
+}) {
   const tier =
     value > 0
       ? col === 'wins' || col === 'poles'
@@ -384,6 +427,7 @@ export default function StatsPage() {
           <span>W = wins</span>
           <span>P3 = podiums</span>
           <span>T5 = top 5s</span>
+          <span>% = share of starts</span>
           {hasQuali && <span className="l-pole">poles from qualifying only</span>}
         </div>
       </div>
@@ -520,7 +564,11 @@ export default function StatsPage() {
                             key={`${f.id ?? 'none'}-${c.key}`}
                             className={`num-cell stat-cell ${ci === 0 ? 'grp-start' : ''}`.trim()}
                           >
-                            <StatValue col={c.key} value={line ? line[c.key] : null} />
+                            {c.rated ? (
+                              <StatPair col={c.key} line={line} />
+                            ) : (
+                              <StatValue col={c.key} value={line ? line[c.key] : null} />
+                            )}
                           </td>
                         ))
                       })}
