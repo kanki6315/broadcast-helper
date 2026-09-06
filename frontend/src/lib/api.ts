@@ -19,6 +19,8 @@ export interface SeriesInfo {
   id: number
   name: string
   abbreviation: string | null
+  /** Headline championship kind (DRIVERS | TEAMS | MANUFACTURERS); null = Teams-first default. */
+  primaryKind: string | null
   aliases: string[]
   /** Epoch-millis stamp of the current series logo, or null when none uploaded. */
   logoVersion: number | null
@@ -51,6 +53,8 @@ export interface ChampionshipSummary {
   groupTitle: string | null
   className: string | null
   kind: string | null
+  /** The series' own wording for the kind ("Entrants"), else the title-cased kind. */
+  kindLabel: string | null
   isCup: boolean
   year: number
   seasonId: number
@@ -63,6 +67,8 @@ export interface SeasonHub {
   year: number
   seriesId: number
   seriesName: string
+  /** The series' headline championship kind; the hub's kind chips lead with it. */
+  primaryKind: string | null
   kind: 'MAIN' | 'QUALIFIER'
   label: string | null
   events: CalendarEvent[]

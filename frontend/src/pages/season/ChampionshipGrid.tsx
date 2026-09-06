@@ -171,9 +171,23 @@ function familyLabel(family: string, seriesName: string): string {
   return label || family
 }
 
+/** Fallback wording for a kind when no championship carries the series' own. */
 export function kindLabel(kind: string): string {
   const lower = kind.toLowerCase()
   return lower.charAt(0).toUpperCase() + lower.slice(1)
+}
+
+/** What THIS championship's series calls its kind — "Entrants" for a Mustang
+ * Challenge TEAMS group — read from the summary rather than title-cased. */
+export function champKindLabel(c: Pick<ChampionshipSummary, 'kind' | 'kindLabel'>): string {
+  return c.kindLabel ?? kindLabel(c.kind ?? '')
+}
+
+/** The wording for a kind among the given championships (any one of that kind
+ * will do: the wording is per group, and a season's groups share it). */
+export function kindLabelOf(champs: ChampionshipSummary[], kind: string): string {
+  const c = champs.find((x) => x.kind === kind && x.kindLabel)
+  return c ? champKindLabel(c) : kindLabel(kind)
 }
 
 export interface ChampSelection {
@@ -183,6 +197,8 @@ export interface ChampSelection {
   kinds: string[]
   kind: string | null
   setKind: (k: string) => void
+  /** The series' wording for a kind chip / heading. */
+  kindLabel: (k: string) => string
   /** championships matching family+kind (all classes), display-ordered */
   selected: ChampionshipSummary[]
 }
@@ -206,15 +222,20 @@ export function champFamilies(withRows: ChampionshipSummary[], seriesName: strin
   return [...seen.values()]
 }
 
-export function champKinds(withRows: ChampionshipSummary[], family: string | null): string[] {
+export function champKinds(
+  withRows: ChampionshipSummary[],
+  family: string | null,
+  primaryKind: string | null = null,
+): string[] {
   const seen: string[] = []
   for (const c of withRows) {
     if ((c.groupTitle ?? c.title) === family && c.kind && !seen.includes(c.kind)) {
       seen.push(c.kind)
     }
   }
-  // Teams first — matches the sheet's champ-column preference.
-  return seen.sort((a, b) => rank(a) - rank(b))
+  // The series' headline kind first, else Teams first — the same preference
+  // the sheet's champ column applies.
+  return seen.sort((a, b) => rank(a, primaryKind) - rank(b, primaryKind))
 }
 
 export function selectedChamps(
@@ -250,7 +271,10 @@ export function useChampSelection(): ChampSelection {
   const family =
     families.find((f) => f.family === familyParam)?.family ?? families[0]?.family ?? null
 
-  const kinds = useMemo(() => champKinds(withRows, family), [withRows, family])
+  const kinds = useMemo(
+    () => champKinds(withRows, family, hub.primaryKind),
+    [withRows, family, hub.primaryKind],
+  )
 
   const kindParam = searchParams.get('kind')
   const kind = kinds.includes(kindParam ?? '') ? kindParam : (kinds[0] ?? null)
@@ -267,7 +291,8 @@ export function useChampSelection(): ChampSelection {
   }
 
   // Switching championship keeps the Teams/Drivers choice when the new family
-  // also offers it — dropping it silently reset the user's selection to Teams.
+  // also offers it — dropping it silently reset the user's selection to the
+  // headline kind.
   function switchFamily(f: string) {
     const next = new URLSearchParams(searchParams)
     next.set('champ', f)
@@ -286,11 +311,13 @@ export function useChampSelection(): ChampSelection {
     kinds,
     kind,
     setKind: (k) => put('kind', k),
+    kindLabel: (k) => kindLabelOf(withRows, k),
     selected,
   }
 }
 
-function rank(kind: string): number {
+function rank(kind: string, primaryKind: string | null): number {
+  if (primaryKind && kind === primaryKind) return -1
   switch (kind) {
     case 'TEAMS':
       return 0
@@ -473,7 +500,7 @@ export function ChampFilterBar({
               aria-pressed={sel.kind === k}
               onClick={() => sel.setKind(k)}
             >
-              {kindLabel(k)}
+              {sel.kindLabel(k)}
             </button>
           ))}
         </div>
@@ -569,7 +596,7 @@ export function ClassGrid({
     // nothing and reads like data corruption on a page full of numbers.
     return (
       <p className="error-panel">
-        Couldn’t load the {champ.className} {kindLabel(champ.kind ?? '').toLowerCase()} recap.{' '}
+        Couldn’t load the {champ.className} {champKindLabel(champ).toLowerCase()} recap.{' '}
         <button
           type="button"
           className="hs-retry"
@@ -684,7 +711,7 @@ export function ClassGrid({
     return { '--ident-left': `${lefts[i]}px`, minWidth: col.w } as React.CSSProperties
   }
 
-  const gridLabel = `${champ.className} ${kindLabel(champ.kind ?? '')} — ${
+  const gridLabel = `${champ.className} ${champKindLabel(champ)} — ${
     mode === 'recap' ? 'season recap, start and finish by round' : 'championship points by round'
   }`
 
@@ -738,7 +765,7 @@ export function ClassGrid({
             style={{ '--class-color': color } as React.CSSProperties}
           >
             <span className="band-label">
-              {champ.className} · {kindLabel(champ.kind ?? '')}
+              {champ.className} · {champKindLabel(champ)}
             </span>
           </td>
         </tr>
