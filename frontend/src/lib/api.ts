@@ -110,6 +110,10 @@ export interface RecapRace {
    * per-line tag where a round ran more than one race. Null for rounds
    * imported before the name was carried. */
   name: string | null
+  /** The car that scored this line. One car per race for a car- or
+   * driver-keyed row; a team-keyed row (Mustang's DH Entrants) gathers every
+   * car the team ran, so a round can hold several lines per race. */
+  carNumber: string | null
   start: number | null
   finish: number | null
   status: string | null

@@ -308,7 +308,11 @@ which one (`H1`, `C`, `F`) — the same notation as the standings breakdown, via
 the shared `sessionTagList`. The tag is derived across the **round's whole
 race list**, not the races that competitor contested, so a driver who ran only
 the fourth heat reads `H4` rather than `H`. It sits outside the tinted chip so
-the result tints stay the width of the numbers they back.
+the result tints stay the width of the numbers they back. A row keyed by team
+name rather than car number (Mustang's DH Entrants) gathers every car the team
+ran, so where a round holds more than one car the cell reads one `.race-car-row`
+per car instead — the muted car number leading, that car's tagged chips
+following in running order — rather than an unlabelled stack of duplicates.
 
 The **standings** grid prints how each round paid, not one summed number: a
 `.pts-cell` stacks one `.pts-line` per scoring session the competitor ran,

@@ -11,7 +11,7 @@ import { formatPoints } from '../pages/season/ChampionshipGrid'
 import CareerStats from './CareerStats'
 import { useInfoModal } from './infoModal'
 import NotesSection from './NotesSection'
-import RaceLine from './RaceLine'
+import RaceCell from './RaceCell'
 import { raceTagsByOrdinal } from '../lib/raceForm'
 
 /* ------------------------------------------------------------------------- */
@@ -144,15 +144,7 @@ function RosterEntryRows({
           const raceTags = raceTagsByOrdinal(r.races)
           return (
             <td key={r.round} className="dm-mx-cell">
-              {races && races.length > 0 ? (
-                races.map((race) => (
-                  <RaceLine key={race.race} r={race} tag={raceTags.get(race.race)} />
-                ))
-              ) : (
-                <span className="cell-skip" title="Did not enter this round">
-                  ·
-                </span>
-              )}
+              <RaceCell races={races} raceTags={raceTags} />
             </td>
           )
         })}

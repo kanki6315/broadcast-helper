@@ -67,9 +67,15 @@ public class SeasonViewController {
      *  round ran more than one race. It is the RACE session's name, not the
      *  championship calendar's: a weekend can run races the championship does
      *  not score (Sachsenring 2025 pays four heats but runs five plus a
-     *  consolation), so the two lists genuinely differ. */
-    public record RecapRace(int race, String name, Integer start, Integer finish, String status,
-                            boolean notFinished) {
+     *  consolation), so the two lists genuinely differ.
+     *
+     *  {@code carNumber} is the entry that scored this line. A car-keyed or
+     *  driver-keyed row only ever carries one car per race, but a team-keyed
+     *  row (Mustang's DH Entrants) gathers every car the team ran, so a round
+     *  cell can hold several lines per race — the number is what tells them
+     *  apart. */
+    public record RecapRace(int race, String name, String carNumber, Integer start, Integer finish,
+                            String status, boolean notFinished) {
     }
 
     /** How one session paid: the components sum to {@code total} (verified for
@@ -389,8 +395,8 @@ public class SeasonViewController {
                 }
                 int round = roundByEventId.get(c.eventId());
                 byRound.computeIfAbsent(round, k -> new ArrayList<>())
-                        .add(new RecapRace(c.raceOrdinal(), c.raceName(), c.start(), c.finish(),
-                                c.status(), c.notFinished()));
+                        .add(new RecapRace(c.raceOrdinal(), c.raceName(), c.carNumber(), c.start(),
+                                c.finish(), c.status(), c.notFinished()));
                 if (c.team() != null && !c.team().isBlank()) {
                     String displayTeam = c.team().trim();
                     distinctTeamNames.putIfAbsent(displayTeam.toLowerCase(Locale.ROOT), displayTeam);

@@ -10,7 +10,7 @@ import {
 } from '../../lib/api'
 import { useInfoModal } from '../../components/infoModal'
 import { raceTagsByOrdinal, sessionTagList } from '../../lib/raceForm'
-import RaceLine from '../../components/RaceLine'
+import RaceCell from '../../components/RaceCell'
 import { useSeason } from './SeasonLayout'
 
 /* Recaps are immutable between imports; cache per championship for the session
@@ -894,15 +894,7 @@ export function ClassGrid({
                 const raceTags = raceTagsByRound.get(r.round) ?? new Map()
                 return (
                   <td key={r.round} className="race-cell">
-                    {races && races.length > 0 ? (
-                      races.map((race) => (
-                        <RaceLine key={race.race} r={race} tag={raceTags.get(race.race)} />
-                      ))
-                    ) : (
-                      <span className="cell-skip" title="Did not enter this round">
-                        ·
-                      </span>
-                    )}
+                    <RaceCell races={races} raceTags={raceTags} />
                   </td>
                 )
               })}
