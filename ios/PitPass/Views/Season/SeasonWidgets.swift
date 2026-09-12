@@ -183,6 +183,7 @@ enum ResultTint {
 struct RaceLineView: View {
     let race: RecapRace
     var tag: String?
+    var chipPadding: CGFloat = 4
 
     private var isDns: Bool { (race.status ?? "").lowercased().contains("not started") }
 
@@ -198,7 +199,7 @@ struct RaceLineView: View {
     @ViewBuilder private var chip: some View {
         if isDns {
             Text("DNS").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.textMuted)
-                .frame(minWidth: 36).padding(.horizontal, 4)
+                .frame(minWidth: 36).padding(.horizontal, chipPadding)
         } else {
             let tier = RaceForm.positionTier(finish: race.finish, nonResult: race.notFinished)
             let ink: Color = tier == .dnf ? ResultTint.dnfInk : PP.text
@@ -221,7 +222,7 @@ struct RaceLineView: View {
             .foregroundStyle(ink)
             .lineLimit(1)
             .fixedSize()
-            .padding(.horizontal, 4)
+            .padding(.horizontal, chipPadding)
             .frame(minWidth: 36)
             .background(ResultTint.fill(tier) ?? .clear, in: RoundedRectangle(cornerRadius: PP.Radius.xs, style: .continuous))
             .accessibilityLabel(accessibility)
@@ -243,13 +244,14 @@ struct RaceLineView: View {
 struct RaceCellView: View {
     let races: [RecapRace]?
     let raceTags: [Int: String?]
+    var chipPadding: CGFloat = 4
 
     var body: some View {
         if let races, !races.isEmpty {
             let byCar = Dictionary(grouping: races, by: { $0.carNumber ?? "" })
             if byCar.count <= 1 {
                 VStack(alignment: .center, spacing: 2) {
-                    ForEach(races, id: \.self) { r in RaceLineView(race: r, tag: raceTags[r.race] ?? nil) }
+                    ForEach(races, id: \.self) { r in RaceLineView(race: r, tag: raceTags[r.race] ?? nil, chipPadding: chipPadding) }
                 }
             } else {
                 VStack(alignment: .center, spacing: 2) {
@@ -258,7 +260,7 @@ struct RaceCellView: View {
                             Text(car).font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted)
                                 .frame(minWidth: 22, alignment: .trailing)
                             ForEach(byCar[car]!.sorted { $0.race < $1.race }, id: \.self) { r in
-                                RaceLineView(race: r, tag: raceTags[r.race] ?? nil)
+                                RaceLineView(race: r, tag: raceTags[r.race] ?? nil, chipPadding: chipPadding)
                             }
                         }
                     }

@@ -153,24 +153,36 @@ struct ClassGridView: View {
     @Environment(SeasonModel.self) private var model
     let champ: ChampionshipSummary
     let mode: ChampionshipGridView.Mode
+    @State private var availableWidth: CGFloat = 0
+    @State private var selectedEntry: RecapEntryDetail?
+    @ScaledMetric private var entryLineHeight: CGFloat = 24
+
+    // The same entry layout in every orientation; reserve two rounds in narrow windows.
+    private var entryWidth: CGFloat { min(280, max(140, availableWidth - 132)) }
 
     var body: some View {
         let resource = model.recap(for: champ)
-        if let recap = resource.value {
-            grid(recap)
-        } else if let error = resource.error {
-            HStack(spacing: PP.Space.s2) {
-                Text("Couldn’t load the \(champ.className ?? "") \(Champs.champKindLabel(champ).lowercased()) recap. \(error)")
-                RetryButton { Task { await resource.load(session.loader) } }
+        Group {
+            if let recap = resource.value {
+                grid(recap)
+            } else if let error = resource.error {
+                HStack(spacing: PP.Space.s2) {
+                    Text("Couldn’t load the \(champ.className ?? "") \(Champs.champKindLabel(champ).lowercased()) recap. \(error)")
+                    RetryButton { Task { await resource.load(session.loader) } }
+                }
+                .font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.error)
+            } else {
+                SkeletonLines()
             }
-            .font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.error)
-        } else {
-            SkeletonLines()
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
+        .sheet(item: $selectedEntry) { entry in
+            RecapEntryDetailSheet(entry: entry)
         }
     }
 
     private func grid(_ recap: Recap) -> some View {
-        let rounds = recap.rounds
+        let rounds = mode == .recap ? recap.rounds.filter { $0.hasParticipation(in: recap.rows) } : recap.rounds
         let drivers = recap.championship.kind == "DRIVERS"
         let leader = recap.rows.map(\.totalPoints).max() ?? 0
         let color = model.classColor(champ.className)
@@ -181,13 +193,37 @@ struct ClassGridView: View {
             ? recap.rows.flatMap { $0.sessionPoints.values }.map { Points.marks($0).map(\.glyph).joined(separator: " ").count }.max() ?? 0
             : 0
 
-        var identColumns: [GridColumn] = mode == .recap
-            ? [.text("pos", "Pos", width: 48, align: .trailing), .text("pts", "Pts", width: 112, align: .trailing),
-               .text("car", "#", width: 52, align: .trailing), .text("name", drivers ? "Driver" : "Team", width: 216)]
-            : [.text("pos", "Pos", width: 52, align: .trailing), .text("car", "#", width: 60, align: .trailing),
-               .text("name", drivers ? "Driver" : "Team", width: 236)]
-        identColumns = identColumns.map { $0 }
-        var dataColumns: [GridColumn] = rounds.map { .round("r\($0.round)", venue: $0.venue, round: $0.round, current: model.currentEventId != nil && $0.eventId == model.currentEventId) }
+        var identColumns: [GridColumn] = [
+            .text("pos", "Pos", width: 52, align: .trailing),
+            .text("car", "#", width: 60, align: .trailing),
+            .text("name", drivers ? "Driver" : "Team", width: 236),
+        ]
+        if mode == .recap {
+            identColumns = [GridColumn(id: "entry", width: entryWidth, padH: 12) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(drivers ? "Driver" : "Team").font(PP.sans(PP.TextSize.xs, weight: 600))
+                    Text("Position · car · points").font(PP.sans(PP.TextSize.xs))
+                }
+                .foregroundStyle(PP.textMuted)
+                .lineLimit(1)
+            }]
+        }
+        let tightRounds = mode == .recap && availableWidth < 890
+        var dataColumns: [GridColumn] = rounds.map { round in
+            // Keep extra room for multi-race entries and long retirement chips.
+            let needsRoom = round.races.count > 1 || recap.rows.contains { row in
+                let races = row.races(round: round.round) ?? []
+                return Set(races.compactMap(\.carNumber)).count > 1 || races.contains { race in
+                    let digits = (race.start.map { $0 == 1 ? 2 : String($0).count + 1 } ?? 0)
+                        + (race.finish.map { String($0).count } ?? 1)
+                    return digits > 5 || (race.notFinished && digits >= 5)
+                }
+            }
+            return .round("r\(round.round)", venue: round.venue, round: round.round,
+                          width: tightRounds ? (needsRoom ? 60 : 52) : 66,
+                          padH: tightRounds ? 2 : 4,
+                          current: model.currentEventId != nil && round.eventId == model.currentEventId)
+        }
         if mode == .points {
             dataColumns.append(.text("total", "Total", width: 72, align: .trailing))
             dataColumns.append(.text("back", "Back", width: 110, align: .trailing))
@@ -200,18 +236,26 @@ struct ClassGridView: View {
             let name = drivers ? (row.competitorName ?? row.competitorKey) : (row.teamName ?? "")
             let teamNames: [String] = drivers ? (row.teamNames?.isEmpty == false ? row.teamNames! : (row.teamName.map { [$0] } ?? [])) : []
             let shownTeams = model.showTeams ? teamNames : []
-            var ident: [AnyView] = [GridCell.pos(row.position)]
+            var ident: [AnyView]
             if mode == .recap {
-                ident.append(AnyView(HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(Points.format(row.totalPoints)).font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.text)
-                    if back > 0 { Text("(-\(Points.format(back)))").font(PP.mono(PP.TextSize.xs)).foregroundStyle(PP.textMuted.opacity(0.75)) }
-                }))
+                let entry = RecapEntryDetail(id: row.competitorKey, position: row.position,
+                                             carNumber: row.carNumber, name: name,
+                                             points: row.totalPoints, back: back, teams: teamNames)
+                ident = [AnyView(Button {
+                    selectedEntry = entry
+                } label: {
+                    RecapEntryLabel(entry: entry, shownTeams: shownTeams)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(entry.accessibilityLabel)
+                .accessibilityHint("Show full entry details"))]
+            } else {
+                ident = [GridCell.pos(row.position), GridCell.car(row.carNumber ?? ""),
+                         GridCell.name(name, sub: shownTeams)]
             }
-            ident.append(GridCell.car(row.carNumber ?? ""))
-            ident.append(GridCell.name(name, sub: shownTeams))
 
             var cells: [AnyView] = []
-            var lines = shownTeams.isEmpty ? 1 : 2
+            var lines = (shownTeams.isEmpty ? 1 : 2) + (mode == .recap ? 1 : 0)
             for r in rounds {
                 if mode == .points {
                     guard let pts = row.points(round: r.round) else { cells.append(GridCell.skip()); continue }
@@ -233,7 +277,7 @@ struct ClassGridView: View {
                 } else {
                     let races = row.races(round: r.round)
                     lines = max(lines, RaceCellView.lines(races))
-                    cells.append(AnyView(RaceCellView(races: races, raceTags: raceTags[r.round] ?? [:]).frame(maxWidth: .infinity)))
+                    cells.append(AnyView(RaceCellView(races: races, raceTags: raceTags[r.round] ?? [:], chipPadding: tightRounds ? 2 : 4).frame(maxWidth: .infinity)))
                 }
             }
             if mode == .points {
@@ -258,11 +302,130 @@ struct ClassGridView: View {
                 ? GridColumn(id: col.id, width: pointsColumnWidth, align: .trailing, title: { col.title })
                 : col
         }
-        return GridTable(identColumns: identColumns, dataColumns: dataColumns,
+        return VStack(alignment: .trailing, spacing: 0) {
+            GridTable(identColumns: identColumns, dataColumns: dataColumns,
                          sections: [GridSection(id: String(champ.id),
                                                 band: ("\(champ.className ?? "") · \(Champs.champKindLabel(champ))", color),
-                                                rows: rows)])
+                                                rows: rows)],
+                         lineHeight: mode == .recap ? entryLineHeight : 20,
+                         cellPadV: mode == .recap ? 3 : 4,
+                         headerHeight: mode == .recap ? entryLineHeight * 2 : 40,
+                         separatesIdentity: mode == .recap,
+                         centersCells: mode == .recap)
+            .accessibilityElement(children: .contain)
             .accessibilityLabel("\(champ.className ?? "") \(Champs.champKindLabel(champ)) — \(mode == .recap ? "season recap" : "championship points by round")")
+            if mode == .recap && dataColumns.reduce(0, { $0 + $1.width }) > availableWidth - entryWidth {
+                Label("Swipe for more rounds", systemImage: "arrow.right")
+                    .font(PP.sans(PP.TextSize.xs))
+                    .foregroundStyle(PP.textMuted)
+                    .padding(.bottom, PP.Space.s3)
+            }
+        }
+    }
+}
+
+private struct RecapEntryDetail: Identifiable {
+    let id: String
+    let position: Int
+    let carNumber: String?
+    let name: String
+    let points: Double
+    let back: Double
+    let teams: [String]
+
+    var accessibilityLabel: String {
+        let car = carNumber.flatMap { $0.isEmpty ? nil : "Car \($0), " } ?? ""
+        return "Position \(position), \(car)\(name), \(Points.format(points)) points"
+            + (back > 0 ? ", \(Points.format(back)) behind leader" : ", championship leader")
+    }
+}
+
+private struct RecapEntryLabel: View {
+    let entry: RecapEntryDetail
+    let shownTeams: [String]
+    @ScaledMetric private var positionWidth: CGFloat = 32
+    @ScaledMetric private var positionSize: CGFloat = 36
+    @ScaledMetric private var numberSize: CGFloat = 14
+    @ScaledMetric private var pointsSize: CGFloat = 13
+
+    var body: some View {
+        // Trade gutter spacing for numeral width, keeping the entry text's left edge.
+        HStack(alignment: .center, spacing: 4) {
+            Text(String(entry.position))
+                .font(.system(size: positionSize, weight: .medium))
+                .fontWidth(.compressed)
+                .monospacedDigit()
+                .foregroundStyle(PP.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+                .frame(width: positionWidth, alignment: .center)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    if let car = entry.carNumber, !car.isEmpty {
+                        Text("#\(car)").font(PP.mono(numberSize, weight: 500))
+                            .foregroundStyle(PP.text).fixedSize()
+                    }
+                    Text(entry.name).font(PP.sans(PP.TextSize.sm, weight: 500))
+                        .foregroundStyle(PP.ink).lineLimit(1)
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(Points.format(entry.points))
+                            .font(PP.mono(pointsSize, weight: 600))
+                            .foregroundStyle(PP.ink)
+                        Text("pts").font(PP.sans(PP.TextSize.xs))
+                            .foregroundStyle(PP.text)
+                    }
+                    .layoutPriority(1)
+                    if entry.back > 0 {
+                        Text("−\(Points.format(entry.back))")
+                            .font(PP.mono(PP.TextSize.xs))
+                            .foregroundStyle(PP.textMuted)
+                    }
+                }
+                .lineLimit(1)
+                if !shownTeams.isEmpty {
+                    Text(shownTeams.joined(separator: " · "))
+                        .font(PP.sans(PP.TextSize.xs))
+                        .foregroundStyle(PP.textMuted).lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct RecapEntryDetailSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let entry: RecapEntryDetail
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: PP.Space.s3) {
+                    Text(entry.name).ppTitle()
+                    if let car = entry.carNumber, !car.isEmpty {
+                        Text("Car #\(car)").ppBody()
+                    }
+                    Text("Position \(entry.position) · \(Points.format(entry.points)) points")
+                        .font(PP.sans(PP.TextSize.base, weight: 600)).foregroundStyle(PP.ink)
+                    Text(entry.back > 0 ? "\(Points.format(entry.back)) points behind leader" : "Championship leader")
+                        .ppBody()
+                    ForEach(entry.teams, id: \.self) { Text($0).ppBody() }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(PP.Space.s5)
+            }
+            .background(PP.bg)
+            .navigationTitle("Entry details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationBackground(PP.bg)
+        .tint(PP.accentInk)
     }
 }
 

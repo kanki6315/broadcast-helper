@@ -51,19 +51,6 @@ final class AppSession {
         APIClient(baseURL: url, token: { Keychain.deviceToken })
     }
 
-    /// Point the app at another server. Drops the token and cache: they belong
-    /// to the old one.
-    func setServer(_ url: URL) async {
-        guard url != serverURL else { return }
-        ServerConfig.current = url
-        serverURL = url
-        Keychain.deviceToken = nil
-        await clearOfflineData(includingPads: true)
-        client = AppSession.makeClient(url)
-        loader = DataLoader(client: client, store: store)
-        await bootstrap()
-    }
-
     /// Wipe the store and everything that describes it. Scratchpad mirrors
     /// (possibly unsynced ink) go only when the account or server changes.
     func clearOfflineData(includingPads: Bool = false) async {
@@ -81,6 +68,12 @@ final class AppSession {
 
     func bootstrap() async {
         phase = .checking
+        // Finish migration before any request or offline scratchpad replay.
+        if ServerConfig.needsReset(for: serverURL) {
+            Keychain.deviceToken = nil
+            await clearOfflineData(includingPads: true)
+        }
+        ServerConfig.recordServer(serverURL)
         connectivity.start(client: client)
         await downloads.load(from: store)
         await pads.start(store: store, client: client, connectivity: connectivity)

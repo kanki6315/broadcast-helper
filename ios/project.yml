@@ -57,6 +57,7 @@ targets:
             CFBundleURLSchemes: [pitpass]
         # Pit-lane walk-to-box guidance (PitLaneSheet) and anchor capture.
         NSLocationWhenInUseUsageDescription: Pit Pass uses your location to guide you to a pit box along the lane.
+        NSLocalNetworkUsageDescription: Debug builds can connect to a Pit Pass development server on your local network.
         # Local dev server is plain http://localhost:8731.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
