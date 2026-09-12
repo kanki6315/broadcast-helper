@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.core.oidc.user.OidcUser;
+import com.pitpass.auth.Principals;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -57,7 +57,7 @@ public class ScratchpadController {
     }
 
     @GetMapping("/events/{eventId}/scratchpad")
-    public Pad get(@PathVariable long eventId, @AuthenticationPrincipal OidcUser caller) {
+    public Pad get(@PathVariable long eventId, @AuthenticationPrincipal Object caller) {
         requireEvent(eventId);
         record Row(long revision, int pageHeight, String strokes) {
         }
@@ -78,7 +78,7 @@ public class ScratchpadController {
     }
 
     @PutMapping("/events/{eventId}/scratchpad")
-    public SaveResponse save(@PathVariable long eventId, @AuthenticationPrincipal OidcUser caller,
+    public SaveResponse save(@PathVariable long eventId, @AuthenticationPrincipal Object caller,
                              @RequestBody SaveRequest request) {
         requireEvent(eventId);
         if (request.strokes() == null || !request.strokes().isArray()) {
@@ -142,8 +142,10 @@ public class ScratchpadController {
         return new SaveResponse(saved.revision(), saved.updatedAt());
     }
 
-    private String owner(OidcUser caller) {
-        return caller != null ? caller.getEmail() : DEV_OWNER;
+    /** Google session or device token alike; no principal = the open dev chain. */
+    private String owner(Object caller) {
+        String email = Principals.emailOf(caller);
+        return email != null ? email : DEV_OWNER;
     }
 
     private JsonNode parseStrokes(String stored) {

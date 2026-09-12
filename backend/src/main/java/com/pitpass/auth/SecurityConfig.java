@@ -17,6 +17,7 @@ import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 
 /**
  * Two mutually-exclusive filter chains selected by {@code pit-pass.auth.enabled}:
@@ -30,6 +31,11 @@ import org.springframework.security.web.authentication.HttpStatusEntryPoint;
  * immediately instead of when the session expires. Login itself only rejects
  * unlisted emails (the access_denied UX, recorded via {@link DeniedLogins});
  * it stamps no roles into the session.
+ *
+ * <p>The native iPad app authenticates with a bearer token instead of the
+ * session cookie ({@link DeviceTokenFilter}); it obtains one through the same
+ * Google login via {@link DeviceAuthController} + {@link DeviceLoginSuccessHandler}.
+ * Same roster, same request-time rules — only the "who" transport differs.
  */
 @Configuration
 @EnableWebSecurity
@@ -46,15 +52,22 @@ public class SecurityConfig {
             // "/*.svg" — uploaded series/manufacturer logos live under /api and
             // stay gated.
             "/favicon.ico", "/*.png", "/*.svg", "/manifest.webmanifest", "/sw.js", "/workbox-*.js",
-            "/api/me", "/oauth2/**", "/login/**", "/error"
+            "/api/me", "/oauth2/**", "/login/**", "/error",
+            // Native-app sign-in: start has no session yet, exchange carries
+            // the one-time code as its credential (DeviceAuthController).
+            "/api/auth/device/start", "/api/auth/device/exchange"
     };
 
     @Bean
     @ConditionalOnProperty(prefix = "pit-pass.auth", name = "enabled", havingValue = "true")
     SecurityFilterChain securedChain(HttpSecurity http, UserDirectory directory,
-                                     LiveAuthorization live, DeniedLogins deniedLogins)
+                                     LiveAuthorization live, DeniedLogins deniedLogins,
+                                     DeviceTokens deviceTokens)
             throws Exception {
         http
+                // Bearer → DeviceAuthentication, right after the session-based
+                // context is loaded and before anonymous/authorization run.
+                .addFilterAfter(new DeviceTokenFilter(deviceTokens), SecurityContextHolderFilter.class)
                 .authorizeHttpRequests(a -> a
                         // PUBLIC first so /api/me stays reachable signed-out.
                         .requestMatchers(PUBLIC).permitAll()
@@ -65,6 +78,8 @@ public class SecurityConfig {
                         // the controller pins the row to the caller's email, so
                         // member() is sufficient here.
                         .requestMatchers(HttpMethod.PUT, "/api/events/*/scratchpad").access(live.member())
+                        // A device signing itself out revokes only its own token.
+                        .requestMatchers(HttpMethod.DELETE, "/api/auth/device").access(live.member())
                         .requestMatchers(HttpMethod.GET, "/api/**").access(live.member())
                         .requestMatchers(HttpMethod.HEAD, "/api/**").access(live.member())
                         // Every other method — including OPTIONS and anything
@@ -75,9 +90,10 @@ public class SecurityConfig {
                 .oauth2Login(o -> o
                         .userInfoEndpoint(u -> u.oidcUserService(
                                 allowlistUserService(directory, deniedLogins)))
-                        // Login itself returns to the SPA; a rejected email lands
-                        // back with a flag the frontend can surface.
-                        .defaultSuccessUrl("/", true)
+                        // Browser logins return to the SPA; app-started logins
+                        // redirect into the app with a one-time code. A rejected
+                        // email lands back with a flag the frontend can surface.
+                        .successHandler(new DeviceLoginSuccessHandler(deviceTokens))
                         .failureUrl("/?authError=1"))
                 .logout(l -> l.logoutSuccessUrl("/").permitAll())
                 // Same-origin SPA with a SameSite=Lax session cookie; no CSRF tokens.

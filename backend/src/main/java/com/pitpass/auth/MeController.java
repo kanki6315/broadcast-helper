@@ -1,7 +1,6 @@
 package com.pitpass.auth;
 
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -11,7 +10,8 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code authEnabled=true, email=null} → not signed in, so the frontend sends the
  * browser to Google; a non-null email means signed in. The backend, not the
  * frontend, decides that "auth off ⇒ admin", so the SPA has exactly one boolean
- * to consult for showing edit controls.
+ * to consult for showing edit controls. The principal may be a Google session
+ * or a native-app device token; {@link Principals} tells them apart.
  */
 @RestController
 public class MeController {
@@ -28,11 +28,11 @@ public class MeController {
     }
 
     @GetMapping("/api/me")
-    public Me me(@AuthenticationPrincipal OidcUser user) {
+    public Me me(@AuthenticationPrincipal Object user) {
         if (!auth.enabled()) {
             return new Me(false, null, true);
         }
-        String email = user != null ? user.getEmail() : null;
+        String email = Principals.emailOf(user);
         return new Me(true, email, directory.isAdmin(email));
     }
 }

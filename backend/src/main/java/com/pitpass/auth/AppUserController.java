@@ -6,7 +6,6 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -95,7 +94,7 @@ public class AppUserController {
     @PatchMapping("/{id}")
     public AppUser setRole(@PathVariable long id,
                            @Valid @RequestBody RoleRequest request,
-                           @AuthenticationPrincipal OidcUser caller) {
+                           @AuthenticationPrincipal Object caller) {
         String role = requireRole(request.role());
         AppUser target = find(id);
         if (isSelf(target, caller) && !"ADMIN".equals(role)) {
@@ -125,7 +124,7 @@ public class AppUserController {
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@PathVariable long id, @AuthenticationPrincipal OidcUser caller) {
+    public void delete(@PathVariable long id, @AuthenticationPrincipal Object caller) {
         AppUser target = find(id);
         if (isSelf(target, caller)) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
@@ -173,9 +172,9 @@ public class AppUserController {
                 rs.getObject("created_at", OffsetDateTime.class));
     }
 
-    private static boolean isSelf(AppUser target, OidcUser caller) {
-        return caller != null && caller.getEmail() != null
-                && caller.getEmail().trim().toLowerCase().equals(target.email().toLowerCase());
+    private static boolean isSelf(AppUser target, Object caller) {
+        String email = Principals.emailOf(caller);
+        return email != null && email.trim().toLowerCase().equals(target.email().toLowerCase());
     }
 
     private static String requireRole(String raw) {

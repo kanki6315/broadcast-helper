@@ -1265,6 +1265,54 @@ dividers. The whole sheet's row height + content now scales from one knob —
 to every size that drives row height (fonts, cell padding, images, flags),
 still breaking cleanly at entry boundaries.
 
+**Phase 4c — Native iPad app (started 2026-09-12).** The installed PWA's
+service worker proved flaky in the field, and Phase 5's live timing page needs
+the *website* to run cache-free in a Safari window beside the app. Decision:
+a **full native SwiftUI app** (`ios/`, iPad Pro 11" first) owns everything the
+service worker used to — offline storage, freshness, the Pencil scratchpad —
+and the website returns to a plain web app. Usage model unchanged: the iPad
+**reads (plus the scratchpad); all editing stays on the website.** Hybrid
+(WKWebView + native store) was considered and rejected: it keeps one UI
+codebase but still carries a bundle-version staleness problem, and with the
+code being written for him a second codebase is an acceptable cost. Full
+design and the sign-in flow in **docs/IOS.md**.
+
+- **Slice 1 — sign-in + offline store + series directory — ✅ DONE
+  (2026-09-12).** Backend: bearer **device tokens** (V45 `device_token`,
+  `auth/DeviceTokens`/`DeviceTokenFilter`/`DeviceLoginSuccessHandler`/
+  `DeviceAuthController`/`UserDeviceController`; `Principals` is now the one
+  place that knows both principal kinds — never `instanceof OidcUser`
+  again). Google login runs in `ASWebAuthenticationSession`, ends on
+  `pitpass://auth?code=…`, code → token, token → Keychain; a revoked token
+  presents as `/api/me` with a null email (never a 401). Manage → Sessions
+  gained a **Linked devices** table. App: XcodeGen project (Swift 6 strict,
+  iOS 18+, iPad only), `OfflineStore` (SQLite in Application Support),
+  `DataLoader` (conditional GET on the existing weak ETags) and `Resource`
+  keeping the PWA's rules — cache paints instantly, revalidate behind it,
+  a changed payload is a **nudge, never a silent re-render** — plus the
+  `Connectivity` heartbeat port and a "Cached/Updated Xm ago" footer. Verified
+  in the iPad Pro 11-inch (M5) simulator including a fully offline cold launch.
+- **Slice 2 — season pages** (hub, schedule, standings, stats, results,
+  entries, photos), one screen per slice, models mirroring `lib/api.ts`.
+- **Slice 3 — sheet page**, then the sheet leaves the website (it is the
+  website's print/PDF path, so the app must print first — `ImageRenderer` /
+  `UIPrintPageRenderer`).
+- **Slice 4 — "Download this event"**: an explicit prefetch manifest per
+  event/season with progress, so pages never opened still work offline (the
+  SW only ever cached what had been visited).
+- **Slice 5 — PencilKit scratchpad**, keeping the stroke JSON wire format
+  (`{tool,color,size,points}`, 800-wide logical space, revision-guarded PUT)
+  so the desktop web pad still reads iPad ink; port the dirty/conflict/backup
+  logic from `scratchpadStore.ts`/`scratchpadSync.ts`, add BGAppRefresh
+  replay on top of foreground replay.
+- **Slice 6 — retire the service worker**: remove `vite-plugin-pwa`,
+  `browserTabReads.ts`, DataNudge/ConnectivityPill/InstallHint/StoragePage;
+  ship ONE deploy with `selfDestroying: true` first so installed iPads let go
+  of the old worker (they keep it forever otherwise). Not before slices 3–4
+  exist — race weekends in between still need offline reading.
+- **Parity rule:** every web slice that changes a payload an iPad surface
+  reads updates `ios/PitPass/Model` + the view in the same slice.
+
 **Phase 5 — Live timing.** Ingest a timing feed (provider TBD per series),
 WebSocket push to a dashboard, storyline surfacing (position changes vs champ
 implications, guest running ahead of points leader, pit-cycle notes). Separate
