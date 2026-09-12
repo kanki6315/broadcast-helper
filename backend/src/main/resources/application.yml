@@ -117,10 +117,5 @@ spring:
     # connections mostly sit idle holding memory on both ends.
     hikari:
       maximum-pool-size: 5
-  jpa:
-    # Flyway owns the schema; Hibernate only checks that entities match it.
-    hibernate:
-      ddl-auto: validate
-    open-in-view: false
   flyway:
     enabled: true

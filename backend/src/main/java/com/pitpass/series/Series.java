@@ -1,19 +1,9 @@
 package com.pitpass.series;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-
 import java.time.OffsetDateTime;
 
-@Entity
-@Table(name = "series")
 public class Series {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     private String name;
@@ -22,8 +12,11 @@ public class Series {
 
     private OffsetDateTime createdAt;
 
-    protected Series() {
-        // for JPA
+    public Series(Long id, String name, String abbreviation, OffsetDateTime createdAt) {
+        this.id = id;
+        this.name = name;
+        this.abbreviation = abbreviation;
+        this.createdAt = createdAt;
     }
 
     public Series(String name, String abbreviation) {
