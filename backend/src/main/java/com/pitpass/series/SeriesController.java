@@ -3,7 +3,6 @@ package com.pitpass.series;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -62,7 +61,7 @@ public class SeriesController {
         Map<Long, List<String>> aliases = loadAliases();
         Map<Long, Long> logoVersions = loadLogoVersions();
         Map<Long, String> primaryKinds = loadPrimaryKinds();
-        return repository.findAll(Sort.by("name")).stream()
+        return repository.findAllByOrderByName().stream()
                 .map(s -> toResponse(s, aliases, logoVersions, primaryKinds))
                 .toList();
     }
@@ -96,8 +95,7 @@ public class SeriesController {
      * Which championship kind is this series' headline. Everything that ranks
      * kinds against each other reads it: the hub's kind chips default to it,
      * the sheet's champ column prefers it per class. A blank clears it back to
-     * the Teams-first default. Stored outside the JPA entity like the aliases —
-     * a plain column the JdbcClient reads.
+     * the Teams-first default. Loaded separately from the series identity, like aliases.
      */
     @PutMapping("/{id}/primary-kind")
     @ResponseStatus(HttpStatus.NO_CONTENT)
