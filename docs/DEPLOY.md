@@ -163,23 +163,15 @@ seasons, standings, sheets, driver profiles — but change nothing (writes are
 admin-only, and the management UI is hidden). The pit-lane sheet still ships as
 an exported **PDF** for teams without accounts.
 
-## Service worker retirement (in progress)
+## No service worker
 
-The PWA is retired in favour of the iPad app ([PWA.md](PWA.md) has the
-history). It takes two deploys, because a browser keeps a service worker it
-already installed until a *new* worker replaces it:
-
-1. **This deploy** ships Workbox's self-destroying worker. The first time an
-   installed iPad (or any browser that once had the worker) opens the site,
-   the new worker installs, unregisters itself, reloads the page once and
-   deletes every cache. From then on the site is a plain web app.
-2. **Next deploy**, after every installed iPad has opened the site once:
-   remove `vite-plugin-pwa` and the `/sw.js` allowlist entries. If step 2
-   went out first, a device that never saw step 1 would keep the old worker
-   forever (a 404 on `sw.js` leaves the existing registration in place).
-
-Nothing else changes at deploy time. Updates no longer need a banner: with no
-worker, a reload always gets the latest bundle.
+The website is a plain, uncached web app; the iPad app (`docs/IOS.md`) owns
+offline reading and the scratchpad. The former PWA was retired in two deploys
+in September 2026 (a self-destroying worker first, then the plugin's removal),
+so a reload always gets the latest bundle and nothing at deploy time concerns
+caching. Should a device somehow still hold the old worker, `/sw.js` now 404s,
+which leaves that registration in place — redeploying a self-destroying
+`sw.js` at the web root is the fix (git history has the config).
 
 ## Config reference (env)
 

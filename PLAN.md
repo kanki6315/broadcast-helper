@@ -1348,10 +1348,9 @@ design and the sign-in flow in **docs/IOS.md**.
   header), DataNudge, UpdatePrompt, ConnectivityPill (+ the cache-age half of
   `lib/connectivity.ts`; the heartbeat stays for the web scratchpad and is
   started by scratchpadSync), InstallHint, the Manage → Diagnostics page.
-  **Step 2 (branch `claude/remove-pwa-plugin`, merge only after every
-  installed iPad has opened the site once):** remove `vite-plugin-pwa`, the
-  `registerSW` call, manifest + icons, the `/sw.js` allowlist entries in
-  SecurityConfig, and `docs/PWA.md`.
+  **Step 2 ✅:** `vite-plugin-pwa`, the `registerSW` call, the manifest +
+  PWA icons, the `/sw.js` + `/workbox-*.js` + manifest allowlist entries in
+  SecurityConfig and `docs/PWA.md` removed. The website is a plain web app.
 - **Parity rule:** every web slice that changes a payload an iPad surface
   reads updates `ios/PitPass/Model` + the view in the same slice.
 

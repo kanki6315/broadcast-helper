@@ -45,13 +45,12 @@ public class SecurityConfig {
     // Static SPA shell + the endpoints the login flow itself needs.
     private static final String[] PUBLIC = {
             "/", "/index.html", "/assets/**",
-            // PWA shell served from the web root (not /assets): icons, manifest,
-            // service worker. The login screen and the browser tab reference
-            // these before the user signs in, so they must load pre-auth. The
-            // brand marks are root SVGs (the login logo + favicon), hence
-            // "/*.svg" — uploaded series/manufacturer logos live under /api and
-            // stay gated.
-            "/favicon.ico", "/*.png", "/*.svg", "/manifest.webmanifest", "/sw.js", "/workbox-*.js",
+            // Icons served from the web root (not /assets): the login screen
+            // and the browser tab reference these before the user signs in, so
+            // they must load pre-auth. The brand marks are root SVGs (the login
+            // logo + favicon), hence "/*.svg" — uploaded series/manufacturer
+            // logos live under /api and stay gated.
+            "/favicon.ico", "/*.png", "/*.svg",
             "/api/me", "/oauth2/**", "/login/**", "/error",
             // Native-app sign-in: start has no session yet, exchange carries
             // the one-time code as its credential (DeviceAuthController).

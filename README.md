@@ -104,9 +104,6 @@ model, and phase roadmap.
 - **iPad app** — Swift 6 / SwiftUI, XcodeGen project (`ios/`), one package
   (SwiftDraw). Sign-in, offline store, design parity, sheet + PDF, pit-lane
   guidance: `docs/IOS.md`
-- **PWA** — retired in favour of the iPad app: the site currently ships a
-  self-destroying service worker so installed iPads let go of the old one;
-  the plugin itself comes out in the next deploy (`docs/PWA.md`)
 
 ## Running locally
 
@@ -158,6 +155,5 @@ PRODUCT.md  who it's for, design principles, anti-references
 DESIGN.md   the visual system: tokens, components, named rules
 docs/
   DEPLOY.md deploying to Railway (build, env, auth, backfills)
-  PWA.md    the retired service worker (history + the two-step removal)
   IOS.md    the iPad app: layout, build, device-token sign-in, offline store, design parity
 ```
