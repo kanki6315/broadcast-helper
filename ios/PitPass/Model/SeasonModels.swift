@@ -65,6 +65,16 @@ struct RecapRound: Codable, Sendable, Hashable {
     let raceCount: Int
     let sessions: [RecapSession]
     let races: [RecapRaceRef]
+
+    /// A zero-point entry or a DNS/DNF still counts. Blank calendar rounds
+    /// return to the recap automatically once participation is imported.
+    func hasParticipation(in rows: [RecapRow]) -> Bool {
+        rows.contains { row in
+            !(row.races(round: round) ?? []).isEmpty
+                || row.points(round: round) != nil
+                || sessions.contains { row.sessionPoints(index: $0.sessionIndex)?.contested == true }
+        }
+    }
 }
 
 struct RecapRace: Codable, Sendable, Hashable {
