@@ -1,3 +1,4 @@
+import PageLoading from '../components/PageLoading'
 import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react'
 import 'flag-icons/css/flag-icons.min.css'
 import './sheet.css'
@@ -201,12 +202,7 @@ export default function SheetPage({ eventId }: { eventId: number }) {
   if (!sheet) {
     return (
       <div className="sheet">
-        <div className="skeleton-block" aria-label="Loading sheet">
-          <span className="skeleton" />
-          <span className="skeleton" />
-          <span className="skeleton" />
-          <span className="skeleton" />
-        </div>
+        <PageLoading key={eventId} label="Loading broadcast sheet" />
       </div>
     )
   }

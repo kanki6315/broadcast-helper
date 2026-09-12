@@ -1,3 +1,4 @@
+import PageLoading from '../components/PageLoading'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -128,17 +129,7 @@ export default function SeriesDirectoryPage() {
 
   if (error) return <p className="error-panel">{error}</p>
   if (!groups || !filtered) {
-    return (
-      <div className="dir-grid" aria-label="Loading series" aria-busy="true">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="dir-card dir-card-skeleton">
-            <span className="skeleton" style={{ height: '2.75rem', width: '55%' }} />
-            <span className="skeleton" style={{ height: '1.25rem', width: '80%' }} />
-            <span className="skeleton" style={{ height: '1rem', width: '45%' }} />
-          </div>
-        ))}
-      </div>
-    )
+    return <PageLoading label="Loading series" />
   }
 
   if (groups.length === 0) {
