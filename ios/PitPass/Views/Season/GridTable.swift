@@ -30,8 +30,8 @@ struct GridColumn: Identifiable {
     }
 
     /// `.round-head`: venue (mono, bold) over "Rd n".
-    static func round(_ id: String, venue: String, round: Int, width: CGFloat = 66, current: Bool = false) -> GridColumn {
-        GridColumn(id: id, width: width, align: .center, padH: 4) {
+    static func round(_ id: String, venue: String, round: Int, width: CGFloat = 66, padH: CGFloat = 4, current: Bool = false) -> GridColumn {
+        GridColumn(id: id, width: width, align: .center, padH: padH) {
             VStack(spacing: 1) {
                 Text(venue).font(PP.mono(PP.TextSize.sm, weight: 700)).foregroundStyle(current ? PP.accentInk : PP.text)
                 Text("Rd \(round)").font(PP.sans(PP.TextSize.xs, weight: 500)).foregroundStyle(current ? PP.accentInk : PP.textMuted)
@@ -73,6 +73,8 @@ struct GridTable: View {
     var cellPadV: CGFloat = 4
     var cellPadH: CGFloat = 10
     var headerHeight: CGFloat = 40
+    var separatesIdentity: Bool = false
+    var centersCells: Bool = false
 
     private let bandHeight: CGFloat = 26
 
@@ -98,6 +100,9 @@ struct GridTable: View {
                     // spare width and create a gap before the scrolling data.
                     .frame(width: identWidth, alignment: .leading)
                     .background(PP.bg)
+                    .overlay(alignment: .trailing) {
+                        if separatesIdentity { Rectangle().fill(PP.borderStrong).frame(width: 1) }
+                    }
                     .zIndex(1)
                 ScrollView(.horizontal, showsIndicators: true) {
                     column(dataColumns, ident: false)
@@ -132,12 +137,12 @@ struct GridTable: View {
                 }
                 ForEach(section.rows) { row in
                     let views = ident ? row.ident : row.cells
-                    HStack(alignment: .top, spacing: 0) {
+                    HStack(alignment: centersCells ? .center : .top, spacing: 0) {
                         ForEach(Array(zip(columns.indices, columns)), id: \.0) { i, col in
                             (i < views.count ? views[i] : AnyView(EmptyView()))
                                 .padding(.horizontal, col.padH ?? cellPadH)
                                 .padding(.vertical, cellPadV)
-                                .frame(width: col.width, height: rowHeight(row), alignment: col.align == .center ? .top : Alignment(horizontal: col.alignment.horizontal, vertical: .top))
+                                .frame(width: col.width, height: rowHeight(row), alignment: Alignment(horizontal: col.alignment.horizontal, vertical: centersCells ? .center : .top))
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
