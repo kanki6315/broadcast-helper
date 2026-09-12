@@ -8,19 +8,35 @@ interface SessionRow {
   current: boolean
 }
 
+/** A linked iPad (native-app bearer token). Never carries the token itself. */
+interface DeviceRow {
+  id: number
+  email: string
+  deviceName: string
+  createdAt: string
+  lastUsedAt: string | null
+}
+
 /**
- * Active sign-in sessions. Revoking one forces that person to sign in again — it
- * does NOT remove their access (that's the Users page). Sessions are addressed
- * by an internal id, never the session cookie.
+ * Active sign-in sessions, plus the iPads linked through the native app (each
+ * holds a long-lived device token instead of a session). Revoking either forces
+ * that person to sign in again — it does NOT remove their access (that's the
+ * Users page). Sessions are addressed by an internal id, never the session
+ * cookie; devices by their token row id, never the token.
  */
 export default function SessionsPage() {
   const [rows, setRows] = useState<SessionRow[]>([])
+  const [devices, setDevices] = useState<DeviceRow[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   async function load() {
-    const res = await fetch('/api/users/sessions')
-    if (res.ok) setRows(await res.json())
+    const [sessions, linked] = await Promise.all([
+      fetch('/api/users/sessions'),
+      fetch('/api/users/devices'),
+    ])
+    if (sessions.ok) setRows(await sessions.json())
+    if (linked.ok) setDevices(await linked.json())
   }
 
   useEffect(() => {
@@ -48,6 +64,11 @@ export default function SessionsPage() {
 
   function signOutEverywhere(email: string) {
     void call(`/api/users/sessions?email=${encodeURIComponent(email)}`, { method: 'DELETE' })
+  }
+
+  function unlinkDevice(row: DeviceRow) {
+    if (!window.confirm(`Unlink "${row.deviceName}"? The app on it will ask to sign in again.`)) return
+    void call(`/api/users/devices/${row.id}`, { method: 'DELETE' })
   }
 
   // "Sign out everywhere" belongs once per email; show it on the first row of any
@@ -104,6 +125,42 @@ export default function SessionsPage() {
                 </tr>
               )
             })}
+          </tbody>
+        </table>
+      )}
+
+      <h2>Linked devices</h2>
+      <p>
+        iPads signed in through the Pit Pass app. Each holds its own long-lived sign-in;{' '}
+        <strong>Unlink</strong> signs that device out. Access is still decided by the Users page.
+      </p>
+      {devices.length === 0 ? (
+        <p className="muted">No linked devices.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Device</th>
+              <th>Linked</th>
+              <th>Last used</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {devices.map((d) => (
+              <tr key={d.id}>
+                <td>{d.email}</td>
+                <td>{d.deviceName}</td>
+                <td>{new Date(d.createdAt).toLocaleString()}</td>
+                <td>{d.lastUsedAt ? new Date(d.lastUsedAt).toLocaleString() : <span className="muted">never</span>}</td>
+                <td>
+                  <button type="button" disabled={busy} onClick={() => unlinkDevice(d)}>
+                    Unlink
+                  </button>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       )}

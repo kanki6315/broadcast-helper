@@ -19,3 +19,9 @@ build/
 
 # Impeccable design-hook cache
 .impeccable/
+
+# iOS app: the Xcode project is generated from ios/project.yml (xcodegen).
+ios/*.xcodeproj
+ios/build/
+ios/DerivedData/
+xcuserdata/

@@ -3,7 +3,6 @@ package com.pitpass.auth;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.stereotype.Component;
 
@@ -13,7 +12,7 @@ import org.springframework.stereotype.Component;
  * membership change takes effect on the next request rather than when the
  * session expires (up to days later).
  *
- * <p>Anonymous callers carry no OidcUser → null email → deny; the
+ * <p>Anonymous callers carry no principal → null email → deny; the
  * ExceptionTranslationFilter then routes unauthenticated denials to the
  * HttpStatusEntryPoint (401) and authenticated ones to the default handler
  * (403), so the SPA's 401-only login redirect (lib/authRedirect.ts) is
@@ -41,8 +40,6 @@ public class LiveAuthorization {
     }
 
     private static String emailOf(Authentication authentication) {
-        return authentication != null && authentication.getPrincipal() instanceof OidcUser u
-                ? u.getEmail()
-                : null;
+        return Principals.emailOf(authentication);
     }
 }
