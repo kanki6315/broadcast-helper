@@ -1,13 +1,11 @@
 import SwiftUI
 
-/// Account, server and offline storage — the app's counterpart to the
+/// Account and offline storage — the app's counterpart to the
 /// website's Manage pages, in the same panel vocabulary (hairline sections
 /// on the panel surface, amber only on the one primary action).
 struct SettingsView: View {
     @Environment(AppSession.self) private var session
     @Environment(\.dismiss) private var dismiss
-    @State private var serverText = ""
-    @State private var serverError: String?
     @State private var stats: OfflineStore.Stats?
     @State private var confirmSignOut = false
 
@@ -17,7 +15,6 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: PP.Space.s5) {
                     account
                     appearance
-                    server
                     storage
                 }
                 .padding(PP.Space.s5)
@@ -34,7 +31,6 @@ struct SettingsView: View {
                 }
             }
             .task {
-                serverText = session.serverURL.absoluteString
                 stats = await session.store.stats()
             }
         }
@@ -72,34 +68,6 @@ struct SettingsView: View {
                 Text("Theme").ppLabel()
                 Spacer()
                 ThemeToggle()
-            }
-            .padding(.vertical, PP.Space.s2)
-        }
-    }
-
-    private var server: some View {
-        Section_(title: "Server", footer: "Changing servers signs this iPad out and clears its offline data.") {
-            VStack(alignment: .leading, spacing: PP.Space.s3) {
-                TextField("https://pitpass.arjunakankipati.com", text: $serverText)
-                    .font(PP.mono(PP.TextSize.sm))
-                    .foregroundStyle(PP.text)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .padding(.vertical, 7)
-                    .padding(.horizontal, 12)
-                    .background(PP.bg, in: RoundedRectangle(cornerRadius: PP.Radius.md, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: PP.Radius.md, style: .continuous).strokeBorder(PP.borderStrong))
-                if let serverError { ErrorPanel(message: serverError) }
-                HStack(spacing: PP.Space.s2) {
-                    Button("Use this server") { apply(serverText) }
-                        .buttonStyle(PPPrimaryButtonStyle(compact: true))
-                        .disabled(serverText.isEmpty)
-                    Button("Production") { apply(ServerConfig.production.absoluteString) }
-                        .buttonStyle(PPSecondaryButtonStyle())
-                    Button("Local dev server") { apply(ServerConfig.localDev.absoluteString) }
-                        .buttonStyle(PPSecondaryButtonStyle())
-                }
             }
             .padding(.vertical, PP.Space.s2)
         }
@@ -159,16 +127,6 @@ struct SettingsView: View {
                      "\(r.documents) documents"]
         if r.missing > 0 { parts.append("\(r.missing) missing") }
         return parts.joined(separator: " · ")
-    }
-
-    private func apply(_ text: String) {
-        guard let url = ServerConfig.parse(text) else {
-            serverError = "Enter a full server address, like https://pitpass.example.com"
-            return
-        }
-        serverError = nil
-        serverText = url.absoluteString
-        Task { await session.setServer(url) }
     }
 
     /// A titled panel: caption title, hairline-divided rows on the panel surface.
