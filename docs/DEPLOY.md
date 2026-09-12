@@ -163,21 +163,23 @@ seasons, standings, sheets, driver profiles — but change nothing (writes are
 admin-only, and the management UI is hidden). The pit-lane sheet still ships as
 an exported **PDF** for teams without accounts.
 
-## PWA / offline
+## Service worker retirement (in progress)
 
-Pit Pass is an installable PWA with read-only offline caching (full details:
-[PWA.md](PWA.md)). Nothing extra to configure at deploy time — the service
-worker and manifest are emitted into the static bundle and served by Spring Boot
-like everything else. Two deploy-relevant facts:
+The PWA is retired in favour of the iPad app ([PWA.md](PWA.md) has the
+history). It takes two deploys, because a browser keeps a service worker it
+already installed until a *new* worker replaces it:
 
-- **HTTPS is required** for the service worker and storage APIs. Railway serves
-  HTTPS, so this is satisfied in production; it only bites when testing on a
-  device over a plain-http LAN address.
-- **Updates are opt-in per user.** A new deploy doesn't force-refresh open apps —
-  the app polls every ~30 min while foregrounded and shows a "new version — Reload"
-  banner. Users on the installed iPad app pick up a deploy on next launch or when
-  they tap the banner. Changing the service worker's own update behavior costs one
-  extra relaunch on existing installs (the old worker applies the first update).
+1. **This deploy** ships Workbox's self-destroying worker. The first time an
+   installed iPad (or any browser that once had the worker) opens the site,
+   the new worker installs, unregisters itself, reloads the page once and
+   deletes every cache. From then on the site is a plain web app.
+2. **Next deploy**, after every installed iPad has opened the site once:
+   remove `vite-plugin-pwa` and the `/sw.js` allowlist entries. If step 2
+   went out first, a device that never saw step 1 would keep the old worker
+   forever (a 404 on `sw.js` leaves the existing registration in place).
+
+Nothing else changes at deploy time. Updates no longer need a banner: with no
+worker, a reload always gets the latest bundle.
 
 ## Config reference (env)
 
