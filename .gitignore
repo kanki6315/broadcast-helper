@@ -25,3 +25,4 @@ ios/*.xcodeproj
 ios/build/
 ios/DerivedData/
 xcuserdata/
+ios/build-tests/
