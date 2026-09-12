@@ -106,7 +106,7 @@ private struct NotesPanel: View {
 
 /// One session's classification. Columns follow the session and the data the
 /// import carried — an empty column is a column of doubt.
-private struct ResultsTable: View {
+struct ResultsTable: View {
     @Environment(SeasonModel.self) private var model
     let session: SessionResults
 
@@ -126,7 +126,9 @@ private struct ResultsTable: View {
         let gridByCar = Dictionary(session.grid.compactMap { g in g.posOverall.map { (g.carNumber, $0) } }, uniquingKeysWith: { a, _ in a })
         let gapInClass = ResultGaps.classGaps(all)
         let carNotes = notesByCar()
-        func timeOf(_ r: ResultRow) -> String? { isQualifying ? r.gapFirst : (r.posOverall == 1 ? r.elapsedTime : r.gapFirst) }
+        func timeOf(_ r: ResultRow) -> String? {
+            !isQualifying && r.posOverall == 1 ? r.elapsedTime : ResultGaps.displayGap(r.gapFirst)
+        }
         func change(_ r: ResultRow) -> Int? { guard let s = gridByCar[r.carNumber], let p = r.posOverall else { return nil }; return s - p }
         let has = (
             laps: all.contains { $0.laps != nil },
@@ -145,26 +147,22 @@ private struct ResultsTable: View {
             return t != r.drivers?.trimmingCharacters(in: .whitespaces) && t != r.fastestLapDriver?.trimmingCharacters(in: .whitespaces)
                 && t != r.qualifyingDriver?.trimmingCharacters(in: .whitespaces)
         }
-        let multiDriver = all.contains { ($0.drivers ?? "").contains(", ") }
-        let teamPos: String = !teamInformative ? "hidden" : (multiDriver ? "before" : "after")
         let driverHead = isQualifying && has.qualifiedBy ? "Qualified by" : (isQualifying && has.fastestBy ? "Fastest lap by" : "Drivers")
 
-        var ident: [GridColumn] = [.text("pos", "Pos", width: 52, align: .trailing), .text("pic", "PIC", width: 52, align: .trailing)]
-        if has.positionChange { ident.append(.text("chg", "± Pos", width: 64, align: .trailing)) }
-        ident.append(.text("cls", "Class", width: 88))
-        ident.append(.text("car", "#", width: 56, align: .trailing))
-        var data: [GridColumn] = []
-        if teamPos == "before" { data.append(.text("team", "Team", width: 220)) }
-        data.append(.text("drv", driverHead, width: 300))
-        if teamPos == "after" { data.append(.text("team", "Team", width: 220)) }
-        data.append(.text("veh", "Car", width: 200))
-        if has.laps { data.append(.text("laps", "Laps", width: 64, align: .trailing)) }
-        if has.pitStops { data.append(.text("pit", "Pit stops", width: 84, align: .trailing)) }
-        if has.fastest { data.append(.text("fl", isQualifying ? "Best lap" : "Fastest", width: 96, align: .trailing)) }
-        if has.onLap { data.append(.text("onlap", "On lap", width: 72, align: .trailing)) }
-        if has.time { data.append(.text("time", isQualifying ? "Gap" : "Time / Gap", width: 110, align: .trailing)) }
-        if has.classGap { data.append(.text("cgap", "Class gap", width: 96, align: .trailing)) }
-        if has.status { data.append(.text("status", "Status", width: 140)) }
+        // The same columns in both orientations, with shared spare width;
+        // crew and vehicle use its vertical space instead of separate columns.
+        var ident: [GridColumn] = [.text("pos", "Pos", width: 32, align: .trailing), .text("pic", "PIC", width: 32, align: .trailing)]
+        if has.positionChange { ident.append(.text("chg", "±\nPos", width: 44, align: .trailing)) }
+        ident.append(.text("cls", "Class", width: 66, align: .center))
+        ident.append(.text("car", "#", width: 38, align: .trailing))
+        var data: [GridColumn] = [.text("entry", teamInformative ? "Team" : driverHead, width: 170)]
+        if has.laps { data.append(.text("laps", "Laps", width: 40, align: .trailing)) }
+        if has.pitStops { data.append(.text("pit", "Pit\nstops", width: 44, align: .trailing)) }
+        if has.fastest { data.append(.text("fl", isQualifying ? "Best\nlap" : "Fastest", width: 84, align: .trailing)) }
+        if has.onLap { data.append(.text("onlap", "On\nlap", width: 42, align: .trailing)) }
+        if has.time { data.append(.text("time", isQualifying ? "Gap" : "Time /\nGap", width: 96, align: .trailing)) }
+        if has.classGap { data.append(.text("cgap", "Class\ngap", width: 84, align: .trailing)) }
+        if has.status { data.append(.text("status", "Status", width: 60)) }
 
         let items: [GridRowItem] = rows.map { r in
             var identCells: [AnyView] = [GridCell.pos(r.posOverall ?? 0), GridCell.num(r.posInClass.map(String.init) ?? "—")]
@@ -178,11 +176,20 @@ private struct ResultsTable: View {
                 }
             }))
             let attributed: String? = (isQualifying && has.qualifiedBy) ? r.qualifyingDriver : ((isQualifying && has.fastestBy) ? r.fastestLapDriver : nil)
-            var cells: [AnyView] = []
-            if teamPos == "before" { cells.append(GridCell.name(r.teamName ?? "")) }
-            cells.append(GridCell.text(attributed ?? r.drivers ?? ""))
-            if teamPos == "after" { cells.append(GridCell.name(r.teamName ?? "")) }
-            cells.append(GridCell.text(r.vehicle ?? ""))
+            let crew = attributed ?? r.drivers ?? ""
+            let team = teamInformative ? (r.teamName ?? "") : ""
+            var cells: [AnyView] = [AnyView(VStack(alignment: .leading, spacing: 2) {
+                if !team.isEmpty {
+                    Text(team).font(PP.sans(PP.TextSize.sm, weight: 500)).foregroundStyle(PP.ink)
+                }
+                if !crew.isEmpty && crew != team {
+                    Text(crew).font(PP.sans(PP.TextSize.sm, weight: team.isEmpty ? 500 : 400))
+                        .foregroundStyle(team.isEmpty ? PP.ink : PP.text)
+                }
+                if let vehicle = r.vehicle, !vehicle.isEmpty {
+                    Text(vehicle).font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.text)
+                }
+            }.fixedSize(horizontal: false, vertical: true))]
             if has.laps { cells.append(GridCell.num(r.laps.map(String.init) ?? "")) }
             if has.pitStops { cells.append(GridCell.num(r.pitStops.map(String.init) ?? "")) }
             if has.fastest { cells.append(GridCell.num(r.fastestLapTime ?? "")) }
@@ -191,11 +198,11 @@ private struct ResultsTable: View {
             if has.classGap { cells.append(GridCell.num(gapInClass[r.carNumber] ?? "")) }
             if has.status {
                 cells.append(ResultGaps.isClassified(r.status) ? GridCell.empty()
-                             : AnyView(Text(r.status ?? "").font(PP.sans(PP.TextSize.sm, weight: 600)).foregroundStyle(PP.error).lineLimit(1)))
+                             : AnyView(Text(r.status ?? "").font(PP.sans(PP.TextSize.sm, weight: 600)).foregroundStyle(PP.error)))
             }
             return GridRowItem(id: "\(r.carNumber)-\(r.posOverall ?? 0)", ident: identCells, cells: cells, lines: 1)
         }
-        return GridTable(identColumns: ident, dataColumns: data, sections: [GridSection(id: "results", band: nil, rows: items)])
+        return ResultsClassificationTable(columns: ident + data, rows: items)
     }
 
     private func notesByCar() -> [String: [String]] {

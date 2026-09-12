@@ -234,6 +234,18 @@ enum Champs {
 // MARK: - Results helpers (ResultsPage.tsx)
 
 enum ResultGaps {
+    /// Providers publish lap deficits as "2 Laps"; make the direction as
+    /// explicit as a time gap without changing the imported value.
+    static func displayGap(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let parts = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"^\+\s*"#, with: "", options: .regularExpression)
+            .split(whereSeparator: \.isWhitespace)
+        guard parts.count == 2, let laps = Int(parts[0]), laps > 0,
+              ["lap", "laps"].contains(parts[1].lowercased()) else { return value }
+        return "+ \(laps) \(laps == 1 ? "lap" : "laps")"
+    }
+
     /// A published gap as whole milliseconds; "-" is zero, lap gaps are nil.
     static func gapMs(_ gap: String?) -> Int? {
         guard let gap else { return nil }
