@@ -36,9 +36,8 @@ struct SeasonView: View {
             ToolbarItem(placement: .principal) {
                 if let hub = model.hub.value { seasonMenu(hub) }
             }
-            ToolbarItem(placement: .topBarTrailing) { ConnectivityPill() }
             ToolbarItem(placement: .topBarTrailing) {
-                if model.hub.value != nil { DownloadButton(target: .season(model.seasonId), noun: "season") }
+                if model.hub.value != nil { StatusDownloadButton(target: .season(model.seasonId), noun: "season") }
             }
         }
         .task(id: model.seasonId) { await model.load(session) }
@@ -48,10 +47,7 @@ struct SeasonView: View {
     private func section(_ selected: Page) -> some View {
         ScrollView {
             PageContainer {
-                VStack(alignment: .leading, spacing: PP.Space.s4) {
-                    Text(selected.label).font(.largeTitle.bold())
-                        .foregroundStyle(PP.ink)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: PP.Space.s2) {
                     if model.hub.value != nil {
                         if selected != .more { classPicker }
                         content(selected)
@@ -71,14 +67,13 @@ struct SeasonView: View {
     @ViewBuilder private var classPicker: some View {
         @Bindable var model = model
         if model.classes.count > 1 {
-            Picker("Class", selection: $model.classFilter) {
-                Text("All classes").tag(String?.none)
-                ForEach(model.classes, id: \.name) { item in
-                    Text(item.name).tag(Optional(item.name))
-                }
+            ScrollView(.horizontal) {
+                ColoredClassFilter(classes: model.classes, selection: $model.classFilter)
+                .padding(.vertical, 2)
             }
-            .pickerStyle(.menu)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .scrollIndicators(.hidden)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.bottom, PP.Space.s1)
         }
     }
 

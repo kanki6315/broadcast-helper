@@ -384,3 +384,47 @@ extension PP {
         })
     }
 }
+
+/// Class colours identify categories; the raised segment and amber outline
+/// identify selection, including for near-black class colours in dark mode.
+struct ColoredClassFilter: View {
+    let classes: [ClassInfo]
+    @Binding var selection: String?
+
+    var body: some View {
+        HStack(spacing: 2) {
+            segment("All classes", value: nil, color: nil)
+            ForEach(classes) { item in
+                segment(item.name, value: item.name, color: Color(cssHex: item.color))
+            }
+        }
+        .padding(3)
+        .background(PP.surface2, in: Capsule())
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Class filter")
+    }
+
+    private func segment(_ title: String, value: String?, color: Color?) -> some View {
+        let selected = selection == value
+        return Button { selection = value } label: {
+            HStack(spacing: 6) {
+                if let color {
+                    Circle()
+                        .fill(color)
+                        .overlay(Circle().strokeBorder(PP.textMuted.opacity(0.65), lineWidth: 1))
+                        .frame(width: 9, height: 9)
+                        .accessibilityHidden(true)
+                }
+                Text(title).font(.subheadline.weight(.medium))
+            }
+            .foregroundStyle(selected ? PP.ink : PP.text)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(selected ? PP.bg : .clear, in: Capsule())
+            .overlay(Capsule().strokeBorder(selected ? PP.accentInk : .clear, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}

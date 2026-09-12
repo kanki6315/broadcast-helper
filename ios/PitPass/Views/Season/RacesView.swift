@@ -30,15 +30,13 @@ struct RacesView: View {
                         HStack(spacing: PP.Space.s2) {
                             ForEach(events) { event in
                                 Button { selectedEvent = event.id } label: {
-                                    VStack(spacing: 4) {
-                                        Text(Venue.of(eventName: event.name, circuitName: event.circuitName))
-                                            .font(.subheadline.weight(.semibold))
-                                        Text([event.roundOrdinal.map { "Rd \($0)" }, event.eventDate].compactMap { $0 }.joined(separator: " · "))
-                                            .font(.caption)
-                                    }
-                                    .padding(.vertical, 6)
+                                    Text(roundTabLabel(event))
+                                        .font(.subheadline.weight(.semibold))
+                                        .lineLimit(1)
+                                        .fixedSize()
                                 }
                                 .buttonStyle(.bordered)
+                                .controlSize(.small)
                                 .tint(event.id == selected.id ? PP.accentInk : PP.textMuted)
                                 .accessibilityAddTraits(event.id == selected.id ? .isSelected : [])
                                 .accessibilityLabel(event.name + (event.eventDate.map { ", " + $0 } ?? ""))
@@ -59,6 +57,12 @@ struct RacesView: View {
                 EmptyState(message: "No events yet — import a results file or entry list on the website.")
             }
         }
+    }
+
+    private func roundTabLabel(_ event: CalendarEvent) -> String {
+        let track = Venue.of(eventName: event.name, circuitName: event.circuitName)
+        guard let round = event.roundOrdinal else { return track }
+        return "Rd \(round) | \(track)"
     }
 
     private func roundLabel(_ event: CalendarEvent, isNext: Bool, today: String) -> some View {

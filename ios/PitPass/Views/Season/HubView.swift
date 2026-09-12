@@ -51,7 +51,6 @@ private struct HubStrip: View {
         .background(PP.surface)
         .clipShape(RoundedRectangle(cornerRadius: PP.Radius.lg, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: PP.Radius.lg, style: .continuous).strokeBorder(PP.border))
-        .padding(.top, PP.Space.s5)
         .padding(.bottom, PP.Space.s6)
     }
 

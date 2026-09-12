@@ -362,7 +362,7 @@ Season screens use five native tabs: Overview, Races, Standings, Stats and
 More (Entries and Photos). The tab container uses compact navigation to keep
 the bar at the bottom on iPad, while content retains the actual size class.
 iPadOS 26 supplies Liquid Glass; iOS 18 retains standard system controls.
-The title menu switches year/stage, and class filtering uses a native menu.
+The title menu switches year/stage, and class filtering uses an compact segmented control with configured class-colour swatches.
 Races uses a horizontally scrolling round selector, initially selecting the
 next dated event or the latest event, with results and event-sheet access below.
 UI text uses the system font; numeric data retains JetBrains Mono.
