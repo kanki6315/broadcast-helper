@@ -1,4 +1,4 @@
-import { getConnectivity, subscribeConnectivity } from './connectivity'
+import { getConnectivity, startConnectivityMonitor, subscribeConnectivity } from './connectivity'
 import { listDirtyPads, saveLocalPad, type LocalPad } from './scratchpadStore'
 
 /**
@@ -77,6 +77,7 @@ let started = false
 export function startScratchpadSync(): void {
   if (started) return
   started = true
+  startConnectivityMonitor()
   let wasLive = getConnectivity().status === 'live'
   subscribeConnectivity(() => {
     const live = getConnectivity().status === 'live'

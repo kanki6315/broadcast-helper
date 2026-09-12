@@ -1340,11 +1340,18 @@ design and the sign-in flow in **docs/IOS.md**.
   finger input against the local backend: web-seeded strokes render, iPad
   strokes land on the server and re-import unchanged; real Pencil latency and
   the "Only Draw with Apple Pencil" setting still need a device session.
-- **Slice 6 — retire the service worker**: remove `vite-plugin-pwa`,
-  `browserTabReads.ts`, DataNudge/ConnectivityPill/InstallHint/StoragePage;
-  ship ONE deploy with `selfDestroying: true` first so installed iPads let go
-  of the old worker (they keep it forever otherwise). Slices 3–5 exist, so
-  this can go as soon as the iPad pad has had one real Pencil session.
+- **Slice 6 — retire the service worker — step 1 ✅ (2026-09-12).**
+  `vite.config.ts` ships Workbox's self-destroying worker (`selfDestroying:
+  true`: installs over the old one, unregisters, reloads the page once,
+  deletes every cache); `main.tsx` keeps a bare `registerSW` so installed
+  iPads fetch it. Removed with it: `browserTabReads.ts` (the browser-tab
+  header), DataNudge, UpdatePrompt, ConnectivityPill (+ the cache-age half of
+  `lib/connectivity.ts`; the heartbeat stays for the web scratchpad and is
+  started by scratchpadSync), InstallHint, the Manage → Diagnostics page.
+  **Step 2 (branch `claude/remove-pwa-plugin`, merge only after every
+  installed iPad has opened the site once):** remove `vite-plugin-pwa`, the
+  `registerSW` call, manifest + icons, the `/sw.js` allowlist entries in
+  SecurityConfig, and `docs/PWA.md`.
 - **Parity rule:** every web slice that changes a payload an iPad surface
   reads updates `ios/PitPass/Model` + the view in the same slice.
 

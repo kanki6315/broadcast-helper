@@ -1,14 +1,19 @@
 # PWA support (installable app + offline reading, offline scratchpad ink)
 
-> **Being superseded (2026-09-12).** The service worker proved flaky in the
-> field, so the trackside surface is moving to a native iPad app
-> (`docs/IOS.md`) that owns offline storage and, next, the scratchpad. The
-> worker stays deployed until the app covers offline reading for a whole
-> weekend ("Download this event") and the pad. Retirement is one deploy with
-> `selfDestroying: true` in `vite.config.ts` — installed iPads keep the last
-> worker forever otherwise — followed by removing `vite-plugin-pwa`,
-> `lib/browserTabReads.ts`, DataNudge, ConnectivityPill, InstallHint and the
-> Diagnostics page. Everything below describes the worker as it still runs.
+> **Retired (2026-09-12, step 1 of 2 deployed).** The service worker proved
+> flaky in the field, and the native iPad app (`docs/IOS.md`) now owns
+> offline reading, "Download this event / season" and the Pencil
+> scratchpad. `vite.config.ts` currently ships Workbox's **self-destroying
+> worker** (`selfDestroying: true`): it installs over whatever an iPad has,
+> unregisters itself, reloads the page and deletes every cache — the only way
+> to evict a worker a device already holds. The SW-only UI is already gone
+> (DataNudge, ConnectivityPill, InstallHint, the Diagnostics page,
+> `lib/browserTabReads.ts`, the update banner). **Step 2**, once every
+> installed iPad has opened the site once after this deploy: remove
+> `vite-plugin-pwa`, the `registerSW` call in `main.tsx`, the manifest and
+> icons, and the `/sw.js` + `/workbox-*.js` + manifest allowlist entries in
+> `SecurityConfig`; this file goes with them. Everything below is history —
+> how the worker ran.
 
 Pit Pass is an installable Progressive Web App. On iPad/desktop it can be added
 to the home screen and runs standalone, and it keeps working **for reading**

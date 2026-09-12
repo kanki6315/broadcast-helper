@@ -6,17 +6,21 @@ import { VitePWA } from 'vite-plugin-pwa'
 export default defineConfig({
   plugins: [
     react(),
-    // Installable PWA + read-only offline resilience (trackside connectivity is
-    // flaky). The app shell is precached; API reads are stale-while-revalidate
-    // so pages paint instantly from cache while a background refetch keeps the
-    // cache current (a changed payload triggers the DataNudge banner). No
-    // offline writes.
+    // RETIRING (2026-09-12, step 1 of 2). The trackside surface is the iPad
+    // app now (docs/IOS.md); the website goes back to being a plain, uncached
+    // web app so it can run beside the app for live timing. A service worker
+    // an iPad already installed stays in charge of the origin forever unless
+    // a NEW worker replaces it, so this deploy ships Workbox's self-destroying
+    // worker: it installs over the old one, unregisters itself and deletes
+    // every cache. Step 2 — once every installed iPad has opened the site
+    // once — removes vite-plugin-pwa, this block, the registration in
+    // main.tsx and the /sw.js allowlist entry in SecurityConfig.
     VitePWA({
-      // 'prompt' (not autoUpdate): a new deploy installs but WAITS — the app
-      // shows a "reload to update" banner instead of refreshing itself, so a
-      // live broadcast is never yanked out from under the user mid-session.
-      registerType: 'prompt',
+      selfDestroying: true,
+      registerType: 'autoUpdate',
       includeAssets: ['pit-pass-access-lane.svg', 'apple-touch-icon-180x180.png'],
+      // The manifest still ships so home-screen installs keep their icon and
+      // name while the worker retires; it goes with the plugin in step 2.
       manifest: {
         name: 'Pit Pass',
         short_name: 'Pit Pass',
@@ -27,171 +31,12 @@ export default defineConfig({
         background_color: '#ffffff',
         theme_color: '#f0b84a',
         icons: [
-          // Vector first: browsers that support SVG app icons (desktop install,
-          // and a growing set of others) render the crisp source at any size.
-          // The raster fallbacks below cover everyone else; iOS ignores these
-          // and uses the apple-touch-icon PNG, Android the maskable PNG.
-          {
-            src: 'pit-pass-access-lane.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
-            purpose: 'any',
-          },
+          { src: 'pit-pass-access-lane.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
-          {
-            src: 'maskable-icon-512x512.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable',
-          },
+          { src: 'maskable-icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
-      workbox: {
-        // The pdfjs worker (~1.25MB) is lazy-loaded only when the team-sheets
-        // modal opens; keep it out of the install-time precache (it's runtime-
-        // cached below instead). Fonts + hashed JS/CSS + index.html precache.
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2}'],
-        globIgnores: ['**/pdf.worker*.js', '**/pdf.worker*.mjs'],
-        // The precache installs a NavigationRoute that serves index.html for
-        // every in-scope navigation — great for SPA client routes, fatal for
-        // the server-owned ones. The OAuth login flow is all full-page
-        // navigations Spring must handle (/oauth2/authorization/google kicks
-        // off, /login/oauth2/code/google exchanges the code); if the worker
-        // answers those with the cached shell instead, the handshake silently
-        // dies ("clicking Sign in does nothing"). Deny-list them (plus /logout,
-        // /error, and /api navigations) so they always hit the network.
-        navigateFallbackDenylist: [
-          /^\/oauth2\//,
-          /^\/login\//,
-          /^\/logout/,
-          /^\/error/,
-          /^\/api\//,
-        ],
-        // Routes are matched in order (first match wins), so the specific image
-        // and /api/me buckets sit before the general api-data catch-all.
-        runtimeCaching: [
-          {
-            // Binary images (photos, car images, series + manufacturer logos).
-            // All display URLs carry a ?v= buster, so CacheFirst is safe and
-            // keeps large blobs out of the small JSON-doc cache below. Matched
-            // precisely so JSON docs that also end in "/data" (notably
-            // /api/seasons/{id}/data) are NOT swept in here. NOTE: this matcher
-            // must be self-contained — Workbox serializes it via .toString(),
-            // so it cannot reference module-scope helpers.
-            urlPattern: ({ url }) =>
-              /\/(drivers\/[^/]+\/photo|car-images\/[^/]+\/data|series\/[^/]+\/logo\/data|manufacturer-logos\/[^/]+\/data)$/.test(
-                url.pathname,
-              ),
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'api-images',
-              expiration: {
-                maxEntries: 3000,
-                maxAgeSeconds: 60 * 60 * 24 * 30,
-                purgeOnQuotaError: true, // iOS evicts aggressively; fail gracefully
-              },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-          {
-            // pdfjs worker: available offline after first use, without bloating
-            // the install-time precache.
-            urlPattern: ({ url }) => /pdf\.worker/.test(url.pathname),
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'pdfjs',
-              expiration: { maxEntries: 4, maxAgeSeconds: 60 * 60 * 24 * 30 },
-            },
-          },
-          {
-            // /api/me on its own 1-day TTL: offline restores the real signed-in
-            // identity (not the open-admin fallback in lib/auth.tsx), but the
-            // short TTL bounds how long a stale identity can linger after a
-            // logout the device never saw.
-            urlPattern: ({ url, request }) =>
-              request.method === 'GET' && url.pathname === '/api/me',
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-me',
-              networkTimeoutSeconds: 4,
-              expiration: { maxEntries: 1, maxAgeSeconds: 60 * 60 * 24 }, // 1 day
-              cacheableResponse: { statuses: [200] },
-            },
-          },
-          {
-            // The scratchpad is a writable document, so its GET must NOT be
-            // stale-while-revalidate: serving a stale pad while online means
-            // drawing on an old baseRevision and a guaranteed 409 at first
-            // save. NetworkFirst = fresh base online, last-seen pad offline —
-            // the pre-SWR semantics, kept only for this route. Must sit
-            // before the api-data catch-all (first match wins).
-            urlPattern: ({ url, request }) =>
-              request.method === 'GET' &&
-              /^\/api\/events\/[^/]+\/scratchpad$/.test(url.pathname),
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-scratchpad',
-              networkTimeoutSeconds: 4,
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 60 * 24 * 30,
-                purgeOnQuotaError: true,
-              },
-              cacheableResponse: { statuses: [200] },
-            },
-          },
-          {
-            // Read-only offline for prep content — INSTALLED APP ONLY: GET
-            // /api/* served stale-while-revalidate — the cached copy answers
-            // instantly (no multi-second network stall on trackside internet)
-            // while a background refetch updates the cache for next time.
-            // When the refetch actually changed the payload, BroadcastUpdate
-            // posts CACHE_UPDATED to every open page, which shows a "newer
-            // data" nudge (DataNudge.tsx) rather than re-rendering mid-read.
-            // Browser tabs opt OUT per request: all editing happens there,
-            // and stale-first turns every write into "commit, see the old
-            // list, get nudged to refresh". lib/browserTabReads.ts tags
-            // non-standalone /api reads with X-Pit-Pass-Browser-Tab and this
-            // matcher declines them → plain network, like a normal web app.
-            // (Per-request because a service worker is origin-scoped — once
-            // the installed app registers it, browser tabs are controlled by
-            // the same worker; there is no registration-level split.)
-            // Only 200s cached (never a 401, so the auth gate still works
-            // online). Excluded (→ straight to network, uncached): search
-            // typeaheads (a new URL per keystroke would thrash the LRU) and the
-            // admin session list (live security data, never serve stale). Like
-            // the image matcher, this must stay self-contained (.toString()).
-            urlPattern: ({ url, request }) =>
-              request.method === 'GET' &&
-              !request.headers.has('x-pit-pass-browser-tab') &&
-              url.pathname.startsWith('/api/') &&
-              !/^\/api\/(search|drivers\/search|users\/sessions)/.test(url.pathname),
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'api-data',
-              broadcastUpdate: {
-                // Fires only when one of these headers differs between the
-                // cached and fresh response. ETag is the workhorse: the API's
-                // JSON is chunked (no Content-Length), so the backend stamps a
-                // weak content-hash ETag on /api GETs expressly for this
-                // comparison (backend ApiEtagConfig). If NONE of the headers
-                // exist on both copies, Workbox assumes "unchanged" and stays
-                // silent — keep these two files in sync.
-                options: { headersToCheck: ['etag', 'content-length', 'last-modified'] },
-              },
-              expiration: {
-                maxEntries: 3000,
-                maxAgeSeconds: 60 * 60 * 24 * 30, // 30d: keep prep available offline for weeks
-                purgeOnQuotaError: true,
-              },
-              cacheableResponse: { statuses: [200] },
-            },
-          },
-        ],
-      },
-      // Service workers don't run under `vite dev`; leave preview/build to
-      // exercise them so local dev keeps hot-reload and the /api proxy.
       devOptions: { enabled: false },
     }),
   ],

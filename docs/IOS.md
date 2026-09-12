@@ -19,7 +19,7 @@ staleness problem, which is the class of bug being escaped.
 | 3. Event sheet | done | Sheet, team-sheets and storylines PDFs, Recap overlay, Pit lane with GPS guidance, Print / Save PDF |
 | 4. Download this event / season | done | Prefetch manifests with progress, "Downloaded · Xm" per screen, Settings list |
 | 5. PencilKit scratchpad | done | Same stroke wire format as the web pad, local mirror, offline replay, conflict banner, FAB badge |
-| 6. Retire the service worker | next | One deploy with `selfDestroying: true`, then remove `vite-plugin-pwa` |
+| 6. Retire the service worker | step 1 shipped | Self-destroying worker + SW-only web UI removed; step 2 (remove the plugin) after every installed iPad has opened the site once |
 
 Known gaps: driver/team info modals (the website's ⌘K and name links) — names
 are plain text; grid headers don't pin to the viewport while scrolling; the
