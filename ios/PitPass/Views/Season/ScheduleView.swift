@@ -15,6 +15,7 @@ struct ScheduleView: View {
                 header
                 ForEach(events) { e in
                     let upcoming = e.eventDate.map { $0 >= today } ?? false
+                    NavigationLink(value: SheetRoute(eventId: e.id)) {
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
                         cell(GridCell.num(e.roundOrdinal.map(String.init) ?? "—"), width: 56, align: .trailing)
                         HStack(spacing: PP.Space.s2) {
@@ -23,18 +24,23 @@ struct ScheduleView: View {
                         }
                         .padding(.horizontal, 10)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        cell(GridCell.text(e.circuitName ?? ""), width: 240)
+                        cell(GridCell.text(e.circuitName ?? ""), width: 200)
                         cell(GridCell.num(e.eventDate ?? ""), width: 120, align: .trailing)
                         cell(GridCell.num(e.entryCount > 0 ? String(e.entryCount) : "—"), width: 80, align: .trailing)
                         cell(GridCell.num(e.sessionCount > 0 ? String(e.sessionCount) : "—"), width: 90, align: .trailing)
+                        Text("Sheet →").font(PP.sans(PP.TextSize.sm, weight: 500)).foregroundStyle(PP.accentInk).fixedSize().padding(.horizontal, 10)
                     }
                     .padding(.vertical, 6)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                     .overlay(alignment: .bottom) { Rectangle().fill(PP.border).frame(height: 1) }
                 }
             }
             .padding(.top, PP.Space.s3)
             .padding(.bottom, PP.Space.s5)
-            Text("Round results live under Results; the event sheet stays on the website for now.")
+            Text("Tap a round for its event sheet.")
                 .font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.textMuted)
         }
     }
@@ -43,10 +49,11 @@ struct ScheduleView: View {
         HStack(spacing: 0) {
             head("Rd", width: 56, align: .trailing)
             head("Event").frame(maxWidth: .infinity, alignment: .leading)
-            head("Circuit", width: 240)
+            head("Circuit", width: 200)
             head("Date", width: 120, align: .trailing)
             head("Entries", width: 80, align: .trailing)
             head("Sessions", width: 90, align: .trailing)
+            head("", width: 80)
         }
         .padding(.vertical, 6)
         .overlay(alignment: .bottom) { Rectangle().fill(PP.borderStrong).frame(height: 1) }

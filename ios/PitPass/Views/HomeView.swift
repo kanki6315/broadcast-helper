@@ -28,6 +28,9 @@ struct HomeView: View {
             .navigationDestination(for: SeasonSummary.self) { season in
                 SeasonView(seasonId: season.id)
             }
+            .navigationDestination(for: SheetRoute.self) { route in
+                SheetView(eventId: route.eventId)
+            }
         }
         .tint(PP.accentInk)
         .sheet(isPresented: $showSettings) { SettingsView() }

@@ -8,10 +8,12 @@ storage, freshness, the Pencil scratchpad — and the website goes back to being
 a plain web app. Usage model unchanged: **the iPad reads (plus the
 scratchpad); all editing happens on the website.**
 
-Status: sign-in, read-through offline store, the series directory and the
+Status: sign-in, read-through offline store, the series directory, the
 **season pages** (overview strip + recap, schedule, standings, stats, results,
-entries, photos). The sheet page, "Download this event" and the PencilKit pad
-follow, one slice each (PLAN.md). Driver/team info modals (the website's ⌘K
+entries, photos) and the **event sheet** (reached from Schedule) with its
+team-sheets and storylines PDFs, the pit lane, the recap overlay and
+**Print / Save PDF**. "Download this event" and the PencilKit pad follow
+(PLAN.md). Driver/team info modals (the website's ⌘K
 and name links) are not in the app yet — names are plain text. The PWA service worker stays on the
 website until the app's sheet page and event download exist; retiring it needs
 one deploy with `selfDestroying: true` in `vite.config.ts` so installed iPads
@@ -161,6 +163,22 @@ count (stacked race chips, crew members) — keep `lineHeight` honest when a
 cell's font changes. Auto-width cells (lineup crews) compute their width from
 the longest line; chip columns are fixed. Headers don't pin to the viewport
 yet (the web's do).
+
+### The sheet and its PDF
+
+`Views/Sheet/SheetView.swift` is SheetPage.tsx: the eight percentage
+columns (`SheetColumn`, laid out by `PercentColumns`), one entry = main row
++ form strip, zebra as the class colour at 8% into the ground, linked rows
+open the team-sheets PDF at the car's page (`PdfViewerSheet`, PDFKit, bytes
+from the offline store). Prior-year notes are read-only here. Manufacturer
+marks that are SVG fall back to the name (UIImage can't decode SVG).
+
+`SheetPrint` is the `@media print` block: a light US-Letter PDF laid out at
+the browser's 96/in CSS px (so the columns match the web's print density),
+then scaled onto 72dpi points. Pagination is by measured entry heights —
+an entry never splits, a class band stays with its first rows, continuation
+pages repeat band + header. The share sheet offers Print and Save to Files.
+Once this is trusted, the website's sheet page can go.
 
 ## Parity checklist
 

@@ -1302,9 +1302,17 @@ design and the sign-in flow in **docs/IOS.md**.
   matrix with change tint), photos (read-only gallery). `GridTable` is the
   native `.grid-table`; pure derivations live in `Season/SeasonLogic.swift`.
   Not yet: driver/team info modals, viewport-pinned grid headers.
-- **Slice 3 — sheet page**, then the sheet leaves the website (it is the
-  website's print/PDF path, so the app must print first — `ImageRenderer` /
-  `UIPrintPageRenderer`).
+- **Slice 3 — sheet page — ✅ DONE (2026-09-12).** SheetView reached from
+  Schedule rows: header + legend, class sections with the eight-column entry
+  table and the season-form strip, zebra, flags, ratings, photos; linked rows
+  open the team-sheets PDF at the car's page (PDFKit via the offline store);
+  FABs for Storylines, Recap (the season grids with this round marked),
+  Pit lane (lane list with landmarks) and a Scratchpad placeholder. **Print /
+  Save PDF** renders the light US-Letter sheet with entry-safe pagination
+  and hands it to the share sheet (Print, Save to Files). Not yet: GPS
+  walk-to-box guidance, SVG manufacturer marks (name fallback), editing
+  prior-year notes (website). The website's sheet page stays until the PDF
+  has been checked against a real weekend's export.
 - **Slice 4 — "Download this event"**: an explicit prefetch manifest per
   event/season with progress, so pages never opened still work offline (the
   SW only ever cached what had been visited).

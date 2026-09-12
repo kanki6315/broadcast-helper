@@ -21,6 +21,9 @@ final class SeasonModel {
     var kind: String?
     var pointsView: PointsView = .breakdown
     var showTeams = false
+    /// When the grid is shown from an event sheet, that event's round column
+    /// is marked — the amber selection vocabulary, never a class colour.
+    var currentEventId: Int?
 
     enum PointsView: String, CaseIterable, Identifiable {
         case breakdown, total

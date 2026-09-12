@@ -47,6 +47,7 @@ struct PhotosView: View {
 struct CachedImage: View {
     @Environment(AppSession.self) private var session
     let path: String
+    var contentMode: ContentMode = .fill
     @State private var image: UIImage?
     @State private var failed = false
 
@@ -56,7 +57,7 @@ struct CachedImage: View {
         Color.clear
             .overlay {
                 if let image {
-                    Image(uiImage: image).resizable().scaledToFill()
+                    Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode)
                 } else if failed {
                     PP.surface2.overlay(Image(systemName: "photo").foregroundStyle(PP.textMuted))
                 } else {

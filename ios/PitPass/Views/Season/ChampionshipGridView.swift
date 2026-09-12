@@ -187,7 +187,7 @@ struct ClassGridView: View {
             : [.text("pos", "Pos", width: 52, align: .trailing), .text("car", "#", width: 60, align: .trailing),
                .text("name", drivers ? "Driver" : "Team", width: 236)]
         identColumns = identColumns.map { $0 }
-        var dataColumns: [GridColumn] = rounds.map { .round("r\($0.round)", venue: $0.venue, round: $0.round) }
+        var dataColumns: [GridColumn] = rounds.map { .round("r\($0.round)", venue: $0.venue, round: $0.round, current: model.currentEventId != nil && $0.eventId == model.currentEventId) }
         if mode == .points {
             dataColumns.append(.text("total", "Total", width: 72, align: .trailing))
             dataColumns.append(.text("back", "Back", width: 110, align: .trailing))
