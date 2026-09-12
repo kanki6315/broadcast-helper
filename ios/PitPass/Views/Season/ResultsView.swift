@@ -22,10 +22,9 @@ struct ResultsView: View {
             }
         }
         .task(id: eventId) {
-            results = nil
-            selectedSession = nil
-            showGrid = false
-            await loadResults()
+            // This view is keyed by event ID. Returning to the Races tab
+            // should preserve its selected session and cached classification.
+            if results == nil { await loadResults() }
         }
     }
 

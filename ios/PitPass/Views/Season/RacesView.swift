@@ -4,7 +4,7 @@ import SwiftUI
 struct RacesView: View {
     @Environment(AppSession.self) private var session
     @Environment(SeasonModel.self) private var model
-    @State private var expandedEvent: Int?
+    @State private var selectedEvent: Int?
 
     private var events: [CalendarEvent] {
         (model.hub.value?.events ?? []).sorted {
@@ -22,28 +22,41 @@ struct RacesView: View {
     var body: some View {
         let today = Dates.today
         let nextEvent = events.first { ($0.eventDate ?? "") >= today }
-        VStack(alignment: .leading, spacing: 0) {
-            if events.isEmpty {
-                EmptyState(message: "No events yet — import a results file or entry list on the website.")
-            } else {
-                Text("Select a round for results and its event sheet.")
-                    .ppBody()
-                    .padding(.bottom, PP.Space.s3)
-                ForEach(events) { event in
-                    DisclosureGroup(isExpanded: Binding(
-                        get: { expandedEvent == event.id },
-                        set: { expandedEvent = $0 ? event.id : nil }
-                    )) {
-                        roundContent(event)
-                    } label: {
-                        roundLabel(event, isNext: event.id == nextEvent?.id, today: today)
+        let selected = events.first { $0.id == selectedEvent } ?? nextEvent ?? events.last
+        VStack(alignment: .leading, spacing: PP.Space.s4) {
+            if let selected {
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal) {
+                        HStack(spacing: PP.Space.s2) {
+                            ForEach(events) { event in
+                                Button { selectedEvent = event.id } label: {
+                                    VStack(spacing: 4) {
+                                        Text(Venue.of(eventName: event.name, circuitName: event.circuitName))
+                                            .font(.subheadline.weight(.semibold))
+                                        Text([event.roundOrdinal.map { "Rd \($0)" }, event.eventDate].compactMap { $0 }.joined(separator: " · "))
+                                            .font(.caption)
+                                    }
+                                    .padding(.vertical, 6)
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(event.id == selected.id ? PP.accentInk : PP.textMuted)
+                                .accessibilityAddTraits(event.id == selected.id ? .isSelected : [])
+                                .accessibilityLabel(event.name + (event.eventDate.map { ", " + $0 } ?? ""))
+                                .id(event.id)
+                            }
+                        }
                     }
-                    .tint(PP.accentInk)
-                    .padding(.vertical, PP.Space.s3)
-                    .overlay(alignment: .bottom) {
-                        Rectangle().fill(PP.border).frame(height: 1)
+                    .scrollIndicators(.hidden)
+                    .onAppear { proxy.scrollTo(selected.id, anchor: .center) }
+                    .onChange(of: selected.id) { _, id in proxy.scrollTo(id, anchor: .center) }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { _ in
+                        proxy.scrollTo(selected.id, anchor: .center)
                     }
                 }
+                roundLabel(selected, isNext: selected.id == nextEvent?.id, today: today)
+                roundContent(selected)
+            } else {
+                EmptyState(message: "No events yet — import a results file or entry list on the website.")
             }
         }
     }
@@ -97,7 +110,7 @@ struct RacesView: View {
             NavigationLink(value: SheetRoute(eventId: event.id)) {
                 Label("Open event sheet", systemImage: "doc.text")
             }
-            .buttonStyle(PPSecondaryButtonStyle())
+            .buttonStyle(.bordered)
             if event.sessionCount > 0 {
                 ResultsView(eventId: event.id).id(event.id)
             } else {
