@@ -1,73 +1,44 @@
 import SwiftUI
 
-/// ResultsPage: round chips → session tabs → the classification, with the
-/// stewards' notes above it and race control (flags + messages) below.
+/// Results for one round, embedded in Races. Session selection, classification,
+/// stewards’ notes, starting grids and race control stay together.
 struct ResultsView: View {
     @Environment(AppSession.self) private var session
     @Environment(SeasonModel.self) private var model
-    @State private var selectedEvent: Int?
+    let eventId: Int
     @State private var selectedSession: Int?
     @State private var results: Resource<EventResults>?
     @State private var showGrid = false
 
-    private var rounds: [CalendarEvent] {
-        (model.hub.value?.events ?? []).filter { $0.roundOrdinal != nil && $0.sessionCount > 0 }
-    }
-
     var body: some View {
-        let selected = rounds.first { $0.id == selectedEvent } ?? rounds.last
-        if rounds.isEmpty {
-            EmptyState(message: "No session results yet — import a results or grid file on the website.")
-        } else {
-            VStack(alignment: .leading, spacing: 0) {
-                roundChips(selected)
-                if let results = results?.value {
-                    event(results)
-                } else if let error = results?.error {
-                    ErrorPanel(message: error)
-                } else {
-                    SkeletonLines()
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            if let results = results?.value {
+                event(results)
+            } else if let error = results?.error {
+                ErrorPanel(message: error)
+                RetryButton { Task { await loadResults() } }
+            } else {
+                SkeletonLines()
             }
-            .task(id: selected?.id) {
-                guard let selected else { return }
-                let r = Resource<EventResults>("/api/events/\(selected.id)/results")
-                results = r
-                selectedSession = nil
-                showGrid = false
-                await r.load(session.loader, connectivity: session.connectivity, freshness: session.freshness)
-            }
+        }
+        .task(id: eventId) {
+            results = nil
+            selectedSession = nil
+            showGrid = false
+            await loadResults()
         }
     }
 
-    private func roundChips(_ selected: CalendarEvent?) -> some View {
-        FlowLayout(horizontalSpacing: PP.Space.s2, verticalSpacing: PP.Space.s2) {
-            ForEach(rounds) { e in
-                let active = e.id == selected?.id
-                Button { withAnimation(PP.Motion.fast) { selectedEvent = e.id } } label: {
-                    VStack(spacing: 0) {
-                        Text(Venue.of(eventName: e.name, circuitName: e.circuitName))
-                            .font(PP.mono(PP.TextSize.sm, weight: 700)).foregroundStyle(active ? PP.ink : PP.text)
-                        Text("Rd \(e.roundOrdinal ?? 0)").font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted)
-                    }
-                    .padding(.vertical, 4).padding(.horizontal, 12)
-                    .background(active ? PP.accentTint : .clear, in: RoundedRectangle(cornerRadius: PP.Radius.md, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: PP.Radius.md, style: .continuous).strokeBorder(active ? PP.accent : PP.borderStrong))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(e.name)
-                .accessibilityAddTraits(active ? .isSelected : [])
-            }
-        }
-        .padding(.vertical, PP.Space.s4)
+    private func loadResults() async {
+        let resource = Resource<EventResults>("/api/events/\(eventId)/results")
+        results = resource
+        await resource.load(session.loader, connectivity: session.connectivity, freshness: session.freshness)
     }
 
     @ViewBuilder private func event(_ results: EventResults) -> some View {
         let sessions = results.sessions
         let races = sessions.filter(\.isRace)
         let active = sessions.first { $0.sessionId == selectedSession } ?? races.first ?? sessions.first
-        PageTitle(text: results.eventName, trailing: [results.circuitName, results.eventDate].compactMap { $0 }.joined(separator: " · "))
-            .padding(.top, 0)
         if let active {
             let hasGrid = active.isRace && !active.grid.isEmpty
             HStack(spacing: PP.Space.s3) {

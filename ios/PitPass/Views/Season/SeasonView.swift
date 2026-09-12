@@ -9,7 +9,7 @@ struct SeasonView: View {
     @State private var page: Page? = .overview
 
     enum Page: String, CaseIterable, Identifiable {
-        case overview, schedule, standings, stats, results, entries, photos
+        case overview, races, standings, stats, entries, photos
         var id: String { rawValue }
         var label: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
     }
@@ -131,10 +131,9 @@ struct SeasonView: View {
     @ViewBuilder private func content(_ hub: SeasonHub) -> some View {
         switch page ?? .overview {
         case .overview: HubView()
-        case .schedule: ScheduleView()
+        case .races: RacesView().id(model.seasonId)
         case .standings: ChampionshipGridView(mode: .points)
         case .stats: StatsView()
-        case .results: ResultsView()
         case .entries: EntriesView()
         case .photos: PhotosView()
         }

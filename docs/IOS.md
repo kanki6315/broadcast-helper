@@ -15,7 +15,7 @@ staleness problem, which is the class of bug being escaped.
 | Slice | State | What it covers |
 |---|---|---|
 | 1. Sign-in, offline store, series directory | done | Device-token login, SQLite read-through store, the card grid |
-| 2. Season pages | done | Overview strip + recap, Schedule, Standings, Stats, Results, Entries, Photos |
+| 2. Season pages | done | Overview strip + recap, Races (schedule + session results), Standings, Stats, Entries, Photos |
 | 3. Event sheet | done | Sheet, team-sheets and storylines PDFs, Recap overlay, Pit lane with GPS guidance, Print / Save PDF |
 | 4. Download this event / season | done | Prefetch manifests with progress, "Downloaded · Xm" per screen, Settings list |
 | 5. PencilKit scratchpad | done | Same stroke wire format as the web pad, local mirror, offline replay, conflict banner, FAB badge |
