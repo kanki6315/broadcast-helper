@@ -66,6 +66,10 @@ actor OfflineStore {
                     fetched_at REAL NOT NULL,
                     body BLOB NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS local_pad (
+                    key TEXT PRIMARY KEY,
+                    body BLOB NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS download_record (
                     key TEXT PRIMARY KEY,
                     title TEXT NOT NULL,
@@ -161,9 +165,53 @@ actor OfflineStore {
         _ = sqlite3_step(stmt)
     }
 
-    func removeAll() {
+    /// Drops every cached document and download record. Scratchpad mirrors
+    /// stay — they may hold ink the server never got — unless asked.
+    func removeAll(includingPads: Bool = false) {
         _ = exec("DELETE FROM cached_response")
         _ = exec("DELETE FROM download_record")
+        if includingPads { _ = exec("DELETE FROM local_pad") }
+    }
+
+    // MARK: scratchpad mirrors (raw bodies; see LocalPad for the typed API)
+
+    func loadPadBody(_ key: String) -> Data? {
+        guard let db else { return nil }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT body FROM local_pad WHERE key = ?", -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, key, -1, OfflineStore.transient)
+        guard sqlite3_step(stmt) == SQLITE_ROW, let bytes = sqlite3_column_blob(stmt, 0) else { return nil }
+        return Data(bytes: bytes, count: Int(sqlite3_column_bytes(stmt, 0)))
+    }
+
+    func savePadBody(_ key: String, body: Data) {
+        guard let db else { return }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, """
+            INSERT INTO local_pad (key, body) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET body = excluded.body
+            """, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, key, -1, OfflineStore.transient)
+        body.withUnsafeBytes { raw in
+            _ = sqlite3_bind_blob(stmt, 2, raw.baseAddress, Int32(raw.count), OfflineStore.transient)
+        }
+        _ = sqlite3_step(stmt)
+    }
+
+    func allPadBodies() -> [Data] {
+        guard let db else { return [] }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT body FROM local_pad", -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        var out: [Data] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let bytes = sqlite3_column_blob(stmt, 0) {
+                out.append(Data(bytes: bytes, count: Int(sqlite3_column_bytes(stmt, 0))))
+            }
+        }
+        return out
     }
 
     // MARK: download records

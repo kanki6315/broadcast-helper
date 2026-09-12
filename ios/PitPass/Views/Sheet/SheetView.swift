@@ -85,8 +85,8 @@ struct SheetView: View {
         .sheet(isPresented: $recapOpen) {
             if let sheet = sheet.value, let seasonId = sheet.seasonId { RecapSheet(seasonId: seasonId, currentEventId: eventId) }
         }
-        .sheet(isPresented: $scratchpadOpen) {
-            ScratchpadPlaceholderSheet()
+        .fullScreenCover(isPresented: $scratchpadOpen) {
+            ScratchpadSheet(eventId: eventId)
         }
         .sheet(item: $exportURL) { url in
             ExportSheet(url: url)
@@ -136,8 +136,22 @@ struct SheetView: View {
             if sheet.seasonId != nil { fab("Recap") { recapOpen = true } }
             fab("Pit lane") { pitLaneOpen = true }
             fab("Scratchpad") { scratchpadOpen = true }
+                .overlay(alignment: .topTrailing) { scratchpadBadge }
         }
         .padding(PP.Space.s5)
+    }
+
+    /// Amber dot while the pad holds unsynced offline ink; red when a sync
+    /// conflict needs a person (SheetPage's useScratchpadAttention).
+    @ViewBuilder private var scratchpadBadge: some View {
+        if let attention = session.pads.attention(eventId: eventId, owner: session.padOwner) {
+            Circle()
+                .fill(attention == .conflict ? PP.error : PP.accent)
+                .frame(width: 10, height: 10)
+                .overlay(Circle().strokeBorder(PP.bg, lineWidth: 2))
+                .offset(x: 3, y: -3)
+                .accessibilityLabel(attention == .conflict ? "Scratchpad needs attention: changed elsewhere" : "Scratchpad has unsynced ink")
+        }
     }
 
     private func fab(_ label: String, action: @escaping () -> Void) -> some View {
@@ -480,23 +494,6 @@ private struct ManufacturerMark: View {
     }
 }
 
-/// Until the PencilKit pad lands (slice 5).
-private struct ScratchpadPlaceholderSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        NavigationStack {
-            EmptyState(message: "The Pencil scratchpad arrives in the next slice. Until then the website's pad still works.")
-                .padding(PP.Space.s5)
-                .frame(maxHeight: .infinity, alignment: .top)
-                .background(PP.bg.ignoresSafeArea())
-                .navigationTitle("Scratchpad")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-        }
-        .presentationBackground(PP.bg)
-        .tint(PP.accentInk)
-    }
-}
 
 /// The exported PDF: a preview line and SwiftUI's ShareLink, whose share
 /// sheet carries Print and Save to Files.
