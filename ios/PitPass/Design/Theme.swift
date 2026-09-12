@@ -75,9 +75,10 @@ enum PP {
 
     // MARK: Fonts
 
-    /// Inter (UI). `weight` is the variable axis value, e.g. 400 / 500 / 600 / 650.
+    /// Native system UI type; retain the existing scale and monospaced data face.
     static func sans(_ size: CGFloat, weight: CGFloat = 400) -> Font {
-        Font(variable("Inter-Regular", size: size, weight: weight))
+        let nativeWeight: UIFont.Weight = weight >= 700 ? .bold : weight >= 600 ? .semibold : weight >= 500 ? .medium : .regular
+        return Font(UIFontMetrics.default.scaledFont(for: UIFont.systemFont(ofSize: size, weight: nativeWeight)))
     }
 
     /// JetBrains Mono (data): every number that lives in a column.

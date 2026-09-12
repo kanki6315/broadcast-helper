@@ -94,6 +94,9 @@ struct GridTable: View {
         GeometryReader { geo in
             HStack(alignment: .top, spacing: 0) {
                 column(identColumns, ident: true)
+                    // Flexible row frames must not let the pinned pane absorb
+                    // spare width and create a gap before the scrolling data.
+                    .frame(width: identWidth, alignment: .leading)
                     .background(PP.bg)
                     .zIndex(1)
                 ScrollView(.horizontal, showsIndicators: true) {

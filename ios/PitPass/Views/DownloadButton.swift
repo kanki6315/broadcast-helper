@@ -90,3 +90,129 @@ struct DownloadButton: View {
         }
     }
 }
+
+/// Compact toolbar entry point; detailed status and download actions live in
+/// the popover so neither timestamps nor progress counts crowd the title.
+struct StatusDownloadButton: View {
+    @Environment(AppSession.self) private var session
+    @State private var showingStatus = false
+    let target: DownloadTarget
+    let noun: String
+
+    var body: some View {
+        Button { showingStatus = true } label: {
+            HStack(spacing: 10) {
+                Image(systemName: connectionIcon)
+                    .foregroundStyle(connectionColor)
+                if case .running = session.downloads.activity(for: target) {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: downloadIcon)
+                }
+            }
+            .frame(minHeight: 32)
+        }
+        .accessibilityLabel("\(connectionLabel). \(downloadLabel). Show status and downloads")
+        .popover(isPresented: $showingStatus) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text("Status & downloads").font(.headline)
+                    Spacer()
+                    Button("Done") { showingStatus = false }
+                }
+                Label(connectionLabel, systemImage: connectionIcon)
+                    .foregroundStyle(connectionColor)
+                if let checked = session.connectivity.lastChecked {
+                    Text("Connection checked \(checked.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if let cached = session.freshness.dataAsOf {
+                    Text("Cached data from \(cached.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.subheadline)
+                }
+                Divider()
+                downloadDetails
+            }
+            .padding(20)
+            .frame(width: 340)
+            .tint(PP.accentInk)
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    @ViewBuilder private var downloadDetails: some View {
+        if let record = session.downloads.record(for: target) {
+            Label("\(noun.capitalized) saved for offline use", systemImage: "checkmark.circle")
+            Text("Downloaded \(record.completedAt.formatted(date: .abbreviated, time: .shortened))")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        switch session.downloads.activity(for: target) {
+        case let .running(progress):
+            Text(progress.phase).font(.subheadline)
+            if progress.total > 0 {
+                ProgressView(value: Double(progress.done), total: Double(progress.total))
+                Text("\(progress.done) of \(progress.total)").font(.caption).monospacedDigit()
+            } else {
+                ProgressView("Starting download…")
+            }
+            Button("Stop download", role: .cancel) { session.downloads.cancel(target) }
+                .buttonStyle(.bordered)
+        case let .failed(message):
+            Label("Download failed", systemImage: "exclamationmark.circle").foregroundStyle(PP.error)
+            Text(message).font(.subheadline)
+            Button("Retry download") {
+                session.downloads.dismissFailure(target)
+                start()
+            }
+            .buttonStyle(.bordered)
+        case nil:
+            if session.downloads.record(for: target) == nil {
+                Text("This \(noun) hasn’t been downloaded for offline use.")
+                    .font(.subheadline)
+            }
+            Button(session.downloads.record(for: target) == nil ? "Download \(noun)" : "Update download", action: start)
+                .buttonStyle(.bordered)
+        }
+    }
+
+    private func start() {
+        session.downloads.start(target, loader: session.loader, store: session.store)
+    }
+
+    private var connectionLabel: String {
+        switch session.connectivity.status {
+        case .live: "Connected"
+        case .degraded: "Slow connection"
+        case .offline: "Offline"
+        }
+    }
+
+    private var connectionIcon: String {
+        switch session.connectivity.status {
+        case .live: "wifi"
+        case .degraded: "wifi.exclamationmark"
+        case .offline: "wifi.slash"
+        }
+    }
+
+    private var connectionColor: Color {
+        switch session.connectivity.status {
+        case .live: PP.textMuted
+        case .degraded: PP.accentInk
+        case .offline: PP.error
+        }
+    }
+
+    private var downloadIcon: String {
+        if case .failed = session.downloads.activity(for: target) { return "exclamationmark.arrow.triangle.2.circlepath" }
+        return session.downloads.record(for: target) == nil ? "arrow.down.circle" : "checkmark.circle"
+    }
+
+    private var downloadLabel: String {
+        switch session.downloads.activity(for: target) {
+        case .running: "Downloading \(noun)"
+        case .failed: "Download failed"
+        case nil: session.downloads.record(for: target) == nil ? "Not downloaded" : "Downloaded"
+        }
+    }
+}

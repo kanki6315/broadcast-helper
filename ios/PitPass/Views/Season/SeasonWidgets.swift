@@ -19,46 +19,23 @@ struct Segmented<ID: Hashable>: View {
     enum Size { case regular, year, stage }
 
     var body: some View {
-        HStack(spacing: 2) {
+        if options.count <= 3 {
+            picker.pickerStyle(.segmented)
+                .frame(maxWidth: 420)
+        } else {
+            picker.pickerStyle(.menu)
+        }
+    }
+
+    private var picker: some View {
+        Picker("View", selection: $selection) {
             ForEach(options) { option in
-                let active = option.id == selection
-                Button {
-                    withAnimation(PP.Motion.fast) { selection = option.id }
-                } label: {
-                    Text(option.label)
-                        .font(font(option))
-                        .foregroundStyle(active ? PP.ink : PP.textMuted)
-                        .padding(.vertical, padV)
-                        .padding(.horizontal, padH)
-                        .background {
-                            if active {
-                                RoundedRectangle(cornerRadius: PP.Radius.sm, style: .continuous)
-                                    .fill(PP.bg)
-                                    .shadow(color: .black.opacity(0.08), radius: 1, y: 1)
-                                    .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
-                            }
-                        }
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(active ? .isSelected : [])
+                Text(option.label).tag(Optional(option.id))
             }
         }
-        .padding(2)
-        .background(PP.surface, in: RoundedRectangle(cornerRadius: PP.Radius.md, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: PP.Radius.md, style: .continuous).strokeBorder(PP.border))
-        .fixedSize()
+        .labelsHidden()
+        .tint(PP.accentInk)
     }
-
-    private func font(_ option: Option) -> Font {
-        switch size {
-        case .regular: option.mono ? PP.mono(PP.TextSize.sm, weight: 500) : PP.sans(PP.TextSize.sm, weight: 500)
-        case .year: PP.mono(PP.TextSize.sm, weight: 600)
-        case .stage: PP.sans(PP.TextSize.xs, weight: 500)
-        }
-    }
-
-    private var padV: CGFloat { size == .stage ? 2 : (size == .year ? 3 : 4) }
-    private var padH: CGFloat { size == .stage ? 9 : (size == .year ? 10 : 12) }
 }
 
 /// Multi-toggle variant of `.seg` (formats shown on the stats page).
@@ -405,5 +382,49 @@ extension PP {
         Color(UIColor { traits in
             traits.userInterfaceStyle == .dark ? UIColor(hex: dark) : UIColor(hex: light)
         })
+    }
+}
+
+/// Class colours identify categories; the raised segment and amber outline
+/// identify selection, including for near-black class colours in dark mode.
+struct ColoredClassFilter: View {
+    let classes: [ClassInfo]
+    @Binding var selection: String?
+
+    var body: some View {
+        HStack(spacing: 2) {
+            segment("All classes", value: nil, color: nil)
+            ForEach(classes) { item in
+                segment(item.name, value: item.name, color: Color(cssHex: item.color))
+            }
+        }
+        .padding(3)
+        .background(PP.surface2, in: Capsule())
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Class filter")
+    }
+
+    private func segment(_ title: String, value: String?, color: Color?) -> some View {
+        let selected = selection == value
+        return Button { selection = value } label: {
+            HStack(spacing: 6) {
+                if let color {
+                    Circle()
+                        .fill(color)
+                        .overlay(Circle().strokeBorder(PP.textMuted.opacity(0.65), lineWidth: 1))
+                        .frame(width: 9, height: 9)
+                        .accessibilityHidden(true)
+                }
+                Text(title).font(.subheadline.weight(.medium))
+            }
+            .foregroundStyle(selected ? PP.ink : PP.text)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(selected ? PP.bg : .clear, in: Capsule())
+            .overlay(Capsule().strokeBorder(selected ? PP.accentInk : .clear, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

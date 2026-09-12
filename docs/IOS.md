@@ -15,7 +15,7 @@ staleness problem, which is the class of bug being escaped.
 | Slice | State | What it covers |
 |---|---|---|
 | 1. Sign-in, offline store, series directory | done | Device-token login, SQLite read-through store, the card grid |
-| 2. Season pages | done | Overview strip + recap, Schedule, Standings, Stats, Results, Entries, Photos |
+| 2. Season pages | done | Overview strip + recap, Races (schedule + session results), Standings, Stats, Entries, Photos |
 | 3. Event sheet | done | Sheet, team-sheets and storylines PDFs, Recap overlay, Pit lane with GPS guidance, Print / Save PDF |
 | 4. Download this event / season | done | Prefetch manifests with progress, "Downloaded · Xm" per screen, Settings list |
 | 5. PencilKit scratchpad | done | Same stroke wire format as the web pad, local mirror, offline replay, conflict banner, FAB badge |
@@ -355,3 +355,14 @@ pit lane, later the pad) ships twice. Before closing a web slice that changes
 one of those payloads, tick: `Model/` updated → view updated → PLAN.md
 parity row. Where the web's derivation lives in `lib/*.ts`, its port is in
 `Season/SeasonLogic.swift` or `Season/PitLaneGeo.swift` — change both.
+
+## Native season navigation
+
+Season screens use five native tabs: Overview, Races, Standings, Stats and
+More (Entries and Photos). The tab container uses compact navigation to keep
+the bar at the bottom on iPad, while content retains the actual size class.
+iPadOS 26 supplies Liquid Glass; iOS 18 retains standard system controls.
+The title menu switches year/stage, and class filtering uses an compact segmented control with configured class-colour swatches.
+Races uses a horizontally scrolling round selector, initially selecting the
+next dated event or the latest event, with results and event-sheet access below.
+UI text uses the system font; numeric data retains JetBrains Mono.

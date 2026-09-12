@@ -1,15 +1,13 @@
 import SwiftUI
 
-/// SeasonLayout: series title + year strip, the class chips, the selected
-/// year's qualifying stages, and the sub-page segmented nav. The year strip
-/// swaps the model in place so the sub-page and filters survive the switch.
+/// Native season navigation with a shared model and independent tab content.
 struct SeasonView: View {
     @Environment(AppSession.self) private var session
     @State private var model: SeasonModel
-    @State private var page: Page? = .overview
+    @State private var page: Page = .overview
 
     enum Page: String, CaseIterable, Identifiable {
-        case overview, schedule, standings, stats, results, entries, photos
+        case overview, races, standings, stats, more
         var id: String { rawValue }
         var label: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
     }
@@ -18,14 +16,41 @@ struct SeasonView: View {
         _model = State(initialValue: SeasonModel(seasonId: seasonId))
     }
 
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
     var body: some View {
-        @Bindable var model = model
+        TabView(selection: $page) {
+            Tab("Overview", systemImage: "house", value: Page.overview) { section(.overview) }
+            Tab("Races", systemImage: "flag.checkered", value: Page.races) { section(.races) }
+            Tab("Standings", systemImage: "trophy", value: Page.standings) { section(.standings) }
+            Tab("Stats", systemImage: "chart.bar", value: Page.stats) { section(.stats) }
+            Tab("More", systemImage: "ellipsis", value: Page.more) { section(.more) }
+        }
+        // Keep the agreed bottom navigation on iPad; restore the real size
+        // class inside each tab so its tables and adaptive layouts stay wide.
+        .environment(\.horizontalSizeClass, .compact)
+        .tint(PP.accentInk)
+        .navigationTitle(model.hub.value?.seriesName ?? "Season")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                if let hub = model.hub.value { seasonMenu(hub) }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                if model.hub.value != nil { StatusDownloadButton(target: .season(model.seasonId), noun: "season") }
+            }
+        }
+        .task(id: model.seasonId) { await model.load(session) }
+        .environment(model)
+    }
+
+    private func section(_ selected: Page) -> some View {
         ScrollView {
             PageContainer {
-                VStack(alignment: .leading, spacing: 0) {
-                    if let hub = model.hub.value {
-                        header(hub)
-                        content(hub)
+                VStack(alignment: .leading, spacing: PP.Space.s2) {
+                    if model.hub.value != nil {
+                        if selected != .more { classPicker }
+                        content(selected)
                     } else if let error = model.hub.error {
                         ErrorPanel(message: error)
                     } else {
@@ -34,86 +59,65 @@ struct SeasonView: View {
                 }
             }
         }
-        .background(PP.bg.ignoresSafeArea())
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(PP.bg, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { ConnectivityPill() }
-            ToolbarItem(placement: .topBarTrailing) {
-                if model.hub.value != nil { DownloadButton(target: .season(model.seasonId), noun: "season") }
-            }
-        }
-        .task(id: model.seasonId) { await model.load(session) }
+        .background(PP.bg)
         .refreshable { await model.load(session) }
-        .environment(model)
+        .environment(\.horizontalSizeClass, sizeClass)
     }
 
-    private var title: String {
-        guard let hub = model.hub.value else { return "" }
-        let stage = hub.isQualifier ? " · \(hub.label ?? "Qualifying")" : ""
-        return "\(String(hub.year))\(stage) · \(hub.seriesName)"
-    }
-
-    // MARK: header
-
-    private struct SeasonRef: Hashable {
-        let id: Int
-        let year: Int
-        let isQualifier: Bool
-        let label: String?
-    }
-
-    private func header(_ hub: SeasonHub) -> some View {
+    @ViewBuilder private var classPicker: some View {
         @Bindable var model = model
-        let known: [SeasonRef] = {
-            let same = (model.seasons.value ?? []).filter { $0.seriesName == hub.seriesName }
-            if same.isEmpty { return [SeasonRef(id: hub.id, year: hub.year, isQualifier: hub.isQualifier, label: hub.label)] }
-            return same.map { SeasonRef(id: $0.id, year: $0.year, isQualifier: $0.isQualifier, label: $0.label) }
-        }()
-        let byYear = Dictionary(grouping: known, by: \.year)
-        let years = byYear.keys.sorted(by: >)
-        let stages = (byYear[hub.year] ?? []).filter(\.isQualifier).sorted { ($0.label ?? "") < ($1.label ?? "") }
-        let main = (byYear[hub.year] ?? []).first { !$0.isQualifier }
-        let yearSelection = Binding<Int?>(
-            get: { hub.year },
-            set: { year in
-                guard let year, year != hub.year, let list = byYear[year] else { return }
-                let target = list.first { !$0.isQualifier } ?? list.sorted { ($0.label ?? "") < ($1.label ?? "") }[0]
-                switchSeason(target.id)
-            })
-        let stageSelection = Binding<Int?>(get: { hub.id }, set: { id in if let id, id != hub.id { switchSeason(id) } })
-
-        return VStack(alignment: .leading, spacing: PP.Space.s3) {
-            // `.season-toolbar` wraps: title + years first, the chips on their
-            // own line when the row can't hold both.
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: PP.Space.s4) {
-                    titleRow(hub, years: years, selection: yearSelection)
-                    Spacer(minLength: PP.Space.s4)
-                    if model.classes.count > 1 { ClassChipRow(classes: model.classes, selection: $model.classFilter).fixedSize() }
-                }
-                VStack(alignment: .leading, spacing: PP.Space.s3) {
-                    titleRow(hub, years: years, selection: yearSelection)
-                    if model.classes.count > 1 { ClassChipRow(classes: model.classes, selection: $model.classFilter) }
-                }
+        if model.classes.count > 1 {
+            ScrollView(.horizontal) {
+                ColoredClassFilter(classes: model.classes, selection: $model.classFilter)
+                .padding(.vertical, 2)
             }
-            if !stages.isEmpty {
-                var options: [Segmented<Int>.Option] = []
-                let _ = { if let main { options.append(.init(id: main.id, label: "Season")) } }()
-                let _ = { options.append(contentsOf: stages.map { .init(id: $0.id, label: $0.label ?? "Qualifying") }) }()
-                Segmented(options: options, selection: stageSelection, size: .stage)
-            }
-            Segmented(options: Page.allCases.map { .init(id: $0, label: $0.label) }, selection: $page)
+            .scrollIndicators(.hidden)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.bottom, PP.Space.s1)
         }
-        .padding(.bottom, PP.Space.s4)
     }
 
-    private func titleRow(_ hub: SeasonHub, years: [Int], selection: Binding<Int?>) -> some View {
-        HStack(spacing: PP.Space.s3) {
-            Text(hub.seriesName).ppHeadline().lineLimit(1).fixedSize()
-            Segmented(options: years.map { .init(id: $0, label: String($0)) }, selection: selection, size: .year)
+    private func seasonMenu(_ hub: SeasonHub) -> some View {
+        let seasons = (model.seasons.value ?? []).filter { $0.seriesName == hub.seriesName }
+        let byYear = Dictionary(grouping: seasons, by: \.year)
+        let years = byYear.keys.sorted(by: >)
+        let stages = (byYear[hub.year] ?? []).sorted {
+            if $0.isQualifier != $1.isQualifier { return !$0.isQualifier }
+            return ($0.label ?? "") < ($1.label ?? "")
         }
+        return Menu {
+            Picker("Year", selection: Binding(
+                get: { hub.year },
+                set: { year in
+                    guard year != hub.year, let options = byYear[year],
+                          let target = options.first(where: { !$0.isQualifier }) ?? options.first else { return }
+                    switchSeason(target.id)
+                }
+            )) {
+                ForEach(years, id: \.self) { Text(String($0)).tag($0) }
+            }
+            if stages.count > 1 {
+                Picker("Stage", selection: Binding(
+                    get: { hub.id },
+                    set: { if $0 != hub.id { switchSeason($0) } }
+                )) {
+                    ForEach(stages) { stage in
+                        Text(stage.isQualifier ? (stage.label ?? "Qualifying") : "Main season").tag(stage.id)
+                    }
+                }
+            }
+        } label: {
+            VStack(spacing: 2) {
+                Text(hub.seriesName).font(.headline)
+                HStack(spacing: 4) {
+                    Text(String(hub.year) + (hub.isQualifier ? " · " + (hub.label ?? "Qualifying") : ""))
+                    Image(systemName: "chevron.down").font(.caption2)
+                }
+                .font(.subheadline).foregroundStyle(.secondary)
+            }
+        }
+        .foregroundStyle(PP.ink)
+        .accessibilityLabel("\(hub.seriesName), \(hub.year), choose season")
     }
 
     private func switchSeason(_ id: Int) {
@@ -128,15 +132,47 @@ struct SeasonView: View {
 
     // MARK: content
 
-    @ViewBuilder private func content(_ hub: SeasonHub) -> some View {
-        switch page ?? .overview {
+    @ViewBuilder private func content(_ selected: Page) -> some View {
+        switch selected {
         case .overview: HubView()
-        case .schedule: ScheduleView()
+        case .races: RacesView().id(model.seasonId)
         case .standings: ChampionshipGridView(mode: .points)
         case .stats: StatsView()
-        case .results: ResultsView()
-        case .entries: EntriesView()
-        case .photos: PhotosView()
+        case .more:
+            VStack(spacing: 0) {
+                NavigationLink {
+                    secondaryPage("Entries") { EntriesView() }
+                } label: { moreRow("Entries", symbol: "person.3") }
+                Divider()
+                NavigationLink {
+                    secondaryPage("Photos") { PhotosView() }
+                } label: { moreRow("Photos", symbol: "photo.on.rectangle") }
+            }
         }
+    }
+
+    private func moreRow(_ title: String, symbol: String) -> some View {
+        HStack {
+            Label(title, systemImage: symbol)
+            Spacer()
+            Image(systemName: "chevron.right").foregroundStyle(.secondary)
+        }
+        .font(.body)
+        .padding(.vertical, PP.Space.s4)
+        .contentShape(Rectangle())
+    }
+
+    private func secondaryPage<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        ScrollView {
+            PageContainer {
+                VStack(alignment: .leading, spacing: PP.Space.s4) {
+                    classPicker
+                    content()
+                }
+            }
+        }
+        .background(PP.bg)
+        .navigationTitle(title)
+        .environment(model)
     }
 }
