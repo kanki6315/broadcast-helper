@@ -15,6 +15,8 @@ final class Resource<T: Decodable & Sendable> {
     private(set) var isLoading = false
     private(set) var error: String?
     private(set) var pendingUpdate: Loaded<T>?
+    /// Digest of the bytes behind `value` (see `Loaded.digest`).
+    private var digest: Int?
 
     init(_ path: String) {
         self.path = path
@@ -29,6 +31,7 @@ final class Resource<T: Decodable & Sendable> {
         isStale = false
         error = nil
         pendingUpdate = nil
+        digest = nil
     }
 
     func load(_ loader: DataLoader, connectivity: Connectivity? = nil, freshness: Freshness? = nil) async {
@@ -44,8 +47,15 @@ final class Resource<T: Decodable & Sendable> {
             connectivity?.noteReachable()
             switch result {
             case let .unchanged(loaded):
-                fetchedAt = loaded.fetchedAt
-                isStale = false
+                // 304 against the *store's* ETag: if a download replaced the
+                // stored body since this view adopted it, the server has just
+                // confirmed bytes we aren't showing — surface them as an update.
+                if let digest, digest != loaded.digest {
+                    pendingUpdate = loaded
+                } else {
+                    fetchedAt = loaded.fetchedAt
+                    isStale = false
+                }
                 freshness?.confirmed(path)
             case let .updated(loaded):
                 if value == nil {
@@ -68,6 +78,7 @@ final class Resource<T: Decodable & Sendable> {
         isStale = false
         pendingUpdate = nil
         error = nil
+        digest = nil
     }
 
     func applyPendingUpdate() {
@@ -79,5 +90,6 @@ final class Resource<T: Decodable & Sendable> {
         fetchedAt = loaded.fetchedAt
         isStale = loaded.fromCache
         pendingUpdate = nil
+        digest = loaded.digest
     }
 }

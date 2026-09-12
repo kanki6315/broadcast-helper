@@ -106,20 +106,59 @@ struct SettingsView: View {
     }
 
     private var storage: some View {
-        Section_(title: "Offline storage") {
+        Section_(title: "Offline storage", footer: "Everything the iPad has read is kept. Download an event or a season to keep pages you haven’t opened yet.") {
             if let stats {
                 Row(label: "Documents", value: "\(stats.entries)", mono: true)
                 Row(label: "Size", value: ByteCountFormatter.string(fromByteCount: Int64(stats.bytes), countStyle: .file), mono: true)
             }
+            downloads
             HStack {
                 Spacer()
                 Button("Clear offline data", role: .destructive) {
-                    Task { await session.store.removeAll(); stats = await session.store.stats() }
+                    Task { await session.clearOfflineData(); stats = await session.store.stats() }
                 }
                 .buttonStyle(PPSecondaryButtonStyle())
             }
             .padding(.vertical, PP.Space.s2)
         }
+        .task(id: session.downloads.recordsNewestFirst.map(\.completedAt)) {
+            stats = await session.store.stats()
+        }
+    }
+
+    /// What "Download this event / season" completed, newest first.
+    @ViewBuilder private var downloads: some View {
+        let records = session.downloads.recordsNewestFirst
+        if records.isEmpty {
+            Text("Nothing downloaded yet — open an event sheet or a season and tap Download.")
+                .font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.textMuted)
+                .padding(.vertical, 10)
+                .overlay(alignment: .bottom) { Rectangle().fill(PP.border).frame(height: 1) }
+        } else {
+            ForEach(records) { r in
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(r.title).font(PP.sans(PP.TextSize.sm, weight: 500)).foregroundStyle(PP.text).lineLimit(1)
+                            Text(downloadDetail(r, now: context.date))
+                                .font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted)
+                        }
+                        Spacer()
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(r.bytes), countStyle: .file))
+                            .font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.text)
+                    }
+                    .padding(.vertical, 10)
+                    .overlay(alignment: .bottom) { Rectangle().fill(PP.border).frame(height: 1) }
+                }
+            }
+        }
+    }
+
+    private func downloadDetail(_ r: OfflineStore.DownloadRecord, now: Date) -> String {
+        var parts = ["Downloaded \(ConnectivityPill.age(now.timeIntervalSince(r.completedAt))) ago",
+                     "\(r.documents) documents"]
+        if r.missing > 0 { parts.append("\(r.missing) missing") }
+        return parts.joined(separator: " · ")
     }
 
     private func apply(_ text: String) {

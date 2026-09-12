@@ -2,6 +2,7 @@ import SwiftUI
 
 /// SchedulePage: the plain calendar table. Rows open the event's results.
 struct ScheduleView: View {
+    @Environment(AppSession.self) private var session
     @Environment(SeasonModel.self) private var model
     @State private var openEvent: CalendarEvent?
 
@@ -21,6 +22,11 @@ struct ScheduleView: View {
                         HStack(spacing: PP.Space.s2) {
                             Text(e.name).font(PP.sans(PP.TextSize.sm, weight: 500)).foregroundStyle(PP.text).lineLimit(1)
                             if upcoming { Badge(text: "upcoming") }
+                            if session.downloads.record(for: .event(e.id)) != nil {
+                                Image(systemName: "arrow.down.circle.fill")
+                                    .font(.system(size: 12)).foregroundStyle(PP.textMuted)
+                                    .accessibilityLabel("Downloaded for offline use")
+                            }
                         }
                         .padding(.horizontal, 10)
                         .frame(maxWidth: .infinity, alignment: .leading)

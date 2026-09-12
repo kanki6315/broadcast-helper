@@ -27,6 +27,8 @@ final class AppSession {
     let store: OfflineStore
     let connectivity = Connectivity()
     let freshness = Freshness()
+    /// "Download this event / season" jobs and what they last completed.
+    let downloads = DownloadManager()
     var theme: ThemePreference = ThemePreference.stored {
         didSet { ThemePreference.stored = theme }
     }
@@ -54,15 +56,22 @@ final class AppSession {
         ServerConfig.current = url
         serverURL = url
         Keychain.deviceToken = nil
-        await store.removeAll()
+        await clearOfflineData()
         client = AppSession.makeClient(url)
         loader = DataLoader(client: client, store: store)
         await bootstrap()
     }
 
+    /// Wipe the store and everything that describes it.
+    func clearOfflineData() async {
+        downloads.forget()
+        await store.removeAll()
+    }
+
     func bootstrap() async {
         phase = .checking
         connectivity.start(client: client)
+        await downloads.load(from: store)
         do {
             let me: Loaded<Me> = try await loader.networkFirst("/api/me")
             resolve(me.value, fromCache: me.fromCache)
@@ -106,7 +115,7 @@ final class AppSession {
     func signOut() async {
         try? await client.send("DELETE", "/api/auth/device")
         Keychain.deviceToken = nil
-        await store.removeAll()
+        await clearOfflineData()
         await bootstrap()
     }
 }

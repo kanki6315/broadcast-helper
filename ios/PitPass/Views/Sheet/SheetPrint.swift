@@ -92,13 +92,7 @@ enum SheetPrint {
         var out: [String: UIImage] = [:]
         for cls in sheet.classes {
             for e in cls.entries {
-                if let v = e.imageVersion {
-                    let p = "/api/entries/\(e.entryId)/image?variant=sheet&v=\(v)"
-                    if let d = await loader.bytes(p), let img = ImageDecoding.decode(d) { out[p] = img }
-                }
-                if let v = e.manufacturerLogoVersion, let name = e.manufacturer {
-                    let encoded = name.lowercased().addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name.lowercased()
-                    let p = "/api/manufacturer-logos/\(encoded)/data?v=\(v)"
+                for p in [e.imagePath, e.manufacturerLogoPath].compactMap({ $0 }) {
                     if let d = await loader.bytes(p), let img = ImageDecoding.decode(d) { out[p] = img }
                 }
             }
@@ -247,8 +241,7 @@ struct PrintEntry: View {
                         if e.isGuest { Text("GUEST").font(PP.sans(8 * scale, weight: 600)).foregroundStyle(SheetPrint.Ink.muted) }
                     }
                 case .mfr:
-                    if let v = e.manufacturerLogoVersion, let name = e.manufacturer,
-                       let img = images["/api/manufacturer-logos/\(name.lowercased().addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name.lowercased())/data?v=\(v)"] {
+                    if let p = e.manufacturerLogoPath, let img = images[p] {
                         Image(uiImage: img).resizable().scaledToFit().frame(maxHeight: 0.3 * 72 * scale)
                     } else {
                         Text(e.manufacturer ?? "").font(PP.sans(8.5 * scale)).foregroundStyle(SheetPrint.Ink.muted).lineLimit(1).minimumScaleFactor(0.7)
@@ -275,7 +268,7 @@ struct PrintEntry: View {
                 case .champ:
                     Text(e.championship ?? "").font(PP.sans(9.5 * scale)).foregroundStyle(SheetPrint.Ink.text).multilineTextAlignment(.center)
                 case .photo:
-                    if let v = e.imageVersion, let img = images["/api/entries/\(e.entryId)/image?variant=sheet&v=\(v)"] {
+                    if let p = e.imagePath, let img = images[p] {
                         Image(uiImage: img).resizable().scaledToFit().frame(maxHeight: 0.42 * 72 * scale)
                     } else {
                         Color.clear.frame(height: 1)

@@ -22,6 +22,20 @@ actor OfflineStore {
         let bytes: Int
     }
 
+    /// What "Download this event / season" last completed, so a screen can say
+    /// "Downloaded 2h ago" before any page is opened. Cleared with the data.
+    struct DownloadRecord: Sendable, Equatable, Identifiable {
+        let key: String
+        let title: String
+        let completedAt: Date
+        let documents: Int
+        let bytes: Int
+        /// Documents the server refused (404 etc.) — the bundle is usable without them.
+        let missing: Int
+
+        var id: String { key }
+    }
+
     // The handle is only touched from actor methods (and deinit); the annotation
     // is what lets a nonisolated deinit close it.
     private nonisolated(unsafe) let db: OpaquePointer?
@@ -52,6 +66,14 @@ actor OfflineStore {
                     fetched_at REAL NOT NULL,
                     body BLOB NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS download_record (
+                    key TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    completed_at REAL NOT NULL,
+                    documents INTEGER NOT NULL,
+                    bytes INTEGER NOT NULL,
+                    missing INTEGER NOT NULL
+                );
                 """, nil, nil, nil)
         } else {
             if let handle { sqlite3_close(handle) }
@@ -77,6 +99,31 @@ actor OfflineStore {
         let length = Int(sqlite3_column_bytes(stmt, 2))
         let body = bytes.map { Data(bytes: $0, count: length) } ?? Data()
         return Entry(path: path, etag: etag, fetchedAt: fetchedAt, body: body)
+    }
+
+    /// Whether a body is stored for the path (no read of the body itself).
+    func contains(_ path: String) -> Bool {
+        guard let db else { return false }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT 1 FROM cached_response WHERE path = ?", -1, &stmt, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, path, -1, OfflineStore.transient)
+        return sqlite3_step(stmt) == SQLITE_ROW
+    }
+
+    /// Stored bytes across the given paths (paths with nothing stored count 0).
+    func size(of paths: [String]) -> Int {
+        guard let db else { return 0 }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT length(body) FROM cached_response WHERE path = ?", -1, &stmt, nil) == SQLITE_OK else { return 0 }
+        defer { sqlite3_finalize(stmt) }
+        var total = 0
+        for path in paths {
+            sqlite3_reset(stmt)
+            sqlite3_bind_text(stmt, 1, path, -1, OfflineStore.transient)
+            if sqlite3_step(stmt) == SQLITE_ROW { total += Int(sqlite3_column_int64(stmt, 0)) }
+        }
+        return total
     }
 
     func save(_ path: String, etag: String?, body: Data, at date: Date = .now) {
@@ -116,6 +163,57 @@ actor OfflineStore {
 
     func removeAll() {
         _ = exec("DELETE FROM cached_response")
+        _ = exec("DELETE FROM download_record")
+    }
+
+    // MARK: download records
+
+    func saveDownload(_ record: DownloadRecord) {
+        guard let db else { return }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, """
+            INSERT INTO download_record (key, title, completed_at, documents, bytes, missing) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET title = excluded.title, completed_at = excluded.completed_at,
+                documents = excluded.documents, bytes = excluded.bytes, missing = excluded.missing
+            """, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, record.key, -1, OfflineStore.transient)
+        sqlite3_bind_text(stmt, 2, record.title, -1, OfflineStore.transient)
+        sqlite3_bind_double(stmt, 3, record.completedAt.timeIntervalSince1970)
+        sqlite3_bind_int64(stmt, 4, Int64(record.documents))
+        sqlite3_bind_int64(stmt, 5, Int64(record.bytes))
+        sqlite3_bind_int64(stmt, 6, Int64(record.missing))
+        _ = sqlite3_step(stmt)
+    }
+
+    func removeDownload(_ key: String) {
+        guard let db else { return }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "DELETE FROM download_record WHERE key = ?", -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, key, -1, OfflineStore.transient)
+        _ = sqlite3_step(stmt)
+    }
+
+    /// Every completed download, newest first.
+    func downloads() -> [DownloadRecord] {
+        guard let db else { return [] }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, """
+            SELECT key, title, completed_at, documents, bytes, missing FROM download_record ORDER BY completed_at DESC
+            """, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        var out: [DownloadRecord] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            out.append(DownloadRecord(
+                key: String(cString: sqlite3_column_text(stmt, 0)),
+                title: String(cString: sqlite3_column_text(stmt, 1)),
+                completedAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 2)),
+                documents: Int(sqlite3_column_int64(stmt, 3)),
+                bytes: Int(sqlite3_column_int64(stmt, 4)),
+                missing: Int(sqlite3_column_int64(stmt, 5))))
+        }
+        return out
     }
 
     func stats() -> Stats {
