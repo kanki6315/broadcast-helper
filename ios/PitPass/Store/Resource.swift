@@ -7,7 +7,7 @@ import Observation
 @MainActor
 @Observable
 final class Resource<T: Decodable & Sendable> {
-    let path: String
+    private(set) var path: String
     private(set) var value: T?
     private(set) var fetchedAt: Date?
     /// True while what's shown came from disk and the server hasn't confirmed it.
@@ -18,6 +18,17 @@ final class Resource<T: Decodable & Sendable> {
 
     init(_ path: String) {
         self.path = path
+    }
+
+    /// Point at another document (a model built before its id was known).
+    func retarget(_ path: String) {
+        guard path != self.path else { return }
+        self.path = path
+        value = nil
+        fetchedAt = nil
+        isStale = false
+        error = nil
+        pendingUpdate = nil
     }
 
     func load(_ loader: DataLoader, connectivity: Connectivity? = nil, freshness: Freshness? = nil) async {

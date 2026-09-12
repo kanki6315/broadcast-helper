@@ -8,9 +8,11 @@ storage, freshness, the Pencil scratchpad — and the website goes back to being
 a plain web app. Usage model unchanged: **the iPad reads (plus the
 scratchpad); all editing happens on the website.**
 
-Status: **skeleton** — sign-in, read-through offline store, series/seasons
-list. Season pages, the sheet page, "Download this event" and the PencilKit
-pad follow, one slice each (PLAN.md). The PWA service worker stays on the
+Status: sign-in, read-through offline store, the series directory and the
+**season pages** (overview strip + recap, schedule, standings, stats, results,
+entries, photos). The sheet page, "Download this event" and the PencilKit pad
+follow, one slice each (PLAN.md). Driver/team info modals (the website's ⌘K
+and name links) are not in the app yet — names are plain text. The PWA service worker stays on the
 website until the app's sheet page and event download exist; retiring it needs
 one deploy with `selfDestroying: true` in `vite.config.ts` so installed iPads
 let go of the old worker.
@@ -26,7 +28,11 @@ ios/
     Net/        APIClient (bearer + conditional GET), Connectivity (heartbeat)
     Store/      OfflineStore (SQLite), DataLoader (read-through), Resource (view-facing)
     Model/      Codable wire shapes — mirror frontend/src/lib/api.ts, same field names
-    Views/      SwiftUI screens
+    Season/     SeasonModel (hub, classes, champ selection, recap cache), SeasonLogic
+                (pure ports of names.ts / raceForm.ts / venue.ts / ChampionshipGrid derivations)
+    Views/      SwiftUI screens; Views/Season/ = SeasonView shell + one file per tab,
+                GridTable (pinned identity columns + scrolling data columns), SeasonWidgets
+                (segmented controls, class chips/tags/bands, race chips, legends)
     Resources/  Assets.xcassets (AppIcon from frontend/public/pwa-512x512.png, AccentColor = #f0b84a)
   PitPassTests/ Swift Testing: OfflineStore round-trips, DataLoader with a scripted transport
 ```
@@ -145,6 +151,16 @@ numerals; no eyebrows, no gradients on the accent, no decorative shadows
 (the nudge toast and the pressed segment are the two state-response shadows);
 every animation collapses under Reduce Motion (`SkeletonBlock` checks it).
 When DESIGN.md changes a token, change `Theme.swift` in the same slice.
+
+### The grid natively
+
+`GridTable` is `.grid-table`: identity columns pinned on the left, data columns
+in a horizontal scroller, class bands across both. SwiftUI can't measure one
+half against the other, so row heights are budgeted from a per-row `lines`
+count (stacked race chips, crew members) — keep `lineHeight` honest when a
+cell's font changes. Auto-width cells (lineup crews) compute their width from
+the longest line; chip columns are fixed. Headers don't pin to the viewport
+yet (the web's do).
 
 ## Parity checklist
 

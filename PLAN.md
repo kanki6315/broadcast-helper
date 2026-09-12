@@ -1292,8 +1292,16 @@ design and the sign-in flow in **docs/IOS.md**.
   a changed payload is a **nudge, never a silent re-render** — plus the
   `Connectivity` heartbeat port and a "Cached/Updated Xm ago" footer. Verified
   in the iPad Pro 11-inch (M5) simulator including a fully offline cold launch.
-- **Slice 2 — season pages** (hub, schedule, standings, stats, results,
-  entries, photos), one screen per slice, models mirroring `lib/api.ts`.
+- **Slice 2 — season pages — ✅ DONE (2026-09-12).** SeasonView shell
+  (series title + year strip + qualifying-stage strip, class chips, sub-page
+  seg), overview (hub strip 4-across / 2×2 / stacked + season recap), schedule,
+  standings (breakdown and round-total views, legends), stats (drivers/teams,
+  season/all-time, format toggles, per-class sorting), results (round chips,
+  session tabs, stewards' notes with car markers, classification with the
+  web's column rules, race control, starting-grid sheet), entries (lineup
+  matrix with change tint), photos (read-only gallery). `GridTable` is the
+  native `.grid-table`; pure derivations live in `Season/SeasonLogic.swift`.
+  Not yet: driver/team info modals, viewport-pinned grid headers.
 - **Slice 3 — sheet page**, then the sheet leaves the website (it is the
   website's print/PDF path, so the app must print first — `ImageRenderer` /
   `UIPrintPageRenderer`).
