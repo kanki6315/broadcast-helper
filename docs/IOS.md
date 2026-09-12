@@ -18,14 +18,15 @@ staleness problem, which is the class of bug being escaped.
 | 2. Season pages | done | Overview strip + recap, Schedule, Standings, Stats, Results, Entries, Photos |
 | 3. Event sheet | done | Sheet, team-sheets and storylines PDFs, Recap overlay, Pit lane with GPS guidance, Print / Save PDF |
 | 4. Download this event / season | done | Prefetch manifests with progress, "Downloaded · Xm" per screen, Settings list |
-| 5. PencilKit scratchpad | next | Same stroke wire format as the web pad, offline replay, conflict handling |
-| 6. Retire the service worker | planned | One deploy with `selfDestroying: true`, then remove `vite-plugin-pwa` |
+| 5. PencilKit scratchpad | done | Same stroke wire format as the web pad, local mirror, offline replay, conflict banner, FAB badge |
+| 6. Retire the service worker | next | One deploy with `selfDestroying: true`, then remove `vite-plugin-pwa` |
 
 Known gaps: driver/team info modals (the website's ⌘K and name links) — names
 are plain text; grid headers don't pin to the viewport while scrolling; the
 website's sheet page stays until the app's PDF export has been compared with
-one real weekend's export. The PWA service worker stays on the website until
-slice 5 lands, so race weekends in between still have the web scratchpad.
+one real weekend's export. The scratchpad has been exercised in the
+simulator with finger input only — the first real Apple Pencil session is
+the proof for latency and the system "Only Draw with Apple Pencil" setting.
 
 ## Layout
 
@@ -42,6 +43,10 @@ ios/
                 ImageDecoding (UIImage, SVG via SwiftDraw)
     Model/      Codable wire shapes — mirror frontend/src/lib/api.ts, same field names
                 (Models, SeasonModels, SheetModels)
+    Scratchpad/ PadDocument (the web's Stroke wire format + the LocalPad mirror),
+                PadBridge (PencilKit ↔ Stroke with identity), PadModel (one open pad:
+                load, mirror, debounced PUT, conflicts), PadSync (offline replay,
+                FAB badges, BGAppRefresh)
     Season/     SeasonModel (hub, classes, championship selection, recap cache),
                 SeasonLogic (pure ports of names.ts / raceForm.ts / venue.ts /
                 ChampionshipGrid derivations), PitLaneGeo (port of pitLaneGeo.ts)
@@ -50,10 +55,11 @@ ios/
     Views/      RootView, HomeView, SignInView, SettingsView, TopBar, StatusViews,
                 SeriesDirectoryView, DownloadButton
       Season/   SeasonView shell + one file per tab, GridTable, SeasonWidgets
-      Sheet/    SheetView, PdfViewerSheet, PitLaneSheet, RecapSheet, SheetPrint
+      Sheet/    SheetView, PdfViewerSheet, PitLaneSheet, RecapSheet, SheetPrint, ScratchpadSheet
     Resources/  Assets.xcassets (AppIcon, AccentColor #f0b84a), Fonts (Inter, JetBrains Mono)
   PitPassTests/ Swift Testing — OfflineStore, DataLoader (scripted transport), Downloads
-                (plan + job over a path-routed transport), PitLaneGeo
+                (plan + job over a path-routed transport), Pad (wire format, mirror,
+                PencilKit bridge, syncer), PitLaneGeo
 ```
 
 Swift 6 with strict concurrency, iOS 18+, iPad only (`TARGETED_DEVICE_FAMILY
@@ -154,8 +160,8 @@ rules the web app settled on:
 - the topbar pill says "· cached Xm" while any document on the screen came
   from the store (`Freshness`, reset per screen).
 
-`networkFirst` is for documents that must be fresh when online (`/api/me`
-now; the scratchpad later). `DataLoader.bytes` is cache-first for immutable
+`networkFirst` is for documents that must be fresh when online (`/api/me`;
+the scratchpad does its own network-first load, see below). `DataLoader.bytes` is cache-first for immutable
 binaries (`?v=`-stamped logos, photos, PDFs). `Connectivity` is the heartbeat
 port of `lib/connectivity.ts` (HEAD `/api/me` every 30s, slow > 2.5s,
 502/503/504 = offline, immediate ping on foregrounding). Verified: a cold
@@ -195,7 +201,51 @@ schedule marks downloaded rounds and Settings lists every bundle. A
 background task keeps the job alive for a while if the person switches to
 Safari mid-download.
 
-One rule fell out of this: `Loaded.digest` identifies the stored bytes. A
+### The scratchpad
+
+`ScratchpadSheet` is ScratchpadModal.tsx over a `PKCanvasView`: PencilKit
+draws, erases and undoes; the web's `[Stroke]` stays the document and the
+wire format is untouched (`{id, tool, color, size, points}` in the 800-wide
+logical column, tenths of a px), so the desktop pad reads iPad ink and vice
+versa. The pieces:
+
+- **`PadBridge`** converts both ways with identity. A `PKStroke` built from
+  a web stroke carries a private creation date as its key, so when PencilKit
+  hands the drawing back every stroke it didn't touch maps to the *original*
+  `Stroke` object — desktop ink never gets re-sampled by a trip through the
+  iPad. Only pen-drawn strokes are exported: control points, thinned at
+  1.5px and rounded to tenths like the web's pointer samples. Two PencilKit
+  facts the bridge encodes: it fits a B-spline *through* its control points,
+  so web strokes are fed the web's own quadratic-through-midpoints curve
+  sampled every ~3px (a square stays a square); and monoline points store
+  the tool width plus 2, so sizes shift by 2 in each direction. Ink is
+  `.monoline` (uniform width, like the web's lineWidth), the eraser is the
+  vector one (whole strokes, like the web's), paper is white in both themes
+  because ink colours are persisted literals.
+- **`PadModel`** is the modal's state: network-first load against the
+  `LocalPad` mirror (dirty local ink wins and syncs; a moved-on server is the
+  conflict case), every completed change mirrored to SQLite first, a 2.5s
+  debounced whole-document PUT, 409 → conflict banner with the one-slot
+  backup for the loser, 413 → "pad full", transport failure → "Offline —
+  saved on this iPad" and a retry on the next 'live' flip.
+- **`PadSyncer`** on `AppSession` is scratchpadSync.ts: replays dirty
+  mirrors on start and on every offline→live flip, skipping the pad whose
+  sheet is open, flagging (never resolving) 409s; it also feeds the sheet
+  FAB's badge (amber = unsynced ink, red = conflict). A `BGAppRefreshTask`
+  (`com.arjunakankipati.pitpass.padsync`) gives ink one more chance to sync
+  after the app is backgrounded. Mirrors survive "Clear offline data"; only
+  sign-out or a server change wipes them.
+
+Canvas mechanics worth knowing: the 800-wide column is fitted to the window
+by a fixed zoom (min = max = width/800) with content size 800×pageHeight
+scaled, the way Apple's PencilKit sample does it; the fit resets the content
+offset (re-zooming otherwise leaves the page scrolled mid-way), and a drawing
+is only installed once the view has a real width — installed at the
+placeholder zoom it is rasterised blurry and stays that way. On the
+simulator the drawing policy is `.anyInput` because it reports "Only Draw
+with Apple Pencil" on; devices use `.default`.
+
+One rule fell out of the downloads work: `Loaded.digest` identifies the stored bytes. A
 `Resource` that adopted v1 while a download stored v2 gets a **304** on its
 own revalidation (the store's ETag is v2's), so it compares digests and
 surfaces v2 as the usual "Newer data" nudge instead of concluding
@@ -232,6 +282,7 @@ Component parity with the web CSS, so a screen reads the same on both:
 | `flex-wrap: wrap` chip rows | `FlowLayout` (the web clips the earlier-seasons row; the app wraps it) |
 | `.sheet-*` / `.form-strip` / `.sheet-fabs` | `SheetView`, `StripRace`, `FabButtonStyle` |
 | `.pl-*` (pit lane, `.pl-guide`) | `PitLaneSheet` |
+| `.sp-*` (scratchpad chrome, swatches, conflict bar, save status) | `ScratchpadSheet` |
 
 Rules carried over, not just colors: amber is the only voiced accent (≤10% of
 a screen, primary action + selection only); class colour is always paired

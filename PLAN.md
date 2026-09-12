@@ -1327,16 +1327,24 @@ design and the sign-in flow in **docs/IOS.md**.
   marks on Schedule rows, the bundle list in Settings. `Loaded.digest` lets a
   `Resource` notice a download replaced its document behind a 304. Unit
   tests cover the plan and the job over a path-routed transport.
-- **Slice 5 — PencilKit scratchpad**, keeping the stroke JSON wire format
-  (`{tool,color,size,points}`, 800-wide logical space, revision-guarded PUT)
-  so the desktop web pad still reads iPad ink; port the dirty/conflict/backup
-  logic from `scratchpadStore.ts`/`scratchpadSync.ts`, add BGAppRefresh
-  replay on top of foreground replay.
+- **Slice 5 — PencilKit scratchpad — ✅ DONE (2026-09-12).** `ios/PitPass/
+  Scratchpad/`: the web's stroke wire format kept byte-for-byte (`PadBridge`
+  maps PencilKit ↔ `[Stroke]` with identity, so desktop ink is never
+  re-sampled; pen strokes export thinned + rounded like the web's samples);
+  `PadModel` = the modal's load/mirror/debounced-PUT/409/413/offline logic;
+  `PadSyncer` = scratchpadSync.ts (replay on start + live flip, active-pad
+  skip, conflicts flagged not resolved) + FAB badge + `BGAppRefreshTask`.
+  `ScratchpadSheet` = the modal's chrome (tools, swatches, sizes, undo/redo,
+  extend page, conflict banner, save status) over a fitted `PKCanvasView`
+  (monoline ink, vector eraser, white paper). Verified in the simulator with
+  finger input against the local backend: web-seeded strokes render, iPad
+  strokes land on the server and re-import unchanged; real Pencil latency and
+  the "Only Draw with Apple Pencil" setting still need a device session.
 - **Slice 6 — retire the service worker**: remove `vite-plugin-pwa`,
   `browserTabReads.ts`, DataNudge/ConnectivityPill/InstallHint/StoragePage;
   ship ONE deploy with `selfDestroying: true` first so installed iPads let go
-  of the old worker (they keep it forever otherwise). Not before slice 5
-  exists — race weekends in between still need the web scratchpad.
+  of the old worker (they keep it forever otherwise). Slices 3–5 exist, so
+  this can go as soon as the iPad pad has had one real Pencil session.
 - **Parity rule:** every web slice that changes a payload an iPad surface
   reads updates `ios/PitPass/Model` + the view in the same slice.
 

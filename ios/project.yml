@@ -61,6 +61,9 @@ targets:
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         ITSAppUsesNonExemptEncryption: false
+        # Offline scratchpad ink replays in the background (PadSyncer).
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers: [com.arjunakankipati.pitpass.padsync]
         # The website's faces (Inter UI, JetBrains Mono data), decompressed
         # from the @fontsource woff2 subsets — see docs/IOS.md "Design".
         UIAppFonts:
