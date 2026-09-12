@@ -89,15 +89,29 @@ xcodebuild -project ios/PitPass.xcodeproj -scheme PitPass \
   -derivedDataPath ios/build build CODE_SIGNING_ALLOWED=NO      # or: test
 ```
 
-The app defaults to `https://pitpass.arjunakankipati.com`. Settings can point
-it at the local dev server (`http://localhost:8731`, auth off, so no sign-in);
-changing servers signs the iPad out and clears its offline data.
+Release builds (including archives) always use `https://pitpass.arjunakankipati.com`.
+There is no server URL setting in the app. Debug builds also default to production.
+To override a Debug launch, open **Product → Scheme → Edit Scheme → Run →
+Arguments → Environment Variables** and set `PITPASS_SERVER_URL`:
+
+- Production: `https://pitpass.arjunakankipati.com` (or disable the variable).
+- Simulator local backend: `http://localhost:8731` (auth off).
+- Physical iPad: `http://<your-mac-hostname>.local:8731`, on the same network;
+  the backend must listen on a network-accessible interface. `localhost` on an
+  iPad refers to the iPad itself. Allow local network access when prompted.
+
+Overrides must be full HTTP(S) origins without paths, credentials, queries, or
+fragments; invalid Debug overrides stop launch with a configuration error.
+Release ignores the environment variable and any old saved URL. Switching
+endpoints on relaunch signs out and clears offline data, including unsynced
+scratchpad ink, before contacting the new server. The old URL preference is
+removed during migration; existing production data is retained.
 
 Simulator recipes that proved necessary:
 
-- Preset the server: `xcrun simctl spawn booted defaults write
-  com.arjunakankipati.pitpass pitpass.serverURL http://localhost:8731` —
-  **after** terminating the app, or its exit flush wins.
+- Launch a Debug build against local dev (terminate the app first):
+  `SIMCTL_CHILD_PITPASS_SERVER_URL=http://localhost:8731 xcrun simctl launch
+  booted com.arjunakankipati.pitpass`. Omit the variable for production.
 - `xcrun simctl launch` reuses the *installed* build; reinstall after every
   `xcodebuild` (the desktop app's simulator panel does this on launch).
 - A background `xcodebuild test` reinstalls the app mid-session and kicks it

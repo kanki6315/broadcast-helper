@@ -1,32 +1,48 @@
 import Foundation
 
-/// Which Pit Pass backend this iPad talks to. Production by default; the
-/// Settings screen can point it at a local dev server (`http://localhost:8731`,
-/// which runs with auth off).
+/// Release always uses production. Debug builds may override the endpoint at launch.
 enum ServerConfig {
     static let production = URL(string: "https://pitpass.arjunakankipati.com")!
-    static let localDev = URL(string: "http://localhost:8731")!
 
-    private static let key = "pitpass.serverURL"
+    static var current: URL { resolve(environment: ProcessInfo.processInfo.environment) }
 
-    static var current: URL {
-        get {
-            guard let raw = UserDefaults.standard.string(forKey: key), let url = URL(string: raw) else {
-                return production
+    static func resolve(environment: [String: String]) -> URL {
+        #if DEBUG
+        if let raw = environment["PITPASS_SERVER_URL"], !raw.isEmpty {
+            guard let url = parse(raw) else {
+                fatalError("PITPASS_SERVER_URL must be an http(s) origin, e.g. http://localhost:8731")
             }
             return url
         }
-        set { UserDefaults.standard.set(newValue.absoluteString, forKey: key) }
+        #endif
+        return production
     }
 
-    /// Accepts what a person types: adds https:// when missing, drops a trailing slash.
+    /// API paths are absolute: endpoints must be origins, without credentials or query strings.
     static func parse(_ text: String) -> URL? {
-        var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        if !trimmed.contains("://") { trimmed = "https://" + trimmed }
-        while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        guard let url = URL(string: trimmed), let scheme = url.scheme, ["http", "https"].contains(scheme),
-              url.host() != nil else { return nil }
-        return url
+        let raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var parts = URLComponents(string: raw),
+              let scheme = parts.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              let host = parts.host, !host.isEmpty,
+              parts.user == nil, parts.password == nil, parts.query == nil, parts.fragment == nil,
+              parts.path.isEmpty || parts.path == "/",
+              parts.port == nil || (1...65535).contains(parts.port!) else { return nil }
+        parts.scheme = scheme
+        parts.host = host.lowercased()
+        parts.path = ""
+        return parts.url
+    }
+
+    /// The legacy preference is consulted only to identify data from an old server.
+    static func needsReset(for url: URL, defaults: UserDefaults = .standard) -> Bool {
+        let previous = defaults.string(forKey: "pitpass.lastServerURL")
+            ?? defaults.string(forKey: "pitpass.serverURL")
+            ?? production.absoluteString
+        return parse(previous) != url
+    }
+
+    static func recordServer(_ url: URL, defaults: UserDefaults = .standard) {
+        defaults.set(url.absoluteString, forKey: "pitpass.lastServerURL")
+        defaults.removeObject(forKey: "pitpass.serverURL")
     }
 }

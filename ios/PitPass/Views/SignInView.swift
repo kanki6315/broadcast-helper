@@ -47,7 +47,7 @@ struct SignInView: View {
             Button("Retry connection") { Task { await session.bootstrap() } }
                 .buttonStyle(PPQuietButtonStyle())
             Spacer()
-            Button("Server settings") { showSettings = true }
+            Button("Settings") { showSettings = true }
                 .buttonStyle(PPQuietButtonStyle())
                 .padding(.bottom, PP.Space.s5)
         }
