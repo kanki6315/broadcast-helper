@@ -80,7 +80,15 @@ struct APIClient: Sendable {
     }
 
     func postJSON<T: Decodable>(_ path: String, body: some Encodable & Sendable) async throws(APIError) -> T {
-        var request = makeRequest("POST", path)
+        try await sendJSON("POST", path, body: body)
+    }
+
+    func putJSON<T: Decodable>(_ path: String, body: some Encodable & Sendable) async throws(APIError) -> T {
+        try await sendJSON("PUT", path, body: body)
+    }
+
+    private func sendJSON<T: Decodable>(_ method: String, _ path: String, body: some Encodable & Sendable) async throws(APIError) -> T {
+        var request = makeRequest(method, path)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         do {
             request.httpBody = try JSONEncoder().encode(body)

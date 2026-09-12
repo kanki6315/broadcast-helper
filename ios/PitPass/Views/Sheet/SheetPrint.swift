@@ -94,12 +94,12 @@ enum SheetPrint {
             for e in cls.entries {
                 if let v = e.imageVersion {
                     let p = "/api/entries/\(e.entryId)/image?variant=sheet&v=\(v)"
-                    if let d = await loader.bytes(p), let img = UIImage(data: d) { out[p] = img }
+                    if let d = await loader.bytes(p), let img = ImageDecoding.decode(d) { out[p] = img }
                 }
                 if let v = e.manufacturerLogoVersion, let name = e.manufacturer {
                     let encoded = name.lowercased().addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name.lowercased()
                     let p = "/api/manufacturer-logos/\(encoded)/data?v=\(v)"
-                    if let d = await loader.bytes(p), let img = UIImage(data: d) { out[p] = img }
+                    if let d = await loader.bytes(p), let img = ImageDecoding.decode(d) { out[p] = img }
                 }
             }
         }

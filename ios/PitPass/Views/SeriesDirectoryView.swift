@@ -357,7 +357,7 @@ struct SeriesLogo: View {
             }
         }
         .task(id: path) {
-            if let data = await session.loader.bytes(path), let decoded = UIImage(data: data) {
+            if let data = await session.loader.bytes(path), let decoded = ImageDecoding.decode(data) {
                 image = decoded
             } else {
                 failed = true

@@ -170,8 +170,29 @@ yet (the web's do).
 columns (`SheetColumn`, laid out by `PercentColumns`), one entry = main row
 + form strip, zebra as the class colour at 8% into the ground, linked rows
 open the team-sheets PDF at the car's page (`PdfViewerSheet`, PDFKit, bytes
-from the offline store). Prior-year notes are read-only here. Manufacturer
-marks that are SVG fall back to the name (UIImage can't decode SVG).
+from the offline store). Prior-year notes are read-only here. Manufacturer marks
+are SVG, which UIKit can't decode: `Store/ImageDecoding.swift` rasterises
+them with **SwiftDraw** (the app's one package, zlib licence, pinned in
+`project.yml`), capped at a sane height; PNG/WebP still go straight through
+UIImage.
+
+**Pit lane** (`PitLaneSheet`) has walk-to-box guidance: tap a car, and
+`Season/PitLaneGeo.swift` (a unit-tested port of `lib/pitLaneGeo.ts`) projects
+the live fix onto the polyline through the GPS anchors and says "~8 boxes
+(200 ft) toward pit in · you're near box 12". Positions come from
+`Net/LocationWatcher.swift` (`CLLocationUpdate.liveUpdates`, when-in-use;
+the watch stops when the target is cleared or the sheet closes). Admins can
+also **mark anchors** here — ten seconds of fixes, inverse-variance averaged
+with outlier rejection, PUT to the anchors endpoint — because the iPad in
+the lane is the device that knows where box 12 is; this is the one write
+besides the scratchpad. Simulator: `xcrun simctl location <device> set
+lat,lng` and `xcrun simctl privacy <device> grant location <bundle>`.
+
+Where UIKit still appears under the SwiftUI app: decoding image bytes
+(UIImage), light/dark dynamic colours and the variable-font axis (UIColor,
+UIFontDescriptor behind `PP`), PDFKit's viewer (UIViewRepresentable) and
+the PDF writer (UIGraphicsPDFRenderer + ImageRenderer). Everything
+user-facing is SwiftUI, including the export's ShareLink.
 
 `SheetPrint` is the `@media print` block: a light US-Letter PDF laid out at
 the browser's 96/in CSS px (so the columns match the web's print density),

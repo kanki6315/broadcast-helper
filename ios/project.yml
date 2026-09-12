@@ -18,12 +18,20 @@ settings:
     DEVELOPMENT_TEAM: ""
     CURRENT_PROJECT_VERSION: 1
     MARKETING_VERSION: 0.1.0
+packages:
+  # SVG rasterizer (zlib licence): manufacturer marks are uploaded as SVG and
+  # UIKit has no decoder for them.
+  SwiftDraw:
+    url: https://github.com/swhitty/SwiftDraw
+    exactVersion: 0.29.0
 targets:
   PitPass:
     type: application
     platform: iOS
     sources:
       - path: PitPass
+    dependencies:
+      - package: SwiftDraw
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.arjunakankipati.pitpass
@@ -47,6 +55,8 @@ targets:
         CFBundleURLTypes:
           - CFBundleURLName: com.arjunakankipati.pitpass.auth
             CFBundleURLSchemes: [pitpass]
+        # Pit-lane walk-to-box guidance (PitLaneSheet) and anchor capture.
+        NSLocationWhenInUseUsageDescription: Pit Pass uses your location to guide you to a pit box along the lane.
         # Local dev server is plain http://localhost:8731.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

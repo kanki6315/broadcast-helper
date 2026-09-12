@@ -61,6 +61,15 @@ final class Resource<T: Decodable & Sendable> {
         }
     }
 
+    /// A write just returned the document's new state: show it as current.
+    func replace(_ newValue: T) {
+        value = newValue
+        fetchedAt = .now
+        isStale = false
+        pendingUpdate = nil
+        error = nil
+    }
+
     func applyPendingUpdate() {
         if let pendingUpdate { adopt(pendingUpdate) }
     }

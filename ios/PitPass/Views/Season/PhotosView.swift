@@ -66,7 +66,7 @@ struct CachedImage: View {
             }
             .clipped()
         .task(id: path) {
-            if let data = await session.loader.bytes(path), let decoded = UIImage(data: data) { image = decoded } else { failed = true }
+            if let data = await session.loader.bytes(path), let decoded = ImageDecoding.decode(data, maxHeight: 1200) { image = decoded } else { failed = true }
         }
     }
 }

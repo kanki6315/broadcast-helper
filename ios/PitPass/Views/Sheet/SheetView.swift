@@ -86,7 +86,7 @@ struct SheetView: View {
             ScratchpadPlaceholderSheet()
         }
         .sheet(item: $exportURL) { url in
-            ShareSheet(items: [url])
+            ExportSheet(url: url)
         }
     }
 
@@ -471,7 +471,7 @@ private struct ManufacturerMark: View {
             guard !tried, let v = entry.manufacturerLogoVersion, let name = entry.manufacturer else { return }
             tried = true
             let encoded = name.lowercased().addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name.lowercased()
-            if let data = await session.loader.bytes("/api/manufacturer-logos/\(encoded)/data?v=\(v)"), let decoded = UIImage(data: data) {
+            if let data = await session.loader.bytes("/api/manufacturer-logos/\(encoded)/data?v=\(v)"), let decoded = ImageDecoding.decode(data) {
                 image = decoded
             }
         }
@@ -496,11 +496,33 @@ private struct ScratchpadPlaceholderSheet: View {
     }
 }
 
-/// UIActivityViewController for the exported PDF (print lives in it too).
-struct ShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+/// The exported PDF: a preview line and SwiftUI's ShareLink, whose share
+/// sheet carries Print and Save to Files.
+private struct ExportSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let url: URL
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: PP.Space.s4) {
+                Text(url.lastPathComponent).ppTitle()
+                Text("US Letter, light, one entry per block — the same sheet the website prints.")
+                    .font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.textMuted)
+                ShareLink(item: url, preview: SharePreview(url.lastPathComponent, image: Image(systemName: "doc.richtext"))) {
+                    Label("Share, print or save", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(PPPrimaryButtonStyle())
+                Spacer()
+            }
+            .padding(PP.Space.s5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(PP.bg.ignoresSafeArea())
+            .navigationTitle("PDF ready")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+        .presentationBackground(PP.bg)
+        .presentationDetents([.medium])
+        .tint(PP.accentInk)
     }
-    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
