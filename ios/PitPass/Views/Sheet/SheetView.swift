@@ -52,6 +52,9 @@ struct SheetView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { ConnectivityPill() }
             ToolbarItem(placement: .topBarTrailing) {
+                if sheet.value != nil { DownloadButton(target: .event(eventId), noun: "event") }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 if let sheet = sheet.value {
                     Button {
                         Task { await export(sheet) }
@@ -367,8 +370,8 @@ private struct EntryRows: View {
             case .champ:
                 Text(entry.championship ?? "").font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.text).multilineTextAlignment(.center)
             case .photo:
-                if let v = entry.imageVersion {
-                    CachedImage(path: "/api/entries/\(entry.entryId)/image?variant=sheet&v=\(v)", contentMode: .fit)
+                if let path = entry.imagePath {
+                    CachedImage(path: path, contentMode: .fit)
                         .frame(height: 44)
                 } else {
                     Color.clear.frame(height: 1)
@@ -468,10 +471,9 @@ private struct ManufacturerMark: View {
         }
         .frame(maxHeight: 28)
         .task(id: entry.manufacturerLogoVersion) {
-            guard !tried, let v = entry.manufacturerLogoVersion, let name = entry.manufacturer else { return }
+            guard !tried, let path = entry.manufacturerLogoPath else { return }
             tried = true
-            let encoded = name.lowercased().addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name.lowercased()
-            if let data = await session.loader.bytes("/api/manufacturer-logos/\(encoded)/data?v=\(v)"), let decoded = ImageDecoding.decode(data) {
+            if let data = await session.loader.bytes(path), let decoded = ImageDecoding.decode(data) {
                 image = decoded
             }
         }

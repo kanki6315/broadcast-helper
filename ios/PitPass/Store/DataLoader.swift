@@ -6,6 +6,17 @@ struct Loaded<T: Sendable>: Sendable {
     /// When the server last confirmed this content (a fresh 200 or a 304).
     let fetchedAt: Date
     let fromCache: Bool
+    /// Identity of the stored bytes behind `value`, so a view can tell that
+    /// the store moved on underneath it (a download refreshed the document)
+    /// even when the server answers its own revalidation with a 304.
+    let digest: Int
+
+    init(value: T, fetchedAt: Date, fromCache: Bool, body: Data) {
+        self.value = value
+        self.fetchedAt = fetchedAt
+        self.fromCache = fromCache
+        digest = body.hashValue
+    }
 }
 
 enum LoadError: Error, LocalizedError {
@@ -39,7 +50,7 @@ struct DataLoader: Sendable {
     func cached<T: Decodable & Sendable>(_ path: String, as type: T.Type = T.self) async -> Loaded<T>? {
         guard let entry = await store.load(path),
               let value: T = try? client.decode(entry.body) else { return nil }
-        return Loaded(value: value, fetchedAt: entry.fetchedAt, fromCache: true)
+        return Loaded(value: value, fetchedAt: entry.fetchedAt, fromCache: true, body: entry.body)
     }
 
     /// Ask the server, storing what comes back. A 304 refreshes the stamp only.
@@ -54,12 +65,12 @@ struct DataLoader: Sendable {
                 return try await refreshUnconditionally(path, as: type)
             }
             await store.touch(path, at: now)
-            return .unchanged(Loaded(value: value, fetchedAt: now, fromCache: false))
+            return .unchanged(Loaded(value: value, fetchedAt: now, fromCache: false, body: entry.body))
         case let .ok(data, etag):
             let value: T = try client.decode(data)
             let same = entry?.body == data
             await store.save(path, etag: etag, body: data, at: now)
-            let loaded = Loaded(value: value, fetchedAt: now, fromCache: false)
+            let loaded = Loaded(value: value, fetchedAt: now, fromCache: false, body: data)
             return same ? .unchanged(loaded) : .updated(loaded)
         }
     }
@@ -70,7 +81,32 @@ struct DataLoader: Sendable {
         }
         let value: T = try client.decode(data)
         await store.save(path, etag: etag, body: data)
-        return .updated(Loaded(value: value, fetchedAt: .now, fromCache: false))
+        return .updated(Loaded(value: value, fetchedAt: .now, fromCache: false, body: data))
+    }
+
+    // MARK: prefetch (Download this event / season)
+
+    /// Bring a JSON document up to date in the store without decoding it —
+    /// the conditional GET of `refresh`, for documents no view is looking at.
+    /// A 304 only moves the freshness stamp.
+    func prefetchDocument(_ path: String) async throws(APIError) {
+        let entry = await store.load(path)
+        switch try await client.get(path, ifNoneMatch: entry?.etag) {
+        case .notModified:
+            await store.touch(path)
+        case let .ok(data, etag):
+            await store.save(path, etag: etag, body: data)
+        }
+    }
+
+    /// Make sure an immutable binary is stored (see `bytes`); nothing is
+    /// fetched when it already is.
+    func ensureBytes(_ path: String) async throws(APIError) {
+        if await store.contains(path) { return }
+        guard case let .ok(data, etag) = try await client.get(path) else {
+            throw APIError.decoding("unconditional GET answered 304")
+        }
+        await store.save(path, etag: etag, body: data)
     }
 
     /// Cache-first bytes for immutable binaries (logos and photos carry a

@@ -40,6 +40,9 @@ struct SeasonView: View {
         .toolbarBackground(PP.bg, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { ConnectivityPill() }
+            ToolbarItem(placement: .topBarTrailing) {
+                if model.hub.value != nil { DownloadButton(target: .season(model.seasonId), noun: "season") }
+            }
         }
         .task(id: model.seasonId) { await model.load(session) }
         .refreshable { await model.load(session) }

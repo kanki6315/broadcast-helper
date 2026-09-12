@@ -46,6 +46,17 @@ struct SheetEntry: Codable, Sendable, Hashable, Identifiable {
 
     var id: Int { entryId }
     func races(round: Int) -> [FormRace] { form[String(round)] ?? [] }
+
+    /// The sheet-size car photo, version-stamped (immutable once stored).
+    var imagePath: String? { imageVersion.map { "/api/entries/\(entryId)/image?variant=sheet&v=\($0)" } }
+
+    /// The manufacturer mark, keyed by lower-cased name like the website.
+    var manufacturerLogoPath: String? {
+        guard let manufacturerLogoVersion, let manufacturer else { return nil }
+        let name = manufacturer.lowercased()
+        let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name
+        return "/api/manufacturer-logos/\(encoded)/data?v=\(manufacturerLogoVersion)"
+    }
 }
 
 struct SheetClass: Codable, Sendable, Hashable, Identifiable {

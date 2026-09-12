@@ -17,15 +17,15 @@ staleness problem, which is the class of bug being escaped.
 | 1. Sign-in, offline store, series directory | done | Device-token login, SQLite read-through store, the card grid |
 | 2. Season pages | done | Overview strip + recap, Schedule, Standings, Stats, Results, Entries, Photos |
 | 3. Event sheet | done | Sheet, team-sheets and storylines PDFs, Recap overlay, Pit lane with GPS guidance, Print / Save PDF |
-| 4. Download this event | next | Prefetch manifest per event/season with progress |
-| 5. PencilKit scratchpad | planned | Same stroke wire format as the web pad, offline replay, conflict handling |
+| 4. Download this event / season | done | Prefetch manifests with progress, "Downloaded · Xm" per screen, Settings list |
+| 5. PencilKit scratchpad | next | Same stroke wire format as the web pad, offline replay, conflict handling |
 | 6. Retire the service worker | planned | One deploy with `selfDestroying: true`, then remove `vite-plugin-pwa` |
 
 Known gaps: driver/team info modals (the website's ⌘K and name links) — names
 are plain text; grid headers don't pin to the viewport while scrolling; the
 website's sheet page stays until the app's PDF export has been compared with
 one real weekend's export. The PWA service worker stays on the website until
-slices 4 and 5 land, so race weekends in between still have offline reading.
+slice 5 lands, so race weekends in between still have the web scratchpad.
 
 ## Layout
 
@@ -38,7 +38,8 @@ ios/
     Net/        APIClient (bearer, conditional GET, JSON), Connectivity (heartbeat pill),
                 Freshness ("cached Xm" per screen), LocationWatcher (Core Location stream)
     Store/      OfflineStore (SQLite), DataLoader (read-through), Resource (view-facing
-                document), ImageDecoding (UIImage, SVG via SwiftDraw)
+                document), Downloads (the prefetch manifests, job and manager),
+                ImageDecoding (UIImage, SVG via SwiftDraw)
     Model/      Codable wire shapes — mirror frontend/src/lib/api.ts, same field names
                 (Models, SeasonModels, SheetModels)
     Season/     SeasonModel (hub, classes, championship selection, recap cache),
@@ -47,11 +48,12 @@ ios/
     Design/     Theme (DESIGN.md tokens as `PP.*`), BrandMark (the SVG mark as a Shape),
                 FlowLayout (flex-wrap)
     Views/      RootView, HomeView, SignInView, SettingsView, TopBar, StatusViews,
-                SeriesDirectoryView
+                SeriesDirectoryView, DownloadButton
       Season/   SeasonView shell + one file per tab, GridTable, SeasonWidgets
       Sheet/    SheetView, PdfViewerSheet, PitLaneSheet, RecapSheet, SheetPrint
     Resources/  Assets.xcassets (AppIcon, AccentColor #f0b84a), Fonts (Inter, JetBrains Mono)
-  PitPassTests/ Swift Testing — OfflineStore, DataLoader (scripted transport), PitLaneGeo
+  PitPassTests/ Swift Testing — OfflineStore, DataLoader (scripted transport), Downloads
+                (plan + job over a path-routed transport), PitLaneGeo
 ```
 
 Swift 6 with strict concurrency, iOS 18+, iPad only (`TARGETED_DEVICE_FAMILY
@@ -160,9 +162,44 @@ port of `lib/connectivity.ts` (HEAD `/api/me` every 30s, slow > 2.5s,
 launch with the backend down paints the whole directory from the store with
 the Offline pill.
 
-Where the app will differ from the SW on purpose: slice 4's "Download this
-event" prefetches a known manifest so pages never opened still work offline,
-which the SW could not do.
+### Download this event / season
+
+Where the app differs from the SW on purpose: the SW only ever cached what
+had been visited. `Store/Downloads.swift` knows which documents each screen
+reads and fetches the whole manifest up front, so a sheet's PDFs, its pit
+lane, the recap behind its FAB, or a season page nobody opened yet still
+work offline.
+
+- **Event** (the sheet's toolbar): the sheet, pit-lane assignments, the
+  team-sheets and storylines PDFs, every car photo and manufacturer mark,
+  the event's results and race control, and the recap's prerequisites (hub,
+  class styles, the seasons list, every championship grid with rows).
+- **Season** (the season's toolbar): hub, reference + lineups, the four stats
+  tables, every round's results and race control, every recap, the photo
+  index and the sheet-size photos.
+
+`DownloadPlan` derives the paths from the payloads (pure, unit-tested — the
+same strings the views build, so a download and a visit store the same
+rows). `PrefetchJob` runs four fetches at a time through `DataLoader`:
+JSON is a conditional GET (`prefetchDocument`, 304s cost nothing), binaries
+are fetched only when absent (`ensureBytes`), so re-running a download is
+cheap. A 404 or an undecodable body counts as *missing* and the bundle
+carries on; a dropped connection or a revoked sign-in ends it (what's stored
+stays — it is all valid). `DownloadManager` (on `AppSession`, so a job
+outlives its screen) holds the in-flight progress and the completed records;
+`download_record` in SQLite remembers title, time, document count, bytes and
+missing count so "Downloaded · 2h" survives a relaunch. `DownloadButton` is
+the toolbar control: Download → ring + "12 of 40" (tap stops) →
+"Downloaded · Xm" (tap refreshes) → "Download failed" (tap retries); the
+schedule marks downloaded rounds and Settings lists every bundle. A
+background task keeps the job alive for a while if the person switches to
+Safari mid-download.
+
+One rule fell out of this: `Loaded.digest` identifies the stored bytes. A
+`Resource` that adopted v1 while a download stored v2 gets a **304** on its
+own revalidation (the store's ETag is v2's), so it compares digests and
+surfaces v2 as the usual "Newer data" nudge instead of concluding
+"unchanged".
 
 ## Design (the website's system, natively)
 
@@ -190,6 +227,7 @@ Component parity with the web CSS, so a screen reads the same on both:
 | `.round-chip`, `.session-notes`, `.race-control`, starting-grid modal | ResultsView's pieces |
 | `.login-screen` / `.login-button` / `.btn` | `SignInView`, `PPPrimaryButtonStyle`, `PPSecondaryButtonStyle`, `PPQuietButtonStyle` |
 | `.update-banner.data-nudge` | `UpdateNudge` |
+| — (the SW had no equivalent) | `DownloadButton` (toolbar), download marks on Schedule rows, the Settings list |
 | `.error-panel` / `.empty-state` / `.skeleton` | `ErrorPanel`, `EmptyState`, `SkeletonBlock`, `SkeletonLines` |
 | `flex-wrap: wrap` chip rows | `FlowLayout` (the web clips the earlier-seasons row; the app wraps it) |
 | `.sheet-*` / `.form-strip` / `.sheet-fabs` | `SheetView`, `StripRace`, `FabButtonStyle` |

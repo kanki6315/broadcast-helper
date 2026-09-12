@@ -1314,9 +1314,19 @@ design and the sign-in flow in **docs/IOS.md**.
   the ported lane geometry, unit-tested), and manufacturer SVGs render via
   SwiftDraw. Not yet: editing prior-year notes (website). The website's sheet
   page stays until the PDF has been checked against a real weekend's export.
-- **Slice 4 — "Download this event"**: an explicit prefetch manifest per
-  event/season with progress, so pages never opened still work offline (the
-  SW only ever cached what had been visited).
+- **Slice 4 — "Download this event / season" — ✅ DONE (2026-09-12).**
+  `Store/Downloads.swift`: `DownloadPlan` derives each bundle's paths from
+  the payloads (event: sheet, pit lane, both PDFs, photos, marks, results +
+  race control, the recap's hub/styles/grids; season: every page, every
+  round's results + race control, every recap, the photos), `PrefetchJob`
+  fetches four at a time through `DataLoader` (conditional GETs for JSON,
+  absent-only for binaries; 404s count as missing, a dropped connection ends
+  the job), `DownloadManager` on `AppSession` keeps progress + the persisted
+  `download_record` rows. `DownloadButton` in the sheet and season toolbars
+  (Download → ring "12 of 40" → "Downloaded · Xm" → failed/retry), downloaded
+  marks on Schedule rows, the bundle list in Settings. `Loaded.digest` lets a
+  `Resource` notice a download replaced its document behind a 304. Unit
+  tests cover the plan and the job over a path-routed transport.
 - **Slice 5 — PencilKit scratchpad**, keeping the stroke JSON wire format
   (`{tool,color,size,points}`, 800-wide logical space, revision-guarded PUT)
   so the desktop web pad still reads iPad ink; port the dirty/conflict/backup
@@ -1325,8 +1335,8 @@ design and the sign-in flow in **docs/IOS.md**.
 - **Slice 6 — retire the service worker**: remove `vite-plugin-pwa`,
   `browserTabReads.ts`, DataNudge/ConnectivityPill/InstallHint/StoragePage;
   ship ONE deploy with `selfDestroying: true` first so installed iPads let go
-  of the old worker (they keep it forever otherwise). Not before slices 3–4
-  exist — race weekends in between still need offline reading.
+  of the old worker (they keep it forever otherwise). Not before slice 5
+  exists — race weekends in between still need the web scratchpad.
 - **Parity rule:** every web slice that changes a payload an iPad surface
   reads updates `ios/PitPass/Model` + the view in the same slice.
 
