@@ -142,6 +142,19 @@ those users next sign in; `TRUNCATE spring_session` clears them if that matters
 > Enabling auth requires the Google client id/secret to be present, or startup
 > fails. Set all three vars together.
 
+
+### The iPad app
+
+The native app (`docs/IOS.md`) signs in through the same Google client and
+roster, then holds a long-lived **device token** (V45 `device_token`) instead
+of a session cookie. Nothing to configure: the redirect URI is unchanged, the
+`pitpass://` hop happens after Google returns, and the token is minted from the
+one-time code the login hands the app. Linked iPads are listed under
+**Manage → Sessions → Linked devices**, where an admin can unlink one;
+removing someone from Manage → Users cuts their devices off on the next
+request like their sessions. The app defaults to the production URL, so a
+fresh install on any iPad works as soon as the email is on the roster.
+
 ## Team sharing
 
 Implemented as **account-based view access**: add a teammate's Google account as

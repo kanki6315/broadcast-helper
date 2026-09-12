@@ -1312,8 +1312,8 @@ design and the sign-in flow in **docs/IOS.md**.
   and hands it to the share sheet (Print, Save to Files). GPS walk-to-box
   guidance and admin anchor capture ship in the same slice (Core Location +
   the ported lane geometry, unit-tested), and manufacturer SVGs render via
-  SwiftDraw. Not yet: editing prior-year notes (website). The website's sheet page stays until the PDF
-  has been checked against a real weekend's export.
+  SwiftDraw. Not yet: editing prior-year notes (website). The website's sheet
+  page stays until the PDF has been checked against a real weekend's export.
 - **Slice 4 — "Download this event"**: an explicit prefetch manifest per
   event/season with progress, so pages never opened still work offline (the
   SW only ever cached what had been visited).

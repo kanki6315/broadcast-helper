@@ -17,8 +17,13 @@ race a weekend runs (sprint vs main, heat vs feature) — together with the
 **grid-driver attribution** that makes a pole count for the driver who actually
 set the lap. **Multi-user access** landed 2026-07-19 — Google sign-in with
 admin/viewer roles managed from Manage → Users. Phase 4 (single-container
-hosting + Google login) is code-complete pending deploy. See [PLAN.md](PLAN.md)
-for the full plan, domain model, and phase roadmap.
+hosting + Google login) is code-complete pending deploy. A **native iPad app**
+(`ios/`, SwiftUI) started 2026-09-12 to replace the installed PWA as the
+trackside surface: sign-in with device tokens, an offline store, the series
+directory, every season page and the event sheet with PDF export and pit-lane
+GPS guidance are in; "Download this event" and the Pencil scratchpad follow
+([docs/IOS.md](docs/IOS.md)). See [PLAN.md](PLAN.md) for the full plan, domain
+model, and phase roadmap.
 
 ## What it does today
 
@@ -96,8 +101,12 @@ for the full plan, domain model, and phase roadmap.
 - **PDF parsers** — Python sidecars (`parser/`), invoked by the backend to turn
   entry-list PDFs (`parser/SCHEMA.md`) and championship-points PDFs
   (`parser/POINTS_SCHEMA.md`) into JSON
+- **iPad app** — Swift 6 / SwiftUI, XcodeGen project (`ios/`), one package
+  (SwiftDraw). Sign-in, offline store, design parity, sheet + PDF, pit-lane
+  guidance: `docs/IOS.md`
 - **PWA** — installable, with read-only offline caching via a service worker
-  (`vite-plugin-pwa`). Architecture, cache strategy, and gotchas: `docs/PWA.md`
+  (`vite-plugin-pwa`); being superseded by the iPad app and slated for removal
+  once the app covers offline reading. Architecture and gotchas: `docs/PWA.md`
 
 ## Running locally
 
@@ -140,6 +149,7 @@ frontend/   React UI (Vite)
               src/index.css            design tokens (see DESIGN.md)
               src/pages/season/        the season hub + its sub-pages
               src/pages/SheetPage.tsx  the print-first pit-lane sheet
+ios/        native iPad app (SwiftUI): project.yml + PitPass/ + PitPassTests/
 parser/     Python PDF -> JSON sidecars: entry lists (SCHEMA.md) and
               championship points (POINTS_SCHEMA.md)
 docker-compose.yml
@@ -149,4 +159,5 @@ DESIGN.md   the visual system: tokens, components, named rules
 docs/
   DEPLOY.md deploying to Railway (build, env, auth, backfills)
   PWA.md    installable app + offline: service worker, caches, update flow
+  IOS.md    the iPad app: layout, build, device-token sign-in, offline store, design parity
 ```

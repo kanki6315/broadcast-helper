@@ -1,5 +1,15 @@
 # PWA support (installable app + offline reading, offline scratchpad ink)
 
+> **Being superseded (2026-09-12).** The service worker proved flaky in the
+> field, so the trackside surface is moving to a native iPad app
+> (`docs/IOS.md`) that owns offline storage and, next, the scratchpad. The
+> worker stays deployed until the app covers offline reading for a whole
+> weekend ("Download this event") and the pad. Retirement is one deploy with
+> `selfDestroying: true` in `vite.config.ts` — installed iPads keep the last
+> worker forever otherwise — followed by removing `vite-plugin-pwa`,
+> `lib/browserTabReads.ts`, DataNudge, ConnectivityPill, InstallHint and the
+> Diagnostics page. Everything below describes the worker as it still runs.
+
 Pit Pass is an installable Progressive Web App. On iPad/desktop it can be added
 to the home screen and runs standalone, and it keeps working **for reading**
 when the network drops — the trackside/travel case. General offline writes are
