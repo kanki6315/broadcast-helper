@@ -138,6 +138,7 @@ struct SeriesGroup: Identifiable {
     let seriesId: Int?
     let abbreviation: String?
     let logoVersion: Int?
+    var logoUrl: String? = nil
     var latest: SeasonSummary
     var past: [SeasonSummary]
     /// Qualifying stages, badged separately — never the card's current season.
@@ -146,6 +147,7 @@ struct SeriesGroup: Identifiable {
     var id: String { name }
 
     var logoPath: String? {
+        if let logoUrl { return logoUrl }
         guard let seriesId, let logoVersion else { return nil }
         return "/api/series/\(seriesId)/logo/data?v=\(logoVersion)"
     }
@@ -174,6 +176,7 @@ struct SeriesGroup: Identifiable {
                 byName[s.seriesName] = SeriesGroup(name: s.seriesName, seriesId: info?.id,
                                                    abbreviation: info?.abbreviation,
                                                    logoVersion: info?.logoVersion,
+                                                   logoUrl: info?.logoUrl,
                                                    latest: s, past: [], qualifiers: [])
                 order.append(s.seriesName)
                 if !s.isQualifier { continue }

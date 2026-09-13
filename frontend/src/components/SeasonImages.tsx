@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useIsAdmin } from '../lib/auth'
+import { imageRequest, uploadCarImage, type ImageMatch } from '../lib/carImageUpload'
 
 interface ImageSummary {
   id: number
   carNumber: string
   sourceFilename: string | null
   uploadedAt: string
+  imageUrl: string
+  originalUrl: string
+  publicStorage: boolean
 }
 
 interface MissingCar {
@@ -16,9 +20,10 @@ interface MissingCar {
 
 interface BulkResult {
   filename: string
-  status: 'MATCHED' | 'REPLACED' | 'UNMATCHED' | 'AMBIGUOUS'
+  status: 'MATCHED' | 'REPLACED' | 'UNMATCHED' | 'AMBIGUOUS' | 'FAILED'
   carNumber: string | null
   candidates: string[]
+  message?: string
 }
 
 /** Per-season car-image management, embedded in the season hub. */
@@ -30,6 +35,8 @@ export default function SeasonImages({ seasonId }: { seasonId: number }) {
   const [assignments, setAssignments] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState('')
+  const [directUpload, setDirectUpload] = useState(false)
   // Original File objects by name, so unmatched files can be assigned manually
   // without re-selecting them.
   const pendingFiles = useRef<Map<string, File>>(new Map())
@@ -46,24 +53,59 @@ export default function SeasonImages({ seasonId }: { seasonId: number }) {
 
   useEffect(() => {
     void loadOverview()
+    void imageRequest<{ directUpload: boolean }>('/api/car-images/uploads/config')
+      .then((config) => setDirectUpload(config.directUpload)).catch(() => setDirectUpload(false))
   }, [loadOverview])
 
   async function uploadFiles(files: FileList) {
     setBusy(true)
     setError(null)
-    pendingFiles.current = new Map(Array.from(files).map((f) => [f.name, f]))
-    const form = new FormData()
-    for (const f of Array.from(files)) form.append('files', f)
-    const res = await fetch(`/api/car-images/bulk?seasonId=${seasonId}`, { method: 'POST', body: form })
-    if (!res.ok) {
-      const body = await res.json().catch(() => null)
-      setError(body?.message ?? `Upload failed (${res.status})`)
-    } else {
-      setResults(await res.json())
+    setResults([])
+    const selected = Array.from(files)
+    pendingFiles.current = new Map(selected.map((f) => [f.name, f]))
+    try {
+      const config = await imageRequest<{ directUpload: boolean }>('/api/car-images/uploads/config')
+      if (config.directUpload) {
+        const matches = await imageRequest<ImageMatch[]>('/api/car-images/uploads/match', {
+          seasonId, filenames: selected.map((file) => file.name),
+        })
+        for (let i = 0; i < selected.length; i++) {
+          const file = selected[i]
+          const match = matches[i]
+          let result: BulkResult
+          if (!match.carNumber) {
+            result = match
+          } else {
+            try {
+              const saved = await uploadCarImage(seasonId, match.carNumber, file, setProgress)
+              result = { ...match, status: saved.replaced ? 'REPLACED' : 'MATCHED' }
+              pendingFiles.current.delete(file.name)
+            } catch (e) {
+              result = { ...match, status: 'FAILED', message: e instanceof Error ? e.message : 'Upload failed.' }
+              setAssignments((a) => ({ ...a, [file.name]: match.carNumber! }))
+            }
+          }
+          setResults((rs) => [...rs, result])
+        }
+      } else {
+        setProgress('Uploading photos…')
+        const form = new FormData()
+        for (const file of selected) form.append('files', file)
+        const response = await fetch(`/api/car-images/bulk?seasonId=${seasonId}`, { method: 'POST', body: form })
+        if (!response.ok) {
+          const body = await response.json().catch(() => null)
+          throw new Error(body?.message ?? `Upload failed (${response.status})`)
+        }
+        setResults(await response.json())
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Upload failed.')
+    } finally {
+      if (fileInput.current) fileInput.current.value = ''
+      setBusy(false)
+      setProgress('')
+      await loadOverview().catch(() => setError('Could not refresh photos. Reload the page.'))
     }
-    if (fileInput.current) fileInput.current.value = ''
-    await loadOverview()
-    setBusy(false)
   }
 
   async function assign(filename: string) {
@@ -71,26 +113,62 @@ export default function SeasonImages({ seasonId }: { seasonId: number }) {
     const file = pendingFiles.current.get(filename)
     if (!number || !file) return
     setBusy(true)
-    const form = new FormData()
-    form.append('file', file)
-    const res = await fetch(
-      `/api/car-images?seasonId=${seasonId}&carNumber=${encodeURIComponent(number)}`,
-      { method: 'POST', body: form },
-    )
-    if (!res.ok) {
-      const body = await res.json().catch(() => null)
-      setError(body?.message ?? `Assign failed (${res.status})`)
-    } else {
-      setError(null)
-      setResults((rs) =>
-        rs.map((r) => (r.filename === filename ? { ...r, status: 'MATCHED', carNumber: number } : r)),
-      )
+    setError(null)
+    try {
+      const config = await imageRequest<{ directUpload: boolean }>('/api/car-images/uploads/config')
+      if (config.directUpload) {
+        await uploadCarImage(seasonId, number, file, setProgress)
+      } else {
+        const form = new FormData()
+        form.append('file', file)
+        const response = await fetch(`/api/car-images?seasonId=${seasonId}&carNumber=${encodeURIComponent(number)}`,
+          { method: 'POST', body: form })
+        if (!response.ok) {
+          const body = await response.json().catch(() => null)
+          throw new Error(body?.message ?? `Assign failed (${response.status})`)
+        }
+      }
+      pendingFiles.current.delete(filename)
+      setResults((rs) => rs.map((r) => r.filename === filename ? { ...r, status: 'MATCHED', carNumber: number, message: undefined } : r))
       await loadOverview()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Upload failed.')
+    } finally {
+      setBusy(false)
+      setProgress('')
     }
-    setBusy(false)
   }
 
-  const needsAttention = results.filter((r) => r.status === 'UNMATCHED' || r.status === 'AMBIGUOUS')
+  async function migratePhotos() {
+    setBusy(true)
+    setError(null)
+    const failures: string[] = []
+    try {
+      // One original at a time. The API serves bytes only during this one-off move;
+      // decoding, WebP encoding, and PUTs all happen on this device.
+      for (const img of images.filter((image) => !image.publicStorage)) {
+        try {
+          setProgress(`Reading photo for car #${img.carNumber}…`)
+          const response = await fetch(img.originalUrl, { signal: AbortSignal.timeout(120_000) })
+          if (!response.ok) throw new Error(`Could not read the original (${response.status}).`)
+          const original = await response.blob()
+          const file = new File([original], img.sourceFilename ?? `${img.carNumber}.jpg`, { type: original.type })
+          await uploadCarImage(seasonId, img.carNumber, file, setProgress, {
+            migrationImageId: img.id, sourceUploadedAt: img.uploadedAt,
+          })
+        } catch (e) {
+          failures.push(`#${img.carNumber}: ${e instanceof Error ? e.message : 'Could not move photo.'}`)
+        }
+      }
+      if (failures.length) setError(failures.join(' '))
+    } finally {
+      setBusy(false)
+      setProgress('')
+      await loadOverview().catch(() => setError('Could not refresh photos. Reload the page.'))
+    }
+  }
+
+  const needsAttention = results.filter((r) => r.status === 'UNMATCHED' || r.status === 'AMBIGUOUS' || r.status === 'FAILED')
 
   return (
     <div>
@@ -115,6 +193,13 @@ export default function SeasonImages({ seasonId }: { seasonId: number }) {
         </>
       )}
 
+      {isAdmin && directUpload && images.some((image) => !image.publicStorage) && (
+        <div className="series-form">
+          <button disabled={busy} onClick={() => void migratePhotos()}>Move existing photos to public storage</button>
+          <span>Photos are processed one at a time. Keep this page open until finished.</span>
+        </div>
+      )}
+      {busy && <p role="status">{progress || 'Preparing photos…'}</p>}
       {error && <p className="error">{error}</p>}
 
       {needsAttention.length > 0 && (
@@ -133,7 +218,7 @@ export default function SeasonImages({ seasonId }: { seasonId: number }) {
                 <tr key={r.filename}>
                   <td>{r.filename}</td>
                   <td>
-                    {r.status === 'AMBIGUOUS'
+                    {r.status === 'FAILED' ? r.message : r.status === 'AMBIGUOUS'
                       ? `Matches several cars: ${r.candidates.join(', ')}`
                       : 'No known car number in filename'}
                   </td>
@@ -145,7 +230,7 @@ export default function SeasonImages({ seasonId }: { seasonId: number }) {
                         placeholder="e.g. 023"
                       />
                       <button disabled={busy} onClick={() => assign(r.filename)}>
-                        Assign
+                        {r.status === 'FAILED' ? 'Retry' : 'Assign'}
                       </button>
                     </div>
                   </td>
@@ -171,7 +256,7 @@ export default function SeasonImages({ seasonId }: { seasonId: number }) {
         {images.map((img) => (
           <figure key={img.id} className="car-image">
             <img
-              src={`/api/car-images/${img.id}/data?variant=sheet&v=${Date.parse(img.uploadedAt)}`}
+              src={img.imageUrl}
               alt={`Car ${img.carNumber}`}
               loading="lazy"
             />

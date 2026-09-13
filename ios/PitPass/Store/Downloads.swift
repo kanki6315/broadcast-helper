@@ -92,7 +92,7 @@ enum DownloadPlan {
 
     /// The sheet-size variant PhotosView shows.
     static func photoAssets(_ overview: CarImagesOverview) -> [Fetch] {
-        overview.images.map { .binary("/api/car-images/\($0.id)/data?variant=sheet&v=\($0.uploadedAt)") }
+        overview.images.map { .binary($0.imagePath) }
     }
 
     private static func recaps(_ hub: SeasonHub) -> [Fetch] {

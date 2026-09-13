@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { imageRequest } from '../lib/carImageUpload'
+import { uploadLogo as uploadPublicLogo, migrateLogos } from '../lib/logoUpload'
 import TeamAssignmentEditor from '../components/TeamAssignmentEditor'
 import { invalidateAllRecaps, invalidateRecap } from './season/ChampionshipGrid'
 
@@ -9,6 +11,8 @@ interface Series {
   primaryKind: string | null
   aliases: string[]
   logoVersion: number | null
+  logoUrl: string | null
+  publicLogoStorage: boolean
 }
 
 interface ClassStyle {
@@ -160,7 +164,7 @@ export default function SeriesPage() {
               >
                 <span className="series-directory-mark" aria-hidden="true">
                   {item.logoVersion != null ? (
-                    <img src={`/api/series/${item.id}/logo/data?v=${item.logoVersion}`} alt="" />
+                    <img src={item.logoUrl!} alt="" />
                   ) : (
                     <span>{seriesInitials(item)}</span>
                   )}
@@ -256,7 +260,7 @@ function SeriesManagementDialog({
           <div className="series-dialog-title">
             <span className="series-dialog-mark" aria-hidden="true">
               {series.logoVersion != null ? (
-                <img src={`/api/series/${series.id}/logo/data?v=${series.logoVersion}`} alt="" />
+                <img src={series.logoUrl!} alt="" />
               ) : <span>{seriesInitials(series)}</span>}
             </span>
             <div>
@@ -339,6 +343,13 @@ function SeriesIdentityEditor({ series, onError, onRefresh }: {
   const [name, setName] = useState(series.name)
   const [abbreviation, setAbbreviation] = useState(series.abbreviation ?? '')
   const [saving, setSaving] = useState(false)
+  const [logoBusy, setLogoBusy] = useState(false)
+  const [logoProgress, setLogoProgress] = useState('')
+  const [directUpload, setDirectUpload] = useState(false)
+  useEffect(() => {
+    void imageRequest<{ directUpload: boolean }>('/api/car-images/uploads/config')
+      .then((c) => setDirectUpload(c.directUpload)).catch(() => {})
+  }, [])
 
   async function save(event: FormEvent) {
     event.preventDefault()
@@ -359,13 +370,17 @@ function SeriesIdentityEditor({ series, onError, onRefresh }: {
   }
 
   async function uploadLogo(file: File) {
-    const form = new FormData(); form.append('file', file)
-    const response = await fetch(`/api/series/${series.id}/logo`, { method: 'POST', body: form })
-    if (!response.ok) {
-      const body = await response.json().catch(() => null)
-      onError(body?.message ?? `Logo upload failed (${response.status})`); return
-    }
-    onError(null); await onRefresh()
+    setLogoBusy(true); onError(null)
+    try { await uploadPublicLogo('SERIES', String(series.id), file, setLogoProgress); await onRefresh() }
+    catch (e) { onError(e instanceof Error ? e.message : 'Logo upload failed.') }
+    finally { setLogoBusy(false); setLogoProgress('') }
+  }
+
+  async function migrateLogo() {
+    setLogoBusy(true); onError(null)
+    try { await migrateLogos('SERIES', setLogoProgress, String(series.id)); await onRefresh() }
+    catch (e) { onError(e instanceof Error ? e.message : 'Could not move logo.') }
+    finally { setLogoBusy(false); setLogoProgress('') }
   }
 
   async function removeLogo() {
@@ -382,11 +397,13 @@ function SeriesIdentityEditor({ series, onError, onRefresh }: {
         <div className="series-logo-field">
           <span>Series image</span>
           <div className="series-logo-preview">
-            {series.logoVersion != null ? <img src={`/api/series/${series.id}/logo/data?v=${series.logoVersion}`} alt={`${series.name} logo`} /> : <span className="muted">No image uploaded</span>}
+            {series.logoVersion != null ? <img src={series.logoUrl!} alt={`${series.name} logo`} /> : <span className="muted">No image uploaded</span>}
           </div>
+          {logoBusy && <p role="status">{logoProgress || 'Preparing logo…'}</p>}
           <div className="series-logo-actions">
-            <label className="series-logo-upload">{series.logoVersion != null ? 'Replace image' : 'Upload image'}<input type="file" accept="image/*,.svg" onChange={(e) => e.target.files?.[0] && void uploadLogo(e.target.files[0])} /></label>
-            {series.logoVersion != null && <button type="button" onClick={() => void removeLogo()}>Remove</button>}
+            {directUpload && series.logoVersion != null && !series.publicLogoStorage && <button type="button" disabled={logoBusy} onClick={() => void migrateLogo()}>Move logo to public storage</button>}
+            <label className="series-logo-upload">{series.logoVersion != null ? 'Replace image' : 'Upload image'}<input type="file" disabled={logoBusy} accept="image/*,.svg" onChange={(e) => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; if (file) void uploadLogo(file) }} /></label>
+            {series.logoVersion != null && <button type="button" disabled={logoBusy} onClick={() => void removeLogo()}>Remove</button>}
           </div>
         </div>
         <div className="series-form-actions"><button className="btn btn-primary" type="submit" disabled={saving || !name.trim()}>{saving ? 'Saving…' : 'Save changes'}</button></div>

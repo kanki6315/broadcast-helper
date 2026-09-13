@@ -1,6 +1,7 @@
 package com.pitpass.browse;
 
 import org.springframework.http.HttpStatus;
+import com.pitpass.images.CarImageUrls;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,8 +22,11 @@ public class BrowseController {
 
     private final JdbcClient db;
 
-    public BrowseController(JdbcClient db) {
+    private final CarImageUrls imageUrls;
+
+    public BrowseController(JdbcClient db, CarImageUrls imageUrls) {
         this.db = db;
+        this.imageUrls = imageUrls;
     }
 
     public record EventSummary(long id, String name, String circuitName, LocalDate eventDate,
@@ -54,7 +58,7 @@ public class BrowseController {
     public record EventEntry(long entryId, String carNumber, String className, String classGroup, String teamName,
                              String vehicle, String manufacturer, boolean isGuest, String drivers,
                              Integer racePositionOverall, Integer racePositionInClass, String raceStatus,
-                             Long imageVersion) {
+                             Long imageVersion, String imageUrl) {
     }
 
     public record EventSession(long id, String sessionType, String name, int ordinal,
@@ -95,7 +99,7 @@ public class BrowseController {
                                 FROM driver_assignment da LEFT JOIN driver d ON d.id = da.driver_id
                                 WHERE da.entry_id = en.id)                                      AS drivers,
                                r.position_overall, r.position_in_class, r.status,
-                               ci.uploaded_at AS image_uploaded_at
+                               ci.uploaded_at AS image_uploaded_at, ci.sheet_object_key
                         FROM entry en
                                  JOIN event ev ON ev.id = en.event_id
                                  LEFT JOIN car_image ci ON ci.season_id = ev.season_id
@@ -117,7 +121,8 @@ public class BrowseController {
                             rs.getString("vehicle"), rs.getString("manufacturer"), rs.getBoolean("is_guest"),
                             rs.getString("drivers"), (Integer) rs.getObject("position_overall"),
                             (Integer) rs.getObject("position_in_class"), rs.getString("status"),
-                            imageUploadedAt != null ? imageUploadedAt.toInstant().toEpochMilli() : null);
+                            imageUploadedAt != null ? imageUploadedAt.toInstant().toEpochMilli() : null,
+                            imageUrls.entry(rs.getLong("entry_id"), imageUploadedAt != null ? imageUploadedAt.toInstant().toEpochMilli() : null, rs.getString("sheet_object_key")));
                 })
                 .list();
 

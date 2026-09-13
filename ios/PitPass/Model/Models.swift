@@ -22,6 +22,7 @@ struct SeriesInfo: Codable, Sendable, Identifiable, Hashable {
     let primaryKind: String?
     let aliases: [String]
     let logoVersion: Int?
+    var logoUrl: String? = nil
 }
 
 struct SeasonSummary: Codable, Sendable, Identifiable, Hashable {

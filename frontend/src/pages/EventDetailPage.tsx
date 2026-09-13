@@ -1,3 +1,4 @@
+import { PublicFileMigration } from '../components/PublicFileMigration'
 import { useEffect, useState, type ChangeEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useIsAdmin } from '../lib/auth'
@@ -28,6 +29,7 @@ interface EventEntry {
   racePositionInClass: number | null
   raceStatus: string | null
   imageVersion: number | null
+  imageUrl: string | null
 }
 
 interface EventSession {
@@ -59,6 +61,7 @@ interface TeamSheetPageMapping {
 }
 
 interface TeamSheets {
+  documentUrl: string
   filename: string | null
   uploadedAt: string
   version: number
@@ -67,6 +70,7 @@ interface TeamSheets {
 }
 
 interface Storylines {
+  documentUrl: string
   filename: string | null
   uploadedAt: string
   version: number
@@ -213,6 +217,7 @@ export default function EventDetailPage() {
             .catch(() => {})
         }}
       />
+      <PublicFileMigration eventId={detail.event.id} />
       <TeamSheetsSection eventId={detail.event.id} entries={detail.entries} />
       <StorylinesSection eventId={detail.event.id} />
       {classes.map((cls) => (
@@ -236,10 +241,10 @@ export default function EventDetailPage() {
                 .map((e) => (
                   <tr key={e.entryId}>
                     <td>
-                      {e.imageVersion != null && (
+                      {e.imageUrl != null && (
                         <img
                           className="entry-thumb"
-                          src={`/api/entries/${e.entryId}/image?variant=sheet&v=${e.imageVersion}`}
+                          src={e.imageUrl!}
                           alt=""
                           loading="lazy"
                         />
@@ -348,7 +353,7 @@ function TeamSheetsSection({ eventId, entries }: { eventId: number; entries: Eve
             {cars.length - unmapped.length} of {cars.length} cars mapped
             {' · uploaded '}
             {new Date(sheets.uploadedAt).toLocaleString()}{' '}
-            <a href={`/api/events/${eventId}/team-sheets/data?v=${sheets.version}`} target="_blank" rel="noreferrer">
+            <a href={sheets.documentUrl} target="_blank" rel="noreferrer">
               open
             </a>
           </p>
@@ -496,7 +501,7 @@ function StorylinesSection({ eventId }: { eventId: number }) {
           <strong>{storylines.filename ?? 'storylines.pdf'}</strong>
           {' · uploaded '}
           {new Date(storylines.uploadedAt).toLocaleString()}{' '}
-          <a href={`/api/events/${eventId}/storylines/data?v=${storylines.version}`} target="_blank" rel="noreferrer">
+          <a href={storylines.documentUrl} target="_blank" rel="noreferrer">
             open
           </a>
           {isAdmin && (

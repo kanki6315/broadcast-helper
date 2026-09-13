@@ -126,7 +126,12 @@ struct APIClient: Sendable {
         var request = URLRequest(url: URL(string: path, relativeTo: baseURL)!.absoluteURL)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let token = token() {
+        // Absolute public image URLs use the same offline download pipeline,
+        // but credentials belong only to the API origin.
+        let target = request.url!
+        let sameOrigin = target.scheme == baseURL.scheme && target.host == baseURL.host
+            && (target.port ?? (target.scheme == "https" ? 443 : 80)) == (baseURL.port ?? (baseURL.scheme == "https" ? 443 : 80))
+        if sameOrigin, let token = token() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         return request

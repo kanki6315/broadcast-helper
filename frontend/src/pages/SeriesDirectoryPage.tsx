@@ -13,6 +13,7 @@ interface SeriesGroup {
   seriesId: number | null
   abbreviation: string | null
   logoVersion: number | null
+  logoUrl: string | null
   latest: SeasonSummary
   past: SeasonSummary[]
   /** Qualifying stages, badged separately — never the card's current season. */
@@ -62,6 +63,7 @@ export default function SeriesDirectoryPage() {
             seriesId: info?.id ?? null,
             abbreviation: info?.abbreviation ?? null,
             logoVersion: info?.logoVersion ?? null,
+            logoUrl: info?.logoUrl ?? null,
             latest: s,
             past: [],
             qualifiers: [],
@@ -182,7 +184,7 @@ export default function SeriesDirectoryPage() {
                   {g.seriesId != null && g.logoVersion != null ? (
                     <img
                       className="dir-logo"
-                      src={`/api/series/${g.seriesId}/logo/data?v=${g.logoVersion}`}
+                      src={g.logoUrl!}
                       alt={`${g.name} logo`}
                     />
                   ) : (

@@ -98,6 +98,7 @@ spring:
       initialize-schema: never
   servlet:
     multipart:
+      file-size-threshold: 0B # Keep uploaded PDFs on disk, outside the Java heap.
       # Bulk image upload: a full grid can be 50+ photos of several MB each.
       max-file-size: 25MB
       max-request-size: 500MB
@@ -119,3 +120,12 @@ spring:
       maximum-pool-size: 5
   flyway:
     enabled: true
+
+images:
+  r2:
+    enabled: ${R2_IMAGES_ENABLED:false}
+    endpoint: ${R2_ENDPOINT:}
+    bucket: ${R2_BUCKET:}
+    public-base-url: ${R2_PUBLIC_BASE_URL:}
+    access-key-id: ${R2_ACCESS_KEY_ID:}
+    secret-access-key: ${R2_SECRET_ACCESS_KEY:}

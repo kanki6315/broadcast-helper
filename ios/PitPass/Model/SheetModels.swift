@@ -31,6 +31,7 @@ struct SheetEntry: Codable, Sendable, Hashable, Identifiable {
     let vehicle: String?
     let manufacturer: String?
     let manufacturerLogoVersion: Int?
+    var manufacturerLogoUrl: String? = nil
     /// Monochrome mark: recolour it white in dark theme instead of the white pill.
     let manufacturerLogoInvert: Bool
     let isGuest: Bool
@@ -42,16 +43,18 @@ struct SheetEntry: Codable, Sendable, Hashable, Identifiable {
     let priorYearNote: String?
     let priorYearAuto: Bool
     let imageVersion: Int?
+    var imageUrl: String? = nil
     let teamSheetPage: Int?
 
     var id: Int { entryId }
     func races(round: Int) -> [FormRace] { form[String(round)] ?? [] }
 
     /// The sheet-size car photo, version-stamped (immutable once stored).
-    var imagePath: String? { imageVersion.map { "/api/entries/\(entryId)/image?variant=sheet&v=\($0)" } }
+    var imagePath: String? { imageUrl ?? imageVersion.map { "/api/entries/\(entryId)/image?variant=sheet&v=\($0)" } }
 
     /// The manufacturer mark, keyed by lower-cased name like the website.
     var manufacturerLogoPath: String? {
+        if let manufacturerLogoUrl { return manufacturerLogoUrl }
         guard let manufacturerLogoVersion, let manufacturer else { return nil }
         let name = manufacturer.lowercased()
         let encoded = name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name
@@ -77,14 +80,16 @@ struct Sheet: Codable, Sendable {
     let seriesName: String
     let championshipLabel: String
     let priorYearLabel: String
+    var teamSheetsUrl: String? = nil
+    var storylinesUrl: String? = nil
     let teamSheetsVersion: Int?
     let pitAssignmentsVersion: Int?
     let storylinesVersion: Int?
     let formRounds: [FormRound]
     let classes: [SheetClass]
 
-    var teamSheetsPath: String? { teamSheetsVersion.map { "/api/events/\(eventId)/team-sheets/data?v=\($0)" } }
-    var storylinesPath: String? { storylinesVersion.map { "/api/events/\(eventId)/storylines/data?v=\($0)" } }
+    var teamSheetsPath: String? { teamSheetsUrl ?? teamSheetsVersion.map { "/api/events/\(eventId)/team-sheets/data?v=\($0)" } }
+    var storylinesPath: String? { storylinesUrl ?? storylinesVersion.map { "/api/events/\(eventId)/storylines/data?v=\($0)" } }
 }
 
 // MARK: pit lane

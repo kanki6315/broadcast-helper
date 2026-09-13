@@ -40,14 +40,16 @@ public class EventDocumentController {
     private static final String KIND = "TEAM_SHEETS";
 
     private final JdbcClient db;
+    private final DocumentStorage storage;
     private final ObjectMapper json;
     private final String parserPython;
     private final String parserScript;
 
-    public EventDocumentController(JdbcClient db, ObjectMapper json,
+    public EventDocumentController(JdbcClient db, ObjectMapper json, DocumentStorage storage,
                                    @Value("${pit-pass.entry-list-parser.python:python3}") String parserPython,
                                    @Value("${pit-pass.team-sheet-parser.script:../parser/extract_team_sheet_pages.py}") String parserScript) {
         this.db = db;
+        this.storage = storage;
         this.json = json;
         this.parserPython = parserPython;
         this.parserScript = parserScript;
@@ -57,7 +59,7 @@ public class EventDocumentController {
     }
 
     public record TeamSheets(String filename, OffsetDateTime uploadedAt, long version, Integer pageCount,
-                             List<PageMapping> pages) {
+                             List<PageMapping> pages, String documentUrl) {
     }
 
     @GetMapping("/events/{eventId}/team-sheets")
@@ -70,68 +72,52 @@ public class EventDocumentController {
     @Transactional
     public TeamSheets upload(@PathVariable long eventId, @RequestParam("file") MultipartFile file) {
         requireEvent(eventId);
-        byte[] data;
-        try {
-            data = file.getBytes();
-        } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read upload: " + e.getMessage());
-        }
-        if (data.length < 5 || data[0] != '%' || data[1] != 'P' || data[2] != 'D' || data[3] != 'F') {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Not a PDF: " + file.getOriginalFilename());
-        }
+        try (var upload = storage.receive(file)) {
+            JsonNode map = runPageMapParser(file.getOriginalFilename(), upload.path());
+            Integer pageCount = map.path("page_count").isNumber() ? map.get("page_count").asInt() : null;
 
-        JsonNode map = runPageMapParser(file.getOriginalFilename(), data);
-        Integer pageCount = map.path("page_count").isNumber() ? map.get("page_count").asInt() : null;
-
-        long documentId = db.sql("""
-                        INSERT INTO event_document (event_id, kind, source_filename, content_type, data, page_count)
-                        VALUES (:eventId, :kind, :filename, 'application/pdf', :data, :pageCount)
-                        ON CONFLICT (event_id, kind) DO UPDATE
-                            SET source_filename = EXCLUDED.source_filename,
-                                data = EXCLUDED.data,
-                                page_count = EXCLUDED.page_count,
-                                uploaded_at = now()
-                        RETURNING id
-                        """)
-                .param("eventId", eventId)
-                .param("kind", KIND)
-                .param("filename", file.getOriginalFilename())
-                .param("data", data)
-                .param("pageCount", pageCount)
-                .query(Long.class)
-                .single();
-
-        // The extracted map fully replaces the previous one, including any manual
-        // overrides — an updated PDF renumbers pages, so stale overrides would
-        // point at the wrong team.
-        db.sql("DELETE FROM event_document_page WHERE document_id = :id").param("id", documentId).update();
-        for (JsonNode car : map.path("cars")) {
-            db.sql("""
-                            INSERT INTO event_document_page (document_id, car_number, page, team_name)
-                            VALUES (:id, :number, :page, :team)
+            byte[] data = upload.persist();
+            long documentId = db.sql("""
+                            INSERT INTO event_document (event_id, kind, source_filename, content_type, object_key, data, page_count)
+                            VALUES (:eventId, :kind, :filename, 'application/pdf', :objectKey, :data, :pageCount)
+                            ON CONFLICT (event_id, kind) DO UPDATE
+                                SET source_filename = EXCLUDED.source_filename,
+                                    data = EXCLUDED.data, object_key = EXCLUDED.object_key,
+                                    page_count = EXCLUDED.page_count,
+                                    uploaded_at = now()
+                            RETURNING id
                             """)
-                    .param("id", documentId)
-                    .param("number", car.path("car_number").asText())
-                    .param("page", car.path("page").asInt())
-                    .param("team", car.path("team").isTextual() ? car.get("team").asText() : null)
-                    .update();
+                    .param("eventId", eventId)
+                    .param("kind", KIND)
+                    .param("filename", file.getOriginalFilename())
+                    .param("data", data).param("objectKey", upload.key())
+                    .param("pageCount", pageCount)
+                    .query(Long.class)
+                    .single();
+
+            // The extracted map fully replaces the previous one, including any manual
+            // overrides — an updated PDF renumbers pages, so stale overrides would
+            // point at the wrong team.
+            db.sql("DELETE FROM event_document_page WHERE document_id = :id").param("id", documentId).update();
+            for (JsonNode car : map.path("cars")) {
+                db.sql("""
+                                INSERT INTO event_document_page (document_id, car_number, page, team_name)
+                                VALUES (:id, :number, :page, :team)
+                                """)
+                        .param("id", documentId)
+                        .param("number", car.path("car_number").asText())
+                        .param("page", car.path("page").asInt())
+                        .param("team", car.path("team").isTextual() ? car.get("team").asText() : null)
+                        .update();
+            }
+            return get(eventId);
         }
-        return get(eventId);
     }
 
     @GetMapping("/events/{eventId}/team-sheets/data")
     public ResponseEntity<byte[]> data(@PathVariable long eventId,
                                        @RequestParam(required = false) String v) {
-        byte[] pdf = db.sql("SELECT data FROM event_document WHERE event_id = :eventId AND kind = :kind")
-                .param("eventId", eventId).param("kind", KIND)
-                .query(byte[].class)
-                .optional()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No team sheets for this event"));
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_PDF)
-                .header("Cache-Control", HttpCaching.cacheControl(v != null))
-                .body(pdf);
+        return storage.data(eventId, KIND, v != null);
     }
 
     public record PageUpdate(String carNumber, Integer page) {
@@ -203,7 +189,7 @@ public class EventDocumentController {
                                     rs.getString("team_name")))
                             .list();
                     return new TeamSheets(doc.filename(), doc.uploadedAt(),
-                            doc.uploadedAt().toInstant().toEpochMilli(), doc.pageCount(), pages);
+                            doc.uploadedAt().toInstant().toEpochMilli(), doc.pageCount(), pages, storage.url(eventId, KIND));
                 });
     }
 
@@ -216,33 +202,24 @@ public class EventDocumentController {
     }
 
     /** Runs the sidecar (parser/extract_team_sheet_pages.py): PDF in, page-map JSON out. */
-    private JsonNode runPageMapParser(String filename, byte[] pdf) {
+    private JsonNode runPageMapParser(String filename, java.nio.file.Path tmp) {
         try {
-            java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("team-sheets-");
-            String safeName = java.nio.file.Path.of(filename == null ? "team-sheets.pdf" : filename)
-                    .getFileName().toString();
-            java.nio.file.Path tmp = dir.resolve(safeName);
-            try {
-                java.nio.file.Files.write(tmp, pdf);
-                Process process = new ProcessBuilder(parserPython, parserScript, tmp.toString())
-                        .redirectErrorStream(false)
-                        .start();
-                byte[] out = process.getInputStream().readAllBytes();
-                String err = new String(process.getErrorStream().readAllBytes());
-                if (!process.waitFor(120, java.util.concurrent.TimeUnit.SECONDS)) {
-                    process.destroyForcibly();
-                    throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                            "Team-sheets parser timed out on " + filename);
-                }
-                if (process.exitValue() != 0) {
-                    throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                            "Team-sheets parser failed on " + filename + ": " + err.trim());
-                }
-                return json.readTree(out);
-            } finally {
-                java.nio.file.Files.deleteIfExists(tmp);
-                java.nio.file.Files.deleteIfExists(dir);
+            Process process = new ProcessBuilder(parserPython, parserScript, tmp.toString())
+                    .redirectErrorStream(false)
+                    .start();
+            byte[] out = process.getInputStream().readAllBytes();
+            String err = new String(process.getErrorStream().readAllBytes());
+            if (!process.waitFor(120, java.util.concurrent.TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "Team-sheets parser timed out on " + filename);
             }
+            if (process.exitValue() != 0) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "Team-sheets parser failed on " + filename + ": " + err.trim());
+            }
+            return json.readTree(out);
+
         } catch (IOException e) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
                     "Could not run team-sheets parser (" + parserPython + " " + parserScript + "): " + e.getMessage());

@@ -1,3 +1,5 @@
+import { uploadLogo } from '../lib/logoUpload'
+import { PublicFileMigration } from './PublicFileMigration'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import 'flag-icons/css/flag-icons.min.css'
 import './driver-modal.css'
@@ -166,10 +168,7 @@ function BioForm({
       })
       if (!r.ok) throw new Error(`Backend returned ${r.status}`)
       if (photoFile) {
-        const form = new FormData()
-        form.append('file', photoFile)
-        const p = await fetch(`/api/drivers/${profile.id}/photo`, { method: 'POST', body: form })
-        if (!p.ok) throw new Error(`Photo upload failed (${p.status})`)
+        await uploadLogo('DRIVER', String(profile.id), photoFile, () => {})
       } else if (removePhoto && profile.photoVersion != null) {
         await fetch(`/api/drivers/${profile.id}/photo`, { method: 'DELETE' })
       }
@@ -377,7 +376,7 @@ export default function DriverModal({
               {profile.photoVersion != null && (
                 <img
                   className="dm-photo"
-                  src={`/api/drivers/${profile.id}/photo?v=${profile.photoVersion}`}
+                  src={profile.photoUrl ?? undefined}
                   alt=""
                 />
               )}
@@ -448,6 +447,7 @@ export default function DriverModal({
                   ) : (
                     <p className="dm-quiet">No bio yet.</p>
                   )}
+                  {isAdmin && <PublicFileMigration driverId={profile.id} />}
                   {isAdmin && (
                     <button type="button" className="btn dm-edit" onClick={() => setEditing(true)}>
                       {facts.length > 0 || profile.photoVersion != null ? 'Edit bio' : 'Add bio'}

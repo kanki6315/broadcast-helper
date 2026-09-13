@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
+import { imageRequest } from '../lib/carImageUpload'
+import { uploadLogo, migrateLogos } from '../lib/logoUpload'
 
 interface ManufacturerRow {
   name: string
   entryCount: number
   logoVersion: number | null
+  logoUrl: string | null
+  publicStorage: boolean
   /** Dark theme: recolour the mark white instead of the white pill. Null until a logo exists. */
   invertOnDark: boolean | null
 }
@@ -12,6 +16,8 @@ export default function LogosPage() {
   const [rows, setRows] = useState<ManufacturerRow[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState('')
+  const [directUpload, setDirectUpload] = useState(false)
   const inputs = useRef<Record<string, HTMLInputElement | null>>({})
 
   async function load() {
@@ -21,23 +27,27 @@ export default function LogosPage() {
 
   useEffect(() => {
     void load()
+    void imageRequest<{ directUpload: boolean }>('/api/car-images/uploads/config').then((c) => setDirectUpload(c.directUpload)).catch(() => {})
   }, [])
 
   async function upload(name: string, file: File) {
     setBusy(true)
     setError(null)
-    const form = new FormData()
-    form.append('file', file)
-    const res = await fetch(`/api/manufacturer-logos?name=${encodeURIComponent(name)}`, {
-      method: 'POST',
-      body: form,
-    })
-    if (!res.ok) {
-      const body = await res.json().catch(() => null)
-      setError(`${name}: ${body?.message ?? `upload failed (${res.status})`}`)
+    try {
+      await uploadLogo('MANUFACTURER', name, file, setProgress)
+      await load()
+    } catch (e) { setError(e instanceof Error ? e.message : 'Logo upload failed.') }
+    finally {
+      setBusy(false); setProgress('')
+      if (inputs.current[name]) inputs.current[name]!.value = ''
     }
-    await load()
-    setBusy(false)
+  }
+
+  async function migrate() {
+    setBusy(true); setError(null)
+    try { await migrateLogos('MANUFACTURER', setProgress) }
+    catch (e) { setError(e instanceof Error ? e.message : 'Could not move logos.') }
+    finally { setBusy(false); setProgress(''); await load() }
   }
 
   async function setInvert(name: string, value: boolean) {
@@ -66,6 +76,8 @@ export default function LogosPage() {
         single-colour wordmarks: the dark theme then recolours them white instead of painting a
         white pill behind them. Leave multi-colour badges unticked — inverting flattens them.
       </p>
+      {directUpload && <button disabled={busy} onClick={() => void migrate()}>Move existing logos to public storage</button>}
+      {busy && <p role="status">{progress || 'Preparing logo…'}</p>}
       {error && <p className="error">{error}</p>}
 
       <h3>
@@ -90,9 +102,7 @@ export default function LogosPage() {
                 {r.logoVersion != null ? (
                   <img
                     className={`logo-thumb${r.invertOnDark ? ' logo-thumb--invert' : ''}`}
-                    src={`/api/manufacturer-logos/${encodeURIComponent(
-                      r.name.toLowerCase(),
-                    )}/data?v=${r.logoVersion}`}
+                    src={r.logoUrl!}
                     alt={r.name}
                   />
                 ) : (

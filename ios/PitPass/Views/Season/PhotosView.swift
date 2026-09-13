@@ -16,7 +16,7 @@ struct PhotosView: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 320), spacing: PP.Space.s4)], spacing: PP.Space.s4) {
                         ForEach(list.sorted { carSort($0.carNumber, $1.carNumber) }) { img in
                             VStack(alignment: .leading, spacing: PP.Space.s2) {
-                                CachedImage(path: "/api/car-images/\(img.id)/data?variant=sheet&v=\(img.uploadedAt)")
+                                CachedImage(path: img.imagePath)
                                     .aspectRatio(16 / 9, contentMode: .fit)
                                     .clipShape(RoundedRectangle(cornerRadius: PP.Radius.md, style: .continuous))
                                     .overlay(RoundedRectangle(cornerRadius: PP.Radius.md, style: .continuous).strokeBorder(PP.border))

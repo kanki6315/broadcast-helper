@@ -49,14 +49,16 @@ public class PitAssignmentController {
     private static final String KIND = "PIT_ASSIGNMENTS";
 
     private final JdbcClient db;
+    private final DocumentStorage storage;
     private final ObjectMapper json;
     private final String parserPython;
     private final String parserScript;
 
-    public PitAssignmentController(JdbcClient db, ObjectMapper json,
+    public PitAssignmentController(JdbcClient db, ObjectMapper json, DocumentStorage storage,
                                    @Value("${pit-pass.entry-list-parser.python:python3}") String parserPython,
                                    @Value("${pit-pass.pit-assignments-parser.script:../parser/parse_pit_assignments.py}") String parserScript) {
         this.db = db;
+        this.storage = storage;
         this.json = json;
         this.parserPython = parserPython;
         this.parserScript = parserScript;
@@ -84,7 +86,7 @@ public class PitAssignmentController {
     }
 
     public record PitAssignments(String filename, OffsetDateTime uploadedAt, long version, String versionNote,
-                                 List<AssignmentRow> rows, List<Landmark> landmarks, List<Anchor> anchors) {
+                                 List<AssignmentRow> rows, List<Landmark> landmarks, List<Anchor> anchors, String documentUrl) {
     }
 
     @GetMapping("/events/{eventId}/pit-assignments")
@@ -132,7 +134,7 @@ public class PitAssignmentController {
                         rs.getObject("captured_at", OffsetDateTime.class)))
                 .list();
         return new PitAssignments(doc.filename(), doc.uploadedAt(), doc.uploadedAt().toInstant().toEpochMilli(),
-                doc.note(), rows, landmarks, anchors);
+                doc.note(), rows, landmarks, anchors, storage.url(eventId, KIND));
     }
 
     /**
@@ -145,37 +147,29 @@ public class PitAssignmentController {
     @Transactional
     public Proposal upload(@PathVariable long eventId, @RequestParam("file") MultipartFile file) {
         requireEvent(eventId);
-        byte[] data;
-        try {
-            data = file.getBytes();
-        } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read upload: " + e.getMessage());
+        try (var upload = storage.receive(file)) {
+            JsonNode parsed = runParser(file.getOriginalFilename(), upload.path());
+            String versionNote = parsed.path("version_note").isTextual() ? parsed.get("version_note").asText() : null;
+
+            byte[] data = upload.persist();
+            db.sql("""
+                            INSERT INTO event_document (event_id, kind, source_filename, content_type, object_key, data, note)
+                            VALUES (:eventId, :kind, :filename, 'application/pdf', :objectKey, :data, :note)
+                            ON CONFLICT (event_id, kind) DO UPDATE
+                                SET source_filename = EXCLUDED.source_filename,
+                                    data = EXCLUDED.data, object_key = EXCLUDED.object_key,
+                                    note = EXCLUDED.note,
+                                    uploaded_at = now()
+                            """)
+                    .param("eventId", eventId)
+                    .param("kind", KIND)
+                    .param("filename", file.getOriginalFilename())
+                    .param("data", data).param("objectKey", upload.key())
+                    .param("note", versionNote)
+                    .update();
+
+            return propose(eventId, parsed, versionNote);
         }
-        if (data.length < 5 || data[0] != '%' || data[1] != 'P' || data[2] != 'D' || data[3] != 'F') {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Not a PDF: " + file.getOriginalFilename());
-        }
-
-        JsonNode parsed = runParser(file.getOriginalFilename(), data);
-        String versionNote = parsed.path("version_note").isTextual() ? parsed.get("version_note").asText() : null;
-
-        db.sql("""
-                        INSERT INTO event_document (event_id, kind, source_filename, content_type, data, note)
-                        VALUES (:eventId, :kind, :filename, 'application/pdf', :data, :note)
-                        ON CONFLICT (event_id, kind) DO UPDATE
-                            SET source_filename = EXCLUDED.source_filename,
-                                data = EXCLUDED.data,
-                                note = EXCLUDED.note,
-                                uploaded_at = now()
-                        """)
-                .param("eventId", eventId)
-                .param("kind", KIND)
-                .param("filename", file.getOriginalFilename())
-                .param("data", data)
-                .param("note", versionNote)
-                .update();
-
-        return propose(eventId, parsed, versionNote);
     }
 
     public record SaveRow(Integer boxNumber, String carNumber, String teamName, Long entryId) {
@@ -294,16 +288,7 @@ public class PitAssignmentController {
     @GetMapping("/events/{eventId}/pit-assignments/data")
     public ResponseEntity<byte[]> data(@PathVariable long eventId,
                                        @RequestParam(required = false) String v) {
-        byte[] pdf = db.sql("SELECT data FROM event_document WHERE event_id = :id AND kind = :kind")
-                .param("id", eventId).param("kind", KIND)
-                .query(byte[].class)
-                .optional()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                        "No pit assignments for this event"));
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_PDF)
-                .header("Cache-Control", HttpCaching.cacheControl(v != null))
-                .body(pdf);
+        return storage.data(eventId, KIND, v != null);
     }
 
     @DeleteMapping("/events/{eventId}/pit-assignments")
@@ -430,33 +415,24 @@ public class PitAssignmentController {
     }
 
     /** Runs the sidecar (parser/parse_pit_assignments.py): PDF in, JSON out. */
-    private JsonNode runParser(String filename, byte[] pdf) {
+    private JsonNode runParser(String filename, java.nio.file.Path tmp) {
         try {
-            java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("pit-assignments-");
-            String safeName = java.nio.file.Path.of(filename == null ? "pit-assignments.pdf" : filename)
-                    .getFileName().toString();
-            java.nio.file.Path tmp = dir.resolve(safeName);
-            try {
-                java.nio.file.Files.write(tmp, pdf);
-                Process process = new ProcessBuilder(parserPython, parserScript, tmp.toString())
-                        .redirectErrorStream(false)
-                        .start();
-                byte[] out = process.getInputStream().readAllBytes();
-                String err = new String(process.getErrorStream().readAllBytes());
-                if (!process.waitFor(120, java.util.concurrent.TimeUnit.SECONDS)) {
-                    process.destroyForcibly();
-                    throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                            "Pit-assignments parser timed out on " + filename);
-                }
-                if (process.exitValue() != 0) {
-                    throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                            "Pit-assignments parser failed on " + filename + ": " + err.trim());
-                }
-                return json.readTree(out);
-            } finally {
-                java.nio.file.Files.deleteIfExists(tmp);
-                java.nio.file.Files.deleteIfExists(dir);
+            Process process = new ProcessBuilder(parserPython, parserScript, tmp.toString())
+                    .redirectErrorStream(false)
+                    .start();
+            byte[] out = process.getInputStream().readAllBytes();
+            String err = new String(process.getErrorStream().readAllBytes());
+            if (!process.waitFor(120, java.util.concurrent.TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "Pit-assignments parser timed out on " + filename);
             }
+            if (process.exitValue() != 0) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "Pit-assignments parser failed on " + filename + ": " + err.trim());
+            }
+            return json.readTree(out);
+
         } catch (IOException e) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
                     "Could not run pit-assignments parser (" + parserPython + " " + parserScript + "): "

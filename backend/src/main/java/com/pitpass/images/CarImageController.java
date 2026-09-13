@@ -45,13 +45,18 @@ public class CarImageController {
 
     private final JdbcClient db;
 
-    public CarImageController(JdbcClient db) {
+    private final PublicImageStorage storage;
+    private final CarImageUrls urls;
+
+    public CarImageController(JdbcClient db, PublicImageStorage storage, CarImageUrls urls) {
         this.db = db;
+        this.storage = storage;
+        this.urls = urls;
     }
 
     // ----------------------------------------------------------------- images
 
-    public record ImageSummary(long id, String carNumber, String sourceFilename, OffsetDateTime uploadedAt) {
+    public record ImageSummary(long id, String carNumber, String sourceFilename, OffsetDateTime uploadedAt, String imageUrl, String originalUrl, boolean publicStorage) {
     }
 
     public record MissingCar(String carNumber, String className, String teamName) {
@@ -63,12 +68,15 @@ public class CarImageController {
     @GetMapping("/car-images")
     public ImageOverview list(@RequestParam long seasonId) {
         List<ImageSummary> images = db.sql("""
-                        SELECT id, car_number, source_filename, uploaded_at
+                        SELECT id, car_number, source_filename, uploaded_at, original_object_key, sheet_object_key
                         FROM car_image WHERE season_id = :seasonId ORDER BY car_number
                         """)
                 .param("seasonId", seasonId)
                 .query((rs, i) -> new ImageSummary(rs.getLong("id"), rs.getString("car_number"),
-                        rs.getString("source_filename"), rs.getObject("uploaded_at", OffsetDateTime.class)))
+                        rs.getString("source_filename"), rs.getObject("uploaded_at", OffsetDateTime.class),
+                        urls.sheet(rs.getLong("id"), rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli(), rs.getString("sheet_object_key")),
+                        urls.original(rs.getLong("id"), rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli(), rs.getString("original_object_key")),
+                        rs.getString("original_object_key") != null))
                 .list();
         // Cars entered this season with no image yet; latest event's team name wins.
         List<MissingCar> missing = db.sql("""
@@ -127,12 +135,15 @@ public class CarImageController {
         }
         save(seasonId, number, file);
         return db.sql("""
-                        SELECT id, car_number, source_filename, uploaded_at
+                        SELECT id, car_number, source_filename, uploaded_at, original_object_key, sheet_object_key
                         FROM car_image WHERE season_id = :seasonId AND car_number = :number
                         """)
                 .param("seasonId", seasonId).param("number", number)
                 .query((rs, i) -> new ImageSummary(rs.getLong("id"), rs.getString("car_number"),
-                        rs.getString("source_filename"), rs.getObject("uploaded_at", OffsetDateTime.class)))
+                        rs.getString("source_filename"), rs.getObject("uploaded_at", OffsetDateTime.class),
+                        urls.sheet(rs.getLong("id"), rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli(), rs.getString("sheet_object_key")),
+                        urls.original(rs.getLong("id"), rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli(), rs.getString("original_object_key")),
+                        rs.getString("original_object_key") != null))
                 .single();
     }
 
@@ -140,12 +151,7 @@ public class CarImageController {
     public ResponseEntity<byte[]> imageData(@PathVariable long id,
                                             @RequestParam(required = false) String variant,
                                             @RequestParam(required = false) String v) {
-        FullImage full = db.sql("SELECT id, content_type, data FROM car_image WHERE id = :id")
-                .param("id", id)
-                .query((rs, i) -> new FullImage(rs.getLong("id"), rs.getString("content_type"), rs.getBytes("data")))
-                .optional()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such image"));
-        return serve(full, variant, v != null);
+        return serve(id, variant, v != null);
     }
 
     /** The effective livery image for an entry: (its event's season, its car number). */
@@ -153,22 +159,17 @@ public class CarImageController {
     public ResponseEntity<byte[]> entryImage(@PathVariable long entryId,
                                              @RequestParam(required = false) String variant,
                                              @RequestParam(required = false) String v) {
-        FullImage full = db.sql("""
-                        SELECT ci.id, ci.content_type, ci.data
-                        FROM entry en
-                                 JOIN event e ON e.id = en.event_id
-                                 JOIN car_image ci ON ci.season_id = e.season_id AND ci.car_number = en.car_number
+        long imageId = db.sql("""
+                        SELECT ci.id FROM entry en
+                        JOIN event e ON e.id = en.event_id
+                        JOIN car_image ci ON ci.season_id = e.season_id AND ci.car_number = en.car_number
                         WHERE en.id = :entryId
-                        """)
-                .param("entryId", entryId)
-                .query((rs, i) -> new FullImage(rs.getLong("id"), rs.getString("content_type"), rs.getBytes("data")))
-                .optional()
+                        """).param("entryId", entryId).query(Long.class).optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No image for this entry"));
-        return serve(full, variant, v != null);
+        return serve(imageId, variant, v != null);
     }
 
-    private record FullImage(long id, String contentType, byte[] data) {
-    }
+    private record ImageLocation(String contentType, String originalKey, String sheetKey) {}
 
     private record VariantBlob(String contentType, Integer width, byte[] data) {
     }
@@ -180,27 +181,35 @@ public class CarImageController {
      * a variant can't be produced, fall back to full-res — it's an optimization,
      * never a hard dependency.
      */
-    private ResponseEntity<byte[]> serve(FullImage full, String variant, boolean versioned) {
-        if (variant == null || variant.isBlank()) {
-            return body(full.contentType(), full.data(), versioned);
+    private ResponseEntity<byte[]> serve(long id, String variant, boolean versioned) {
+        ImageLocation image = db.sql("SELECT content_type, original_object_key, sheet_object_key FROM car_image WHERE id = :id")
+                .param("id", id).query((rs, i) -> new ImageLocation(rs.getString("content_type"),
+                        rs.getString("original_object_key"), rs.getString("sheet_object_key")))
+                .optional().orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such image"));
+        String key = "sheet".equals(variant) ? image.sheetKey() : image.originalKey();
+        if (key != null) {
+            return ResponseEntity.status(HttpStatus.FOUND).location(storage.publicUrl(key))
+                    .header("Cache-Control", HttpCaching.cacheControl(versioned)).build();
         }
-        Optional<VariantBlob> existing = db.sql("""
-                        SELECT content_type, data FROM car_image_variant
-                        WHERE image_id = :id AND variant = :variant
-                        """)
-                .param("id", full.id()).param("variant", variant)
-                .query((rs, i) -> new VariantBlob(rs.getString("content_type"), null, rs.getBytes("data")))
-                .optional();
-        if (existing.isPresent()) {
-            return body(existing.get().contentType(), existing.get().data(), versioned);
-        }
-        if ("sheet".equals(variant)) {
-            VariantBlob generated = ensureSheetVariant(full.id(), full.data());
-            if (generated != null) {
-                return body(generated.contentType(), generated.data(), versioned);
+        if (variant != null && !variant.isBlank()) {
+            Optional<VariantBlob> existing = db.sql("""
+                            SELECT content_type, data FROM car_image_variant
+                            WHERE image_id = :id AND variant = :variant
+                            """).param("id", id).param("variant", variant)
+                    .query((rs, i) -> new VariantBlob(rs.getString("content_type"), null, rs.getBytes("data")))
+                    .optional();
+            if (existing.isPresent()) {
+                return body(existing.get().contentType(), existing.get().data(), versioned);
             }
         }
-        return body(full.contentType(), full.data(), versioned);
+        // Legacy images only: never retrieve original bytes for an existing thumbnail.
+        byte[] data = db.sql("SELECT data FROM car_image WHERE id = :id")
+                .param("id", id).query(byte[].class).single();
+        if ("sheet".equals(variant)) {
+            VariantBlob generated = ensureSheetVariant(id, data);
+            if (generated != null) return body(generated.contentType(), generated.data(), versioned);
+        }
+        return body(image.contentType(), data, versioned);
     }
 
     private static ResponseEntity<byte[]> body(String contentType, byte[] data, boolean versioned) {
@@ -222,6 +231,10 @@ public class CarImageController {
 
     /** Saves (upsert); returns true if an existing image was replaced. */
     private boolean save(long seasonId, String carNumber, MultipartFile file) {
+        if (storage.enabled()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Direct image uploads are enabled. Reload the page and upload again.");
+        }
         byte[] data;
         try {
             data = file.getBytes();
@@ -240,6 +253,7 @@ public class CarImageController {
                             SET content_type = EXCLUDED.content_type,
                                 source_filename = EXCLUDED.source_filename,
                                 data = EXCLUDED.data,
+                                original_object_key = NULL, sheet_object_key = NULL,
                                 uploaded_at = now()
                         RETURNING id
                         """)
@@ -313,7 +327,7 @@ public class CarImageController {
     }
 
     /** Digit runs in the filename that exactly match a known car number (string match). */
-    private static List<String> numberCandidates(String filename, Set<String> known) {
+    static List<String> numberCandidates(String filename, Set<String> known) {
         List<String> matches = new ArrayList<>();
         for (String run : digitRuns(filename)) {
             if (known.contains(run) && !matches.contains(run)) {
@@ -323,7 +337,7 @@ public class CarImageController {
         return matches;
     }
 
-    private static List<String> digitRuns(String filename) {
+    static List<String> digitRuns(String filename) {
         String base = filename.contains(".") ? filename.substring(0, filename.lastIndexOf('.')) : filename;
         Matcher m = NUMBER_RUN.matcher(base);
         List<String> runs = new ArrayList<>();
