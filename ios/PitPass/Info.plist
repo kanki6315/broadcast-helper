@@ -46,6 +46,8 @@
 	<string>Debug builds can connect to a Pit Pass development server on your local network.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Pit Pass uses your location to guide you to a pit box along the lane.</string>
+	<key>PitPassServerURL</key>
+	<string>$(PITPASS_SERVER_URL)</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>inter-latin-wght-normal.ttf</string>
