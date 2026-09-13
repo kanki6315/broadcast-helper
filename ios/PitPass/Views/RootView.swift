@@ -11,7 +11,8 @@ struct RootView: View {
             case let .signedOut(reason):
                 SignInView(reason: reason)
             case let .ready(me):
-                HomeView(me: me)
+                HomeView(me: me, scope: session.serverURL.absoluteString + "|" + session.padOwner)
+                    .id(session.serverURL.absoluteString + "|" + session.padOwner)
             }
         }
         .preferredColorScheme(session.theme.colorScheme)

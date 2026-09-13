@@ -3,6 +3,10 @@ import SwiftUI
 /// Native season navigation with a shared model and independent tab content.
 struct SeasonView: View {
     @Environment(AppSession.self) private var session
+    @Environment(WorkspaceState.self) private var workspace
+    let chooseSeason: (Int) -> Void
+    let unavailableSeason: () -> Void
+    @State private var restored = false
     @State private var model: SeasonModel
     @State private var page: Page = .overview
 
@@ -12,7 +16,9 @@ struct SeasonView: View {
         var label: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
     }
 
-    init(seasonId: Int) {
+    init(seasonId: Int, chooseSeason: @escaping (Int) -> Void, unavailableSeason: @escaping () -> Void) {
+        self.unavailableSeason = unavailableSeason
+        self.chooseSeason = chooseSeason
         _model = State(initialValue: SeasonModel(seasonId: seasonId))
     }
 
@@ -40,7 +46,28 @@ struct SeasonView: View {
                 if model.hub.value != nil { StatusDownloadButton(target: .season(model.seasonId), noun: "season") }
             }
         }
-        .task(id: model.seasonId) { await model.load(session) }
+        .task(id: model.seasonId) {
+            if !restored {
+                page = Page(rawValue: workspace.value("season.\(model.seasonId).tab") ?? "") ?? .overview
+                model.classFilter = workspace.value("season.\(model.seasonId).class")
+                restored = true
+            }
+            await model.load(session)
+            guard !Task.isCancelled else { return }
+            if model.hub.value == nil, let seasons = model.seasons.value, !seasons.contains(where: { $0.id == model.seasonId }) {
+                unavailableSeason()
+                return
+            }
+            workspace.set("season.\(model.seasonId).tab", page.rawValue)
+            if let hub = model.hub.value {
+                workspace.select(model.seasonId, series: hub.seriesName)
+                if let filter = model.classFilter, !model.classes.contains(where: { $0.name == filter }) {
+                    model.classFilter = nil
+                }
+            }
+        }
+        .onChange(of: page) { _, page in workspace.set("season.\(model.seasonId).tab", page.rawValue) }
+        .onChange(of: model.classFilter) { _, filter in workspace.set("season.\(model.seasonId).class", filter) }
         .environment(model)
     }
 
@@ -60,6 +87,7 @@ struct SeasonView: View {
             }
         }
         .background(PP.bg)
+        .resumeScroll("season.\(model.seasonId).\(selected.rawValue)", ready: model.hub.value != nil)
         .refreshable { await model.load(session) }
         .environment(\.horizontalSizeClass, sizeClass)
     }
@@ -121,13 +149,7 @@ struct SeasonView: View {
     }
 
     private func switchSeason(_ id: Int) {
-        let next = SeasonModel(seasonId: id)
-        next.classFilter = model.classFilter
-        next.family = model.family
-        next.kind = model.kind
-        next.pointsView = model.pointsView
-        next.showTeams = model.showTeams
-        model = next
+        chooseSeason(id)
     }
 
     // MARK: content

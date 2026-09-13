@@ -320,7 +320,8 @@ struct ClassGridView: View {
                          cellPadV: 3,
                          headerHeight: entryLineHeight * 2,
                          separatesIdentity: true,
-                         centersCells: !entrantRecap)
+                         centersCells: !entrantRecap,
+                         resumeKey: "\(model.currentEventId.map { "event.\($0)" } ?? "season.\(model.seasonId)").grid.\(champ.id).\(mode == .recap ? "recap" : "points")")
             .accessibilityElement(children: .contain)
             .accessibilityLabel("\(champ.className ?? "") \(Champs.champKindLabel(champ)) — \(mode == .recap ? "season recap" : "championship points by round")")
             if dataColumns.reduce(0, { $0 + $1.width }) > availableWidth - entryWidth + 1 {

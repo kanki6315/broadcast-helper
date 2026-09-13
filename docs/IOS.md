@@ -32,6 +32,26 @@ the production Google sign-in end to end (device token minted, stored,
 Known gaps: the website's ⌘K search has no counterpart; grid headers don't
 pin to the viewport while scrolling.
 
+## Workspace navigation and resume
+
+The Series library uses compact rows with expandable seasons. Selecting a
+season establishes the root workspace; All series switches back to the library
+without stacking another season in navigation history. Event broadcast workspaces
+remain pushed destinations with their own four tabs and a Back to series action.
+
+Navigation preferences are stored locally in UserDefaults under a versioned key
+scoped to the server URL and signed-in owner. They do not expire: the last season,
+last season per series, each season's tab/class/race selection, and event tab and
+viewing positions survive restarts. Scroll positions include the season's vertical
+tab views, championship horizontal grids, event reference tables, recap, pit lane,
+and the Pencil canvas (stored in logical document coordinates). Loading placeholders
+do not overwrite positions; content growth retries restoration until user interaction.
+Missing season/filter/tab selections fall back to the library or a valid default.
+
+These are navigation preferences, not data snapshots. Resource loading, offline
+caches, freshness handling, and scratchpad document storage retain their existing
+behavior. Resume preferences are local to this installation, not synced to other devices.
+
 ## Layout
 
 ```

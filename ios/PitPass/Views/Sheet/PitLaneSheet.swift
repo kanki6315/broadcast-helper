@@ -56,6 +56,7 @@ struct PitLaneSheet: View {
                 .frame(maxWidth: 680, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
+            .resumeScroll("event.\(eventId).pitLane", ready: assignments?.value != nil)
             .background(PP.surface.ignoresSafeArea())
 
         }

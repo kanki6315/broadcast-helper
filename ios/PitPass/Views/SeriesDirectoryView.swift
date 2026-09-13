@@ -6,6 +6,8 @@ import SwiftUI
 /// Active seasons first, then alphabetical; dormant series settle to the bottom.
 struct SeriesDirectoryView: View {
     @Environment(AppSession.self) private var session
+    @Environment(WorkspaceState.self) private var workspace
+    let select: (Int) -> Void
     @State private var seasons = Resource<[SeasonSummary]>("/api/seasons")
     @State private var series = Resource<[SeriesInfo]>("/api/series")
     @State private var query = ""
@@ -43,9 +45,9 @@ struct SeriesDirectoryView: View {
                         .font(PP.sans(PP.TextSize.base))
                         .foregroundStyle(PP.textMuted)
                 } else {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: PP.Space.s4) {
+                    LazyVStack(spacing: 0) {
                         ForEach(filtered) { group in
-                            SeriesCard(group: group)
+                            SeriesRow(group: group, select: select)
                         }
                     }
                 }
@@ -76,12 +78,12 @@ struct SeriesDirectoryView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: PP.Space.s4) {
-            Text("Series")
+            Text("All series")
                 .font(PP.sans(PP.TextSize.xxl, weight: 650))
                 .tracking(PP.TextSize.xxl * -0.02)
                 .foregroundStyle(PP.ink)
             Spacer()
-            if let groups, groups.count > 6 {
+            if let groups, !groups.isEmpty {
                 FilterField(text: $query, placeholder: "Filter \(groups.count) series…")
                     .frame(maxWidth: 340)
             }
@@ -204,22 +206,71 @@ struct SeriesGroup: Identifiable {
 
 // MARK: - Card
 
-struct SeriesCard: View {
+struct SeriesRow: View {
     @Environment(AppSession.self) private var session
+    @Environment(WorkspaceState.self) private var workspace
     let group: SeriesGroup
+    let select: (Int) -> Void
+    @State private var expanded = false
     @State private var classes: Resource<ClassStylesResponse>?
 
+    private var available: [SeasonSummary] { [group.latest] + group.past + group.qualifiers }
+    private var current: SeasonSummary {
+        available.first { $0.id == workspace.snapshot.seriesSeasons[group.name] } ?? group.latest
+    }
+
     var body: some View {
-        NavigationLink(value: group.latest) {
-            VStack(alignment: .leading, spacing: 0) {
-                body_
-                Spacer(minLength: 0)
-                foot
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: PP.Space.s3) {
+                Button { open(current) } label: {
+                    HStack(spacing: PP.Space.s4) {
+                        Group {
+                            if let path = group.logoPath { SeriesLogo(path: path, fallback: group.monogram) }
+                            else { Monogram(text: group.monogram) }
+                        }
+                        .frame(width: 76, alignment: .leading)
+                        VStack(alignment: .leading, spacing: PP.Space.s1) {
+                            Text(group.name).font(.headline).foregroundStyle(PP.ink)
+                            if let styles = classes?.value?.styles, !styles.isEmpty { ClassChips(styles: styles) }
+                            HStack(spacing: PP.Space.s2) {
+                                Text(String(current.year)).font(PP.mono(PP.TextSize.sm))
+                                if current.isQualifier { Text(current.label ?? "Qualifying") }
+                                if let page = workspace.value("season.\(current.id).tab"),
+                                   let tab = SeasonView.Page(rawValue: page) {
+                                    Text("Resume \(tab.label.lowercased())").foregroundStyle(PP.accentInk)
+                                }
+                            }
+                            .font(.subheadline).foregroundStyle(PP.textMuted)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "arrow.up.right").foregroundStyle(PP.textMuted)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open \(group.name), \(current.year)")
+                if available.count > 1 {
+                    Button { expanded.toggle() } label: {
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain).foregroundStyle(PP.textMuted)
+                    .accessibilityLabel("\(expanded ? "Hide" : "Show") seasons for \(group.name)")
+                }
             }
-            .frame(maxHeight: .infinity, alignment: .top)
+            .padding(.vertical, PP.Space.s3)
+            if expanded {
+                FlowLayout(horizontalSpacing: PP.Space.s2, verticalSpacing: PP.Space.s2) {
+                    ForEach(available) { season in
+                        Button { open(season) } label: { SeasonChip(season: season).frame(minHeight: 44) }
+                            .buttonStyle(.plain)
+                    }
+                }
+                .padding(.bottom, PP.Space.s3)
+            }
+            Divider()
         }
-        .buttonStyle(SeriesCardStyle())
-        .accessibilityLabel("\(group.name), \(group.latest.year) season")
         .task {
             guard let id = group.seriesId, classes == nil else { return }
             let resource = Resource<ClassStylesResponse>("/api/series/\(id)/class-styles")
@@ -227,72 +278,9 @@ struct SeriesCard: View {
             await resource.load(session.loader)
         }
     }
-
-    private var body_: some View {
-        VStack(alignment: .leading, spacing: PP.Space.s3) {
-            HStack(alignment: .top, spacing: PP.Space.s3) {
-                if let path = group.logoPath {
-                    SeriesLogo(path: path, fallback: group.monogram)
-                } else {
-                    Monogram(text: group.monogram)
-                }
-                Spacer(minLength: 0)
-                Text("→")
-                    .font(PP.sans(PP.TextSize.lg))
-                    .foregroundStyle(PP.textMuted)
-                    .accessibilityHidden(true)
-            }
-            .frame(minHeight: 44)
-            Text(group.name)
-                .font(PP.sans(PP.TextSize.lg, weight: 650))
-                .tracking(PP.TextSize.lg * -0.01)
-                .lineSpacing(PP.TextSize.lg * 0.25 - 4)
-                .foregroundStyle(PP.ink)
-                .fixedSize(horizontal: false, vertical: true)
-            if let styles = classes?.value?.styles, styles.count > 1 {
-                ClassChips(styles: styles)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(PP.Space.s5)
-    }
-
-    private var foot: some View {
-        VStack(alignment: .leading, spacing: PP.Space.s2) {
-            HStack(alignment: .firstTextBaseline, spacing: PP.Space.s2) {
-                Text(String(group.latest.year))
-                    .font(PP.mono(PP.TextSize.lg, weight: 700))
-                    .foregroundStyle(PP.ink)
-                    .fixedSize()
-                if group.latest.isQualifier {
-                    QualifierBadge(text: group.latest.label ?? "Qualifying")
-                }
-                Text("\(group.latest.roundCount) round\(group.latest.roundCount == 1 ? "" : "s") · \(group.latest.championshipCount) championship\(group.latest.championshipCount == 1 ? "" : "s")")
-                    .font(PP.sans(PP.TextSize.sm))
-                    .foregroundStyle(PP.textMuted)
-            }
-            FlowLayout(horizontalSpacing: PP.Space.s2, verticalSpacing: PP.Space.s1) {
-                if !group.past.isEmpty || !group.qualifiers.isEmpty {
-                    if !group.past.isEmpty {
-                        Text("Earlier").font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted).fixedSize()
-                    }
-                    ForEach(group.past) { season in
-                        NavigationLink(value: season) { SeasonChip(season: season) }.buttonStyle(.plain)
-                    }
-                    ForEach(group.qualifiers) { season in
-                        NavigationLink(value: season) { SeasonChip(season: season) }.buttonStyle(.plain)
-                    }
-                } else {
-                    Text("No earlier seasons").font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted)
-                }
-            }
-            .frame(minHeight: 22)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, PP.Space.s3)
-        .padding(.horizontal, PP.Space.s5)
-        .padding(.bottom, PP.Space.s4)
-        .overlay(alignment: .top) { Rectangle().fill(PP.border).frame(height: 1) }
+    private func open(_ season: SeasonSummary) {
+        workspace.select(season.id, series: group.name)
+        select(season.id)
     }
 }
 

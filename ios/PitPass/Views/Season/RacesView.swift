@@ -4,6 +4,7 @@ import SwiftUI
 struct RacesView: View {
     @Environment(AppSession.self) private var session
     @Environment(SeasonModel.self) private var model
+    @Environment(WorkspaceState.self) private var workspace
     @State private var selectedEvent: Int?
 
     private var events: [CalendarEvent] {
@@ -20,6 +21,17 @@ struct RacesView: View {
     }
 
     var body: some View {
+        calendar
+            .onAppear {
+                if let saved = workspace.value("season.\(model.seasonId).race") { selectedEvent = Int(saved) }
+            }
+            .onChange(of: selectedEvent) { _, id in
+                let saved: String? = id.map { String($0) }
+                workspace.set("season.\(model.seasonId).race", saved)
+            }
+    }
+
+    @ViewBuilder private var calendar: some View {
         let today = Dates.today
         let nextEvent = events.first { ($0.eventDate ?? "") >= today }
         let selected = events.first { $0.id == selectedEvent } ?? nextEvent ?? events.last
@@ -112,7 +124,7 @@ struct RacesView: View {
     private func roundContent(_ event: CalendarEvent) -> some View {
         VStack(alignment: .leading, spacing: PP.Space.s3) {
             NavigationLink(value: SheetRoute(eventId: event.id)) {
-                Label("Open event sheet", systemImage: "doc.text")
+                Label("Open broadcast workspace", systemImage: "doc.text")
             }
             .buttonStyle(.bordered)
             if event.sessionCount > 0 {

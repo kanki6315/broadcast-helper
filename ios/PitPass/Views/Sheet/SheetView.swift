@@ -11,6 +11,8 @@ struct SheetRoute: Hashable {
 /// prior-year notes are edited on the website.
 struct SheetView: View {
     @Environment(AppSession.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    @Environment(WorkspaceState.self) private var workspace
     let eventId: Int
     @State private var sheet: Resource<Sheet>
     @State private var teamSheet: (page: Int, title: String)?
@@ -18,7 +20,7 @@ struct SheetView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var page: Page = .sheet
 
-    private enum Page { case sheet, recap, pitLane, scratchpad }
+    private enum Page: String { case sheet, recap, pitLane, scratchpad }
     @State private var padModel: PadModel?
     @State private var exporting = false
     @State private var exportURL: URL?
@@ -33,7 +35,22 @@ struct SheetView: View {
         .navigationTitle(sheet.value?.eventName ?? "Sheet")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(PP.bg, for: .navigationBar)
+        .navigationBarBackButtonHidden()
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { dismiss() } label: {
+                    Label("Back to series", systemImage: "chevron.left")
+                }
+            }
+            ToolbarItem(placement: .principal) {
+                if let value = sheet.value {
+                    VStack(spacing: 2) {
+                        Text(value.eventName).font(.headline)
+                        Text("\(value.seriesName) · \(String(value.year))")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 if sheet.value?.storylinesPath != nil {
                     Button { storylinesOpen = true } label: {
@@ -56,7 +73,9 @@ struct SheetView: View {
                 }
             }
         }
+        .onChange(of: page) { _, value in workspace.set("event.\(eventId).tab", value.rawValue) }
         .task(id: eventId) {
+            page = Page(rawValue: workspace.value("event.\(eventId).tab") ?? "") ?? .sheet
             session.freshness.reset()
             await sheet.load(session.loader, connectivity: session.connectivity, freshness: session.freshness)
         }
@@ -138,6 +157,7 @@ struct SheetView: View {
             .frame(maxWidth: .infinity)
         }
         .background(PP.bg.ignoresSafeArea())
+        .resumeScroll("event.\(eventId).sheet", ready: sheet.value != nil)
         .refreshable { await sheet.load(session.loader, connectivity: session.connectivity, freshness: session.freshness) }
     }
 
@@ -231,6 +251,7 @@ private struct ClassSection: View {
                 .frame(minWidth: 760)
                 .containerRelativeFrame(.horizontal, alignment: .leading) { width, _ in max(760, width) }
             }
+            .resumeScroll("event.\(sheet.eventId).class.\(cls.id)")
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: PP.Radius.md, bottomTrailingRadius: PP.Radius.md, style: .continuous))
             .overlay(UnevenRoundedRectangle(bottomLeadingRadius: PP.Radius.md, bottomTrailingRadius: PP.Radius.md, style: .continuous).strokeBorder(PP.border))
