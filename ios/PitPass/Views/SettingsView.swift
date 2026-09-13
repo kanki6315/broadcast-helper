@@ -15,6 +15,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: PP.Space.s5) {
                     account
                     appearance
+                    connection
                     storage
                     about
                 }
@@ -69,6 +70,17 @@ struct SettingsView: View {
                 Text("Theme").ppLabel()
                 Spacer()
                 ThemeToggle()
+            }
+            .padding(.vertical, PP.Space.s2)
+        }
+    }
+
+    private var connection: some View {
+        Section_(title: "Connection") {
+            HStack {
+                Text("Status").ppLabel()
+                Spacer()
+                ConnectivityPill()
             }
             .padding(.vertical, PP.Space.s2)
         }
