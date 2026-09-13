@@ -304,6 +304,75 @@ struct RaceCellView: View {
     }
 }
 
+/// A season-wide lane for each car/race pair. Missing entries never move
+/// another car's results into that lane in a different round.
+struct EntrantRecapLayout {
+    struct Slot: Hashable {
+        let car: String
+        let race: Int
+    }
+    let slots: [Slot]
+
+    init(rounds: [[RecapRace]]) {
+        let races = rounds.flatMap { $0 }
+        let cars = Set(races.map { $0.carNumber ?? "" }).sorted(by: carSort)
+        let ordinals = Set(races.map(\.race)).sorted()
+        slots = cars.flatMap { car in ordinals.map { Slot(car: car, race: $0) } }
+    }
+
+    func result(for slot: Slot, in races: [RecapRace]) -> RecapRace? {
+        races.first { ($0.carNumber ?? "") == slot.car && $0.race == slot.race }
+    }
+}
+
+struct EntrantCarLabels: View {
+    let layout: EntrantRecapLayout
+    let lineHeight: CGFloat
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(layout.slots.enumerated()), id: \.element) { index, slot in
+                let first = index == 0 || layout.slots[index - 1].car != slot.car
+                Text(first ? (slot.car.isEmpty ? "—" : slot.car) : "")
+                    .font(PP.mono(PP.TextSize.xs, weight: 600))
+                    .foregroundStyle(PP.ink)
+                    .frame(height: lineHeight)
+                    .accessibilityLabel(first ? "Car \(slot.car.isEmpty ? "unknown" : slot.car)" : "")
+            }
+        }
+    }
+}
+
+struct EntrantRoundCell: View {
+    let layout: EntrantRecapLayout
+    let races: [RecapRace]
+    let raceTags: [Int: String?]
+    let lineHeight: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(layout.slots, id: \.self) { slot in
+                Group {
+                    if let race = layout.result(for: slot, in: races) {
+                        RaceLineView(race: race, tag: raceTags[slot.race] ?? nil)
+                    } else {
+                        HStack(spacing: 5) {
+                            if let tag = raceTags[slot.race] ?? nil {
+                                Text(tag).font(PP.sans(PP.TextSize.xs, weight: 600))
+                            }
+                            Text("·").frame(minWidth: 36)
+                        }
+                        .foregroundStyle(PP.textMuted)
+                        .accessibilityLabel("Car \(slot.car), race \(slot.race): no entry")
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: lineHeight)
+            }
+        }
+    }
+}
+
 /// Numeric-first car ordering: 7 before 17 before 77, letters after numbers.
 func carSort(_ a: String, _ b: String) -> Bool {
     switch (Int(a), Int(b)) {
