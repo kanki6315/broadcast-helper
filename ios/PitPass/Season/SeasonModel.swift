@@ -106,12 +106,6 @@ final class SeasonModel {
         await styles?.load(session.loader)
     }
 
-    func loadHubExtras(_ session: AppSession) async {
-        async let a: Void = reference?.load(session.loader, freshness: session.freshness) ?? ()
-        async let b: Void = lineups?.load(session.loader, freshness: session.freshness) ?? ()
-        _ = await (a, b)
-    }
-
     func loadRecaps(_ session: AppSession, for champs: [ChampionshipSummary]) async {
         // Main-actor resources; fire the loads together and await them in turn.
         let resources = champs.map { recap(for: $0) }
