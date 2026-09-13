@@ -57,6 +57,16 @@ struct ScratchpadSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(PP.surface, for: .navigationBar)
             .toolbar {
+                if #available(iOS 26.0, *) {
+                    ToolbarItem(placement: .topBarLeading) {
+                        statusText(model?.status ?? .idle)
+                    }
+                    .sharedBackgroundVisibility(.hidden)
+                } else {
+                    ToolbarItem(placement: .topBarLeading) {
+                        statusText(model?.status ?? .idle)
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { close() }.font(PP.sans(PP.TextSize.sm, weight: 600)).tint(PP.accentInk)
                 }
@@ -83,7 +93,7 @@ struct ScratchpadSheet: View {
             HStack(spacing: PP.Space.s3) { tools(model) }
             VStack(alignment: .leading, spacing: PP.Space.s2) {
                 HStack(spacing: PP.Space.s3) { toolPick; swatches }
-                HStack(spacing: PP.Space.s3) { sizePick; statusText(model.status); Spacer(); undoRedo(model) }
+                HStack(spacing: PP.Space.s3) { sizePick; Spacer(); undoRedo(model) }
             }
         }
         .padding(.vertical, PP.Space.s2)
@@ -96,7 +106,6 @@ struct ScratchpadSheet: View {
         toolPick
         swatches
         sizePick
-        statusText(model.status)
         Spacer(minLength: PP.Space.s3)
         undoRedo(model)
     }
@@ -155,6 +164,7 @@ struct ScratchpadSheet: View {
                 .buttonStyle(PPSecondaryButtonStyle())
                 .disabled(!model.canExtend)
         }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     /// `.sp-conflict`: the pad is read-only-in-effect until a side is picked.
@@ -185,14 +195,21 @@ struct ScratchpadSheet: View {
         case .conflict: "Changed elsewhere"
         case .offline: "Offline — saved on this iPad"
         }
-        if let text {
-            Text(text)
-                .font(PP.sans(PP.TextSize.xs))
-                .foregroundStyle(status == .error || status == .full ? PP.error : PP.textMuted)
-                .lineLimit(1)
-                .padding(.leading, PP.Space.s1)
-                .accessibilityAddTraits(.updatesFrequently)
-        }
+        // Reserve the same navigation-bar footprint for every save state.
+        // Feedback never participates in the drawing controls' layout.
+        Text("Pad full — erase some strokes")
+            .font(PP.sans(PP.TextSize.xs))
+            .lineLimit(1)
+            .fixedSize()
+            .hidden()
+            .overlay(alignment: .leading) {
+                Text(text ?? " ")
+                    .font(PP.sans(PP.TextSize.xs))
+                    .foregroundStyle(status == .error || status == .full ? PP.error : PP.textMuted)
+                    .lineLimit(1)
+            }
+            .accessibilityHidden(text == nil)
+            .accessibilityAddTraits(.updatesFrequently)
     }
 }
 
