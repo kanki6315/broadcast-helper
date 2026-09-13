@@ -240,7 +240,7 @@ struct RaceLineView: View {
 }
 
 /// `RaceCell`: the lines of one round cell — one per race, or one per car for
-/// a team-keyed row that ran several.
+/// a team-keyed row that ran several. Each race gets its own vertical line.
 struct RaceCellView: View {
     let races: [RecapRace]?
     let raceTags: [Int: String?]
@@ -259,8 +259,10 @@ struct RaceCellView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(car).font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted)
                                 .frame(minWidth: 22, alignment: .trailing)
-                            ForEach(byCar[car]!.sorted { $0.race < $1.race }, id: \.self) { r in
-                                RaceLineView(race: r, tag: raceTags[r.race] ?? nil, chipPadding: chipPadding)
+                            VStack(alignment: .leading, spacing: 2) {
+                                ForEach(byCar[car]!.sorted { $0.race < $1.race }, id: \.self) { r in
+                                    RaceLineView(race: r, tag: raceTags[r.race] ?? nil, chipPadding: chipPadding)
+                                }
                             }
                         }
                     }
@@ -271,11 +273,34 @@ struct RaceCellView: View {
         }
     }
 
+    /// Reserve the complete car gutter, race tag and uncompressed result chip.
+    /// Narrow windows scroll these columns instead of squeezing their contents.
+    static func contentWidth(_ races: [RecapRace]?, raceTags: [Int: String?], chipPadding: CGFloat = 4) -> CGFloat {
+        guard let races, !races.isEmpty else { return 0 }
+        let labelFont = UIFontMetrics.default.scaledFont(for: .systemFont(ofSize: PP.TextSize.xs, weight: .semibold))
+        func labelWidth(_ text: String) -> CGFloat {
+            ceil((text as NSString).size(withAttributes: [.font: labelFont]).width)
+        }
+        let cars = Set(races.map { $0.carNumber ?? "" })
+        let gutter: CGFloat = cars.count > 1 ? max(22, cars.map(labelWidth).max() ?? 0) + 6 : 0
+        let resultWidth = races.map { race -> CGFloat in
+            let start = race.start.map { $0 == 1 ? "P/" : "\($0)/" } ?? ""
+            let value = start + (race.finish.map(String.init) ?? "–")
+            // JetBrains Mono's advance is 0.6 em; leave room for font fallback.
+            let isDns = (race.status ?? "").lowercased().contains("not started")
+            let chip = isDns ? 36 + chipPadding * 2
+                : max(36, CGFloat(max(3, value.count)) * PP.TextSize.sm * 0.65
+                      + (race.notFinished ? PP.TextSize.sm * 0.72 + 1 : 0) + chipPadding * 2)
+            let tag = (raceTags[race.race] ?? nil).map { labelWidth($0) + 5 } ?? 0
+            return tag + chip
+        }.max() ?? 0
+        return ceil(gutter + resultWidth)
+    }
+
     /// Number of stacked lines this cell draws (for row-height budgeting).
     static func lines(_ races: [RecapRace]?) -> Int {
         guard let races, !races.isEmpty else { return 1 }
-        let cars = Set(races.map { $0.carNumber ?? "" })
-        return cars.count <= 1 ? races.count : cars.count
+        return races.count
     }
 }
 
