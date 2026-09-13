@@ -90,7 +90,7 @@ enum DownloadPlan {
         results.sessions.filter(\.hasFlags).map { .document("/api/sessions/\($0.sessionId)/flags") }
     }
 
-    /// The sheet-size variant PhotosView shows.
+    /// Sheet-size car images for offline use.
     static func photoAssets(_ overview: CarImagesOverview) -> [Fetch] {
         overview.images.map { .binary($0.imagePath) }
     }

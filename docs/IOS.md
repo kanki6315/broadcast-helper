@@ -15,7 +15,7 @@ staleness problem, which is the class of bug being escaped.
 | Slice | State | What it covers |
 |---|---|---|
 | 1. Sign-in, offline store, series directory | done | Device-token login, SQLite read-through store, the card grid |
-| 2. Season pages | done | Season recap overview, Races (schedule + session results), Standings, Stats, Entries, Photos |
+| 2. Season pages | done | Season recap overview, Races (schedule + session results), Standings, Stats, Entries |
 | 3. Event sheet | done | Sheet, team-sheets and storylines PDFs, Recap overlay, Pit lane with GPS guidance, Print / Save PDF |
 | 4. Download this event / season | done | Prefetch manifests with progress, "Downloaded · Xm" per screen, Settings list |
 | 5. PencilKit scratchpad | done | Same stroke wire format as the web pad, local mirror, offline replay, conflict banner, FAB badge |
@@ -529,7 +529,8 @@ a port of its web page; the pure derivations (short names, result tiers,
 session tags, venue codes, championship families and kinds, gap arithmetic)
 live in `Season/SeasonLogic.swift` so a fact reads the same on both surfaces.
 Every document loads through `Resource`, so each tab paints from the store
-first. Photos is read-only (upload and number matching stay on the website).
+first. The standalone Photos page is omitted from the app; upload and number
+matching stay on the website.
 
 ### The sheet and its PDF
 
@@ -608,7 +609,7 @@ parity row. Where the web's derivation lives in `lib/*.ts`, its port is in
 ## Native season navigation
 
 Season screens use five native tabs: Overview, Races, Standings, Stats and
-More (Entries and Photos). The tab container uses compact navigation to keep
+Entries. The tab container uses compact navigation to keep
 the bar at the bottom on iPad, while content retains the actual size class.
 iPadOS 26 supplies Liquid Glass; iOS 18 retains standard system controls.
 The title menu switches year/stage, and class filtering uses an compact segmented control with configured class-colour swatches.

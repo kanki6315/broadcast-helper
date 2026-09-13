@@ -11,7 +11,7 @@ struct SeasonView: View {
     @State private var page: Page = .overview
 
     enum Page: String, CaseIterable, Identifiable {
-        case overview, races, standings, stats, more
+        case overview, races, standings, stats, entries
         var id: String { rawValue }
         var label: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
     }
@@ -30,7 +30,7 @@ struct SeasonView: View {
             Tab("Races", systemImage: "flag.checkered", value: Page.races) { section(.races) }
             Tab("Standings", systemImage: "trophy", value: Page.standings) { section(.standings) }
             Tab("Stats", systemImage: "chart.bar", value: Page.stats) { section(.stats) }
-            Tab("More", systemImage: "ellipsis", value: Page.more) { section(.more) }
+            Tab("Entries", systemImage: "person.3", value: Page.entries) { section(.entries) }
         }
         // Keep the agreed bottom navigation on iPad; restore the real size
         // class inside each tab so its tables and adaptive layouts stay wide.
@@ -48,7 +48,8 @@ struct SeasonView: View {
         }
         .task(id: model.seasonId) {
             if !restored {
-                page = Page(rawValue: workspace.value("season.\(model.seasonId).tab") ?? "") ?? .overview
+                let savedPage = workspace.value("season.\(model.seasonId).tab") ?? ""
+                page = savedPage == "more" ? .entries : Page(rawValue: savedPage) ?? .overview
                 model.classFilter = workspace.value("season.\(model.seasonId).class")
                 restored = true
             }
@@ -76,7 +77,7 @@ struct SeasonView: View {
             PageContainer {
                 VStack(alignment: .leading, spacing: PP.Space.s2) {
                     if model.hub.value != nil {
-                        if selected != .more { classPicker }
+                        classPicker
                         content(selected)
                     } else if let error = model.hub.error {
                         ErrorPanel(message: error)
@@ -160,41 +161,7 @@ struct SeasonView: View {
         case .races: RacesView().id(model.seasonId)
         case .standings: ChampionshipGridView(mode: .points)
         case .stats: StatsView()
-        case .more:
-            VStack(spacing: 0) {
-                NavigationLink {
-                    secondaryPage("Entries") { EntriesView() }
-                } label: { moreRow("Entries", symbol: "person.3") }
-                Divider()
-                NavigationLink {
-                    secondaryPage("Photos") { PhotosView() }
-                } label: { moreRow("Photos", symbol: "photo.on.rectangle") }
-            }
+        case .entries: EntriesView()
         }
-    }
-
-    private func moreRow(_ title: String, symbol: String) -> some View {
-        HStack {
-            Label(title, systemImage: symbol)
-            Spacer()
-            Image(systemName: "chevron.right").foregroundStyle(.secondary)
-        }
-        .font(.body)
-        .padding(.vertical, PP.Space.s4)
-        .contentShape(Rectangle())
-    }
-
-    private func secondaryPage<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        ScrollView {
-            PageContainer {
-                VStack(alignment: .leading, spacing: PP.Space.s4) {
-                    classPicker
-                    content()
-                }
-            }
-        }
-        .background(PP.bg)
-        .navigationTitle(title)
-        .environment(model)
     }
 }
