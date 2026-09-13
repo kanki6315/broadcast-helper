@@ -16,6 +16,7 @@ struct SettingsView: View {
                     account
                     appearance
                     storage
+                    about
                 }
                 .padding(PP.Space.s5)
                 .frame(maxWidth: 640, alignment: .leading)
@@ -120,6 +121,21 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private var about: some View {
+        Section_(title: "About") {
+            Row(label: "Version", value: Self.versionLine, mono: true)
+            Row(label: "Server", value: ServerConfig.current.host ?? ServerConfig.current.absoluteString, mono: true)
+        }
+    }
+
+    /// "0.1.0 (202609122145)" — the TestFlight version and build, for bug reports.
+    static var versionLine: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info["CFBundleVersion"] as? String ?? "?"
+        return "\(version) (\(build))"
     }
 
     private func downloadDetail(_ r: OfflineStore.DownloadRecord, now: Date) -> String {

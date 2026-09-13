@@ -14,10 +14,13 @@ settings:
     # iPad only for now: the broadcast surface is an iPad Pro 11".
     TARGETED_DEVICE_FAMILY: "2"
     CODE_SIGN_STYLE: Automatic
-    # Set your Apple ID team in Xcode (Signing & Capabilities) or here:
-    DEVELOPMENT_TEAM: ""
-    CURRENT_PROJECT_VERSION: 1
+    # Apple Developer Program team ID (Membership details in developer.apple.com/account).
+    # release.sh reads it from here; Xcode's Signing & Capabilities shows it too.
+    DEVELOPMENT_TEAM: "TDBAHN96B3"
+    # Version the user sees (CFBundleShortVersionString). Bump this line for a release;
+    # the build number (CFBundleVersion) is stamped by release.sh, never edited here.
     MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
 packages:
   # SVG rasterizer (zlib licence): manufacturer marks are uploaded as SVG and
   # UIKit has no decoder for them.
@@ -43,6 +46,10 @@ targets:
       properties:
         CFBundleDisplayName: Pit Pass
         CFBundleName: Pit Pass
+        # Without these xcodegen writes literal 1.0 / 1 into Info.plist and the
+        # MARKETING_VERSION / CURRENT_PROJECT_VERSION settings never reach the app.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UIRequiresFullScreen: false
         UISupportedInterfaceOrientations~ipad:
