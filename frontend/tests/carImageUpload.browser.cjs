@@ -118,6 +118,31 @@ const assert = require('node:assert/strict');
   }, Array.from(headshot.body));
   assert.deepEqual(headshotSize, [640, 320]);
   assert.equal(calls.filter(c => c.path === '/api/logo-uploads').at(-1).body.kind, 'DRIVER');
+  let inventoryReads = 0;
+  let pdfAttempts = 0;
+  await page.route('**/api/public-storage/migration', route => {
+    inventoryReads++;
+    return route.fulfill({json:{enabled:true,photos:[],logos:inventoryReads === 1 ? [
+      {kind:'DRIVER',asset:{target:'42',logoUrl:'/api/legacy-headshot',contentType:'image/webp',uploadedAt:'2026-01-01T00:00:00Z'}}
+    ] : [],documents:[{id:9,filename:'notes.pdf'}]}});
+  });
+  await page.route('**/api/legacy-headshot', route => route.fulfill({body:headshot.body,contentType:'image/webp'}));
+  await page.route('**/api/document-storage/9/migrate', route => {
+    pdfAttempts++;
+    return route.fulfill({status:pdfAttempts === 1 ? 503 : 200});
+  });
+  const migration = await page.evaluate(async () => {
+    const {migratePublicStorage} = await import('/src/lib/migratePublicStorage.ts');
+    const progress = [];
+    const first = await migratePublicStorage(p => progress.push(p));
+    const retry = await migratePublicStorage(p => progress.push(p));
+    return {first,retry,progress};
+  });
+  assert.equal(migration.first.length,1);
+  assert.ok(migration.first[0].includes('notes.pdf'));
+  assert.deepEqual(migration.retry,[]);
+  assert.equal(pdfAttempts,2);
+  assert.equal(migration.progress.at(-1).message,'1 of 1 files moved.');
   console.log(JSON.stringify({passed:true,checks:['driver headshot resized to 640px and uploaded directly','worker creates 200x400 WebP','original and variant PUT directly to bucket','backend receives JSON only','declared byte sizes match uploads','no credentials sent to bucket','SVG rejected for car photos','SVG logos preserved byte-for-byte','raster logos resized to 1024px in browser','failed PUT never completes or changes the image'],result},null,2));
  } finally {await browser.close();await server.close();}
 })().catch(e=>{console.error(e);process.exit(1)});

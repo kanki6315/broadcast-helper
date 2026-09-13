@@ -109,6 +109,18 @@ PUT URLs cannot change those permanent keys. Both copies must succeed before
 any database reference changes. A completed ticket can be retried without
 republishing an older photo over a newer one.
 
+## Migrate everything from Manage
+
+Sign in as an admin and open **Manage**. At the top, select **Move all existing
+files to public storage**. This covers car photos in every season, all manufacturer
+and series logos, all driver headshots, and PDFs across all events. Keep Manage
+open until the summary appears. Files move one at a time; individual failures
+are listed and **Retry migration** skips completed items. The control remains
+visible with an explanation if public storage is disabled or cannot be checked.
+Existing database copies and document mappings are retained.
+
+The per-season and per-item controls below remain available for smaller moves.
+
 ## Move existing images
 
 After enabling R2, open each season's Photos page and select **Move existing

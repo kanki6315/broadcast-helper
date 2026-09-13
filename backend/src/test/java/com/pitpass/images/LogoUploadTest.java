@@ -26,6 +26,7 @@ class LogoUploadTest {
     @Autowired JdbcClient db;
     @Autowired LogoUploadController uploads;
     @Autowired LogoAssets assets;
+    @Autowired PublicStorageMigrationController migration;
     @Autowired ManufacturerLogoController manufacturers;
     @Autowired SeriesLogoController seriesLogos;
     @Autowired com.pitpass.series.SeriesController seriesController;
@@ -52,6 +53,24 @@ class LogoUploadTest {
     void legacyManufacturer() {
         db.sql("INSERT INTO manufacturer_logo(name, display_name, content_type, data, invert_on_dark) VALUES (:name, 'Display', 'image/svg+xml', :data, true)")
                 .param("name", name).param("data", svg).update();
+    }
+
+    @Test void globalMigrationInventoryIncludesOnlyLegacyAssetsAndReportsDisabledStorage() {
+        legacyManufacturer();
+        long image = db.sql("INSERT INTO car_image(season_id,car_number,content_type,data) SELECT season_id,'99','image/png',:data FROM event WHERE id = :event RETURNING id")
+                .param("data", new byte[]{1}).param("event", event).query(Long.class).single();
+        long doc = db.sql("INSERT INTO event_document(event_id,kind,content_type,data) VALUES (:event,'STORYLINES','application/pdf',:data) RETURNING id")
+                .param("event", event).param("data", new byte[]{1}).query(Long.class).single();
+        var inventory = migration.inventory();
+        assertTrue(inventory.enabled());
+        assertTrue(inventory.photos().stream().anyMatch(p -> p.id() == image && p.originalUrl().startsWith("/api/car-images/")));
+        assertTrue(inventory.documents().stream().anyMatch(d -> d.id() == doc));
+        assertTrue(inventory.logos().stream().anyMatch(l -> l.asset().target().equals(name)));
+        uploads.complete(plan(MANUFACTURER, name).id());
+        assertFalse(migration.inventory().logos().stream().anyMatch(l -> l.asset().target().equals(name)));
+        when(storage.enabled()).thenReturn(false);
+        assertFalse(migration.inventory().enabled());
+        assertTrue(migration.inventory().photos().isEmpty());
     }
 
     @Test void driverPhotoPublishesWithoutDatabaseBytesAndMigratesSafely() {

@@ -86,6 +86,8 @@ class SecuredChainTest {
 
     @Test
     void documentMigrationRequiresAdmin() throws Exception {
+        mvc.perform(post("/api/public-storage/migration")).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/public-storage/migration").with(signedInAs(VIEWER))).andExpect(status().isForbidden());
         mvc.perform(post("/api/document-storage/1/migrate")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/document-storage/1/migrate").with(signedInAs(VIEWER))).andExpect(status().isForbidden());
     }
