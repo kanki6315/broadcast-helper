@@ -186,7 +186,10 @@ struct ChampMatrixTable: View {
 
     var body: some View {
         let columns = rounds.map { r in
-            GridColumn.round("r\(r.round)", venue: r.venue, round: r.round, width: 66, padH: 4)
+            let width = blocks.map {
+                RaceCellView.contentWidth($0.races(r.round), raceTags: RaceForm.raceTagsByOrdinal(r.races))
+            }.max() ?? 0
+            return GridColumn.round("r\(r.round)", venue: r.venue, round: r.round, width: max(66, width + 8), padH: 4)
         }
         var rows: [GridRowItem] = []
         for b in blocks {

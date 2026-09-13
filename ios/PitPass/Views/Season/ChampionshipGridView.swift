@@ -203,32 +203,34 @@ struct ClassGridView: View {
         }]
         let tightRounds = mode == .recap && availableWidth < 890
         var dataColumns: [GridColumn] = rounds.map { round in
-            // Keep extra room for multi-race entries and long retirement chips.
-            let needsRoom = round.races.count > 1 || recap.rows.contains { row in
-                let races = row.races(round: round.round) ?? []
-                return Set(races.compactMap(\.carNumber)).count > 1 || races.contains { race in
-                    let digits = (race.start.map { $0 == 1 ? 2 : String($0).count + 1 } ?? 0)
-                        + (race.finish.map { String($0).count } ?? 1)
-                    return digits > 5 || (race.notFinished && digits >= 5)
-                }
-            }
+            let padH: CGFloat = tightRounds ? 2 : 4
+            let contentWidth = recap.rows.map {
+                RaceCellView.contentWidth($0.races(round: round.round),
+                                          raceTags: raceTags[round.round] ?? [:], chipPadding: padH)
+            }.max() ?? 0
             return .round("r\(round.round)", venue: round.venue, round: round.round,
-                          width: tightRounds ? (needsRoom ? 60 : 52) : 66,
-                          padH: tightRounds ? 2 : 4,
+                          width: max(tightRounds ? 60 : 66, contentWidth + padH * 2),
+                          padH: padH,
                           current: model.currentEventId != nil && round.eventId == model.currentEventId)
         }
         var rows: [GridRowItem] = []
         var prevPoints: Double?
         for row in recap.rows {
             let back = leader - row.totalPoints
-            let name = drivers ? (row.competitorName ?? row.competitorKey) : (row.teamName ?? "")
+            // Entrant standings can be keyed by a team name rather than a car.
+            let keyIsCar = row.cells.values.joined().contains { $0.carNumber == row.carNumber }
+            let teamKeyed = !drivers && !keyIsCar
+                && (row.carNumber == nil || row.carNumber?.contains(where: \.isLetter) == true)
+            let name = drivers ? (row.competitorName ?? row.competitorKey)
+                : (row.teamName?.isEmpty == false ? row.teamName! : (teamKeyed ? row.competitorKey : ""))
+            let carNumber = teamKeyed ? nil : row.carNumber
             let teamNames: [String] = drivers ? (row.teamNames?.isEmpty == false ? row.teamNames! : (row.teamName.map { [$0] } ?? [])) : []
             let shownTeams = mode == .recap && model.showTeams ? teamNames : []
             // The primary label opens the championship competitor's profile;
             // team sub-lines open the team's (Privateer stays plain).
             let target: InfoTarget? = drivers ? InfoTarget.driver(named: name) : InfoTarget.team(named: name)
             let entry = RecapEntryDetail(id: row.competitorKey, position: row.position,
-                                         carNumber: row.carNumber, name: name,
+                                         carNumber: carNumber, name: name,
                                          points: row.totalPoints, back: back, teams: teamNames,
                                          gap: mode == .points ? prevPoints.map { $0 - row.totalPoints } : nil)
             let label = RecapEntryLabel(entry: entry, shownTeams: shownTeams)
