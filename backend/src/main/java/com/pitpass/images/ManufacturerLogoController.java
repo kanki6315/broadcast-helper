@@ -1,8 +1,6 @@
 package com.pitpass.images;
 
-import com.pitpass.web.HttpCaching;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -32,35 +30,40 @@ public class ManufacturerLogoController {
 
     private final JdbcClient db;
 
-    public ManufacturerLogoController(JdbcClient db) {
-        this.db = db;
+    private final PublicImageStorage storage;
+    private final LogoAssets assets;
+    public ManufacturerLogoController(JdbcClient db, PublicImageStorage storage, LogoAssets assets) {
+        this.db = db; this.storage = storage; this.assets = assets;
     }
 
-    public record ManufacturerRow(String name, long entryCount, Long logoVersion, Boolean invertOnDark) {
+    public record ManufacturerRow(String name, long entryCount, Long logoVersion, Boolean invertOnDark, String logoUrl, boolean publicStorage) {
     }
 
     /** Every manufacturer seen on an entry, with whether a logo is uploaded. */
     @GetMapping("/manufacturers")
     public List<ManufacturerRow> manufacturers() {
         return db.sql("""
-                        SELECT en.manufacturer AS name, count(*) AS entry_count, ml.uploaded_at, ml.invert_on_dark
+                        SELECT en.manufacturer AS name, count(*) AS entry_count, ml.uploaded_at, ml.invert_on_dark, ml.object_key
                         FROM entry en
                                  LEFT JOIN manufacturer_logo ml ON ml.name = lower(trim(en.manufacturer))
                         WHERE en.manufacturer IS NOT NULL AND en.manufacturer <> ''
-                        GROUP BY en.manufacturer, ml.uploaded_at, ml.invert_on_dark
+                        GROUP BY en.manufacturer, ml.uploaded_at, ml.invert_on_dark, ml.object_key
                         ORDER BY en.manufacturer
                         """)
                 .query((rs, i) -> {
                     OffsetDateTime uploaded = rs.getObject("uploaded_at", OffsetDateTime.class);
                     return new ManufacturerRow(rs.getString("name"), rs.getLong("entry_count"),
                             uploaded != null ? uploaded.toInstant().toEpochMilli() : null,
-                            rs.getObject("invert_on_dark", Boolean.class));
+                            rs.getObject("invert_on_dark", Boolean.class),
+                            assets.url(LogoAssets.Kind.MANUFACTURER, rs.getString("name"), uploaded != null ? uploaded.toInstant().toEpochMilli() : null, rs.getString("object_key")),
+                            rs.getString("object_key") != null);
                 })
                 .list();
     }
 
     @PostMapping("/manufacturer-logos")
     public ManufacturerRow upload(@RequestParam String name, @RequestParam("file") MultipartFile file) {
+        if (storage.enabled()) throw new ResponseStatusException(HttpStatus.CONFLICT, "Direct logo uploads are enabled. Reload the page and upload again.");
         String display = name.trim();
         if (display.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Manufacturer name is required");
@@ -80,7 +83,7 @@ public class ManufacturerLogoController {
                         ON CONFLICT (name) DO UPDATE
                             SET display_name = EXCLUDED.display_name,
                                 content_type = EXCLUDED.content_type,
-                                data = EXCLUDED.data,
+                                data = EXCLUDED.data, object_key = NULL,
                                 uploaded_at = now()
                         """)
                 .param("name", display.toLowerCase(Locale.ROOT))
@@ -89,17 +92,19 @@ public class ManufacturerLogoController {
                 .param("data", data)
                 .update();
         return db.sql("""
-                        SELECT en.manufacturer AS name, count(*) AS entry_count, ml.uploaded_at, ml.invert_on_dark
+                        SELECT en.manufacturer AS name, count(*) AS entry_count, ml.uploaded_at, ml.invert_on_dark, ml.object_key
                         FROM entry en JOIN manufacturer_logo ml ON ml.name = lower(trim(en.manufacturer))
                         WHERE lower(trim(en.manufacturer)) = :name
-                        GROUP BY en.manufacturer, ml.uploaded_at, ml.invert_on_dark
+                        GROUP BY en.manufacturer, ml.uploaded_at, ml.invert_on_dark, ml.object_key
                         """)
                 .param("name", display.toLowerCase(Locale.ROOT))
                 .query((rs, i) -> new ManufacturerRow(rs.getString("name"), rs.getLong("entry_count"),
                         rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli(),
-                        rs.getBoolean("invert_on_dark")))
+                        rs.getBoolean("invert_on_dark"),
+                        assets.url(LogoAssets.Kind.MANUFACTURER, rs.getString("name"), rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli(), rs.getString("object_key")),
+                        rs.getString("object_key") != null))
                 .optional()
-                .orElse(new ManufacturerRow(display, 0, System.currentTimeMillis(), false));
+                .orElse(new ManufacturerRow(display, 0, System.currentTimeMillis(), false, assets.url(LogoAssets.Kind.MANUFACTURER, display, System.currentTimeMillis(), null), false));
     }
 
     public record InvertRequest(boolean invertOnDark) {
@@ -125,14 +130,7 @@ public class ManufacturerLogoController {
     @GetMapping("/manufacturer-logos/{name}/data")
     public ResponseEntity<byte[]> data(@org.springframework.web.bind.annotation.PathVariable String name,
                                        @RequestParam(required = false) String v) {
-        return db.sql("SELECT content_type, data FROM manufacturer_logo WHERE name = :name")
-                .param("name", name.toLowerCase(Locale.ROOT))
-                .query((rs, i) -> ResponseEntity.ok()
-                        .contentType(MediaType.parseMediaType(rs.getString("content_type")))
-                        .header("Cache-Control", HttpCaching.cacheControl(v != null))
-                        .body(rs.getBytes("data")))
-                .optional()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No logo for that manufacturer"));
+        return assets.data(LogoAssets.Kind.MANUFACTURER, name, v != null);
     }
 
     @DeleteMapping("/manufacturer-logos/{name}")

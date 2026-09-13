@@ -355,6 +355,8 @@ struct CarImageSummary: Codable, Sendable, Hashable, Identifiable {
     let carNumber: String
     let sourceFilename: String?
     let uploadedAt: String
+    var imageUrl: String? = nil
+    var imagePath: String { imageUrl ?? "/api/car-images/\(id)/data?variant=sheet&v=\(uploadedAt)" }
 }
 
 /// `GET /api/car-images?seasonId=`: the uploaded images plus the cars still

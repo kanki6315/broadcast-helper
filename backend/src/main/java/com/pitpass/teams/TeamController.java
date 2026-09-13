@@ -1,5 +1,7 @@
 package com.pitpass.teams;
 
+import com.pitpass.images.CarImageUrls;
+
 import com.pitpass.browse.SeasonViewController;
 import com.pitpass.browse.SeasonViewController.Recap;
 import com.pitpass.browse.SeasonViewController.RecapRace;
@@ -44,9 +46,12 @@ public class TeamController {
     private final JdbcClient db;
     private final SeasonViewController seasonView;
 
-    public TeamController(JdbcClient db, SeasonViewController seasonView) {
+    private final CarImageUrls imageUrls;
+
+    public TeamController(JdbcClient db, SeasonViewController seasonView, CarImageUrls imageUrls) {
         this.db = db;
         this.seasonView = seasonView;
+        this.imageUrls = imageUrls;
     }
 
     static String normalize(String name) {
@@ -112,7 +117,7 @@ public class TeamController {
     }
 
     public record RosterCar(long entryId, String carNumber, String className, String classColor,
-                            String vehicle, Long imageVersion, List<RosterDriver> drivers) {
+                            String vehicle, Long imageVersion, List<RosterDriver> drivers, String imageUrl) {
     }
 
     public record RosterSeason(long seasonId, int year, String seriesName, String eventName,
@@ -271,14 +276,16 @@ public class TeamController {
                     .list();
 
             record CarRow(long entryId, String carNumber, String className, String vehicle,
-                          Long imageVersion) {
+                          Long imageVersion, String sheetObjectKey) {
             }
             List<CarRow> cars = db.sql("""
                             SELECT en.id, en.car_number, en.class_name, en.vehicle,
                                    (SELECT (extract(epoch FROM ci.uploaded_at) * 1000)::bigint
                                     FROM car_image ci
                                     WHERE ci.season_id = :seasonId AND ci.car_number = en.car_number
-                                   ) AS image_version
+                                   ) AS image_version,
+                                   (SELECT ci.sheet_object_key FROM car_image ci
+                                    WHERE ci.season_id = :seasonId AND ci.car_number = en.car_number) AS sheet_object_key
                             FROM entry en
                             WHERE en.event_id = :eventId AND %s
                             ORDER BY en.class_name, en.car_number
@@ -288,7 +295,7 @@ public class TeamController {
                     .param("ident", ident)
                     .query((rs, i) -> new CarRow(rs.getLong("id"), rs.getString("car_number"),
                             rs.getString("class_name"), rs.getString("vehicle"),
-                            rs.getObject("image_version", Long.class)))
+                            rs.getObject("image_version", Long.class), rs.getString("sheet_object_key")))
                     .list();
 
             Map<Long, List<RosterDriver>> crews = new HashMap<>();
@@ -314,7 +321,8 @@ public class TeamController {
                     season.eventName(),
                     cars.stream().map(c -> new RosterCar(c.entryId(), c.carNumber(), c.className(),
                             classColors.getOrDefault(c.className(), "#1a1a1a"), c.vehicle(),
-                            c.imageVersion(), crews.getOrDefault(c.entryId(), List.of()))).toList()));
+                            c.imageVersion(), crews.getOrDefault(c.entryId(), List.of()),
+                            imageUrls.entry(c.entryId(), c.imageVersion(), c.sheetObjectKey()))).toList()));
         }
         return roster;
     }

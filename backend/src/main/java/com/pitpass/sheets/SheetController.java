@@ -1,5 +1,8 @@
 package com.pitpass.sheets;
 
+import com.pitpass.images.CarImageUrls;
+import com.pitpass.images.LogoAssets;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,8 +35,15 @@ public class SheetController {
 
     private final JdbcClient db;
 
-    public SheetController(JdbcClient db) {
+    private final CarImageUrls imageUrls;
+
+    private final LogoAssets logos;
+    private final com.pitpass.documents.DocumentStorage documents;
+
+    public SheetController(JdbcClient db, CarImageUrls imageUrls, LogoAssets logos, com.pitpass.documents.DocumentStorage documents) {
         this.db = db;
+        this.imageUrls = imageUrls;
+        this.logos = logos; this.documents = documents;
     }
 
     public record SheetDriver(String name, String rating, boolean isTbd, String nationality) {
@@ -53,7 +63,7 @@ public class SheetController {
                              List<SheetDriver> drivers, String qualifying, String startingDriver,
                              String championship,
                              Map<Integer, List<FormRace>> form, String priorYearNote, boolean priorYearAuto,
-                             Long imageVersion, Integer teamSheetPage) {
+                             Long imageVersion, Integer teamSheetPage, String imageUrl, String manufacturerLogoUrl) {
     }
 
     public record SheetClass(String className, String color, List<SheetEntry> entries) {
@@ -62,7 +72,7 @@ public class SheetController {
     public record Sheet(long eventId, long seasonId, String eventName, String circuitName, LocalDate eventDate,
                         int year, Integer roundOrdinal, String seriesName, String championshipLabel,
                         String priorYearLabel, Long teamSheetsVersion, Long pitAssignmentsVersion,
-                        Long storylinesVersion, List<FormRound> formRounds, List<SheetClass> classes) {
+                        Long storylinesVersion, String teamSheetsUrl, String storylinesUrl, List<FormRound> formRounds, List<SheetClass> classes) {
     }
 
     @GetMapping("/events/{id}/sheet")
@@ -388,12 +398,12 @@ public class SheetController {
 
         record EntryRow(long entryId, String carNumber, String className, String teamName, String vehicle,
                         String manufacturer, OffsetDateTime logoUploadedAt, boolean logoInvert, boolean isGuest,
-                        String priorYearNote, OffsetDateTime imageUploadedAt) {
+                        String priorYearNote, OffsetDateTime imageUploadedAt, String sheetObjectKey, String logoObjectKey) {
         }
         List<EntryRow> entryRows = db.sql("""
                         SELECT en.id, en.car_number, en.class_name, en.team_name, en.vehicle, en.manufacturer,
-                               en.is_guest, en.prior_year_note, ci.uploaded_at AS image_uploaded_at,
-                               ml.uploaded_at AS logo_uploaded_at, ml.invert_on_dark AS logo_invert
+                               en.is_guest, en.prior_year_note, ci.uploaded_at AS image_uploaded_at, ci.sheet_object_key,
+                               ml.object_key AS logo_object_key, ml.uploaded_at AS logo_uploaded_at, ml.invert_on_dark AS logo_invert
                         FROM entry en
                                  LEFT JOIN car_image ci ON ci.season_id = :seasonId AND ci.car_number = en.car_number
                                  LEFT JOIN manufacturer_logo ml ON ml.name = lower(trim(en.manufacturer))
@@ -405,7 +415,7 @@ public class SheetController {
                         rs.getString("class_name"), rs.getString("team_name"), rs.getString("vehicle"),
                         rs.getString("manufacturer"), rs.getObject("logo_uploaded_at", OffsetDateTime.class),
                         rs.getBoolean("logo_invert"), rs.getBoolean("is_guest"), rs.getString("prior_year_note"),
-                        rs.getObject("image_uploaded_at", OffsetDateTime.class)))
+                        rs.getObject("image_uploaded_at", OffsetDateTime.class), rs.getString("sheet_object_key"), rs.getString("logo_object_key")))
                 .list();
 
         Map<Long, List<SheetDriver>> driversByEntry = new HashMap<>();
@@ -497,7 +507,9 @@ public class SheetController {
                                     formByCar.getOrDefault(r.carNumber() + "|" + r.className(), Map.of()),
                                     priorText, priorAuto,
                                     r.imageUploadedAt() != null ? r.imageUploadedAt().toInstant().toEpochMilli() : null,
-                                    teamSheetPages.get(normalizeCarNumber(r.carNumber()))));
+                                    teamSheetPages.get(normalizeCarNumber(r.carNumber())),
+                                    imageUrls.entry(r.entryId(), r.imageUploadedAt() != null ? r.imageUploadedAt().toInstant().toEpochMilli() : null, r.sheetObjectKey()),
+                                    r.logoUploadedAt() == null ? null : logos.url(LogoAssets.Kind.MANUFACTURER, r.manufacturer(), r.logoUploadedAt().toInstant().toEpochMilli(), r.logoObjectKey())));
                 });
 
         String defaultColor = "#1a1a1a";
@@ -515,7 +527,7 @@ public class SheetController {
                                 + venueAbbrev(eventName, circuitName);
         return new Sheet(id, seasonId, eventName, circuitName, eventDate, year, roundOrdinal, seriesName,
                 seriesName + " " + year + " " + champKindLabel, priorYearLabel, teamSheetsVersion, pitAssignmentsVersion,
-                storylinesVersion, formRounds, classes);
+                storylinesVersion, documents.url(id, "TEAM_SHEETS"), documents.url(id, "STORYLINES"), formRounds, classes);
     }
 
     public record NoteRequest(String note) {

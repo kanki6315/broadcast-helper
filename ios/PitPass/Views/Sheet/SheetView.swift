@@ -468,7 +468,6 @@ private struct ManufacturerMark: View {
     @Environment(\.colorScheme) private var colorScheme
     let entry: SheetEntry
     @State private var image: UIImage?
-    @State private var tried = false
 
     var body: some View {
         Group {
@@ -487,10 +486,10 @@ private struct ManufacturerMark: View {
             }
         }
         .frame(maxHeight: 28)
-        .task(id: entry.manufacturerLogoVersion) {
-            guard !tried, let path = entry.manufacturerLogoPath else { return }
-            tried = true
-            if let data = await session.loader.bytes(path), let decoded = ImageDecoding.decode(data) {
+        .task(id: entry.manufacturerLogoPath) {
+            image = nil
+            guard let path = entry.manufacturerLogoPath else { return }
+            if let data = await session.loader.bytes(path), !Task.isCancelled, let decoded = ImageDecoding.decode(data) {
                 image = decoded
             }
         }

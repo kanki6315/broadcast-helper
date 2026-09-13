@@ -25,6 +25,7 @@ interface SheetEntry {
   vehicle: string | null
   manufacturer: string | null
   manufacturerLogoVersion: number | null
+  manufacturerLogoUrl: string | null
   /** Monochrome mark: recolour it white in dark theme instead of the white pill. */
   manufacturerLogoInvert: boolean
   isGuest: boolean
@@ -38,6 +39,7 @@ interface SheetEntry {
   priorYearNote: string | null
   priorYearAuto: boolean
   imageVersion: number | null
+  imageUrl: string | null
   teamSheetPage: number | null
 }
 
@@ -67,6 +69,8 @@ interface Sheet {
   championshipLabel: string
   priorYearLabel: string
   teamSheetsVersion: number | null
+  teamSheetsUrl: string | null
+  storylinesUrl: string | null
   pitAssignmentsVersion: number | null
   /** Absent on sheet payloads cached before the field shipped. */
   storylinesVersion?: number | null
@@ -154,14 +158,8 @@ export default function SheetPage({ eventId }: { eventId: number }) {
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load sheet'))
   }, [eventId])
 
-  const teamSheetsUrl =
-    sheet?.teamSheetsVersion != null
-      ? `/api/events/${eventId}/team-sheets/data?v=${sheet.teamSheetsVersion}`
-      : null
-  const storylinesUrl =
-    sheet?.storylinesVersion != null
-      ? `/api/events/${eventId}/storylines/data?v=${sheet.storylinesVersion}`
-      : null
+  const teamSheetsUrl = sheet?.teamSheetsUrl ?? null
+  const storylinesUrl = sheet?.storylinesUrl ?? null
 
   // Warm the PDFs while the broadcaster reads the sheet, so the first
   // click opens instantly.
@@ -315,9 +313,7 @@ export default function SheetPage({ eventId }: { eventId: number }) {
                           {e.manufacturerLogoVersion != null ? (
                             <img
                               className={`sheet-mfr-logo${e.manufacturerLogoInvert ? ' sheet-mfr-logo--invert' : ''}`}
-                              src={`/api/manufacturer-logos/${encodeURIComponent(
-                                (e.manufacturer ?? '').toLowerCase(),
-                              )}/data?v=${e.manufacturerLogoVersion}`}
+                              src={e.manufacturerLogoUrl!}
                               alt={e.manufacturer ?? ''}
                             />
                           ) : (
@@ -387,8 +383,8 @@ export default function SheetPage({ eventId }: { eventId: number }) {
                         </td>
                         <td className="col-champ">{e.championship}</td>
                         <td className="col-photo">
-                          {e.imageVersion != null && (
-                            <img src={`/api/entries/${e.entryId}/image?variant=sheet&v=${e.imageVersion}`} alt="" />
+                          {e.imageUrl != null && (
+                            <img src={e.imageUrl!} alt="" />
                           )}
                         </td>
                       </tr>

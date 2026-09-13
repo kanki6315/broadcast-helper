@@ -44,6 +44,16 @@ struct DataLoaderTests {
         return DataLoader(client: client, store: OfflineStore(url: url))
     }
 
+    @Test func publicImageDownloadNeverSendsTheApiTokenAndCachesByAbsoluteUrl() async throws {
+        let transport = ScriptedTransport([.ok("webp")])
+        let loader = makeLoader(transport)
+        let url = "https://images.example.test/car-images/id/sheet"
+        try await loader.ensureBytes(url)
+        #expect(await transport.header(0, "Authorization") == nil)
+        #expect(await loader.store.contains(url))
+        #expect(await loader.bytes(url) == Data("webp".utf8))
+    }
+
     @Test func firstFetchStoresAndSendsBearer() async throws {
         let transport = ScriptedTransport([.ok("[1]", etag: "W/\"v1\"")])
         let loader = makeLoader(transport)

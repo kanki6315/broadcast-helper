@@ -6,6 +6,8 @@ import com.pitpass.browse.SeasonViewController.RecapRace;
 import com.pitpass.browse.SeasonViewController.RecapRound;
 import com.pitpass.browse.SeasonViewController.RecapRow;
 import com.pitpass.web.HttpCaching;
+import com.pitpass.images.LogoAssets;
+import com.pitpass.images.PublicImageStorage;
 import com.sksamuel.scrimage.ImmutableImage;
 import com.sksamuel.scrimage.webp.WebpWriter;
 import org.springframework.http.HttpStatus;
@@ -47,10 +49,13 @@ public class DriverController {
 
     private final JdbcClient db;
     private final SeasonViewController seasonView;
+    private final LogoAssets assets;
+    private final PublicImageStorage storage;
 
-    public DriverController(JdbcClient db, SeasonViewController seasonView) {
+    public DriverController(JdbcClient db, SeasonViewController seasonView, LogoAssets assets, PublicImageStorage storage) {
         this.db = db;
         this.seasonView = seasonView;
+        this.assets = assets; this.storage = storage;
     }
 
     /* ------------------------------------------------------------------ */
@@ -121,7 +126,7 @@ public class DriverController {
     }
 
     public record Profile(long id, String name, String country, String hometown, LocalDate dateOfBirth,
-                          String placeOfBirth, String pronunciation, String notes, Long photoVersion,
+                          String placeOfBirth, String pronunciation, String notes, Long photoVersion, String photoUrl,
                           String rating, String carNumber, String teamName, String className,
                           Integer year, String seriesName, List<ChampMatrix> championships) {
     }
@@ -210,7 +215,7 @@ public class DriverController {
         }
 
         return new Profile(id, bio.name(), bio.country(), bio.hometown(), bio.dateOfBirth(),
-                bio.placeOfBirth(), bio.pronunciation(), bio.notes(), photoVersion,
+                bio.placeOfBirth(), bio.pronunciation(), bio.notes(), photoVersion, assets.find(LogoAssets.Kind.DRIVER, Long.toString(id), false).map(LogoAssets.Asset::logoUrl).orElse(null),
                 seat.rating(), seat.carNumber(), seat.teamName(), seat.className(),
                 seat.year(), seat.seriesName(), championships);
     }
@@ -486,6 +491,7 @@ public class DriverController {
 
     @PostMapping("/drivers/{id}/photo")
     public PhotoResult uploadPhoto(@PathVariable long id, @RequestParam("file") MultipartFile file) {
+        if (storage.enabled()) throw new ResponseStatusException(HttpStatus.CONFLICT, "Use direct photo uploads");
         byte[] data;
         try {
             data = file.getBytes();
@@ -513,7 +519,7 @@ public class DriverController {
                         ON CONFLICT (driver_id) DO UPDATE
                             SET content_type = EXCLUDED.content_type,
                                 source_filename = EXCLUDED.source_filename,
-                                data = EXCLUDED.data,
+                                data = EXCLUDED.data, object_key = NULL,
                                 uploaded_at = now()
                         RETURNING (extract(epoch FROM uploaded_at) * 1000)::bigint
                         """)
@@ -528,17 +534,7 @@ public class DriverController {
 
     @GetMapping("/drivers/{id}/photo")
     public ResponseEntity<byte[]> photo(@PathVariable long id, @RequestParam(required = false) String v) {
-        record Blob(String contentType, byte[] data) {
-        }
-        Blob blob = db.sql("SELECT content_type, data FROM driver_photo WHERE driver_id = :id")
-                .param("id", id)
-                .query((rs, i) -> new Blob(rs.getString("content_type"), rs.getBytes("data")))
-                .optional()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No photo for this driver"));
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(blob.contentType()))
-                .header("Cache-Control", HttpCaching.cacheControl(v != null))
-                .body(blob.data());
+        return assets.data(LogoAssets.Kind.DRIVER, Long.toString(id), v != null);
     }
 
     @DeleteMapping("/drivers/{id}/photo")

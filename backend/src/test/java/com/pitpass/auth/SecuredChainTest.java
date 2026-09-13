@@ -85,6 +85,47 @@ class SecuredChainTest {
     }
 
     @Test
+    void documentMigrationRequiresAdmin() throws Exception {
+        mvc.perform(post("/api/document-storage/1/migrate")).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/document-storage/1/migrate").with(signedInAs(VIEWER))).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void logoSigningAndCompletionRequireAnAdmin() throws Exception {
+        String request = """
+                {"kind":"SERIES","target":"1","contentType":"image/svg+xml","size":100}
+                """;
+        mvc.perform(post("/api/logo-uploads").contentType("application/json").content(request))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/logo-uploads").with(signedInAs(VIEWER)).contentType("application/json").content(request))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/logo-uploads/00000000-0000-0000-0000-000000000001/complete").with(signedInAs(VIEWER)))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/logo-uploads").with(signedInAs(ADMIN)).contentType("application/json").content(request))
+                .andExpect(status().isServiceUnavailable());
+    }
+
+    @Test
+    void onlyAdminsCanPrepareOrCompletePublicImageUploads() throws Exception {
+        String request = """
+                {"seasonId":1,"carNumber":"23","filename":"23.jpg","contentType":"image/jpeg","originalSize":100,"sheetSize":30}
+                """;
+        mvc.perform(post("/api/car-images/uploads").contentType("application/json").content(request))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/car-images/uploads").with(signedInAs(VIEWER)).contentType("application/json").content(request))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/car-images/uploads/00000000-0000-0000-0000-000000000001/complete")
+                        .with(signedInAs(VIEWER)).contentType("application/json").content("{}"))
+                .andExpect(status().isForbidden());
+        // Admin reaches the controller; storage is intentionally disabled in this context.
+        mvc.perform(post("/api/car-images/uploads").with(signedInAs(ADMIN)).contentType("application/json").content(request))
+                .andExpect(status().isServiceUnavailable());
+        mvc.perform(post("/api/car-images/uploads").with(signedInAs(ADMIN)).contentType("application/json")
+                        .content(request.replace("\"originalSize\":100", "\"originalSize\":26214401")))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void anonymousGetsUnauthorizedOnApi() throws Exception {
         mvc.perform(get("/api/series")).andExpect(status().isUnauthorized());
     }

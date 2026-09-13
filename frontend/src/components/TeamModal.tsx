@@ -33,10 +33,10 @@ function RosterBlock({
       </p>
       {season.cars.map((car) => (
         <div key={car.entryId} className="dm-roster-car">
-          {car.imageVersion != null && (
+          {car.imageUrl != null && (
             <img
               className="dm-roster-livery"
-              src={`/api/entries/${car.entryId}/image?variant=sheet&v=${car.imageVersion}`}
+              src={car.imageUrl!}
               alt=""
               loading="lazy"
             />

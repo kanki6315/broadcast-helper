@@ -2,7 +2,6 @@ package com.pitpass.images;
 
 import com.pitpass.web.HttpCaching;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -33,16 +32,19 @@ public class SeriesLogoController {
 
     private final JdbcClient db;
 
-    public SeriesLogoController(JdbcClient db) {
-        this.db = db;
+    private final PublicImageStorage storage;
+    private final LogoAssets assets;
+    public SeriesLogoController(JdbcClient db, PublicImageStorage storage, LogoAssets assets) {
+        this.db = db; this.storage = storage; this.assets = assets;
     }
 
     /** Epoch-millis version stamp of the current logo, for cache-busting URLs. */
-    public record LogoVersion(Long logoVersion) {
+    public record LogoVersion(Long logoVersion, String logoUrl) {
     }
 
     @PostMapping("/{id}/logo")
     public LogoVersion upload(@PathVariable long id, @RequestParam("file") MultipartFile file) {
+        if (storage.enabled()) throw new ResponseStatusException(HttpStatus.CONFLICT, "Direct logo uploads are enabled. Reload the page and upload again.");
         Boolean exists = db.sql("SELECT true FROM series WHERE id = :id")
                 .param("id", id)
                 .query(Boolean.class)
@@ -65,7 +67,7 @@ public class SeriesLogoController {
                         VALUES (:id, :contentType, :data)
                         ON CONFLICT (series_id) DO UPDATE
                             SET content_type = EXCLUDED.content_type,
-                                data = EXCLUDED.data,
+                                data = EXCLUDED.data, object_key = NULL,
                                 uploaded_at = now()
                         RETURNING uploaded_at
                         """)
@@ -74,20 +76,13 @@ public class SeriesLogoController {
                 .param("data", data)
                 .query(OffsetDateTime.class)
                 .single();
-        return new LogoVersion(uploaded.toInstant().toEpochMilli());
+        return new LogoVersion(uploaded.toInstant().toEpochMilli(), assets.url(LogoAssets.Kind.SERIES, Long.toString(id), uploaded.toInstant().toEpochMilli(), null));
     }
 
     @GetMapping("/{id}/logo/data")
     public ResponseEntity<byte[]> data(@PathVariable long id,
                                        @RequestParam(required = false) String v) {
-        return db.sql("SELECT content_type, data FROM series_logo WHERE series_id = :id")
-                .param("id", id)
-                .query((rs, i) -> ResponseEntity.ok()
-                        .contentType(MediaType.parseMediaType(rs.getString("content_type")))
-                        .header("Cache-Control", HttpCaching.cacheControl(v != null))
-                        .body(rs.getBytes("data")))
-                .optional()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No logo for that series"));
+        return assets.data(LogoAssets.Kind.SERIES, Long.toString(id), v != null);
     }
 
     @DeleteMapping("/{id}/logo")

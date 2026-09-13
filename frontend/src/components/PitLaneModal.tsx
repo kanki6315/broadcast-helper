@@ -24,6 +24,7 @@ interface Anchor {
 }
 
 interface PitAssignments {
+  documentUrl: string
   filename: string | null
   uploadedAt: string
   version: number
@@ -634,7 +635,7 @@ export default function PitLaneModal({
                     <button className="btn" onClick={() => setAnchorsOpen((open) => !open)} aria-expanded={anchorsOpen}>
                       GPS anchors ({anchors.length})
                     </button>
-                    <a href={`/api/events/${eventId}/pit-assignments/data?v=${saved.version}`} target="_blank" rel="noreferrer">
+                    <a href={saved.documentUrl} target="_blank" rel="noreferrer">
                       open PDF
                     </a>
                     <button className="btn" onClick={remove} disabled={busy}>

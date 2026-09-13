@@ -190,3 +190,9 @@ which leaves that registration in place — redeploying a self-destroying
 | `AUTH_ENABLED` | `false` | Set `true` on the deployment to require Google login; who may sign in lives in the `app_user` table (Manage → Users) |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | — | Google OAuth client id (when auth on) |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret (when auth on) |
+
+## Public images
+
+For browser-side resizing, direct R2 uploads, public image URLs, and migration
+of existing car photos and manufacturer/series logos, see [IMAGE_STORAGE.md](IMAGE_STORAGE.md). This feature
+is opt-in through `R2_IMAGES_ENABLED`; configure the bucket and CORS first.

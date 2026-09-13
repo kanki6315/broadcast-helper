@@ -73,6 +73,37 @@ private enum Fixtures {
 }
 
 struct DownloadPlanTests {
+    @Test func publicManufacturerLogosAreIncludedInOfflineDownloads() throws {
+        let json = Fixtures.sheet.replacingOccurrences(of: "\"manufacturerLogoVersion\":3", with: "\"manufacturerLogoVersion\":3,\"manufacturerLogoUrl\":\"https://images.example/manufacturer-logos/id/logo\"")
+        let sheet = try JSONDecoder().decode(Sheet.self, from: Data(json.utf8))
+        let files = DownloadPlan.sheetAssets(sheet)
+        #expect(files.contains(.binary("https://images.example/manufacturer-logos/id/logo")))
+        #expect(!files.contains(.binary("/api/manufacturer-logos/porsche/data?v=3")))
+        let series = try JSONDecoder().decode(SeriesInfo.self, from: Data("""
+        {"id":1,"name":"IMSA","abbreviation":null,"primaryKind":null,"aliases":[],"logoVersion":1,"logoUrl":"https://images.example/series-logos/id/logo"}
+        """.utf8))
+        #expect(series.logoUrl == "https://images.example/series-logos/id/logo")
+    }
+
+    @Test func downloadPlansUsePublicImageUrlsWhenPresent() throws {
+        let json = Fixtures.sheet.replacingOccurrences(of: "\"imageVersion\":11", with: "\"imageVersion\":11,\"imageUrl\":\"https://images.example/car-images/10/sheet\"")
+        let sheet = try JSONDecoder().decode(Sheet.self, from: Data(json.utf8))
+        #expect(DownloadPlan.sheetAssets(sheet).contains(.binary("https://images.example/car-images/10/sheet")))
+        let overview = try JSONDecoder().decode(CarImagesOverview.self, from: Data("""
+        {"images":[{"id":500,"carNumber":"23","sourceFilename":null,"uploadedAt":"2026-07-01T10:00:00Z","imageUrl":"https://images.example/car-images/500/sheet"}]}
+        """.utf8))
+        #expect(DownloadPlan.photoAssets(overview) == [.binary("https://images.example/car-images/500/sheet")])
+    }
+
+    @Test func publicPdfsUseDirectUrlsInOfflinePlan() throws {
+        let json = Fixtures.sheet.replacingOccurrences(of: "\"teamSheetsVersion\":4", with: "\"teamSheetsVersion\":4,\"teamSheetsUrl\":\"https://images.example/documents/team/document.pdf\",\"storylinesUrl\":\"https://images.example/documents/story/document.pdf\"")
+        let sheet = try JSONDecoder().decode(Sheet.self, from: Data(json.utf8))
+        let assets = DownloadPlan.sheetAssets(sheet)
+        #expect(assets.contains(.binary("https://images.example/documents/team/document.pdf")))
+        #expect(assets.contains(.binary("https://images.example/documents/story/document.pdf")))
+        #expect(!assets.contains(.binary("/api/events/7/team-sheets/data?v=4")))
+    }
+
     @Test func sheetAssetsNamePitLanePdfsPhotosAndEachMarkOnce() throws {
         let sheet: Sheet = try Fixtures.decode(Fixtures.sheet)
         let assets = DownloadPlan.sheetAssets(sheet)

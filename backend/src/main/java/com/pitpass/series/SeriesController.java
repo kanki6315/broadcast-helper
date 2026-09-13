@@ -1,5 +1,7 @@
 package com.pitpass.series;
 
+import com.pitpass.images.LogoAssets;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.dao.DuplicateKeyException;
@@ -27,16 +29,19 @@ public class SeriesController {
     private final SeriesRepository repository;
     private final JdbcClient db;
 
-    public SeriesController(SeriesRepository repository, JdbcClient db) {
+    private final LogoAssets logos;
+
+    public SeriesController(SeriesRepository repository, JdbcClient db, LogoAssets logos) {
         this.repository = repository;
         this.db = db;
+        this.logos = logos;
     }
 
     /** {@code primaryKind} is the series' headline championship kind (DRIVERS |
      *  TEAMS | MANUFACTURERS) — the one the season hub, the recap modal and the
      *  sheet's champ column put first. Null keeps the Teams-first default. */
     public record SeriesResponse(Long id, String name, String abbreviation, String primaryKind,
-                                 List<String> aliases, Long logoVersion) {
+                                 List<String> aliases, Long logoVersion, String logoUrl, boolean publicLogoStorage) {
     }
 
     /** The closed set of championship kinds — what a standings row ranks and
@@ -59,7 +64,7 @@ public class SeriesController {
     @GetMapping
     public List<SeriesResponse> list() {
         Map<Long, List<String>> aliases = loadAliases();
-        Map<Long, Long> logoVersions = loadLogoVersions();
+        Map<Long, LogoInfo> logoVersions = loadLogoVersions();
         Map<Long, String> primaryKinds = loadPrimaryKinds();
         return repository.findAllByOrderByName().stream()
                 .map(s -> toResponse(s, aliases, logoVersions, primaryKinds))
@@ -140,10 +145,14 @@ public class SeriesController {
                 .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
     }
 
-    private Map<Long, Long> loadLogoVersions() {
-        return db.sql("SELECT series_id, uploaded_at FROM series_logo")
+    private record LogoInfo(long version, String url, boolean publicStorage) {}
+
+    private Map<Long, LogoInfo> loadLogoVersions() {
+        return db.sql("SELECT series_id, uploaded_at, object_key FROM series_logo")
                 .query((rs, i) -> Map.entry(rs.getLong("series_id"),
-                        rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli()))
+                        new LogoInfo(rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli(),
+                        logos.url(LogoAssets.Kind.SERIES, rs.getString("series_id"), rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli(), rs.getString("object_key")),
+                        rs.getString("object_key") != null)))
                 .list()
                 .stream()
                 .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
@@ -160,10 +169,12 @@ public class SeriesController {
     }
 
     private static SeriesResponse toResponse(Series series, Map<Long, List<String>> aliases,
-                                             Map<Long, Long> logoVersions, Map<Long, String> primaryKinds) {
+                                             Map<Long, LogoInfo> logoVersions, Map<Long, String> primaryKinds) {
         return new SeriesResponse(series.getId(), series.getName(), series.getAbbreviation(),
                 primaryKinds.get(series.getId()),
                 aliases.getOrDefault(series.getId(), List.of()),
-                logoVersions.get(series.getId()));
+                logoVersions.containsKey(series.getId()) ? logoVersions.get(series.getId()).version() : null,
+                logoVersions.containsKey(series.getId()) ? logoVersions.get(series.getId()).url() : null,
+                logoVersions.containsKey(series.getId()) && logoVersions.get(series.getId()).publicStorage());
     }
 }

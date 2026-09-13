@@ -23,6 +23,8 @@ export interface SeriesInfo {
   aliases: string[]
   /** Epoch-millis stamp of the current series logo, or null when none uploaded. */
   logoVersion: number | null
+  logoUrl: string | null
+  publicLogoStorage: boolean
 }
 
 export interface ClassStyle {
@@ -367,6 +369,7 @@ export interface DriverProfile {
   pronunciation: string | null
   notes: string | null
   photoVersion: number | null
+  photoUrl: string | null
   rating: string | null
   carNumber: string | null
   teamName: string | null
@@ -510,6 +513,7 @@ export interface TeamRosterCar {
   classColor: string
   vehicle: string | null
   imageVersion: number | null
+  imageUrl: string | null
   drivers: TeamRosterDriver[]
 }
 

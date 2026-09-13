@@ -31,12 +31,14 @@ public class StorylineController {
     private static final String KIND = "STORYLINES";
 
     private final JdbcClient db;
+    private final DocumentStorage storage;
 
-    public StorylineController(JdbcClient db) {
+    public StorylineController(JdbcClient db, DocumentStorage storage) {
         this.db = db;
+        this.storage = storage;
     }
 
-    public record Storylines(String filename, OffsetDateTime uploadedAt, long version) {
+    public record Storylines(String filename, OffsetDateTime uploadedAt, long version, String documentUrl) {
     }
 
     @GetMapping("/events/{eventId}/storylines")
@@ -48,44 +50,29 @@ public class StorylineController {
     @PostMapping("/events/{eventId}/storylines")
     public Storylines upload(@PathVariable long eventId, @RequestParam("file") MultipartFile file) {
         requireEvent(eventId);
-        byte[] data;
-        try {
-            data = file.getBytes();
-        } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read upload: " + e.getMessage());
+        try (var upload = storage.receive(file)) {
+            byte[] data = upload.persist();
+            db.sql("""
+                            INSERT INTO event_document (event_id, kind, source_filename, content_type, object_key, data)
+                            VALUES (:eventId, :kind, :filename, 'application/pdf', :objectKey, :data)
+                            ON CONFLICT (event_id, kind) DO UPDATE
+                                SET source_filename = EXCLUDED.source_filename,
+                                    data = EXCLUDED.data, object_key = EXCLUDED.object_key,
+                                    uploaded_at = now()
+                            """)
+                    .param("eventId", eventId)
+                    .param("kind", KIND)
+                    .param("filename", file.getOriginalFilename())
+                    .param("data", data).param("objectKey", upload.key())
+                    .update();
+            return get(eventId);
         }
-        if (data.length < 5 || data[0] != '%' || data[1] != 'P' || data[2] != 'D' || data[3] != 'F') {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Not a PDF: " + file.getOriginalFilename());
-        }
-        db.sql("""
-                        INSERT INTO event_document (event_id, kind, source_filename, content_type, data)
-                        VALUES (:eventId, :kind, :filename, 'application/pdf', :data)
-                        ON CONFLICT (event_id, kind) DO UPDATE
-                            SET source_filename = EXCLUDED.source_filename,
-                                data = EXCLUDED.data,
-                                uploaded_at = now()
-                        """)
-                .param("eventId", eventId)
-                .param("kind", KIND)
-                .param("filename", file.getOriginalFilename())
-                .param("data", data)
-                .update();
-        return get(eventId);
     }
 
     @GetMapping("/events/{eventId}/storylines/data")
     public ResponseEntity<byte[]> data(@PathVariable long eventId,
                                        @RequestParam(required = false) String v) {
-        byte[] pdf = db.sql("SELECT data FROM event_document WHERE event_id = :eventId AND kind = :kind")
-                .param("eventId", eventId).param("kind", KIND)
-                .query(byte[].class)
-                .optional()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No storylines for this event"));
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_PDF)
-                .header("Cache-Control", HttpCaching.cacheControl(v != null))
-                .body(pdf);
+        return storage.data(eventId, KIND, v != null);
     }
 
     @DeleteMapping("/events/{eventId}/storylines")
@@ -109,7 +96,7 @@ public class StorylineController {
                 .query((rs, i) -> {
                     OffsetDateTime uploadedAt = rs.getObject("uploaded_at", OffsetDateTime.class);
                     return new Storylines(rs.getString("source_filename"), uploadedAt,
-                            uploadedAt.toInstant().toEpochMilli());
+                            uploadedAt.toInstant().toEpochMilli(), storage.url(eventId, KIND));
                 })
                 .optional();
     }
