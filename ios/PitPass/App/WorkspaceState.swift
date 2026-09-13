@@ -53,7 +53,7 @@ final class WorkspaceState {
 /// Restore only once real content is ready; loading placeholders must never
 /// replace a remembered position. Save at gesture end, disappearance/background.
 private struct ResumeScroll: ViewModifier {
-    @Environment(WorkspaceState.self) private var workspace
+    @Environment(WorkspaceState.self) private var workspace: WorkspaceState?
     @Environment(\.scenePhase) private var scenePhase
     let key: String
     let ready: Bool
@@ -71,7 +71,7 @@ private struct ResumeScroll: ViewModifier {
             } action: { _, value in offset = value }
             .onScrollGeometryChange(for: CGSize.self) { $0.contentSize } action: { _, _ in
                 // Recap grids load after the hub. Retry as the real content grows.
-                if ready && restored && !touched { position.scrollTo(point: workspace.offset(key)) }
+                if ready && restored && !touched { position.scrollTo(point: workspace?.offset(key) ?? .zero) }
             }
             .onScrollPhaseChange { _, phase in
                 if phase == .interacting || phase == .tracking { touched = true }
@@ -82,13 +82,13 @@ private struct ResumeScroll: ViewModifier {
                 await Task.yield()
                 guard !Task.isCancelled else { return }
                 restored = true
-                if !touched { position.scrollTo(point: workspace.offset(key)) }
+                if !touched { position.scrollTo(point: workspace?.offset(key) ?? .zero) }
             }
             .onDisappear { save() }
             .onChange(of: scenePhase) { _, phase in if phase != .active { save() } }
     }
     private func save() {
-        if ready && restored && touched { workspace.setOffset(key, offset) }
+        if ready && restored && touched { workspace?.setOffset(key, offset) }
     }
 }
 

@@ -59,11 +59,11 @@ struct HomeView: View {
                 SheetView(eventId: route.eventId)
             }
         }
-        .environment(workspace)
         // Driver / team profiles open from any name in the stack. On the
         // stack itself, not its root content: pushed screens inherit the
         // stack's environment, not the root view's modifiers.
         .infoModalHost()
+        .environment(workspace)
         .tint(PP.accentInk)
         .sheet(isPresented: $showSettings) { SettingsView() }
     }
