@@ -40,11 +40,6 @@ const COLORS = [
   { value: '#ea580c', name: 'Orange' },
   { value: '#9333ea', name: 'Purple' },
 ]
-const SIZES = [
-  { label: 'S', value: 2 },
-  { label: 'M', value: 4 },
-  { label: 'L', value: 8 },
-]
 const ERASER_RADIUS = 12
 /** How far beyond the viewport tiles keep a live canvas, in px of scroll. */
 const RENDER_MARGIN = 800
@@ -69,7 +64,7 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
   const [phase, setPhase] = useState<Phase>('loading')
   const [tool, setTool] = useState<'pen' | 'eraser'>('pen')
   const [color, setColor] = useState(COLORS[0].value)
-  const [size, setSize] = useState(SIZES[1].value)
+  const [size, setSize] = useState(4)
   const [pageHeight, setPageHeight] = useState(2000)
   const [activeTiles, setActiveTiles] = useState<ReadonlySet<number>>(new Set())
   const [status, setStatus] = useState<SaveStatus>('idle')
@@ -723,6 +718,7 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
               type="button"
               className={`seg-btn${tool === 'pen' ? ' active' : ''}`}
               onClick={() => setTool('pen')}
+              aria-pressed={tool === 'pen'}
             >
               Pen
             </button>
@@ -730,6 +726,7 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
               type="button"
               className={`seg-btn${tool === 'eraser' ? ' active' : ''}`}
               onClick={() => setTool('eraser')}
+              aria-pressed={tool === 'eraser'}
             >
               Eraser
             </button>
@@ -750,18 +747,22 @@ export default function ScratchpadModal({ eventId, onClose }: { eventId: number;
               />
             ))}
           </div>
-          <div className="seg" role="group" aria-label="Pen size">
-            {SIZES.map((s) => (
-              <button
-                key={s.label}
-                type="button"
-                className={`seg-btn${s.value === size ? ' active' : ''}`}
-                onClick={() => setSize(s.value)}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
+          <label className="sp-pen-size">
+            <span className="sp-stroke-preview" aria-hidden="true">
+              <span style={{ height: size, background: color }} />
+            </span>
+            <input
+              type="range"
+              min="0.5"
+              max="12"
+              step="0.5"
+              value={size}
+              aria-label="Pen size"
+              aria-valuetext={`${size} points`}
+              onChange={(event) => setSize(Number(event.target.value))}
+            />
+            <span className="sp-size-value">{size} pt</span>
+          </label>
           <div className="sp-toolbar-actions">
             <button className="btn" onClick={undo} disabled={undoRef.current.length === 0}>
               Undo
