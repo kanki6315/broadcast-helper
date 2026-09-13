@@ -4,14 +4,38 @@ import Testing
 
 struct ServerConfigTests {
     @Test func defaultAndOverride() {
-        #expect(ServerConfig.resolve(environment: [:]) == ServerConfig.production)
-        #expect(ServerConfig.resolve(environment: ["PITPASS_SERVER_URL": ""]) == ServerConfig.production)
+        #expect(ServerConfig.resolve(environment: [:]) == ServerConfig.defaultURL)
+        #expect(ServerConfig.resolve(environment: ["PITPASS_SERVER_URL": ""]) == ServerConfig.defaultURL)
         let override = ServerConfig.resolve(environment: ["PITPASS_SERVER_URL": "http://localhost:8731/"])
         #if DEBUG
         #expect(override.absoluteString == "http://localhost:8731")
         #else
         #expect(override == ServerConfig.production)
         #expect(ServerConfig.resolve(environment: ["PITPASS_SERVER_URL": "invalid"]) == ServerConfig.production)
+        #endif
+    }
+
+    @Test func platformDefault() {
+        #if DEBUG && targetEnvironment(simulator)
+        #expect(ServerConfig.defaultURL == ServerConfig.local)
+        #else
+        #expect(ServerConfig.defaultURL == ServerConfig.production)
+        #endif
+    }
+
+    @Test func buildOverrideAndLaunchPrecedence() {
+        let built = "http://localhost:8732"
+        let launch = ["PITPASS_SERVER_URL": "http://localhost:8733"]
+        #if DEBUG
+        #expect(ServerConfig.resolve(environment: [:], builtServerURL: built).absoluteString == built)
+        #expect(ServerConfig.resolve(environment: launch, builtServerURL: built).absoluteString == "http://localhost:8733")
+        #expect(ServerConfig.resolve(environment: ["PITPASS_SERVER_URL": " "], builtServerURL: built).absoluteString == built)
+        #expect(ServerConfig.resolve(environment: [:], builtServerURL: " ") == ServerConfig.defaultURL)
+        #expect(ServerConfig.resolve(environment: ["PITPASS_SERVER_URL": ServerConfig.production.absoluteString],
+                                     builtServerURL: built) == ServerConfig.production)
+        #else
+        #expect(ServerConfig.resolve(environment: launch, builtServerURL: built) == ServerConfig.production)
+        #expect(ServerConfig.resolve(environment: [:], builtServerURL: "invalid") == ServerConfig.production)
         #endif
     }
 

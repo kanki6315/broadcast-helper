@@ -100,28 +100,53 @@ xcodebuild -project ios/PitPass.xcodeproj -scheme PitPass \
 ```
 
 Release builds (including archives) always use `https://pitpass.arjunakankipati.com`.
-There is no server URL setting in the app. Debug builds also default to production.
-To override a Debug launch, open **Product → Scheme → Edit Scheme → Run →
-Arguments → Environment Variables** and set `PITPASS_SERVER_URL`:
+Debug simulator builds default to `http://localhost:8731`; start the local backend
+as described in README.md before launching. Debug builds on physical devices
+still default to production. There is no server URL setting in the app.
 
-- Production: `https://pitpass.arjunakankipati.com` (or disable the variable).
-- Simulator local backend: `http://localhost:8731` (auth off).
-- Physical iPad: `http://<your-mac-hostname>.local:8731`, on the same network;
-  the backend must listen on a network-accessible interface. `localhost` on an
-  iPad refers to the iPad itself. Allow local network access when prompted.
+For a worktree running its backend on a different port, bake the origin into the
+build. For example, start that worktree's backend with `PORT=8732 ./gradlew bootRun`
+from `backend/`, then build from the repository root:
+
+```bash
+xcodegen generate --spec ios/project.yml
+xcodebuild -project ios/PitPass.xcodeproj -scheme PitPass -configuration Debug \
+  -destination 'platform=iOS Simulator,name=iPad Pro 11-inch (M5)' \
+  -derivedDataPath ios/build build CODE_SIGNING_ALLOWED=NO \
+  PITPASS_SERVER_URL=http://localhost:8732
+xcrun simctl install booted ios/build/Build/Products/Debug-iphonesimulator/PitPass.app
+xcrun simctl launch --terminate-running-process booted com.arjunakankipati.pitpass
+```
+
+The build setting is stored in the app's Info.plist, so it also applies to launches
+from the simulator home screen or a simulator panel. Pass it on every rebuild;
+without it, a new build returns to the default. Each worktree should use a distinct
+backend port and its own derived-data directory. Apps share a bundle identifier,
+so use separate simulator devices for simultaneous worktrees (replace `booted`
+with each device's UDID).
+
+For a temporary Debug override, set `PITPASS_SERVER_URL` in **Product → Scheme →
+Edit Scheme → Run → Arguments → Environment Variables**, or use the simctl recipe
+below. Resolution order is launch environment → build setting → platform default.
+To test production in a Debug simulator, explicitly set
+`PITPASS_SERVER_URL=https://pitpass.arjunakankipati.com`.
+For a physical iPad's local backend, use `http://<your-mac-hostname>.local:8731`
+on the same network; the backend must listen on a network-accessible interface.
+`localhost` on an iPad refers to the iPad itself. Allow local network access when prompted.
 
 Overrides must be full HTTP(S) origins without paths, credentials, queries, or
 fragments; invalid Debug overrides stop launch with a configuration error.
-Release ignores the environment variable and any old saved URL. Switching
-endpoints on relaunch signs out and clears offline data, including unsynced
-scratchpad ink, before contacting the new server. The old URL preference is
-removed during migration; existing production data is retained.
+Release ignores both overrides and any old saved URL. There is no automatic
+fallback to production if the local backend is unavailable. Switching endpoints
+on relaunch signs out and clears offline data, including unsynced scratchpad ink,
+before contacting the new server. The old URL preference is removed during
+migration; existing production data is retained when the endpoint is unchanged.
 
 Simulator recipes that proved necessary:
 
 - Launch a Debug build against local dev (terminate the app first):
   `SIMCTL_CHILD_PITPASS_SERVER_URL=http://localhost:8731 xcrun simctl launch
-  booted com.arjunakankipati.pitpass`. Omit the variable for production.
+  booted com.arjunakankipati.pitpass`. Omit the variable to use the built-in endpoint.
 - `xcrun simctl launch` reuses the *installed* build; reinstall after every
   `xcodebuild` (the desktop app's simulator panel does this on launch).
 - A background `xcodebuild test` reinstalls the app mid-session and kicks it

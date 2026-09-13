@@ -1,21 +1,36 @@
 import Foundation
 
-/// Release always uses production. Debug builds may override the endpoint at launch.
+/// Release always uses production. Debug simulators default to the local backend.
 enum ServerConfig {
     static let production = URL(string: "https://pitpass.arjunakankipati.com")!
 
-    static var current: URL { resolve(environment: ProcessInfo.processInfo.environment) }
+    static let local = URL(string: "http://localhost:8731")!
 
-    static func resolve(environment: [String: String]) -> URL {
+    static var current: URL {
+        resolve(environment: ProcessInfo.processInfo.environment,
+                builtServerURL: Bundle.main.object(forInfoDictionaryKey: "PitPassServerURL") as? String)
+    }
+
+    static var defaultURL: URL {
+        #if DEBUG && targetEnvironment(simulator)
+        return local
+        #else
+        return production
+        #endif
+    }
+
+    static func resolve(environment: [String: String], builtServerURL: String? = nil) -> URL {
         #if DEBUG
-        if let raw = environment["PITPASS_SERVER_URL"], !raw.isEmpty {
+        // A launch override wins; the bundled setting survives ordinary relaunches.
+        for raw in [environment["PITPASS_SERVER_URL"], builtServerURL].compactMap({ $0 }) {
+            if raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
             guard let url = parse(raw) else {
                 fatalError("PITPASS_SERVER_URL must be an http(s) origin, e.g. http://localhost:8731")
             }
             return url
         }
         #endif
-        return production
+        return defaultURL
     }
 
     /// API paths are absolute: endpoints must be origins, without credentials or query strings.
