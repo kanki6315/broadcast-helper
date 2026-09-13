@@ -50,9 +50,8 @@ struct SheetView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(PP.bg, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { ConnectivityPill() }
             ToolbarItem(placement: .topBarTrailing) {
-                if sheet.value != nil { DownloadButton(target: .event(eventId), noun: "event") }
+                StatusDownloadButton(target: .event(eventId), noun: "event")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 if let sheet = sheet.value {
