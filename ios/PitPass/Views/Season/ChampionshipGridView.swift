@@ -43,20 +43,22 @@ struct ChampionshipGridView: View {
         let viewSel = Binding<SeasonModel.PointsView?>(get: { model.pointsView }, set: { if let v = $0 { model.pointsView = v } })
         let recaps = loadedRecaps
         let ptsFlags = mode == .points ? PointsLegendFlags(recaps) : nil
-        return FlowLayout(horizontalSpacing: PP.Space.s3, verticalSpacing: PP.Space.s2) {
-            if model.families.count > 1 {
-                Segmented(options: model.families.map { .init(id: $0.family, label: $0.label) }, selection: familySel)
-            }
-            if model.kinds.count > 1 {
-                Segmented(options: model.kinds.map { .init(id: $0, label: model.kindLabel($0)) }, selection: kindSel)
-            }
-            if mode == .points, ptsFlags != nil {
-                Segmented(options: SeasonModel.PointsView.allCases.map { .init(id: $0, label: $0.label) }, selection: viewSel)
-            }
-            if mode == .recap, model.selectedKind == "DRIVERS" {
-                SegmentedToggles(options: [.init(id: "teams", label: "Show teams")],
-                                 on: Binding(get: { model.showTeams ? ["teams"] : [] }, set: { _ in }),
-                                 toggle: { _ in model.showTeams.toggle() })
+        return VStack(alignment: .leading, spacing: PP.Space.s3) {
+            FlowLayout(horizontalSpacing: PP.Space.s3, verticalSpacing: PP.Space.s2) {
+                if model.families.count > 1 {
+                    Segmented(options: model.families.map { .init(id: $0.family, label: $0.label) }, selection: familySel)
+                }
+                if model.kinds.count > 1 {
+                    Segmented(options: model.kinds.map { .init(id: $0, label: model.kindLabel($0)) }, selection: kindSel)
+                }
+                if mode == .points, ptsFlags != nil {
+                    Segmented(options: SeasonModel.PointsView.allCases.map { .init(id: $0, label: $0.label) }, selection: viewSel)
+                }
+                if mode == .recap, model.selectedKind == "DRIVERS" {
+                    SegmentedToggles(options: [.init(id: "teams", label: "Show teams")],
+                                     on: Binding(get: { model.showTeams ? ["teams"] : [] }, set: { _ in }),
+                                     toggle: { _ in model.showTeams.toggle() })
+                }
             }
             if mode == .recap {
                 RecapLegend(recaps: recaps)
@@ -184,6 +186,7 @@ struct ClassGridView: View {
     private func grid(_ recap: Recap) -> some View {
         let rounds = recap.rounds.filter { $0.hasParticipation(in: recap.rows) }
         let drivers = recap.championship.kind == "DRIVERS"
+        let entrantRecap = mode == .recap && !drivers
         let leader = recap.rows.map(\.totalPoints).max() ?? 0
         let color = model.classColor(champ.className)
         let breakdown = mode == .points && model.pointsView == .breakdown
@@ -193,15 +196,27 @@ struct ClassGridView: View {
             ? recap.rows.flatMap { $0.sessionPoints.values }.map { Points.marks($0).map(\.glyph).joined(separator: " ").count }.max() ?? 0
             : 0
 
-        let identColumns = [GridColumn(id: "entry", width: entryWidth, padH: 12) {
+        var identColumns = [GridColumn(id: "entry", width: entrantRecap ? entryWidth - 44 : entryWidth, padH: 12) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(drivers ? "Driver" : "Team").font(PP.sans(PP.TextSize.xs, weight: 600))
-                Text("Position · car · points").font(PP.sans(PP.TextSize.xs))
+                Text(entrantRecap ? "Position · points" : "Position · car · points").font(PP.sans(PP.TextSize.xs))
             }
             .foregroundStyle(PP.textMuted)
             .lineLimit(1)
         }]
+        if entrantRecap {
+            identColumns.append(GridColumn(id: "car", width: 44, align: .center, padH: 4) {
+                Text("Car").font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted)
+            })
+        }
         let tightRounds = mode == .recap && availableWidth < 890
+        let entrantRoundWidth = recap.rows.flatMap { row in
+            rounds.flatMap { round in
+                Dictionary(grouping: row.races(round: round.round) ?? [], by: { $0.carNumber ?? "" }).values.map {
+                    RaceCellView.contentWidth($0, raceTags: raceTags[round.round] ?? [:]) + 8
+                }
+            }
+        }.max() ?? 66
         var dataColumns: [GridColumn] = rounds.map { round in
             let padH: CGFloat = tightRounds ? 2 : 4
             let contentWidth = recap.rows.map {
@@ -209,7 +224,7 @@ struct ClassGridView: View {
                                           raceTags: raceTags[round.round] ?? [:], chipPadding: padH)
             }.max() ?? 0
             return .round("r\(round.round)", venue: round.venue, round: round.round,
-                          width: max(tightRounds ? 60 : 66, contentWidth + padH * 2),
+                          width: entrantRecap ? max(66, entrantRoundWidth) : max(tightRounds ? 60 : 66, contentWidth + padH * 2),
                           padH: padH,
                           current: model.currentEventId != nil && round.eventId == model.currentEventId)
         }
@@ -230,11 +245,11 @@ struct ClassGridView: View {
             // team sub-lines open the team's (Privateer stays plain).
             let target: InfoTarget? = drivers ? InfoTarget.driver(named: name) : InfoTarget.team(named: name)
             let entry = RecapEntryDetail(id: row.competitorKey, position: row.position,
-                                         carNumber: carNumber, name: name,
+                                         carNumber: entrantRecap ? nil : carNumber, name: name,
                                          points: row.totalPoints, back: back, teams: teamNames,
                                          gap: mode == .points ? prevPoints.map { $0 - row.totalPoints } : nil)
-            let label = RecapEntryLabel(entry: entry, shownTeams: shownTeams)
-            let ident: [AnyView]
+            let label = RecapEntryLabel(entry: entry, shownTeams: shownTeams, wrapsName: entrantRecap)
+            var ident: [AnyView]
             if let target, let modals {
                 ident = [AnyView(Button {
                     modals.open(target)
@@ -248,8 +263,12 @@ struct ClassGridView: View {
                 ident = [AnyView(label.accessibilityLabel(entry.accessibilityLabel))]
             }
 
+            let entrantLayout = EntrantRecapLayout(rounds: rounds.map { row.races(round: $0.round) ?? [] })
+            if entrantRecap {
+                ident.append(AnyView(EntrantCarLabels(layout: entrantLayout, lineHeight: entryLineHeight)))
+            }
             var cells: [AnyView] = []
-            var lines = shownTeams.isEmpty ? 2 : 3
+            var lines = entrantRecap ? 3 : (shownTeams.isEmpty ? 2 : 3)
             for r in rounds {
                 if mode == .points {
                     guard let pts = row.points(round: r.round) else { cells.append(GridCell.skip()); continue }
@@ -270,6 +289,13 @@ struct ClassGridView: View {
                     }
                 } else {
                     let races = row.races(round: r.round)
+                    if entrantRecap {
+                        lines = max(lines, entrantLayout.slots.count)
+                        cells.append(AnyView(EntrantRoundCell(layout: entrantLayout, races: races ?? [],
+                                                             raceTags: raceTags[r.round] ?? [:],
+                                                             lineHeight: entryLineHeight)))
+                        continue
+                    }
                     lines = max(lines, RaceCellView.lines(races))
                     cells.append(AnyView(RaceCellView(races: races, raceTags: raceTags[r.round] ?? [:], chipPadding: tightRounds ? 2 : 4).frame(maxWidth: .infinity)))
                 }
@@ -294,7 +320,7 @@ struct ClassGridView: View {
                          cellPadV: 3,
                          headerHeight: entryLineHeight * 2,
                          separatesIdentity: true,
-                         centersCells: true)
+                         centersCells: !entrantRecap)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("\(champ.className ?? "") \(Champs.champKindLabel(champ)) — \(mode == .recap ? "season recap" : "championship points by round")")
             if dataColumns.reduce(0, { $0 + $1.width }) > availableWidth - entryWidth + 1 {
@@ -328,6 +354,7 @@ private struct RecapEntryDetail: Identifiable {
 private struct RecapEntryLabel: View {
     let entry: RecapEntryDetail
     let shownTeams: [String]
+    var wrapsName = false
     @ScaledMetric private var positionWidth: CGFloat = 32
     @ScaledMetric private var positionSize: CGFloat = 36
     @ScaledMetric private var numberSize: CGFloat = 14
@@ -351,7 +378,7 @@ private struct RecapEntryLabel: View {
                             .foregroundStyle(PP.text).fixedSize()
                     }
                     Text(entry.name).font(PP.sans(PP.TextSize.sm, weight: 500))
-                        .foregroundStyle(PP.ink).lineLimit(1)
+                        .foregroundStyle(PP.ink).lineLimit(wrapsName ? 2 : 1)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {

@@ -17,6 +17,26 @@ struct RecapLayoutTests {
         }
     }
 
+    @Test func entrantCarsKeepTheirLanesWhenParticipationChanges() {
+        let first = races(cars: ["7", "77"])
+        let second = races(cars: ["8", "77"])
+        let layout = EntrantRecapLayout(rounds: [first, second])
+        #expect(layout.slots.map(\.car) == ["7", "7", "8", "8", "77", "77"])
+        #expect(layout.slots.map(\.race) == [1, 2, 1, 2, 1, 2])
+        #expect(layout.result(for: layout.slots[0], in: second) == nil)
+        #expect(layout.result(for: layout.slots[2], in: first) == nil)
+        #expect(layout.result(for: layout.slots[4], in: second)?.carNumber == "77")
+    }
+
+    @Test func entrantLaneHeightFitsResults() {
+        let results = races(cars: ["7", "1234"], retired: true)
+        let layout = EntrantRecapLayout(rounds: [results])
+        let host = UIHostingController(rootView: EntrantRoundCell(
+            layout: layout, races: results, raceTags: tags, lineHeight: 24).fixedSize())
+        let size = host.sizeThatFits(in: CGSize(width: 1000, height: 1000))
+        #expect(size.height == CGFloat(layout.slots.count) * 24)
+    }
+
     @Test func everyCarRaceHasVerticalSpace() {
         #expect(RaceCellView.lines(nil) == 1)
         #expect(RaceCellView.lines([]) == 1)
