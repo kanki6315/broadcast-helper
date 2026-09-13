@@ -559,3 +559,22 @@ The title menu switches year/stage, and class filtering uses an compact segmente
 Races uses a horizontally scrolling round selector, initially selecting the
 next dated event or the latest event, with results and event-sheet access below.
 UI text uses the system font; numeric data retains JetBrains Mono.
+
+## App icon
+
+`ios/PitPass/Resources/AppIcon.icon` is the editable Icon Composer source for
+the Liquid Glass app icon. Open it in Icon Composer (included with Xcode 26+).
+Its four SVG layers preserve the existing Access Lane mark: the rail and two
+P forms share a glass group, with the gold access marker in a group above it.
+The charcoal background and system-generated Default, Dark, and Mono appearances
+were visually checked in Icon Composer. Edit the SVGs inside the package's
+`Assets` directory to change the artwork; let Icon Composer provide the glass
+effects and system corner mask.
+
+XcodeGen automatically includes the `.icon` package from the app sources. Keep
+its basename `AppIcon` aligned with `ASSETCATALOG_COMPILER_APPICON_NAME` in
+`ios/project.yml`. The existing `AppIcon.appiconset` remains for compatibility;
+the in-app `AppIconPreview` and web icons are separate static assets.
+
+Validation: generated the Xcode project and built the unsigned app for a generic
+iOS device with Xcode 26.6 (deployment target remains iOS 18).
