@@ -65,6 +65,7 @@ ios/
                 TeamProfileView, ProfileWidgets (career stats, matrices, notes)
     Resources/  Assets.xcassets (AppIcon, AccentColor #f0b84a), Fonts (Inter, JetBrains Mono),
                 PrivacyInfo.xcprivacy (required-reason APIs + data types, for App Review)
+  release.sh    TestFlight release (below); asc_profile.py keeps its App Store profile current
   PitPassTests/ Swift Testing — OfflineStore, DataLoader (scripted transport), Downloads
                 (plan + job over a path-routed transport), Pad (wire format, mirror,
                 PencilKit bridge, syncer), PitLaneGeo, ProfileLogic
@@ -140,9 +141,10 @@ One command per release, once the account is set up:
 ios/release.sh            # unit tests → Release archive → upload → git tag
 ```
 
-It reads the version from `project.yml`, stamps a build number, archives with
-automatic signing, uploads to App Store Connect and tags the commit
-`ios/v<version>-<build>`. Flags: `--skip-tests`, `--no-upload` (export an
+It reads the version from `project.yml`, stamps a build number, archives,
+signs the export with the keychain's Apple Distribution certificate and an
+App Store profile that `ios/asc_profile.py` keeps current through the App
+Store Connect API, uploads, and tags the commit `ios/v<version>-<build>`. Flags: `--skip-tests`, `--no-upload` (export an
 `.ipa` instead), `--build N`, `--allow-dirty`. Output lands in
 `ios/build/release/<version>-<build>/` (git-ignored) — the `.xcarchive` there
 holds the dSYMs for that build, so keep it until the next release.
@@ -163,10 +165,16 @@ holds the dSYMs for that build, so keep it until the next release.
    `pitpass`, primary language English. The **name** must be unique across the
    App Store — if "Pit Pass" is taken, pick a variant; it's only the store
    listing, not `CFBundleDisplayName`.
-4. **API key** so uploads never prompt for a password or 2FA: *App Store
-   Connect → Users and Access → Integrations → App Store Connect API → Team
-   Keys → Generate*, role **App Manager**. Download the `.p8` once (Apple
-   won't offer it again), then:
+4. **Distribution certificate**: Xcode → Settings → Accounts → your Apple ID
+   → *Manage Certificates…* → **+** → *Apple Distribution*. It lives in this
+   Mac's keychain for a year (Xcode warns before it expires; renewing is the
+   same dialog). Export it once from Keychain Access as a `.p12` and keep it
+   with your backups in case you change Macs.
+5. **API key** so signing and uploads never prompt for a password or 2FA:
+   *App Store Connect → Users and Access → Integrations → App Store Connect
+   API → Team Keys → Generate*, role **App Manager** (enough to create
+   profiles and upload builds — an Admin key is not needed). Download the
+   `.p8` once (Apple won't offer it again), then:
 
    ```bash
    mkdir -p ~/.appstoreconnect/private_keys && mv ~/Downloads/AuthKey_*.p8 ~/.appstoreconnect/private_keys/
@@ -177,14 +185,15 @@ holds the dSYMs for that build, so keep it until the next release.
    ```
 
    `ios/.release.env` is git-ignored. Without it the script falls back to the
-   Apple ID signed into Xcode, which works but may stop to ask for 2FA.
-5. **TestFlight → Internal Testing → +**: create a group (e.g. "Booth"),
+   Apple ID signed into Xcode with automatic (cloud) signing, which works but
+   may stop to ask for 2FA.
+6. **TestFlight → Internal Testing → +**: create a group (e.g. "Booth"),
    tick *Enable automatic distribution*, add testers by Apple ID email. They
    must first be added under *Users and Access* (role Customer Support is
    enough) — internal testers are team members; there can be up to 100, and
    their builds skip review. Testers install the TestFlight app and accept the
    email invite once.
-6. Run `ios/release.sh`. The first build for a version also needs the
+7. Run `ios/release.sh`. The first build for a version also needs the
    **export-compliance** answer, which `ITSAppUsesNonExemptEncryption = false`
    in `Info.plist` already gives (HTTPS only, no custom crypto).
 
@@ -223,11 +232,30 @@ Shipping to the App Store proper adds a listing (screenshots for the 13" and
 a support URL) and App Review; the same archive is submitted from the
 TestFlight build, no rebuild.
 
+### Why the export is signed manually
+
+With an API key, xcodebuild's automatic signing considers only
+*cloud-managed* distribution certificates, and creating those needs an Admin
+key ("Cloud signing permission error" from an App Manager key, even when your
+own user has the cloud-certificate permission). Rather than hold an Admin key
+on disk, the script signs the export manually: `asc_profile.py` finds the
+portal certificate that matches the keychain's Apple Distribution identity,
+reuses an active App Store profile containing it or creates one named
+"PitPass App Store", installs it under `~/Library/Developer/Xcode/UserData/
+Provisioning Profiles`, and the export options name it. Nothing needs
+touching in the developer portal; a renewed certificate simply gets a new
+profile on the next run. The archive step stays automatic (development
+signing).
+
 ### Troubleshooting
 
-- `No profiles for 'com.arjunakankipati.pitpass' were found` / `Provisioning
-  profile doesn't support …`: the team in `project.yml` is wrong or still the
-  free one; `-allowProvisioningUpdates` creates profiles only for a paid team.
+- `no Apple Distribution certificate with a private key in the keychain`:
+  one-time setup step 4. `security find-identity -v -p codesigning` lists what
+  the keychain holds.
+- `Cloud signing permission error` / `No profiles for
+  'com.arjunakankipati.pitpass' were found`: automatic signing ran with the
+  API key — `ios/.release.env` and the certificate are the fix (above). With
+  no key configured, the team in `project.yml` is wrong or still the free one.
 - `Unable to authenticate with App Store Connect`: the `.p8` path or IDs in
   `ios/.release.env` — the default key path is
   `~/.appstoreconnect/private_keys/AuthKey_<ASC_KEY_ID>.p8`.
