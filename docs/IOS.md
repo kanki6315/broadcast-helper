@@ -15,7 +15,7 @@ staleness problem, which is the class of bug being escaped.
 | Slice | State | What it covers |
 |---|---|---|
 | 1. Sign-in, offline store, series directory | done | Device-token login, SQLite read-through store, the card grid |
-| 2. Season pages | done | Overview strip + recap, Races (schedule + session results), Standings, Stats, Entries, Photos |
+| 2. Season pages | done | Season recap overview, Races (schedule + session results), Standings, Stats, Entries, Photos |
 | 3. Event sheet | done | Sheet, team-sheets and storylines PDFs, Recap overlay, Pit lane with GPS guidance, Print / Save PDF |
 | 4. Download this event / season | done | Prefetch manifests with progress, "Downloaded · Xm" per screen, Settings list |
 | 5. PencilKit scratchpad | done | Same stroke wire format as the web pad, local mirror, offline replay, conflict banner, FAB badge |
@@ -31,6 +31,10 @@ the production Google sign-in end to end (device token minted, stored,
 
 Known gaps: the website's ⌘K search has no counterpart; grid headers don't
 pin to the viewport while scrolling.
+
+The Overview opens directly on the season recap. Race details and entries remain
+available in their dedicated views; the duplicate summary strip and its extra
+requests have been removed so more season rows are visible immediately.
 
 ## Workspace navigation and resume
 

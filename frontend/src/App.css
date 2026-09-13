@@ -2109,15 +2109,6 @@ h2 small {
  * thing the product cannot trade away. It stays at its AA-compliant 25.5px.
  * ------------------------------------------------------------------------- */
 @media (pointer: coarse) {
-  .wr-link {
-    padding: 12px 0;
-  }
-
-  .hs-more {
-    padding: 14px 4px;
-    margin: 0 -4px;
-  }
-
   /* `.season-year-strip .seg-btn` sets its own padding at higher specificity,
    * so match it rather than losing the cascade. */
   .seg-btn,
