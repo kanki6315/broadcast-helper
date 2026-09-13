@@ -362,6 +362,13 @@ Safari mid-download.
 
 ### The scratchpad
 
+The pen toolbar uses a 0.5–12 pt slider in 0.5 pt steps, with a live width
+preview and numeric label on both iPad and web. On iPad, a completed Pencil
+Pro squeeze toggles Pen/Eraser without resetting the pen color or width;
+cancelled squeezes and system-disabled interactions do nothing. Double-tap
+also toggles when the system preference is Switch Eraser or Switch Previous.
+Pencil hardware gestures need validation on a physical iPad.
+
 `ScratchpadSheet` is ScratchpadModal.tsx over a `PKCanvasView`: PencilKit
 draws, erases and undoes; the web's `[Stroke]` stays the document and the
 wire format is untouched (`{id, tool, color, size, points}` in the 800-wide

@@ -2,7 +2,7 @@ import PencilKit
 import SwiftUI
 
 /// The event scratchpad tab: the
-/// tool row (Pen/Eraser, the six literal ink colours, S/M/L, Undo/Redo), the
+/// tool row (Pen/Eraser, the six literal ink colours, a point-size slider, Undo/Redo), the
 /// conflict banner, and white paper 800 logical px wide scaled to the
 /// window. Ink colours are persisted literals, so the paper stays white in
 /// both themes; the chrome follows the tokens.
@@ -12,7 +12,7 @@ struct ScratchpadSheet: View {
     @Binding var model: PadModel?
     @State private var tool: Tool? = .pen
     @State private var color = ScratchpadSheet.colors[0].value
-    @State private var size: Double? = ScratchpadSheet.sizes[1].value
+    @State private var size = 4.0
 
     enum Tool: String, CaseIterable, Identifiable {
         case pen, eraser
@@ -24,7 +24,6 @@ struct ScratchpadSheet: View {
         ("#111827", "Black"), ("#dc2626", "Red"), ("#2563eb", "Blue"),
         ("#16a34a", "Green"), ("#ea580c", "Orange"), ("#9333ea", "Purple"),
     ]
-    static let sizes: [(label: String, value: Double)] = [("S", 2), ("M", 4), ("L", 8)]
 
     var body: some View {
         Group {
@@ -37,7 +36,9 @@ struct ScratchpadSheet: View {
                     if model.conflict { conflictBanner(model) }
                     switch model.phase {
                     case .ready:
-                        PadCanvas(model: model, tool: tool ?? .pen, color: color, size: size ?? 4)
+                        PadCanvas(model: model, tool: $tool, color: color, size: size)
+                            // Let paper scroll behind the floating tab bar.
+                            .ignoresSafeArea(.container, edges: .bottom)
                     case .loading:
                         Text("Loading scratchpad…").font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.textMuted)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -125,8 +126,25 @@ struct ScratchpadSheet: View {
     }
 
     private var sizePick: some View {
-        Segmented(options: ScratchpadSheet.sizes.map { .init(id: $0.value, label: $0.label) }, selection: $size)
-            .accessibilityLabel("Pen size")
+        HStack(spacing: PP.Space.s2) {
+            Capsule()
+                .fill(Color(UIColor(hex: color) ?? .black))
+                .frame(width: 24, height: size)
+                .frame(width: 32, height: 24)
+                .background(.white, in: RoundedRectangle(cornerRadius: 4))
+                .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(PP.borderStrong))
+                .accessibilityHidden(true)
+            Slider(value: $size, in: 0.5...12, step: 0.5)
+                .frame(width: 100)
+                .accessibilityLabel("Pen size")
+                .accessibilityValue("\(size.formatted()) points")
+            Text("\(size.formatted()) pt")
+                .font(PP.sans(PP.TextSize.xs))
+                .monospacedDigit()
+                .foregroundStyle(PP.text)
+                .frame(width: 46, alignment: .trailing)
+        }
+        .frame(minHeight: 44)
     }
 
     private func undoRedo(_ model: PadModel) -> some View {
@@ -201,13 +219,14 @@ struct ScratchpadSheet: View {
 /// web's eraser. Fingers scroll or draw per the system Pencil setting.
 private struct PadCanvas: UIViewRepresentable {
     let model: PadModel
-    let tool: ScratchpadSheet.Tool
+    @Binding var tool: ScratchpadSheet.Tool?
     let color: String
     let size: Double
 
     func makeUIView(context: Context) -> FittedCanvasView {
         let view = FittedCanvasView()
         view.delegate = context.coordinator
+        view.addInteraction(UIPencilInteraction(delegate: context.coordinator))
         #if targetEnvironment(simulator)
         // The simulator reports "Only Draw with Apple Pencil" on, which would
         // leave a mouse unable to draw at all.
@@ -218,6 +237,9 @@ private struct PadCanvas: UIViewRepresentable {
         view.backgroundColor = .white
         view.overrideUserInterfaceStyle = .light
         view.alwaysBounceVertical = true
+        // Keep the final strokes scrollable above the tab bar even though
+        // the canvas itself extends underneath it.
+        view.contentInsetAdjustmentBehavior = .always
         view.isRulerActive = false
         model.undoHandle = { [weak view] in view?.undoManager?.undo(); view?.reportUndoState() }
         model.redoHandle = { [weak view] in view?.undoManager?.redo(); view?.reportUndoState() }
@@ -226,6 +248,7 @@ private struct PadCanvas: UIViewRepresentable {
     }
 
     func updateUIView(_ view: FittedCanvasView, context: Context) {
+        context.coordinator.tool = $tool
         view.pageHeight = CGFloat(model.pageHeight)
         if context.coordinator.appliedVersion != model.drawingVersion {
             context.coordinator.appliedVersion = model.drawingVersion
@@ -235,7 +258,7 @@ private struct PadCanvas: UIViewRepresentable {
             view.install(model.drawing)
             view.reportUndoState()
         }
-        switch tool {
+        switch tool ?? .pen {
         case .pen:
             view.tool = PKInkingTool(.monoline, color: UIColor(hex: color) ?? .black, width: size)
         case .eraser:
@@ -243,15 +266,38 @@ private struct PadCanvas: UIViewRepresentable {
         }
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(model: model) }
+    func makeCoordinator() -> Coordinator { Coordinator(model: model, tool: $tool) }
 
-    final class Coordinator: NSObject, PKCanvasViewDelegate {
+    final class Coordinator: NSObject, PKCanvasViewDelegate, UIPencilInteractionDelegate {
         let model: PadModel
         var appliedVersion = -1
         /// True while the representable itself sets the drawing.
         var muted = false
 
-        init(model: PadModel) { self.model = model }
+        var tool: Binding<ScratchpadSheet.Tool?>
+
+        init(model: PadModel, tool: Binding<ScratchpadSheet.Tool?>) {
+            self.model = model
+            self.tool = tool
+        }
+
+        func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
+            // One toggle per completed squeeze; cancellation never changes tools.
+            guard squeeze.phase == .ended,
+                  UIPencilInteraction.preferredSqueezeAction != .ignore,
+                  UIPencilInteraction.preferredSqueezeAction != .runSystemShortcut else { return }
+            toggleEraser()
+        }
+
+        func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveTap tap: UIPencilInteraction.Tap) {
+            guard UIPencilInteraction.preferredTapAction == .switchEraser ||
+                  UIPencilInteraction.preferredTapAction == .switchPrevious else { return }
+            toggleEraser()
+        }
+
+        private func toggleEraser() {
+            tool.wrappedValue = tool.wrappedValue == .eraser ? .pen : .eraser
+        }
 
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             guard !muted else { return }
