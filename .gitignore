@@ -27,3 +27,6 @@ ios/build-*/
 ios/DerivedData/
 xcuserdata/
 ios/build-tests/
+# iOS release (ios/release.sh): App Store Connect API key settings + archives.
+ios/.release.env
+*.xcarchive

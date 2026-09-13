@@ -63,7 +63,8 @@ ios/
       Sheet/    SheetView, PdfViewerSheet, PitLaneSheet, RecapSheet, SheetPrint, ScratchpadSheet
       Info/     InfoModal (targets, presenter, host, NameLink), DriverProfileView,
                 TeamProfileView, ProfileWidgets (career stats, matrices, notes)
-    Resources/  Assets.xcassets (AppIcon, AccentColor #f0b84a), Fonts (Inter, JetBrains Mono)
+    Resources/  Assets.xcassets (AppIcon, AccentColor #f0b84a), Fonts (Inter, JetBrains Mono),
+                PrivacyInfo.xcprivacy (required-reason APIs + data types, for App Review)
   PitPassTests/ Swift Testing — OfflineStore, DataLoader (scripted transport), Downloads
                 (plan + job over a path-routed transport), Pad (wire format, mirror,
                 PencilKit bridge, syncer), PitLaneGeo, ProfileLogic
@@ -84,9 +85,10 @@ brew install xcodegen
 cd ios && xcodegen generate && open PitPass.xcodeproj
 ```
 
-Pick your team under Signing & Capabilities (a free Apple ID works; the
-install expires after 7 days until a paid account is used). From the CLI —
-`DEVELOPER_DIR` sidesteps an `xcode-select` that still points at the
+Signing is automatic against the team in `project.yml` (`DEVELOPMENT_TEAM`,
+the Apple Developer Program team ID — see "Releasing to TestFlight"). A free
+Apple ID also works for a personal install, expiring after 7 days. From the
+CLI — `DEVELOPER_DIR` sidesteps an `xcode-select` that still points at the
 command-line tools:
 
 ```bash
@@ -129,6 +131,114 @@ Simulator recipes that proved necessary:
   clears it (and comes back in portrait).
 - Screenshots: `xcrun simctl io <device> screenshot out.png` works right
   after a boot when the panel's capture doesn't.
+
+## Releasing to TestFlight
+
+One command per release, once the account is set up:
+
+```bash
+ios/release.sh            # unit tests → Release archive → upload → git tag
+```
+
+It reads the version from `project.yml`, stamps a build number, archives with
+automatic signing, uploads to App Store Connect and tags the commit
+`ios/v<version>-<build>`. Flags: `--skip-tests`, `--no-upload` (export an
+`.ipa` instead), `--build N`, `--allow-dirty`. Output lands in
+`ios/build/release/<version>-<build>/` (git-ignored) — the `.xcarchive` there
+holds the dSYMs for that build, so keep it until the next release.
+
+### One-time setup (after Apple Developer Program approval)
+
+1. **Xcode → Settings → Accounts**: sign in with the enrolled Apple ID (or
+   press *Download Manual Profiles* / re-add it so Xcode drops the cached
+   "Personal Team"). The paid team's ID is under *Membership details* at
+   [developer.apple.com/account](https://developer.apple.com/account).
+2. **`ios/project.yml`**: set `DEVELOPMENT_TEAM` to that team ID and commit.
+   Everything signs against it — Xcode runs, the release script, and the
+   certificates + profiles Xcode creates on demand (`-allowProvisioningUpdates`).
+3. **App Store Connect → Apps → New App**: platform iOS, bundle ID
+   `com.arjunakankipati.pitpass` (Xcode registers the identifier on the first
+   signed build; if the menu doesn't offer it yet, add it under
+   *Certificates, Identifiers & Profiles → Identifiers* first), SKU
+   `pitpass`, primary language English. The **name** must be unique across the
+   App Store — if "Pit Pass" is taken, pick a variant; it's only the store
+   listing, not `CFBundleDisplayName`.
+4. **API key** so uploads never prompt for a password or 2FA: *App Store
+   Connect → Users and Access → Integrations → App Store Connect API → Team
+   Keys → Generate*, role **App Manager**. Download the `.p8` once (Apple
+   won't offer it again), then:
+
+   ```bash
+   mkdir -p ~/.appstoreconnect/private_keys && mv ~/Downloads/AuthKey_*.p8 ~/.appstoreconnect/private_keys/
+   cat > ios/.release.env <<'EOF'
+   ASC_KEY_ID=<Key ID from the keys table>
+   ASC_ISSUER_ID=<Issuer ID shown above the table>
+   EOF
+   ```
+
+   `ios/.release.env` is git-ignored. Without it the script falls back to the
+   Apple ID signed into Xcode, which works but may stop to ask for 2FA.
+5. **TestFlight → Internal Testing → +**: create a group (e.g. "Booth"),
+   tick *Enable automatic distribution*, add testers by Apple ID email. They
+   must first be added under *Users and Access* (role Customer Support is
+   enough) — internal testers are team members; there can be up to 100, and
+   their builds skip review. Testers install the TestFlight app and accept the
+   email invite once.
+6. Run `ios/release.sh`. The first build for a version also needs the
+   **export-compliance** answer, which `ITSAppUsesNonExemptEncryption = false`
+   in `Info.plist` already gives (HTTPS only, no custom crypto).
+
+### Every release
+
+1. Merge to `main`, work from a clean tree.
+2. Bump `MARKETING_VERSION` in `ios/project.yml` **only when testers should
+   see a new version** (a new sheet feature, not a hotfix). The build number
+   is a UTC minute stamp (`202609122145`) so every upload is unique and
+   increasing without a counter to maintain; TestFlight rejects a repeated
+   version + build, and the stamp makes that impossible.
+3. `ios/release.sh`, then `git push origin main --tags`.
+4. App Store Connect processes the build in 5–15 minutes; internal groups
+   with automatic distribution get a push from TestFlight. Add **What to Test**
+   notes on the build when there is something specific to look at.
+5. Settings → About in the app shows "0.1.0 (202609122145)" and the server
+   host, so bug reports can name the exact build.
+
+TestFlight builds expire after 90 days; the sustainable rhythm is a release
+after each merged batch of iPad work, and at least one every couple of months
+so the booth iPads never hold an expired build.
+
+### External testers and the App Store
+
+Anyone outside the team (a co-commentator with their own Apple ID) goes in an
+**External Testing** group. The first build in an external group goes through
+Beta App Review (typically a day), later builds of the same version usually
+don't. External groups need a public or invite link plus a Beta App
+Description and feedback email; the app's privacy manifest
+(`PitPass/Resources/PrivacyInfo.xcprivacy`) already declares the
+required-reason APIs (UserDefaults) and the data the app handles (account
+email, on-device location), which review checks.
+
+Shipping to the App Store proper adds a listing (screenshots for the 13" and
+11" iPad sizes, description, privacy nutrition labels matching the manifest,
+a support URL) and App Review; the same archive is submitted from the
+TestFlight build, no rebuild.
+
+### Troubleshooting
+
+- `No profiles for 'com.arjunakankipati.pitpass' were found` / `Provisioning
+  profile doesn't support …`: the team in `project.yml` is wrong or still the
+  free one; `-allowProvisioningUpdates` creates profiles only for a paid team.
+- `Unable to authenticate with App Store Connect`: the `.p8` path or IDs in
+  `ios/.release.env` — the default key path is
+  `~/.appstoreconnect/private_keys/AuthKey_<ASC_KEY_ID>.p8`.
+- `The bundle version must be higher than the previously uploaded version`:
+  a `--build` was passed that is lower than an earlier upload; drop the flag.
+- The upload succeeds but the build never appears: check the App Store
+  Connect email — a missing privacy-manifest reason or a bad icon (must be
+  1024×1024 without alpha; ours is) shows up there, not in `xcodebuild`.
+- Tests fail to find the simulator: the destination is `iPad Pro 11-inch
+  (M5)`; `xcrun simctl list devices available | grep iPad` shows what this
+  Xcode has, edit `release.sh` if the name changed.
 
 ## Sign-in (device tokens)
 
