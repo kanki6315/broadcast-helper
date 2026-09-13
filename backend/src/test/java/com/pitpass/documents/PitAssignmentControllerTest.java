@@ -24,6 +24,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Transactional
 class PitAssignmentControllerTest {
 
+    @org.springframework.test.context.bean.override.mockito.MockitoBean com.pitpass.images.PublicImageStorage storage;
+    @org.junit.jupiter.api.BeforeEach void publicStorage() {
+        org.mockito.Mockito.when(storage.enabled()).thenReturn(true);
+        org.mockito.Mockito.when(storage.publicUrl(org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(i -> java.net.URI.create("https://images.example/" + i.getArgument(0)));
+    }
+
     @Autowired JdbcClient db;
     @Autowired PitAssignmentController controller;
     @Autowired SheetController sheetController;
@@ -50,10 +57,10 @@ class PitAssignmentControllerTest {
     /** The stored PDF that upload would have written; PUT requires it. */
     private void document(long eventId, String note) {
         db.sql("""
-                        INSERT INTO event_document (event_id, kind, source_filename, content_type, data, note)
+                        INSERT INTO event_document (event_id, kind, source_filename, content_type, object_key, note)
                         VALUES (:e, 'PIT_ASSIGNMENTS', 'assignments.pdf', 'application/pdf', :d, :note)
                         """)
-                .param("e", eventId).param("d", new byte[]{'%', 'P', 'D', 'F'}).param("note", note)
+                .param("e", eventId).param("d", "documents/fixture/document.pdf").param("note", note)
                 .update();
     }
 

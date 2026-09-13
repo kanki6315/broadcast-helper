@@ -33,7 +33,7 @@ export function resizeImage(file: File, maxSize = 400): Promise<Blob> {
 
 /** Original and thumbnail go straight to R2. The API only receives JSON metadata. */
 export async function uploadCarImage(seasonId: number, carNumber: string, file: File,
-  progress: (message: string) => void, migration?: { migrationImageId: number; sourceUploadedAt: string }): Promise<{ id: number; replaced: boolean }> {
+  progress: (message: string) => void): Promise<{ id: number; replaced: boolean }> {
   const types: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' }
   const type = file.type || types[file.name.split('.').pop()?.toLowerCase() ?? '']
   if (!Object.values(types).includes(type)) throw new Error('Choose a JPEG, PNG, WebP, or GIF image.')
@@ -42,7 +42,7 @@ export async function uploadCarImage(seasonId: number, carNumber: string, file: 
   const sheet = await resizeImage(file)
   if (sheet.size > 1024 * 1024) throw new Error('The resized image is too large. Try another image.')
   const plan = await imageRequest<{ id: string; originalUrl: string; sheetUrl: string }>('/api/car-images/uploads', {
-    seasonId, carNumber, filename: file.name, contentType: type, originalSize: file.size, sheetSize: sheet.size, ...migration,
+    seasonId, carNumber, filename: file.name, contentType: type, originalSize: file.size, sheetSize: sheet.size,
   })
   progress(`Uploading ${file.name}…`)
   // Sequential PUTs and sequential files bound memory and network pressure on the device.

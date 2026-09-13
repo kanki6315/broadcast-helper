@@ -1,4 +1,3 @@
-import { PublicFileMigration } from '../components/PublicFileMigration'
 import { useEffect, useState, type ChangeEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useIsAdmin } from '../lib/auth'
@@ -217,7 +216,6 @@ export default function EventDetailPage() {
             .catch(() => {})
         }}
       />
-      <PublicFileMigration eventId={detail.event.id} />
       <TeamSheetsSection eventId={detail.event.id} entries={detail.entries} />
       <StorylinesSection eventId={detail.event.id} />
       {classes.map((cls) => (

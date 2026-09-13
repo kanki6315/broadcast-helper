@@ -22,6 +22,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 @Transactional
 class StorylineControllerTest {
 
+    @org.springframework.test.context.bean.override.mockito.MockitoBean com.pitpass.images.PublicImageStorage storage;
+    @org.junit.jupiter.api.BeforeEach void publicStorage() {
+        org.mockito.Mockito.when(storage.enabled()).thenReturn(true);
+        org.mockito.Mockito.when(storage.publicUrl(org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(i -> java.net.URI.create("https://images.example/" + i.getArgument(0)));
+    }
+
     @Autowired JdbcClient db;
     @Autowired StorylineController controller;
     @Autowired SheetController sheetController;
@@ -49,7 +56,8 @@ class StorylineControllerTest {
         assertNotNull(uploaded.uploadedAt());
 
         assertEquals(uploaded, controller.get(event));
-        assertArrayEquals(new byte[]{'%', 'P', 'D', 'F', '-'}, controller.data(event, null).getBody());
+        assertNull(controller.data(event, null).getBody());
+        assertNotNull(controller.data(event, null).getHeaders().getLocation());
         assertEquals(uploaded.version(), sheetController.sheet(event).storylinesVersion());
     }
 
@@ -60,7 +68,8 @@ class StorylineControllerTest {
         controller.upload(event, pdf("v2.pdf", new byte[]{'%', 'P', 'D', 'F', '2'}));
 
         assertEquals("v2.pdf", controller.get(event).filename());
-        assertArrayEquals(new byte[]{'%', 'P', 'D', 'F', '2'}, controller.data(event, null).getBody());
+        assertNull(controller.data(event, null).getBody());
+        assertNotNull(controller.data(event, null).getHeaders().getLocation());
         assertEquals(1, db.sql("SELECT count(*) FROM event_document WHERE event_id = :e AND kind = 'STORYLINES'")
                 .param("e", event).query(Long.class).single());
     }
@@ -69,10 +78,10 @@ class StorylineControllerTest {
     void uploadKeepsTeamSheetsSeparate() {
         long event = eventId();
         db.sql("""
-                        INSERT INTO event_document (event_id, kind, source_filename, content_type, data)
+                        INSERT INTO event_document (event_id, kind, source_filename, content_type, object_key)
                         VALUES (:e, 'TEAM_SHEETS', 'teams.pdf', 'application/pdf', :d)
                         """)
-                .param("e", event).param("d", new byte[]{'%', 'P', 'D', 'F'}).update();
+                .param("e", event).param("d", "documents/fixture/document.pdf").update();
 
         controller.upload(event, pdf("storylines.pdf", new byte[]{'%', 'P', 'D', 'F', '-'}));
         controller.delete(event);

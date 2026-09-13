@@ -29,14 +29,9 @@ public class DocumentStorage {
         public Path path() { return path; }
         public String key() { return key; }
         /** Publish only after parsing succeeds. No PDF-sized Java array when R2 is enabled. */
-        public byte[] persist() {
-            if (storage.enabled()) {
-                key = "documents/" + UUID.randomUUID() + "/document.pdf";
-                storage.uploadPdf(key, path);
-                return null;
-            }
-            try { return Files.readAllBytes(path); }
-            catch (IOException e) { throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not read PDF", e); }
+        public void persist() {
+            key = "documents/" + UUID.randomUUID() + "/document.pdf";
+            storage.uploadPdf(key, path);
         }
         public void close() {
             try { Files.deleteIfExists(path); }
@@ -45,6 +40,7 @@ public class DocumentStorage {
     }
 
     public Upload receive(MultipartFile file) {
+        if (!storage.enabled()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Public storage is not configured");
         Path path = null;
         try {
             if (file.isEmpty() || file.getSize() > 25 * 1024 * 1024)
@@ -67,55 +63,14 @@ public class DocumentStorage {
         return db.sql("SELECT object_key, uploaded_at FROM event_document WHERE event_id = :id AND kind = :kind")
                 .param("id", eventId).param("kind", kind).query((rs, i) -> {
                     String key = rs.getString("object_key");
-                    if (key != null) return storage.publicUrl(key).toString();
-                    String route = switch (kind) {
-                        case "TEAM_SHEETS" -> "team-sheets";
-                        case "PIT_ASSIGNMENTS" -> "pit-assignments";
-                        case "STORYLINES" -> "storylines";
-                        default -> throw new IllegalArgumentException("Unknown document kind");
-                    };
-                    return "/api/events/" + eventId + "/" + route + "/data?v="
-                            + rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli();
+                    return storage.publicUrl(key).toString();
                 }).optional().orElse(null);
     }
 
     public ResponseEntity<byte[]> data(long eventId, String kind, boolean versioned) {
         String url = url(eventId, kind);
         if (url == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such document");
-        if (url.startsWith("https://")) return ResponseEntity.status(HttpStatus.FOUND)
+        return ResponseEntity.status(HttpStatus.FOUND)
                 .location(java.net.URI.create(url)).header("Cache-Control", HttpCaching.cacheControl(versioned)).build();
-        byte[] data = db.sql("SELECT data FROM event_document WHERE event_id = :id AND kind = :kind")
-                .param("id", eventId).param("kind", kind).query(byte[].class).single();
-        return ResponseEntity.ok().contentType(MediaType.APPLICATION_PDF)
-                .header("Cache-Control", HttpCaching.cacheControl(versioned)).body(data);
-    }
-
-    public record LegacyDocument(long id, String filename) {}
-    public List<LegacyDocument> legacy(long eventId) {
-        return db.sql("SELECT id, source_filename FROM event_document WHERE event_id = :id AND object_key IS NULL ORDER BY id")
-                .param("id", eventId).query((rs, i) -> new LegacyDocument(rs.getLong("id"), rs.getString("source_filename"))).list();
-    }
-
-    @Transactional
-    public void migrate(long id) {
-        if (!storage.enabled()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Public storage is not configured");
-        // Lock across the copy so a concurrent replacement cannot publish stale metadata.
-        boolean remote = db.sql("SELECT object_key IS NOT NULL FROM event_document WHERE id = :id FOR UPDATE")
-                .param("id", id).query(Boolean.class).optional()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such document"));
-        if (remote) return;
-        Path path;
-        try { path = Files.createTempFile("pitpass-migration-", ".pdf"); }
-        catch (IOException e) { throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not create temporary PDF", e); }
-        try (Upload upload = new Upload(path, storage)) {
-            db.sql("SELECT data FROM event_document WHERE id = :id").param("id", id).query((rs, i) -> {
-                try (var input = rs.getBinaryStream("data")) { Files.copy(input, path, StandardCopyOption.REPLACE_EXISTING); }
-                catch (IOException e) { throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not read existing PDF", e); }
-                return true;
-            }).single();
-            upload.persist();
-            db.sql("UPDATE event_document SET object_key = :key WHERE id = :id")
-                    .param("key", upload.key()).param("id", id).update();
-        }
     }
 }

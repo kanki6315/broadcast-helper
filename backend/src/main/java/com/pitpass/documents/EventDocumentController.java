@@ -76,13 +76,13 @@ public class EventDocumentController {
             JsonNode map = runPageMapParser(file.getOriginalFilename(), upload.path());
             Integer pageCount = map.path("page_count").isNumber() ? map.get("page_count").asInt() : null;
 
-            byte[] data = upload.persist();
+            upload.persist();
             long documentId = db.sql("""
-                            INSERT INTO event_document (event_id, kind, source_filename, content_type, object_key, data, page_count)
-                            VALUES (:eventId, :kind, :filename, 'application/pdf', :objectKey, :data, :pageCount)
+                            INSERT INTO event_document (event_id, kind, source_filename, content_type, object_key, page_count)
+                            VALUES (:eventId, :kind, :filename, 'application/pdf', :objectKey, :pageCount)
                             ON CONFLICT (event_id, kind) DO UPDATE
                                 SET source_filename = EXCLUDED.source_filename,
-                                    data = EXCLUDED.data, object_key = EXCLUDED.object_key,
+                                    object_key = EXCLUDED.object_key,
                                     page_count = EXCLUDED.page_count,
                                     uploaded_at = now()
                             RETURNING id
@@ -90,7 +90,7 @@ public class EventDocumentController {
                     .param("eventId", eventId)
                     .param("kind", KIND)
                     .param("filename", file.getOriginalFilename())
-                    .param("data", data).param("objectKey", upload.key())
+                    .param("objectKey", upload.key())
                     .param("pageCount", pageCount)
                     .query(Long.class)
                     .single();

@@ -8,7 +8,7 @@ Sheets, event details, team views, the gallery, and iPad downloads receive publi
 asset URLs in API data and fetch R2 directly. Driver headshots resize to at most 640px in the browser and upload directly.
 PDF uploads use disk-backed multipart files: the backend parses team sheets and pit assignments from temporary paths, then streams each PDF to R2. Storylines use the same disk-backed upload without parsing. New PDFs never become full Java byte arrays when R2 is enabled.
 New raster logos resize to at most 1024px in the browser; SVG logos upload unchanged.
-Logo migration preserves existing files byte-for-byte, including SVGs and transparency.
+
 
 ## Configure R2
 
@@ -77,10 +77,9 @@ Official references:
 | `R2_ACCESS_KEY_ID` | Bucket-scoped access key ID |
 | `R2_SECRET_ACCESS_KEY` | Corresponding secret access key |
 
-Redeploy after setting these. Without the enable flag the existing database
-upload path remains available for local development. When enabled, legacy
-multipart car-photo and logo uploads are rejected with an instruction to reload the
-page; they cannot silently trigger server resizing.
+Redeploy after setting these. R2 must remain enabled for file uploads and public
+URLs. Legacy multipart image uploads are rejected with an instruction to reload
+the app; they cannot trigger server resizing or database writes.
 
 ## Upload and verify
 
@@ -109,92 +108,28 @@ PUT URLs cannot change those permanent keys. Both copies must succeed before
 any database reference changes. A completed ticket can be retried without
 republishing an older photo over a newer one.
 
-## Migrate everything from Manage
+## R2-only storage and database cleanup
 
-Sign in as an admin and open **Manage**. At the top, select **Move all existing
-files to public storage**. This covers car photos in every season, all manufacturer
-and series logos, all driver headshots, and PDFs across all events. Keep Manage
-open until the summary appears. Files move one at a time; individual failures
-are listed and **Retry migration** skips completed items. The control remains
-visible with an explanation if public storage is disabled or cannot be checked.
-Existing database copies and document mappings are retained.
+All new uploads require configured R2 storage. There is no database fallback.
+Image resizing runs in the browser; the backend no longer includes Scrimage.
+PDFs stream from temporary files to R2 after any required parsing. Downloads
+use direct public URLs. Legacy data endpoints redirect to R2 for older links.
 
-The per-season and per-item controls below remain available for smaller moves.
+Flyway migration V50 checks that every car photo has original and sheet keys,
+and every logo, headshot, and PDF has an object key. If any are absent or blank,
+it aborts transactionally without deleting bytes. Complete migration on the
+previous release before upgrading such a database.
 
-## Move existing images
+When the check passes, V50 clears and drops the file-data columns, drops the
+old thumbnail table, and removes migration-ticket metadata. All file metadata,
+R2 keys, page mappings, pit assignments, and driver records remain. Migration
+buttons and endpoints are removed. This cleanup runs once during deployment;
+there is no manual cleanup button.
 
-After enabling R2, open each season's Photos page and select **Move existing
-photos to public storage**. Leave the page open. For each unmigrated photo the
-browser downloads one original, creates its WebP locally, uploads to R2, and
-completes the move. The backend transfers original bytes only during this
-one-off migration; normal public image reads bypass it afterwards.
-
-Migration retains the existing database original and thumbnail for verification
-and rollback. It refuses to replace a photo if that photo changed after the
-browser loaded its metadata. Refresh and retry to pick up the new version.
-Already migrated photos are skipped, so rerunning the button resumes a partial
-move. New uploads/replacements store only object keys.
-
-Check public delivery and take a database backup before separately clearing
-retained database bytes. Clearing bytes is intentionally not automatic. A
-normal DELETE does not shrink PostgreSQL's volume file immediately.
-
-Do not simply disable R2 after uploading remote-only images: those have no
-local bytes. For migrated images with retained bytes, rollback requires clearing
-both object-key columns so API reads use the database again. Keep R2 and its
-public domain available for remote-only photos and older offline payloads.
-
-## Move existing logos
-
-The same R2 settings enable logo storage; no new credentials or bucket are needed.
-
-- **Manage → Logos:** choose **Move existing logos to public storage** to move
-  all manufacturer logos, one at a time.
-- **Manage → Series → Identity:** choose **Move logo to public storage** for a
-  series logo. Repeat for the remaining series.
-
-Both flows retain database bytes for verification, skip already migrated logos,
-refuse to overwrite a concurrently changed logo, and preserve manufacturer
-inversion and existing display names. Manufacturer and series logo uploads are
-admin-only, using the same temporary-key verification and server-side COPY as
-car photos. Normal replacements store object keys only. SVGs are preserved;
-new raster logos become WebP (maximum 1024px longest side, no upscaling).
-
-The website and iPad use public logo URLs directly, including manufacturer marks
-on printed sheets and offline iPad downloads. Old offline payloads still fall
-back to the existing API paths. The iPad never sends API credentials to the
-public image host.
-
-For a migrated logo with retained database bytes, rollback requires clearing its
-`object_key` column. Do not disable R2 for remote-only logos without restoring
-local bytes first.
-
-## Move existing headshots and PDFs
-
-After enabling R2, open a driver's profile as an admin and select **Move existing
-headshot to public storage**. This preserves the existing image bytes and skips
-already migrated headshots. New headshots use browser resizing; legacy multipart
-headshot uploads are rejected while R2 is enabled.
-
-On each event page, select **Move existing PDFs to public storage**. This moves
-team sheets, pit assignments, and storylines one document per request, retains
-existing DB bytes, and preserves page mappings, pit assignments, GPS anchors,
-filenames, and upload timestamps. A row lock prevents a concurrent replacement
-from being overwritten. Retry after a failure to resume; completed documents
-are skipped. PostgreSQL's JDBC driver can still buffer a legacy BYTEA during
-migration, but only one PDF is requested at a time. Normal R2 downloads do not
-read those bytes.
-
-These controls reload the page on success to pick up the new public URLs. The
-old data routes remain compatible with older clients, but current website and
-iPad payloads carry direct public URLs. Configure GET/HEAD CORS and the exposed
-range headers above for the website's PDF viewer; test opening a PDF and jumping
-to a mapped page against the real public domain.
-
-Rollback for migrated rows requires clearing `driver_photo.object_key` or
-`event_document.object_key` while retained DB bytes are still available. New
-uploads store only an object key; restore local bytes before disabling R2 for
-those rows. No production migration is performed by deploying the schema alone.
+The check validates database references, not live R2 objects. R2 and its public
+domain must remain available. Database-only rollback to pre-R2 storage is no
+longer possible after cleanup without restoring a backup. PostgreSQL vacuum can
+reclaim cleared data internally; allocated volume size may not shrink immediately.
 
 ## Maintenance and costs
 

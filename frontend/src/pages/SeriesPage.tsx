@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { imageRequest } from '../lib/carImageUpload'
-import { uploadLogo as uploadPublicLogo, migrateLogos } from '../lib/logoUpload'
+import { uploadLogo as uploadPublicLogo } from '../lib/logoUpload'
 import TeamAssignmentEditor from '../components/TeamAssignmentEditor'
 import { invalidateAllRecaps, invalidateRecap } from './season/ChampionshipGrid'
 
@@ -345,11 +344,6 @@ function SeriesIdentityEditor({ series, onError, onRefresh }: {
   const [saving, setSaving] = useState(false)
   const [logoBusy, setLogoBusy] = useState(false)
   const [logoProgress, setLogoProgress] = useState('')
-  const [directUpload, setDirectUpload] = useState(false)
-  useEffect(() => {
-    void imageRequest<{ directUpload: boolean }>('/api/car-images/uploads/config')
-      .then((c) => setDirectUpload(c.directUpload)).catch(() => {})
-  }, [])
 
   async function save(event: FormEvent) {
     event.preventDefault()
@@ -376,12 +370,6 @@ function SeriesIdentityEditor({ series, onError, onRefresh }: {
     finally { setLogoBusy(false); setLogoProgress('') }
   }
 
-  async function migrateLogo() {
-    setLogoBusy(true); onError(null)
-    try { await migrateLogos('SERIES', setLogoProgress, String(series.id)); await onRefresh() }
-    catch (e) { onError(e instanceof Error ? e.message : 'Could not move logo.') }
-    finally { setLogoBusy(false); setLogoProgress('') }
-  }
 
   async function removeLogo() {
     const response = await fetch(`/api/series/${series.id}/logo`, { method: 'DELETE' })
@@ -401,7 +389,6 @@ function SeriesIdentityEditor({ series, onError, onRefresh }: {
           </div>
           {logoBusy && <p role="status">{logoProgress || 'Preparing logo…'}</p>}
           <div className="series-logo-actions">
-            {directUpload && series.logoVersion != null && !series.publicLogoStorage && <button type="button" disabled={logoBusy} onClick={() => void migrateLogo()}>Move logo to public storage</button>}
             <label className="series-logo-upload">{series.logoVersion != null ? 'Replace image' : 'Upload image'}<input type="file" disabled={logoBusy} accept="image/*,.svg" onChange={(e) => { const file = e.currentTarget.files?.[0]; e.currentTarget.value = ''; if (file) void uploadLogo(file) }} /></label>
             {series.logoVersion != null && <button type="button" disabled={logoBusy} onClick={() => void removeLogo()}>Remove</button>}
           </div>

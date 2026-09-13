@@ -53,7 +53,7 @@ class PublicDocumentStorageTest {
         var result = storylines.upload(event, file);
         assertTrue(result.documentUrl().startsWith("https://images.example/documents/"));
         assertEquals(result.documentUrl(), sheets.sheet(event).storylinesUrl());
-        assertTrue(db.sql("SELECT data IS NULL FROM event_document WHERE event_id = :id").param("id", event).query(Boolean.class).single());
+        assertTrue(db.sql("SELECT object_key IS NOT NULL FROM event_document WHERE event_id = :id").param("id", event).query(Boolean.class).single());
         assertEquals(URI.create(result.documentUrl()), storylines.data(event, null).getHeaders().getLocation());
         assertNull(storylines.data(event, null).getBody());
         var replacement = storylines.upload(event, file);
@@ -76,25 +76,8 @@ class PublicDocumentStorageTest {
             assertEquals("IWSC", proposal.seriesColumn());
             assertEquals("23", proposal.rows().getFirst().carNumber());
             assertEquals("V2", pitController.get(event).versionNote());
-            assertEquals(2, db.sql("SELECT count(*) FROM event_document WHERE event_id = :id AND data IS NULL AND object_key IS NOT NULL").param("id", event).query(Integer.class).single());
+            assertEquals(2, db.sql("SELECT count(*) FROM event_document WHERE event_id = :id AND object_key IS NOT NULL").param("id", event).query(Integer.class).single());
         } finally { Files.deleteIfExists(script); }
-    }
-
-    @Test void migrationRetainsBytesAndMappingsAndIsResumableForAllKinds() {
-        for (String kind : List.of("TEAM_SHEETS", "PIT_ASSIGNMENTS", "STORYLINES")) {
-            long id = db.sql("INSERT INTO event_document(event_id,kind,content_type,data,page_count) VALUES (:event,:kind,'application/pdf',:data,7) RETURNING id")
-                    .param("event", event).param("kind", kind).param("data", pdf).query(Long.class).single();
-            db.sql("INSERT INTO event_document_page(document_id,car_number,page) VALUES (:id,'23',3)").param("id", id).update();
-            documents.migrate(id); documents.migrate(id);
-            assertArrayEquals(pdf, db.sql("SELECT data FROM event_document WHERE id = :id").param("id", id).query(byte[].class).single());
-            assertEquals(3, db.sql("SELECT page FROM event_document_page WHERE document_id = :id").param("id", id).query(Integer.class).single());
-            assertTrue(documents.url(event, kind).startsWith("https://images.example/documents/"));
-            assertNull(documents.data(event, kind, true).getBody());
-        }
-        assertEquals(3, temporaryFiles.size());
-        assertTrue(documents.legacy(event).isEmpty());
-        assertEquals(teams.get(event).documentUrl(), sheets.sheet(event).teamSheetsUrl());
-        assertTrue(pits.get(event).documentUrl().startsWith("https://images.example/documents/"));
     }
 
     @Test void failedUploadKeepsExistingDocumentAndCleansTemporaryFile() {

@@ -151,20 +151,20 @@ public class PitAssignmentController {
             JsonNode parsed = runParser(file.getOriginalFilename(), upload.path());
             String versionNote = parsed.path("version_note").isTextual() ? parsed.get("version_note").asText() : null;
 
-            byte[] data = upload.persist();
+            upload.persist();
             db.sql("""
-                            INSERT INTO event_document (event_id, kind, source_filename, content_type, object_key, data, note)
-                            VALUES (:eventId, :kind, :filename, 'application/pdf', :objectKey, :data, :note)
+                            INSERT INTO event_document (event_id, kind, source_filename, content_type, object_key, note)
+                            VALUES (:eventId, :kind, :filename, 'application/pdf', :objectKey, :note)
                             ON CONFLICT (event_id, kind) DO UPDATE
                                 SET source_filename = EXCLUDED.source_filename,
-                                    data = EXCLUDED.data, object_key = EXCLUDED.object_key,
+                                    object_key = EXCLUDED.object_key,
                                     note = EXCLUDED.note,
                                     uploaded_at = now()
                             """)
                     .param("eventId", eventId)
                     .param("kind", KIND)
                     .param("filename", file.getOriginalFilename())
-                    .param("data", data).param("objectKey", upload.key())
+                    .param("objectKey", upload.key())
                     .param("note", versionNote)
                     .update();
 

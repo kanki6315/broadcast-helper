@@ -28,7 +28,7 @@ public class LogoUploadController {
                           OffsetDateTime sourceUploadedAt) {}
     public record Plan(UUID id, String uploadUrl) {}
     private record Ticket(LogoAssets.Kind kind, String target, String contentType, long size,
-                          OffsetDateTime expires, OffsetDateTime source, boolean completed) {}
+                          OffsetDateTime expires, boolean completed) {}
 
     @GetMapping("/assets")
     public List<LogoAssets.Asset> list(@RequestParam LogoAssets.Kind kind) { return assets.list(kind); }
@@ -47,18 +47,15 @@ public class LogoUploadController {
             if (!db.sql("SELECT EXISTS(SELECT 1 FROM driver WHERE id = :id)").param("id", Long.valueOf(target)).query(Boolean.class).single())
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such driver");
         }
-        if (request.sourceUploadedAt() != null) {
-            var source = verifySource(request.kind(), target, request.sourceUploadedAt(), false);
-            if (!source.contentType().equals(request.contentType()))
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Migration must preserve the original logo format");
-        }
+        if (request.sourceUploadedAt() != null)
+            throw new ResponseStatusException(HttpStatus.GONE, "Database migration has been retired");
         UUID id = UUID.randomUUID();
         String url = storage.uploadUrl(staging(id), request.contentType(), request.size());
         db.sql("""
-                INSERT INTO logo_upload(id, kind, target, content_type, size, expires_at, source_uploaded_at)
-                VALUES (:id, :kind, :target, :type, :size, now() + interval '30 minutes', :source)
+                INSERT INTO logo_upload(id, kind, target, content_type, size, expires_at)
+                VALUES (:id, :kind, :target, :type, :size, now() + interval '30 minutes')
                 """).param("id", id).param("kind", request.kind().name()).param("target", target)
-                .param("type", request.contentType()).param("size", request.size()).param("source", request.sourceUploadedAt()).update();
+                .param("type", request.contentType()).param("size", request.size()).update();
         return new Plan(id, url);
     }
 
@@ -68,40 +65,32 @@ public class LogoUploadController {
         Ticket ticket = db.sql("SELECT * FROM logo_upload WHERE id = :id FOR UPDATE").param("id", id)
                 .query((rs, i) -> new Ticket(LogoAssets.Kind.valueOf(rs.getString("kind")), rs.getString("target"),
                         rs.getString("content_type"), rs.getLong("size"), rs.getObject("expires_at", OffsetDateTime.class),
-                        rs.getObject("source_uploaded_at", OffsetDateTime.class), rs.getBoolean("completed")))
+                        rs.getBoolean("completed")))
                 .optional().orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such upload"));
         if (ticket.completed()) return assets.find(ticket.kind(), ticket.target(), false)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.GONE, "This logo was deleted"));
         if (ticket.expires().isBefore(OffsetDateTime.now())) throw new ResponseStatusException(HttpStatus.GONE, "Upload expired; select the logo again");
-        if (ticket.source() != null) verifySource(ticket.kind(), ticket.target(), ticket.source(), true);
         String key = ticket.kind().prefix + "/" + id + "/logo";
         storage.publish(staging(id), key, ticket.contentType(), ticket.size());
         String sql = ticket.kind() == LogoAssets.Kind.DRIVER ? """
                 INSERT INTO driver_photo(driver_id, content_type, object_key) VALUES (:target, :type, :key)
                 ON CONFLICT(driver_id) DO UPDATE SET content_type = EXCLUDED.content_type, object_key = EXCLUDED.object_key,
-                  data = CASE WHEN :preserve THEN driver_photo.data ELSE NULL END, uploaded_at = clock_timestamp()
+                  uploaded_at = clock_timestamp()
                 """ : ticket.kind() == LogoAssets.Kind.SERIES ? """
                 INSERT INTO series_logo(series_id, content_type, object_key) VALUES (:target, :type, :key)
                 ON CONFLICT(series_id) DO UPDATE SET content_type = EXCLUDED.content_type, object_key = EXCLUDED.object_key,
-                  data = CASE WHEN :preserve THEN series_logo.data ELSE NULL END, uploaded_at = clock_timestamp()
+                  uploaded_at = clock_timestamp()
                 """ : """
                 INSERT INTO manufacturer_logo(name, display_name, content_type, object_key) VALUES (:target, :target, :type, :key)
                 ON CONFLICT(name) DO UPDATE SET content_type = EXCLUDED.content_type, object_key = EXCLUDED.object_key,
-                  data = CASE WHEN :preserve THEN manufacturer_logo.data ELSE NULL END, uploaded_at = clock_timestamp()
+                  uploaded_at = clock_timestamp()
                 """;
         db.sql(sql).param("target", ticket.kind().key(ticket.target())).param("type", ticket.contentType())
-                .param("key", key).param("preserve", ticket.source() != null).update();
+                .param("key", key).update();
         // Inversion and existing display names are deliberately not updated by uploads.
         db.sql("UPDATE logo_upload SET completed = true WHERE id = :id").param("id", id).update();
         return assets.find(ticket.kind(), ticket.target(), false).orElseThrow();
     }
 
-    private LogoAssets.Asset verifySource(LogoAssets.Kind kind, String target, OffsetDateTime expected, boolean lock) {
-        LogoAssets.Asset source = assets.find(kind, target, lock)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Logo changed; refresh before moving it"));
-        if (source.publicStorage() || !source.uploadedAt().toInstant().equals(expected.toInstant()))
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Logo changed; refresh before moving it");
-        return source;
-    }
     static String staging(UUID id) { return "staging/logos/" + id + "/logo"; }
 }

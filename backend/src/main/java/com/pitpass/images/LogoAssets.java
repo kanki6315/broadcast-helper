@@ -40,12 +40,7 @@ public class LogoAssets {
     public LogoAssets(JdbcClient db, PublicImageStorage storage) { this.db = db; this.storage = storage; }
 
     public String url(Kind kind, String target, Long version, String key) {
-        if (key != null) return storage.publicUrl(key).toString();
-        if (version == null) return null;
-        String encoded = UriUtils.encodePathSegment(kind.normalize(target), StandardCharsets.UTF_8);
-        if (kind == Kind.DRIVER) return "/api/drivers/" + encoded + "/photo?v=" + version;
-        return kind == Kind.SERIES ? "/api/series/" + encoded + "/logo/data?v=" + version
-                : "/api/manufacturer-logos/" + encoded + "/data?v=" + version;
+        return key == null ? null : storage.publicUrl(key).toString();
     }
 
     public List<Asset> list(Kind kind) {
@@ -71,11 +66,7 @@ public class LogoAssets {
 
     public ResponseEntity<byte[]> data(Kind kind, String target, boolean versioned) {
         Asset asset = find(kind, target, false).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such logo"));
-        if (asset.publicStorage()) return ResponseEntity.status(HttpStatus.FOUND)
+        return ResponseEntity.status(HttpStatus.FOUND)
                 .location(storage.publicUrl(asset.objectKey())).header("Cache-Control", HttpCaching.cacheControl(versioned)).build();
-        byte[] data = db.sql("SELECT data FROM " + kind.table + " WHERE " + kind.column + " = :target")
-                .param("target", kind.key(asset.target())).query(byte[].class).single();
-        return ResponseEntity.ok().contentType(MediaType.parseMediaType(asset.contentType()))
-                .header("Cache-Control", HttpCaching.cacheControl(versioned)).body(data);
     }
 }
