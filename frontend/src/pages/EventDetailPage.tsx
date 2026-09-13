@@ -1,4 +1,3 @@
-import PageLoading from '../components/PageLoading'
 import { useEffect, useState, type ChangeEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useIsAdmin } from '../lib/auth'
@@ -188,7 +187,7 @@ export default function EventDetailPage() {
   }, [eventId])
 
   if (error) return <p className="error">{error}</p>
-  if (!detail) return <PageLoading label="Loading event" />
+  if (!detail) return <p>Loading…</p>
 
   const classes = [...new Set(detail.entries.map((e) => e.className))]
   return (
