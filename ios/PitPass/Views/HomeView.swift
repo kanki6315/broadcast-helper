@@ -37,19 +37,16 @@ struct HomeView: View {
                 } else {
                     ScrollView {
                         PageContainer {
-                            VStack(alignment: .leading, spacing: PP.Space.s4) {
-                                TopBar { showSettings = true }
-                                SeriesDirectoryView(select: select)
-                            }
+                            SeriesDirectoryView(select: select)
                         }
                     }
                     .background(PP.bg)
-                    .navigationTitle("All series")
+                    .navigationTitle("")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
-                            if selectedSeason != nil {
-                                Button("Return to series") { showLibrary = false }
+                            Button { showSettings = true } label: {
+                                Label("Settings", systemImage: "gearshape")
                             }
                         }
                     }

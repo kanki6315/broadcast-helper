@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// The website's series directory (`SeriesDirectoryPage` + `.dir-*` in
-/// season.css): one card per series with its current season, class chips
-/// (colour + code — colour never stands alone), and earlier seasons as chips.
+/// Series directory: aligned logo rows with class chips (colour + code —
+/// colour never stands alone) and always-visible season pills.
 /// Active seasons first, then alphabetical; dormant series settle to the bottom.
 struct SeriesDirectoryView: View {
     @Environment(AppSession.self) private var session
@@ -77,18 +76,25 @@ struct SeriesDirectoryView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: PP.Space.s4) {
-            Text("All series")
-                .font(PP.sans(PP.TextSize.xxl, weight: 650))
-                .tracking(PP.TextSize.xxl * -0.02)
-                .foregroundStyle(PP.ink)
-            Spacer()
-            if let groups, !groups.isEmpty {
-                FilterField(text: $query, placeholder: "Filter \(groups.count) series…")
-                    .frame(maxWidth: 340)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: PP.Space.s5) {
+                Wordmark(markSize: 52, textSize: PP.TextSize.xxl)
+                    .fixedSize()
+                Spacer(minLength: PP.Space.s4)
+                filter.frame(width: 340)
+            }
+            VStack(alignment: .leading, spacing: PP.Space.s4) {
+                Wordmark(markSize: 52, textSize: PP.TextSize.xxl)
+                filter
             }
         }
         .padding(.top, PP.Space.s4)
+    }
+
+    @ViewBuilder private var filter: some View {
+        if let groups, !groups.isEmpty {
+            FilterField(text: $query, placeholder: "Filter \(groups.count) series…")
+        }
     }
 
     private func load() async {
@@ -211,7 +217,6 @@ struct SeriesRow: View {
     @Environment(WorkspaceState.self) private var workspace
     let group: SeriesGroup
     let select: (Int) -> Void
-    @State private var expanded = false
     @State private var classes: Resource<ClassStylesResponse>?
 
     private var available: [SeasonSummary] { [group.latest] + group.past + group.qualifiers }
@@ -221,54 +226,62 @@ struct SeriesRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: PP.Space.s3) {
+            HStack(alignment: .center, spacing: PP.Space.s4) {
                 Button { open(current) } label: {
-                    HStack(spacing: PP.Space.s4) {
-                        Group {
-                            if let path = group.logoPath { SeriesLogo(path: path, fallback: group.monogram) }
-                            else { Monogram(text: group.monogram) }
+                    Group {
+                        if let path = group.logoPath {
+                            SeriesLogo(path: path, fallback: group.monogram)
+                        } else {
+                            Monogram(text: group.monogram)
                         }
-                        .frame(width: 76, alignment: .leading)
-                        VStack(alignment: .leading, spacing: PP.Space.s1) {
-                            Text(group.name).font(.headline).foregroundStyle(PP.ink)
-                            if let styles = classes?.value?.styles, !styles.isEmpty { ClassChips(styles: styles) }
-                            HStack(spacing: PP.Space.s2) {
-                                Text(String(current.year)).font(PP.mono(PP.TextSize.sm))
-                                if current.isQualifier { Text(current.label ?? "Qualifying") }
-                                if let page = workspace.value("season.\(current.id).tab"),
-                                   let tab = SeasonView.Page(rawValue: page) {
-                                    Text("Resume \(tab.label.lowercased())").foregroundStyle(PP.accentInk)
-                                }
-                            }
-                            .font(.subheadline).foregroundStyle(PP.textMuted)
-                        }
-                        Spacer(minLength: 0)
-                        Image(systemName: "arrow.up.right").foregroundStyle(PP.textMuted)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+                    .frame(width: 76, height: 64, alignment: .center)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Open \(group.name), \(current.year)")
-                if available.count > 1 {
-                    Button { expanded.toggle() } label: {
-                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                            .frame(width: 44, height: 44)
+
+                VStack(alignment: .leading, spacing: PP.Space.s1) {
+                    Button { open(current) } label: {
+                        HStack(spacing: PP.Space.s3) {
+                            VStack(alignment: .leading, spacing: PP.Space.s1) {
+                                Text(group.name).font(.headline).foregroundStyle(PP.ink)
+                                if let styles = classes?.value?.styles, !styles.isEmpty {
+                                    ClassChips(styles: styles)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "arrow.up.right").foregroundStyle(PP.textMuted)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain).foregroundStyle(PP.textMuted)
-                    .accessibilityLabel("\(expanded ? "Hide" : "Show") seasons for \(group.name)")
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open \(group.name), \(current.year)")
+
+                    FlowLayout(horizontalSpacing: PP.Space.s2, verticalSpacing: PP.Space.s1) {
+                        ForEach(available) { season in
+                            Button { open(season) } label: {
+                                SeasonChip(season: season)
+                                    .frame(minWidth: 44, minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        if let page = workspace.value("season.\(current.id).tab"),
+                           let tab = SeasonView.Page(rawValue: page) {
+                            Button { open(current) } label: {
+                                Text("Resume \(tab.label.lowercased())")
+                                    .font(.subheadline)
+                                    .foregroundStyle(PP.accentInk)
+                                    .frame(minHeight: 44)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
             }
             .padding(.vertical, PP.Space.s3)
-            if expanded {
-                FlowLayout(horizontalSpacing: PP.Space.s2, verticalSpacing: PP.Space.s2) {
-                    ForEach(available) { season in
-                        Button { open(season) } label: { SeasonChip(season: season).frame(minHeight: 44) }
-                            .buttonStyle(.plain)
-                    }
-                }
-                .padding(.bottom, PP.Space.s3)
-            }
             Divider()
         }
         .task {
@@ -318,8 +331,10 @@ struct Monogram: View {
             .font(PP.sans(PP.TextSize.lg, weight: 700))
             .tracking(PP.TextSize.lg * -0.01)
             .foregroundStyle(PP.text)
-            .padding(.horizontal, 10)
-            .frame(minWidth: 44, minHeight: 44)
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .padding(.horizontal, 6)
+            .frame(width: 76, height: 44)
             .background(PP.surface2, in: RoundedRectangle(cornerRadius: PP.Radius.md, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: PP.Radius.md, style: .continuous).strokeBorder(PP.borderStrong))
             .accessibilityHidden(true)
@@ -340,7 +355,7 @@ struct SeriesLogo: View {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
-                    .frame(maxWidth: 200, maxHeight: 44, alignment: .leading)
+                    .frame(width: 76, height: 44, alignment: .center)
             } else if failed {
                 Monogram(text: fallback)
             } else {
