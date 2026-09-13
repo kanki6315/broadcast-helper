@@ -375,7 +375,11 @@ private struct EntryRows: View {
             case .q:
                 VStack(spacing: 0) {
                     Text(entry.qualifying ?? "").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.text)
-                    if let s = entry.startingDriver { Text(s).font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted).lineLimit(1) }
+                    if let s = entry.startingDriver {
+                        Text(s).font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             case .prior:
                 Text(entry.priorYearNote ?? "").font(PP.sans(PP.TextSize.sm))

@@ -232,7 +232,7 @@ public class SheetController {
                 .list();
 
         // Who takes the start, from the grid file's attribution (first race
-        // naming one). Short form for the sheet's dense Q column; absent for
+        // naming one). Full name for the sheet's Q column; absent for
         // solo series (iRacing stores no attribution) and pre-V27 grids.
         Map<Long, String> startingDriverByEntry = new HashMap<>();
         db.sql("""
@@ -245,7 +245,7 @@ public class SheetController {
                         """)
                 .param("id", id)
                 .query((rs, i) -> startingDriverByEntry.put(rs.getLong("entry_id"),
-                        shortDriverName(rs.getString("first_name"), rs.getString("surname"))))
+                        fullDriverName(rs.getString("first_name"), rs.getString("surname"))))
                 .list();
 
         // Last year's result at this venue, auto-passed when car number and team
@@ -648,16 +648,15 @@ public class SheetController {
                 .collect(java.util.stream.Collectors.toSet());
     }
 
-    /** "Hannah Grisham" -> "H. Grisham": the sheet's dense columns want the
-     *  short broadcast form; a missing first name falls back to the surname. */
-    private static String shortDriverName(String firstName, String surname) {
+    /** Preserve the full driver name, including compound first names and surnames. */
+    static String fullDriverName(String firstName, String surname) {
         if (surname == null || surname.isBlank()) {
             return firstName;
         }
         if (firstName == null || firstName.isBlank()) {
             return surname;
         }
-        return firstName.charAt(0) + ". " + surname;
+        return firstName + " " + surname;
     }
 
     /** Venue abbreviations as used on broadcast sheets; falls back to a prefix. */

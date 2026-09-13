@@ -9,6 +9,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SheetControllerTest {
 
     @Test
+    void gridDriverNamePreservesFullName() {
+        assertEquals("Hannah Grisham", SheetController.fullDriverName("Hannah", "Grisham"));
+        assertEquals("Jean-Eric de Oliveira", SheetController.fullDriverName("Jean-Eric", "de Oliveira"));
+        assertEquals("Grisham", SheetController.fullDriverName(null, "Grisham"));
+        assertEquals("Grisham", SheetController.fullDriverName("", "Grisham"));
+        assertEquals("Hannah", SheetController.fullDriverName("Hannah", null));
+    }
+
+    @Test
     void teamSimilarityAcceptsSponsorAndCasingChanges() {
         // Same operation, cosmetic changes -> auto-pass.
         assertTrue(SheetController.similarTeams("Vasser Sullivan Racing",
