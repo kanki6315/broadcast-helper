@@ -12,13 +12,18 @@
 # version). Build = UTC minute stamp, e.g. 202609122145 — unique without a
 # counter file, always increasing, and readable in App Store Connect.
 #
-# Upload authentication, in order of preference:
-#   1. An App Store Connect API key, from ios/.release.env (git-ignored):
+# Signing + upload authentication, in order of preference:
+#   1. An App Store Connect API key (App Manager role), from ios/.release.env
+#      (git-ignored):
 #        ASC_KEY_ID=ABC123DEF4
 #        ASC_ISSUER_ID=12345678-aaaa-bbbb-cccc-1234567890ab
 #        ASC_KEY_PATH=$HOME/.appstoreconnect/private_keys/AuthKey_ABC123DEF4.p8
-#   2. Otherwise the Apple ID signed into Xcode (Settings → Accounts) is used
-#      through -allowProvisioningUpdates.
+#      The export is then signed manually with the keychain's Apple Distribution
+#      certificate and an App Store profile that asc_profile.py keeps current
+#      through the API (with a key, xcodebuild's automatic signing insists on
+#      cloud-managed certificates, which need an Admin key).
+#   2. Otherwise the Apple ID signed into Xcode (Settings → Accounts) does
+#      automatic signing and the upload through -allowProvisioningUpdates.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -74,10 +79,12 @@ if [ -n "${ASC_KEY_ID:-}" ]; then
     key_path="${ASC_KEY_PATH:-$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8}"
     [ -f "$key_path" ] || die "App Store Connect key not found at $key_path"
     auth=(-authenticationKeyPath "$key_path" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
-    auth_note="App Store Connect API key $ASC_KEY_ID"
+    auth_note="App Store Connect API key $ASC_KEY_ID, manual signing"
 else
-    auth_note="the Apple ID signed into Xcode (no ios/.release.env)"
+    auth_note="the Apple ID signed into Xcode (no ios/.release.env), automatic signing"
 fi
+bundle_id=com.arjunakankipati.pitpass
+profile_name="PitPass App Store"
 
 pretty() { if command -v xcbeautify >/dev/null; then xcbeautify; else cat; fi; }
 
@@ -119,6 +126,16 @@ xcodebuild archive \
 # --- Export / upload -------------------------------------------------------
 
 if [ "$upload" = 1 ]; then destination=upload; else destination=export; fi
+if [ ${#auth[@]} -gt 0 ]; then
+    log "App Store profile for the keychain's Apple Distribution certificate"
+    profile="$(python3 asc_profile.py --key-id "$ASC_KEY_ID" --issuer-id "$ASC_ISSUER_ID" \
+        --key-path "$key_path" --team "$team" --bundle-id "$bundle_id" --name "$profile_name")"
+    signing="	<key>signingStyle</key><string>manual</string>
+	<key>signingCertificate</key><string>Apple Distribution</string>
+	<key>provisioningProfiles</key><dict><key>$bundle_id</key><string>$profile</string></dict>"
+else
+    signing="	<key>signingStyle</key><string>automatic</string>"
+fi
 cat > "$out/ExportOptions.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -127,7 +144,7 @@ cat > "$out/ExportOptions.plist" <<EOF
 	<key>method</key><string>app-store-connect</string>
 	<key>destination</key><string>$destination</string>
 	<key>teamID</key><string>$team</string>
-	<key>signingStyle</key><string>automatic</string>
+$signing
 	<key>uploadSymbols</key><true/>
 	<key>manageAppVersionAndBuildNumber</key><false/>
 </dict>
