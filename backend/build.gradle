@@ -36,10 +36,6 @@ dependencies {
 	implementation 'org.springframework.session:spring-session-jdbc'
 	implementation 'org.flywaydb:flyway-core'
 	implementation 'org.flywaydb:flyway-database-postgresql'
-	// Image downscaling + WebP encoding for car-image variants (bundled native
-	// dwebp/cwebp binaries for linux/mac/windows).
-	implementation 'com.sksamuel.scrimage:scrimage-core:4.1.3'
-	implementation 'com.sksamuel.scrimage:scrimage-webp:4.1.3'
 	runtimeOnly 'org.postgresql:postgresql'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'

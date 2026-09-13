@@ -44,39 +44,7 @@ public class SeriesLogoController {
 
     @PostMapping("/{id}/logo")
     public LogoVersion upload(@PathVariable long id, @RequestParam("file") MultipartFile file) {
-        if (storage.enabled()) throw new ResponseStatusException(HttpStatus.CONFLICT, "Direct logo uploads are enabled. Reload the page and upload again.");
-        Boolean exists = db.sql("SELECT true FROM series WHERE id = :id")
-                .param("id", id)
-                .query(Boolean.class)
-                .optional()
-                .orElse(false);
-        if (!exists) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such series");
-        }
-        byte[] data;
-        try {
-            data = file.getBytes();
-        } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read upload: " + e.getMessage());
-        }
-        if (data.length == 0) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Empty file");
-        }
-        OffsetDateTime uploaded = db.sql("""
-                        INSERT INTO series_logo (series_id, content_type, data)
-                        VALUES (:id, :contentType, :data)
-                        ON CONFLICT (series_id) DO UPDATE
-                            SET content_type = EXCLUDED.content_type,
-                                data = EXCLUDED.data, object_key = NULL,
-                                uploaded_at = now()
-                        RETURNING uploaded_at
-                        """)
-                .param("id", id)
-                .param("contentType", contentType(file))
-                .param("data", data)
-                .query(OffsetDateTime.class)
-                .single();
-        return new LogoVersion(uploaded.toInstant().toEpochMilli(), assets.url(LogoAssets.Kind.SERIES, Long.toString(id), uploaded.toInstant().toEpochMilli(), null));
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "Upload directly to public storage. Reload the app before uploading.");
     }
 
     @GetMapping("/{id}/logo/data")
@@ -96,17 +64,4 @@ public class SeriesLogoController {
         }
     }
 
-    private static String contentType(MultipartFile file) {
-        String declared = file.getContentType();
-        if (declared != null && declared.toLowerCase(Locale.ROOT).startsWith("image/")) {
-            return declared;
-        }
-        String fn = file.getOriginalFilename() != null ? file.getOriginalFilename().toLowerCase(Locale.ROOT) : "";
-        if (fn.endsWith(".svg")) return "image/svg+xml";
-        if (fn.endsWith(".png")) return "image/png";
-        if (fn.endsWith(".jpg") || fn.endsWith(".jpeg")) return "image/jpeg";
-        if (fn.endsWith(".webp")) return "image/webp";
-        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "Not a recognized image type: " + file.getOriginalFilename());
-    }
 }

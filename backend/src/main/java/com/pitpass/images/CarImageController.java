@@ -1,8 +1,6 @@
 package com.pitpass.images;
 
 import com.pitpass.web.HttpCaching;
-import com.sksamuel.scrimage.ImmutableImage;
-import com.sksamuel.scrimage.webp.WebpWriter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -100,51 +98,14 @@ public class CarImageController {
     @PostMapping("/car-images/bulk")
     public List<BulkResult> bulkUpload(@RequestParam long seasonId,
                                        @RequestParam("files") List<MultipartFile> files) {
-        Set<String> known = new LinkedHashSet<>(db.sql("""
-                        SELECT DISTINCT en.car_number FROM entry en
-                                 JOIN event e ON e.id = en.event_id
-                        WHERE e.season_id = :seasonId
-                        """)
-                .param("seasonId", seasonId)
-                .query(String.class)
-                .list());
-
-        List<BulkResult> results = new ArrayList<>();
-        for (MultipartFile file : files) {
-            String filename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "(unnamed)";
-            List<String> candidates = numberCandidates(filename, known);
-            if (candidates.size() == 1) {
-                boolean replaced = save(seasonId, candidates.get(0), file);
-                results.add(new BulkResult(filename, replaced ? "REPLACED" : "MATCHED", candidates.get(0), candidates));
-            } else if (candidates.isEmpty()) {
-                results.add(new BulkResult(filename, "UNMATCHED", null, digitRuns(filename)));
-            } else {
-                results.add(new BulkResult(filename, "AMBIGUOUS", null, candidates));
-            }
-        }
-        return results;
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "Upload directly to public storage. Reload the app before uploading.");
     }
 
     @PostMapping("/car-images")
     public ImageSummary uploadOne(@RequestParam long seasonId,
                                   @RequestParam String carNumber,
                                   @RequestParam("file") MultipartFile file) {
-        String number = carNumber.trim();
-        if (number.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Car number is required");
-        }
-        save(seasonId, number, file);
-        return db.sql("""
-                        SELECT id, car_number, source_filename, uploaded_at, original_object_key, sheet_object_key
-                        FROM car_image WHERE season_id = :seasonId AND car_number = :number
-                        """)
-                .param("seasonId", seasonId).param("number", number)
-                .query((rs, i) -> new ImageSummary(rs.getLong("id"), rs.getString("car_number"),
-                        rs.getString("source_filename"), rs.getObject("uploaded_at", OffsetDateTime.class),
-                        urls.sheet(rs.getLong("id"), rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli(), rs.getString("sheet_object_key")),
-                        urls.original(rs.getLong("id"), rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli(), rs.getString("original_object_key")),
-                        rs.getString("original_object_key") != null))
-                .single();
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "Upload directly to public storage. Reload the app before uploading.");
     }
 
     @GetMapping("/car-images/{id}/data")
@@ -171,52 +132,12 @@ public class CarImageController {
 
     private record ImageLocation(String contentType, String originalKey, String sheetKey) {}
 
-    private record VariantBlob(String contentType, Integer width, byte[] data) {
-    }
-
-    /**
-     * Serve full-res, or a named downscaled variant (currently just "sheet"). An
-     * existing variant is served straight; a missing "sheet" variant is generated
-     * on the fly and stored (covers images uploaded before variants existed). If
-     * a variant can't be produced, fall back to full-res — it's an optimization,
-     * never a hard dependency.
-     */
     private ResponseEntity<byte[]> serve(long id, String variant, boolean versioned) {
-        ImageLocation image = db.sql("SELECT content_type, original_object_key, sheet_object_key FROM car_image WHERE id = :id")
-                .param("id", id).query((rs, i) -> new ImageLocation(rs.getString("content_type"),
-                        rs.getString("original_object_key"), rs.getString("sheet_object_key")))
+        String key = db.sql("SELECT original_object_key, sheet_object_key FROM car_image WHERE id = :id")
+                .param("id", id).query((rs, i) -> rs.getString("sheet".equals(variant) ? "sheet_object_key" : "original_object_key"))
                 .optional().orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such image"));
-        String key = "sheet".equals(variant) ? image.sheetKey() : image.originalKey();
-        if (key != null) {
-            return ResponseEntity.status(HttpStatus.FOUND).location(storage.publicUrl(key))
-                    .header("Cache-Control", HttpCaching.cacheControl(versioned)).build();
-        }
-        if (variant != null && !variant.isBlank()) {
-            Optional<VariantBlob> existing = db.sql("""
-                            SELECT content_type, data FROM car_image_variant
-                            WHERE image_id = :id AND variant = :variant
-                            """).param("id", id).param("variant", variant)
-                    .query((rs, i) -> new VariantBlob(rs.getString("content_type"), null, rs.getBytes("data")))
-                    .optional();
-            if (existing.isPresent()) {
-                return body(existing.get().contentType(), existing.get().data(), versioned);
-            }
-        }
-        // Legacy images only: never retrieve original bytes for an existing thumbnail.
-        byte[] data = db.sql("SELECT data FROM car_image WHERE id = :id")
-                .param("id", id).query(byte[].class).single();
-        if ("sheet".equals(variant)) {
-            VariantBlob generated = ensureSheetVariant(id, data);
-            if (generated != null) return body(generated.contentType(), generated.data(), versioned);
-        }
-        return body(image.contentType(), data, versioned);
-    }
-
-    private static ResponseEntity<byte[]> body(String contentType, byte[] data, boolean versioned) {
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(contentType))
-                .header("Cache-Control", HttpCaching.cacheControl(versioned))
-                .body(data);
+        return ResponseEntity.status(HttpStatus.FOUND).location(storage.publicUrl(key))
+                .header("Cache-Control", HttpCaching.cacheControl(versioned)).build();
     }
 
     @DeleteMapping("/car-images/{id}")
@@ -228,103 +149,6 @@ public class CarImageController {
     }
 
     // ---------------------------------------------------------------- helpers
-
-    /** Saves (upsert); returns true if an existing image was replaced. */
-    private boolean save(long seasonId, String carNumber, MultipartFile file) {
-        if (storage.enabled()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Direct image uploads are enabled. Reload the page and upload again.");
-        }
-        byte[] data;
-        try {
-            data = file.getBytes();
-        } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read upload: " + e.getMessage());
-        }
-        if (data.length == 0) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Empty file");
-        }
-        boolean exists = db.sql("SELECT count(*) FROM car_image WHERE season_id = :s AND car_number = :n")
-                .param("s", seasonId).param("n", carNumber).query(Long.class).single() > 0;
-        long imageId = db.sql("""
-                        INSERT INTO car_image (season_id, car_number, content_type, source_filename, data)
-                        VALUES (:seasonId, :number, :contentType, :filename, :data)
-                        ON CONFLICT (season_id, car_number) DO UPDATE
-                            SET content_type = EXCLUDED.content_type,
-                                source_filename = EXCLUDED.source_filename,
-                                data = EXCLUDED.data,
-                                original_object_key = NULL, sheet_object_key = NULL,
-                                uploaded_at = now()
-                        RETURNING id
-                        """)
-                .param("seasonId", seasonId)
-                .param("number", carNumber)
-                .param("contentType", contentType(file))
-                .param("filename", file.getOriginalFilename())
-                .param("data", data)
-                .query(Long.class)
-                .single();
-        ensureSheetVariant(imageId, data);
-        return exists;
-    }
-
-    private static final int SHEET_MAX = 400; // longest side of the sheet variant, px
-
-    /**
-     * Generate (and store) the ~400px WebP "sheet" variant from the source bytes,
-     * returning it, or null if the source is already small enough or can't be
-     * decoded. Best-effort: variants are an optimization, so failures never break
-     * upload or serving — the caller falls back to full-res.
-     */
-    private VariantBlob ensureSheetVariant(long imageId, byte[] source) {
-        VariantBlob variant = makeSheetVariant(source);
-        if (variant == null) {
-            db.sql("DELETE FROM car_image_variant WHERE image_id = :id AND variant = 'sheet'")
-                    .param("id", imageId).update();
-            return null;
-        }
-        db.sql("""
-                        INSERT INTO car_image_variant (image_id, variant, content_type, width, data)
-                        VALUES (:id, 'sheet', :contentType, :width, :data)
-                        ON CONFLICT (image_id, variant) DO UPDATE
-                            SET content_type = EXCLUDED.content_type,
-                                width = EXCLUDED.width,
-                                data = EXCLUDED.data
-                        """)
-                .param("id", imageId)
-                .param("contentType", variant.contentType())
-                .param("width", variant.width())
-                .param("data", variant.data())
-                .update();
-        return variant;
-    }
-
-    private static VariantBlob makeSheetVariant(byte[] source) {
-        try {
-            ImmutableImage image = ImmutableImage.loader().fromBytes(source);
-            if (image.width <= SHEET_MAX && image.height <= SHEET_MAX) {
-                return null; // already sheet-sized; full-res is fine
-            }
-            ImmutableImage scaled = image.max(SHEET_MAX, SHEET_MAX); // fit within, keep aspect + alpha
-            return new VariantBlob("image/webp", scaled.width, scaled.bytes(WebpWriter.DEFAULT));
-        } catch (IOException | RuntimeException e) {
-            return null; // undecodable or encoder trouble -> serve full-res
-        }
-    }
-
-    private static String contentType(MultipartFile file) {
-        String declared = file.getContentType();
-        if (declared != null && declared.toLowerCase(Locale.ROOT).startsWith("image/")) {
-            return declared;
-        }
-        String name = file.getOriginalFilename() != null ? file.getOriginalFilename().toLowerCase(Locale.ROOT) : "";
-        if (name.endsWith(".png")) return "image/png";
-        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
-        if (name.endsWith(".webp")) return "image/webp";
-        if (name.endsWith(".gif")) return "image/gif";
-        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "Not a recognized image type: " + file.getOriginalFilename());
-    }
 
     /** Digit runs in the filename that exactly match a known car number (string match). */
     static List<String> numberCandidates(String filename, Set<String> known) {

@@ -63,48 +63,7 @@ public class ManufacturerLogoController {
 
     @PostMapping("/manufacturer-logos")
     public ManufacturerRow upload(@RequestParam String name, @RequestParam("file") MultipartFile file) {
-        if (storage.enabled()) throw new ResponseStatusException(HttpStatus.CONFLICT, "Direct logo uploads are enabled. Reload the page and upload again.");
-        String display = name.trim();
-        if (display.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Manufacturer name is required");
-        }
-        byte[] data;
-        try {
-            data = file.getBytes();
-        } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read upload: " + e.getMessage());
-        }
-        if (data.length == 0) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Empty file");
-        }
-        db.sql("""
-                        INSERT INTO manufacturer_logo (name, display_name, content_type, data)
-                        VALUES (:name, :display, :contentType, :data)
-                        ON CONFLICT (name) DO UPDATE
-                            SET display_name = EXCLUDED.display_name,
-                                content_type = EXCLUDED.content_type,
-                                data = EXCLUDED.data, object_key = NULL,
-                                uploaded_at = now()
-                        """)
-                .param("name", display.toLowerCase(Locale.ROOT))
-                .param("display", display)
-                .param("contentType", contentType(file))
-                .param("data", data)
-                .update();
-        return db.sql("""
-                        SELECT en.manufacturer AS name, count(*) AS entry_count, ml.uploaded_at, ml.invert_on_dark, ml.object_key
-                        FROM entry en JOIN manufacturer_logo ml ON ml.name = lower(trim(en.manufacturer))
-                        WHERE lower(trim(en.manufacturer)) = :name
-                        GROUP BY en.manufacturer, ml.uploaded_at, ml.invert_on_dark, ml.object_key
-                        """)
-                .param("name", display.toLowerCase(Locale.ROOT))
-                .query((rs, i) -> new ManufacturerRow(rs.getString("name"), rs.getLong("entry_count"),
-                        rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli(),
-                        rs.getBoolean("invert_on_dark"),
-                        assets.url(LogoAssets.Kind.MANUFACTURER, rs.getString("name"), rs.getObject("uploaded_at", OffsetDateTime.class).toInstant().toEpochMilli(), rs.getString("object_key")),
-                        rs.getString("object_key") != null))
-                .optional()
-                .orElse(new ManufacturerRow(display, 0, System.currentTimeMillis(), false, assets.url(LogoAssets.Kind.MANUFACTURER, display, System.currentTimeMillis(), null), false));
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "Upload directly to public storage. Reload the app before uploading.");
     }
 
     public record InvertRequest(boolean invertOnDark) {
@@ -143,17 +102,4 @@ public class ManufacturerLogoController {
         }
     }
 
-    private static String contentType(MultipartFile file) {
-        String declared = file.getContentType();
-        if (declared != null && declared.toLowerCase(Locale.ROOT).startsWith("image/")) {
-            return declared;
-        }
-        String fn = file.getOriginalFilename() != null ? file.getOriginalFilename().toLowerCase(Locale.ROOT) : "";
-        if (fn.endsWith(".svg")) return "image/svg+xml";
-        if (fn.endsWith(".png")) return "image/png";
-        if (fn.endsWith(".jpg") || fn.endsWith(".jpeg")) return "image/jpeg";
-        if (fn.endsWith(".webp")) return "image/webp";
-        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "Not a recognized image type: " + file.getOriginalFilename());
-    }
 }

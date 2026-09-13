@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { imageRequest } from '../lib/carImageUpload'
-import { uploadLogo, migrateLogos } from '../lib/logoUpload'
+import { uploadLogo } from '../lib/logoUpload'
 
 interface ManufacturerRow {
   name: string
@@ -17,7 +16,6 @@ export default function LogosPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [progress, setProgress] = useState('')
-  const [directUpload, setDirectUpload] = useState(false)
   const inputs = useRef<Record<string, HTMLInputElement | null>>({})
 
   async function load() {
@@ -27,7 +25,6 @@ export default function LogosPage() {
 
   useEffect(() => {
     void load()
-    void imageRequest<{ directUpload: boolean }>('/api/car-images/uploads/config').then((c) => setDirectUpload(c.directUpload)).catch(() => {})
   }, [])
 
   async function upload(name: string, file: File) {
@@ -43,12 +40,6 @@ export default function LogosPage() {
     }
   }
 
-  async function migrate() {
-    setBusy(true); setError(null)
-    try { await migrateLogos('MANUFACTURER', setProgress) }
-    catch (e) { setError(e instanceof Error ? e.message : 'Could not move logos.') }
-    finally { setBusy(false); setProgress(''); await load() }
-  }
 
   async function setInvert(name: string, value: boolean) {
     setError(null)
@@ -76,7 +67,6 @@ export default function LogosPage() {
         single-colour wordmarks: the dark theme then recolours them white instead of painting a
         white pill behind them. Leave multi-colour badges unticked — inverting flattens them.
       </p>
-      {directUpload && <button disabled={busy} onClick={() => void migrate()}>Move existing logos to public storage</button>}
       {busy && <p role="status">{progress || 'Preparing logo…'}</p>}
       {error && <p className="error">{error}</p>}
 

@@ -8,8 +8,6 @@ import com.pitpass.browse.SeasonViewController.RecapRow;
 import com.pitpass.web.HttpCaching;
 import com.pitpass.images.LogoAssets;
 import com.pitpass.images.PublicImageStorage;
-import com.sksamuel.scrimage.ImmutableImage;
-import com.sksamuel.scrimage.webp.WebpWriter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -482,54 +480,12 @@ public class DriverController {
     /* Photo                                                                */
     /* ------------------------------------------------------------------ */
 
-    /** Longest side stored, px. Headshots render at ~96px in the modal; 640
-     *  keeps retina crisp without banking multi-MB originals in the DB. */
-    private static final int PHOTO_MAX = 640;
-
     public record PhotoResult(long driverId, long photoVersion) {
     }
 
     @PostMapping("/drivers/{id}/photo")
     public PhotoResult uploadPhoto(@PathVariable long id, @RequestParam("file") MultipartFile file) {
-        if (storage.enabled()) throw new ResponseStatusException(HttpStatus.CONFLICT, "Use direct photo uploads");
-        byte[] data;
-        try {
-            data = file.getBytes();
-        } catch (IOException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Could not read upload: " + e.getMessage());
-        }
-        if (data.length == 0) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Empty file");
-        }
-        String contentType = contentType(file);
-        // Downscale to a webp like the car-image sheet variant; if the bytes
-        // don't decode, store the original — resizing is an optimization.
-        try {
-            ImmutableImage image = ImmutableImage.loader().fromBytes(data);
-            if (image.width > PHOTO_MAX || image.height > PHOTO_MAX) {
-                data = image.max(PHOTO_MAX, PHOTO_MAX).bytes(WebpWriter.DEFAULT);
-                contentType = "image/webp";
-            }
-        } catch (IOException | RuntimeException e) {
-            // keep original bytes
-        }
-        Long version = db.sql("""
-                        INSERT INTO driver_photo (driver_id, content_type, source_filename, data)
-                        VALUES (:id, :contentType, :filename, :data)
-                        ON CONFLICT (driver_id) DO UPDATE
-                            SET content_type = EXCLUDED.content_type,
-                                source_filename = EXCLUDED.source_filename,
-                                data = EXCLUDED.data, object_key = NULL,
-                                uploaded_at = now()
-                        RETURNING (extract(epoch FROM uploaded_at) * 1000)::bigint
-                        """)
-                .param("id", id)
-                .param("contentType", contentType)
-                .param("filename", file.getOriginalFilename())
-                .param("data", data)
-                .query(Long.class)
-                .single();
-        return new PhotoResult(id, version);
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "Upload directly to public storage. Reload the app before uploading.");
     }
 
     @GetMapping("/drivers/{id}/photo")
@@ -545,18 +501,4 @@ public class DriverController {
         }
     }
 
-    private static String contentType(MultipartFile file) {
-        String declared = file.getContentType();
-        if (declared != null && declared.toLowerCase(Locale.ROOT).startsWith("image/")) {
-            return declared;
-        }
-        String name = file.getOriginalFilename() != null
-                ? file.getOriginalFilename().toLowerCase(Locale.ROOT) : "";
-        if (name.endsWith(".png")) return "image/png";
-        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
-        if (name.endsWith(".webp")) return "image/webp";
-        if (name.endsWith(".gif")) return "image/gif";
-        throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "Not a recognized image type: " + file.getOriginalFilename());
-    }
 }

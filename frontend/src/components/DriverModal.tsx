@@ -1,5 +1,4 @@
 import { uploadLogo } from '../lib/logoUpload'
-import { PublicFileMigration } from './PublicFileMigration'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import 'flag-icons/css/flag-icons.min.css'
 import './driver-modal.css'
@@ -447,7 +446,6 @@ export default function DriverModal({
                   ) : (
                     <p className="dm-quiet">No bio yet.</p>
                   )}
-                  {isAdmin && <PublicFileMigration driverId={profile.id} />}
                   {isAdmin && (
                     <button type="button" className="btn dm-edit" onClick={() => setEditing(true)}>
                       {facts.length > 0 || profile.photoVersion != null ? 'Edit bio' : 'Add bio'}

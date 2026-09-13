@@ -18,6 +18,13 @@ import static org.junit.jupiter.api.Assertions.*;
 @Transactional
 class SeriesControllerTest {
 
+    @org.springframework.test.context.bean.override.mockito.MockitoBean com.pitpass.images.PublicImageStorage storage;
+    @org.junit.jupiter.api.BeforeEach void publicStorage() {
+        org.mockito.Mockito.when(storage.enabled()).thenReturn(true);
+        org.mockito.Mockito.when(storage.publicUrl(org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(i -> java.net.URI.create("https://images.example/" + i.getArgument(0)));
+    }
+
     @Autowired SeriesController controller;
     @Autowired SeriesRepository repository;
     @Autowired JdbcClient db;
@@ -37,9 +44,9 @@ class SeriesControllerTest {
         controller.addAlias(created.id(), new SeriesController.AddAliasRequest("  " + alias + "  "));
         OffsetDateTime uploaded = OffsetDateTime.parse("2026-01-01T00:00:00Z");
         db.sql("""
-                INSERT INTO series_logo (series_id, content_type, data, uploaded_at)
+                INSERT INTO series_logo (series_id, content_type, object_key, uploaded_at)
                 VALUES (:id, 'image/png', :data, :uploaded)
-                """).param("id", created.id()).param("data", new byte[] {1})
+                """).param("id", created.id()).param("data", "series-logos/fixture/logo")
                 .param("uploaded", uploaded).update();
 
         var updated = controller.update(created.id(),

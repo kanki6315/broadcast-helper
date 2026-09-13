@@ -1,4 +1,3 @@
-import ManageStorageMigration from './ManageStorageMigration'
 import { Navigate, NavLink, Outlet } from 'react-router-dom'
 import { useIsAdmin } from '../lib/auth'
 
@@ -39,7 +38,6 @@ export default function ManageLayout() {
           </NavLink>
         ))}
       </nav>
-      <ManageStorageMigration />
       <Outlet />
     </section>
   )

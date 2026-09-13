@@ -51,19 +51,19 @@ public class StorylineController {
     public Storylines upload(@PathVariable long eventId, @RequestParam("file") MultipartFile file) {
         requireEvent(eventId);
         try (var upload = storage.receive(file)) {
-            byte[] data = upload.persist();
+            upload.persist();
             db.sql("""
-                            INSERT INTO event_document (event_id, kind, source_filename, content_type, object_key, data)
-                            VALUES (:eventId, :kind, :filename, 'application/pdf', :objectKey, :data)
+                            INSERT INTO event_document (event_id, kind, source_filename, content_type, object_key)
+                            VALUES (:eventId, :kind, :filename, 'application/pdf', :objectKey)
                             ON CONFLICT (event_id, kind) DO UPDATE
                                 SET source_filename = EXCLUDED.source_filename,
-                                    data = EXCLUDED.data, object_key = EXCLUDED.object_key,
+                                    object_key = EXCLUDED.object_key,
                                     uploaded_at = now()
                             """)
                     .param("eventId", eventId)
                     .param("kind", KIND)
                     .param("filename", file.getOriginalFilename())
-                    .param("data", data).param("objectKey", upload.key())
+                    .param("objectKey", upload.key())
                     .update();
             return get(eventId);
         }
