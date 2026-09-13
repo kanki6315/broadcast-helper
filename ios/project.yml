@@ -41,9 +41,12 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         SUPPORTS_MACCATALYST: false
+        # Optional build-time Debug origin, retained when launching outside Xcode.
+        PITPASS_SERVER_URL: ""
     info:
       path: PitPass/Info.plist
       properties:
+        PitPassServerURL: $(PITPASS_SERVER_URL)
         CFBundleDisplayName: Pit Pass
         CFBundleName: Pit Pass
         # Without these xcodegen writes literal 1.0 / 1 into Info.plist and the
