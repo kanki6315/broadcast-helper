@@ -7,8 +7,7 @@ struct SheetRoute: Hashable {
 
 /// The event sheet — the on-screen broadcast reference for one event
 /// (SheetPage.tsx / sheet.css): header, one class section per class with the
-/// entry table and the season-form strip under each entry, and the floating
-/// action stack (Storylines, Recap, Pit lane, Scratchpad). Read-only here:
+/// entry table and season-form strips, with four peer tabs. Read-only here:
 /// prior-year notes are edited on the website.
 struct SheetView: View {
     @Environment(AppSession.self) private var session
@@ -16,9 +15,11 @@ struct SheetView: View {
     @State private var sheet: Resource<Sheet>
     @State private var teamSheet: (page: Int, title: String)?
     @State private var storylinesOpen = false
-    @State private var pitLaneOpen = false
-    @State private var recapOpen = false
-    @State private var scratchpadOpen = false
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var page: Page = .sheet
+
+    private enum Page { case sheet, recap, pitLane, scratchpad }
+    @State private var padModel: PadModel?
     @State private var exporting = false
     @State private var exportURL: URL?
 
@@ -28,28 +29,18 @@ struct SheetView: View {
     }
 
     var body: some View {
-        ScrollView {
-            Group {
-                if let sheet = sheet.value {
-                    content(sheet)
-                } else if let error = sheet.error {
-                    ErrorPanel(message: error)
-                } else {
-                    SkeletonLines()
-                }
-            }
-            .frame(maxWidth: 1240)
-            .padding(.top, PP.Space.s4)
-            .padding(.horizontal, PP.Space.s5)
-            .padding(.bottom, 200)
-            .frame(maxWidth: .infinity)
-        }
-        .background(PP.bg.ignoresSafeArea())
-        .overlay(alignment: .bottomTrailing) { if let sheet = sheet.value { fabs(sheet) } }
+        eventTabs
         .navigationTitle(sheet.value?.eventName ?? "Sheet")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(PP.bg, for: .navigationBar)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if sheet.value?.storylinesPath != nil {
+                    Button { storylinesOpen = true } label: {
+                        Label("Storylines", systemImage: "doc.text")
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 StatusDownloadButton(target: .event(eventId), noun: "event")
             }
@@ -69,7 +60,7 @@ struct SheetView: View {
             session.freshness.reset()
             await sheet.load(session.loader, connectivity: session.connectivity, freshness: session.freshness)
         }
-        .refreshable { await sheet.load(session.loader, connectivity: session.connectivity, freshness: session.freshness) }
+        .onDisappear { padModel?.close() }
         .sheet(item: Binding(get: { teamSheet.map { TeamSheetTarget(page: $0.page, title: $0.title) } }, set: { teamSheet = $0.map { ($0.page, $0.title) } })) { target in
             if let path = sheet.value?.teamSheetsPath {
                 PdfViewerSheet(path: path, title: target.title, page: target.page)
@@ -78,18 +69,86 @@ struct SheetView: View {
         .sheet(isPresented: $storylinesOpen) {
             if let path = sheet.value?.storylinesPath { PdfViewerSheet(path: path, title: "Storylines", page: 1) }
         }
-        .sheet(isPresented: $pitLaneOpen) {
-            if let sheet = sheet.value { PitLaneSheet(eventId: eventId, sheet: sheet) }
-        }
-        .sheet(isPresented: $recapOpen) {
-            if let sheet = sheet.value, let seasonId = sheet.seasonId { RecapSheet(seasonId: seasonId, currentEventId: eventId) }
-        }
-        .fullScreenCover(isPresented: $scratchpadOpen) {
-            ScratchpadSheet(eventId: eventId)
-        }
         .sheet(item: $exportURL) { url in
             ExportSheet(url: url)
         }
+    }
+
+    private var eventTabs: some View {
+        TabView(selection: $page) {
+            Tab("Sheet", systemImage: "tablecells", value: Page.sheet) {
+                sheetContent.environment(\.horizontalSizeClass, sizeClass)
+            }
+            Tab("Recap", systemImage: "chart.bar.xaxis", value: Page.recap) {
+                recapContent.environment(\.horizontalSizeClass, sizeClass)
+            }
+            Tab("Pit lane", systemImage: "flag.checkered", value: Page.pitLane) {
+                pitLaneContent.environment(\.horizontalSizeClass, sizeClass)
+            }
+            Tab("Scratchpad", systemImage: "pencil.and.scribble", value: Page.scratchpad) {
+                ScratchpadSheet(eventId: eventId, model: $padModel)
+                    .environment(\.horizontalSizeClass, sizeClass)
+            }
+            .badge(scratchpadAttentionBadge)
+        }
+        // Keep native Liquid Glass tabs at the bottom on iPad as well as iPhone.
+        // Each tab restores the actual size class for its adaptive content.
+        .environment(\.horizontalSizeClass, .compact)
+        .tint(PP.accentInk)
+        .background(PP.bg.ignoresSafeArea())
+    }
+
+    private var scratchpadAttentionBadge: Text? {
+        guard let attention = session.pads.attention(eventId: eventId, owner: session.padOwner) else { return nil }
+        return Text("!").accessibilityLabel(attention == .conflict
+            ? "Scratchpad needs attention: changed elsewhere" : "Scratchpad has unsynced ink")
+    }
+
+    @ViewBuilder private var recapContent: some View {
+        if let value = sheet.value {
+            if let seasonId = value.seasonId {
+                RecapSheet(seasonId: seasonId, currentEventId: eventId)
+            } else {
+                ContentUnavailableView("No season recap", systemImage: "chart.bar.xaxis",
+                                       description: Text("This event is not linked to a season."))
+            }
+        } else { sheetLoadingState }
+    }
+
+    @ViewBuilder private var pitLaneContent: some View {
+        if let value = sheet.value { PitLaneSheet(eventId: eventId, sheet: value) }
+        else { sheetLoadingState }
+    }
+
+    private var sheetContent: some View {
+        ScrollView {
+            Group {
+                if let sheet = sheet.value {
+                    content(sheet)
+                } else if let error = sheet.error {
+                    ErrorPanel(message: error)
+                } else {
+                    SkeletonLines()
+                }
+            }
+            .frame(maxWidth: 1240)
+            .padding(.top, PP.Space.s4)
+            .padding(.horizontal, PP.Space.s5)
+            .padding(.bottom, PP.Space.s3)
+            .frame(maxWidth: .infinity)
+        }
+        .background(PP.bg.ignoresSafeArea())
+        .refreshable { await sheet.load(session.loader, connectivity: session.connectivity, freshness: session.freshness) }
+    }
+
+    private var sheetLoadingState: some View {
+        Group {
+            if let error = sheet.error { ErrorPanel(message: error) }
+            else { SkeletonLines() }
+        }
+        .padding(PP.Space.s5)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(PP.bg)
     }
 
     private struct TeamSheetTarget: Identifiable {
@@ -127,37 +186,6 @@ struct SheetView: View {
         }
     }
 
-    /// `.sheet-fabs`: the floating stack, newest at the top so Pit lane and
-    /// Scratchpad keep their positions from the screen edge.
-    private func fabs(_ sheet: Sheet) -> some View {
-        VStack(alignment: .trailing, spacing: PP.Space.s2) {
-            if sheet.storylinesPath != nil { fab("Storylines") { storylinesOpen = true } }
-            if sheet.seasonId != nil { fab("Recap") { recapOpen = true } }
-            fab("Pit lane") { pitLaneOpen = true }
-            fab("Scratchpad") { scratchpadOpen = true }
-                .overlay(alignment: .topTrailing) { scratchpadBadge }
-        }
-        .padding(PP.Space.s5)
-    }
-
-    /// Amber dot while the pad holds unsynced offline ink; red when a sync
-    /// conflict needs a person (SheetPage's useScratchpadAttention).
-    @ViewBuilder private var scratchpadBadge: some View {
-        if let attention = session.pads.attention(eventId: eventId, owner: session.padOwner) {
-            Circle()
-                .fill(attention == .conflict ? PP.error : PP.accent)
-                .frame(width: 10, height: 10)
-                .overlay(Circle().strokeBorder(PP.bg, lineWidth: 2))
-                .offset(x: 3, y: -3)
-                .accessibilityLabel(attention == .conflict ? "Scratchpad needs attention: changed elsewhere" : "Scratchpad has unsynced ink")
-        }
-    }
-
-    private func fab(_ label: String, action: @escaping () -> Void) -> some View {
-        Button(label, action: action)
-            .buttonStyle(FabButtonStyle())
-    }
-
     // MARK: export
 
     private func export(_ sheet: Sheet) async {
@@ -165,22 +193,6 @@ struct SheetView: View {
         defer { exporting = false }
         let images = await SheetPrint.preloadImages(sheet, loader: session.loader)
         if let url = SheetPrint.render(sheet, images: images) { exportURL = url }
-    }
-}
-
-/// `.sheet-fab`: the `.btn` on the panel surface with the modal shadow.
-struct FabButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(PP.sans(PP.TextSize.sm, weight: 500))
-            .foregroundStyle(PP.text)
-            .padding(.vertical, 8).padding(.horizontal, 16)
-            .frame(minWidth: 118)
-            .background(configuration.isPressed ? PP.surface2 : PP.surface, in: RoundedRectangle(cornerRadius: PP.Radius.md, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: PP.Radius.md, style: .continuous).strokeBorder(PP.borderStrong))
-            .shadow(color: .black.opacity(0.14), radius: 6, y: 4)
-            .shadow(color: .black.opacity(0.18), radius: 20, y: 12)
-            .animation(PP.Motion.fast, value: configuration.isPressed)
     }
 }
 

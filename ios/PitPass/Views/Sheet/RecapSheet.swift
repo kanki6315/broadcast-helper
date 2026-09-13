@@ -1,10 +1,9 @@
 import SwiftUI
 
-/// RecapModal: the season recap over the event sheet — the same grids, with
+/// The season recap tab — the same grids, with
 /// this event's round column marked in amber. Selection is local to the sheet.
 struct RecapSheet: View {
     @Environment(AppSession.self) private var session
-    @Environment(\.dismiss) private var dismiss
     @State private var model: SeasonModel
 
     init(seasonId: Int, currentEventId: Int) {
@@ -15,7 +14,7 @@ struct RecapSheet: View {
 
     var body: some View {
         @Bindable var model = model
-        NavigationStack {
+        Group {
             ScrollView {
                 VStack(alignment: .leading, spacing: PP.Space.s3) {
                     if let hub = model.hub.value {
@@ -31,13 +30,8 @@ struct RecapSheet: View {
                 .padding(PP.Space.s5)
             }
             .background(PP.bg.ignoresSafeArea())
-            .navigationTitle("Recap")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
         .infoModalHost()
-        .presentationBackground(PP.bg)
-        .presentationSizing(.page)
         .tint(PP.accentInk)
         .environment(model)
         .task { await model.load(session) }

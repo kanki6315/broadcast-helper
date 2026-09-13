@@ -1,16 +1,15 @@
 import PencilKit
 import SwiftUI
 
-/// The Pencil scratchpad over the event sheet (ScratchpadModal.tsx): the
+/// The event scratchpad tab: the
 /// tool row (Pen/Eraser, the six literal ink colours, S/M/L, Undo/Redo), the
 /// conflict banner, and white paper 800 logical px wide scaled to the
 /// window. Ink colours are persisted literals, so the paper stays white in
 /// both themes; the chrome follows the tokens.
 struct ScratchpadSheet: View {
     @Environment(AppSession.self) private var session
-    @Environment(\.dismiss) private var dismiss
     let eventId: Int
-    @State private var model: PadModel?
+    @Binding var model: PadModel?
     @State private var tool: Tool? = .pen
     @State private var color = ScratchpadSheet.colors[0].value
     @State private var size: Double? = ScratchpadSheet.sizes[1].value
@@ -28,15 +27,17 @@ struct ScratchpadSheet: View {
     static let sizes: [(label: String, value: Double)] = [("S", 2), ("M", 4), ("L", 8)]
 
     var body: some View {
-        NavigationStack {
+        Group {
             VStack(spacing: 0) {
                 if let model {
+                    statusText(model.status)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
                     toolbar(model)
                     if model.conflict { conflictBanner(model) }
                     switch model.phase {
                     case .ready:
                         PadCanvas(model: model, tool: tool ?? .pen, color: color, size: size ?? 4)
-                            .ignoresSafeArea(edges: .bottom)
                     case .loading:
                         Text("Loading scratchpad…").font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.textMuted)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -53,37 +54,15 @@ struct ScratchpadSheet: View {
                 }
             }
             .background(PP.surface.ignoresSafeArea())
-            .navigationTitle("Scratchpad")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(PP.surface, for: .navigationBar)
-            .toolbar {
-                if #available(iOS 26.0, *) {
-                    ToolbarItem(placement: .topBarLeading) {
-                        statusText(model?.status ?? .idle)
-                    }
-                    .sharedBackgroundVisibility(.hidden)
-                } else {
-                    ToolbarItem(placement: .topBarLeading) {
-                        statusText(model?.status ?? .idle)
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { close() }.font(PP.sans(PP.TextSize.sm, weight: 600)).tint(PP.accentInk)
-                }
-            }
+
         }
         .tint(PP.accentInk)
         .task {
+            guard model == nil else { return }
             let m = PadModel(eventId: eventId, session: session)
             model = m
             await m.load()
         }
-        .onDisappear { model?.close() }
-    }
-
-    private func close() {
-        model?.close()
-        dismiss()
     }
 
     // MARK: chrome
@@ -195,7 +174,7 @@ struct ScratchpadSheet: View {
         case .conflict: "Changed elsewhere"
         case .offline: "Offline — saved on this iPad"
         }
-        // Reserve the same navigation-bar footprint for every save state.
+        // Reserve the same status-row footprint for every save state.
         // Feedback never participates in the drawing controls' layout.
         Text("Pad full — erase some strokes")
             .font(PP.sans(PP.TextSize.xs))
