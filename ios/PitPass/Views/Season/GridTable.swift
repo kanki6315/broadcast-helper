@@ -9,16 +9,19 @@ struct GridColumn: Identifiable {
     enum Align { case leading, trailing, center }
     let id: String
     let title: AnyView
-    let width: CGFloat
+    var width: CGFloat
+    /// Opt-in share of unused table width; `width` remains the minimum.
+    var growthWeight: CGFloat = 0
     var align: Align = .leading
     /// Horizontal cell padding override (round cells run tighter, like `.race-cell`).
     var padH: CGFloat?
 
-    init(id: String, width: CGFloat, align: Align = .leading, padH: CGFloat? = nil, @ViewBuilder title: () -> some View) {
+    init(id: String, width: CGFloat, align: Align = .leading, padH: CGFloat? = nil, growthWeight: CGFloat = 0, @ViewBuilder title: () -> some View) {
         self.id = id
         self.width = width
         self.align = align
         self.padH = padH
+        self.growthWeight = growthWeight
         self.title = AnyView(title())
     }
 
@@ -94,19 +97,25 @@ struct GridTable: View {
         // The data half fills whatever the identity half leaves (the web's
         // `grid-soak` column), scrolling only when the season is long.
         GeometryReader { geo in
+            let weight = (identColumns + dataColumns).reduce(0) { $0 + $1.growthWeight }
+            let extra = max(0, geo.size.width - identWidth - dataWidth)
+            let unit = weight > 0 ? extra / weight : 0
+            let identity = expanded(identColumns, unit: unit)
+            let data = expanded(dataColumns, unit: unit)
+            let pinnedWidth = identity.reduce(0) { $0 + $1.width }
             HStack(alignment: .top, spacing: 0) {
-                column(identColumns, ident: true)
+                column(identity, ident: true)
                     // Flexible row frames must not let the pinned pane absorb
                     // spare width and create a gap before the scrolling data.
-                    .frame(width: identWidth, alignment: .leading)
+                    .frame(width: pinnedWidth, alignment: .leading)
                     .background(PP.bg)
                     .overlay(alignment: .trailing) {
                         if separatesIdentity { Rectangle().fill(PP.borderStrong).frame(width: 1) }
                     }
                     .zIndex(1)
                 ScrollView(.horizontal, showsIndicators: true) {
-                    column(dataColumns, ident: false)
-                        .frame(minWidth: max(dataWidth, geo.size.width - identWidth), alignment: .leading)
+                    column(data, ident: false)
+                        .frame(minWidth: max(dataWidth, geo.size.width - pinnedWidth), alignment: .leading)
                 }
                 .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             }
@@ -115,6 +124,14 @@ struct GridTable: View {
         .clipShape(RoundedRectangle(cornerRadius: PP.Radius.md, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: PP.Radius.md, style: .continuous).strokeBorder(PP.border))
         .padding(.bottom, PP.Space.s5)
+    }
+
+    private func expanded(_ columns: [GridColumn], unit: CGFloat) -> [GridColumn] {
+        columns.map { column in
+            var result = column
+            result.width += unit * column.growthWeight
+            return result
+        }
     }
 
     private func column(_ columns: [GridColumn], ident: Bool) -> some View {
@@ -132,7 +149,7 @@ struct GridTable: View {
             .overlay(alignment: .bottom) { Rectangle().fill(PP.borderStrong).frame(height: 1) }
             ForEach(sections) { section in
                 if let band = section.band {
-                    ClassBand(label: ident ? band.label : "", color: band.color)
+                    ClassBand(label: ident ? band.label : " ", color: band.color)
                         .frame(height: bandHeight)
                 }
                 ForEach(section.rows) { row in

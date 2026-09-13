@@ -119,13 +119,13 @@ struct StatsView: View {
         groups.sort { (order[$0.0] ?? 99) < (order[$1.0] ?? 99) }
 
         let ident: [GridColumn] = [
-            sortableColumn("name", label: mode == .drivers ? "Driver" : "Team", width: 200, align: .leading),
-            sortableColumn("car", label: "#", width: 64, align: .trailing),
+            sortableColumn("name", label: mode == .drivers ? "Driver" : "Team", width: 200, align: .leading, growthWeight: 4),
+            sortableColumn("car", label: "#", width: 64, align: .trailing, growthWeight: 0),
         ]
         var data: [GridColumn] = []
         for f in formats {
             for (ci, c) in Self.raceCols.enumerated() {
-                data.append(sortableColumn("fmt:\(f.key):\(c.key)", label: c.label, group: ci == 0 ? f.name : nil, width: c.rated ? 78 : 50, align: .center, groupStart: ci == 0))
+                data.append(sortableColumn("fmt:\(f.key):\(c.key)", label: c.label, group: ci == 0 ? f.name : nil, width: c.rated ? 78 : 50, align: .center, groupStart: ci == 0, rated: c.rated))
             }
         }
         if showQuali {
@@ -154,22 +154,34 @@ struct StatsView: View {
                 return GridRowItem(id: "\(row.id)-\(row.className)", ident: [GridCell.nameLink(row.name, target: target), GridCell.car(row.car ?? "")], cells: cells, lines: 1)
             })
         }
-        return GridTable(identColumns: ident, dataColumns: data, sections: sections, cellPadH: 5, headerHeight: 46)
+        return GridTable(identColumns: ident, dataColumns: data, sections: sections, cellPadH: 5, headerHeight: 46, centersCells: true)
     }
 
-    private func sortableColumn(_ key: String, label: String, group: String? = nil, width: CGFloat, align: GridColumn.Align, groupStart: Bool = false) -> GridColumn {
+    private func sortableColumn(_ key: String, label: String, group: String? = nil, width: CGFloat, align: GridColumn.Align, groupStart: Bool = false, rated: Bool = false, growthWeight: CGFloat = 1) -> GridColumn {
         let active = sort?.key == key
         let dir = active ? sort!.dir : defaultDir(key)
-        return GridColumn(id: key, width: width, align: align, padH: 5) {
+        let alignment: Alignment = align == .leading ? .leading : align == .trailing ? .trailing : .center
+        return GridColumn(id: key, width: width, align: align, padH: 5, growthWeight: growthWeight) {
             Button { toggleSort(key) } label: {
                 VStack(spacing: 1) {
                     Text(group ?? " ").font(PP.sans(PP.TextSize.xs, weight: 700)).foregroundStyle(PP.text).lineLimit(1).fixedSize()
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    HStack(spacing: 2) {
-                        Text(label).font(PP.sans(PP.TextSize.xs, weight: active ? 600 : 500)).foregroundStyle(active ? PP.ink : PP.textMuted)
-                        if active { Text(dir == .asc ? "▲" : "▼").font(.system(size: 7)).foregroundStyle(PP.accentInk) }
+                    Text(label).font(PP.sans(PP.TextSize.xs, weight: active ? 600 : 500)).foregroundStyle(active ? PP.ink : PP.textMuted)
+                    .overlay(alignment: align == .trailing ? .leading : .trailing) {
+                        if active {
+                            Image(systemName: dir == .asc ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
+                                .font(.system(size: 7)).foregroundStyle(PP.accentInk)
+                                .offset(x: align == .trailing ? -10 : 10)
+                        }
                     }
+                    // Match the count + percentage slots in StatPair; the
+                    // label belongs over the count, not between both figures.
+                    .frame(width: rated ? 30 : nil)
+                    .padding(.trailing, rated ? 39 : 0)
+                    .frame(maxWidth: .infinity, alignment: alignment)
                 }
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .overlay(alignment: .leading) { if groupStart { Rectangle().fill(PP.border).frame(width: 1).padding(.leading, -5) } }
