@@ -19,7 +19,7 @@ settings:
     DEVELOPMENT_TEAM: "TDBAHN96B3"
     # Version the user sees (CFBundleShortVersionString). Bump this line for a release;
     # the build number (CFBundleVersion) is stamped by release.sh, never edited here.
-    MARKETING_VERSION: 0.1.5
+    MARKETING_VERSION: 0.1.6
     CURRENT_PROJECT_VERSION: 1
 packages:
   # SVG rasterizer (zlib licence): manufacturer marks are uploaded as SVG and
