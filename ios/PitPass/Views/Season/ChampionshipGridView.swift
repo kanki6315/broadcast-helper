@@ -3,7 +3,7 @@ import SwiftUI
 /// ChampionshipGrid: the filter bar (championship family, competitor kind,
 /// points view, show-teams), the legend, and one ClassGrid per selected
 /// championship. `recap` shows start→finish chips per round; `points` the
-/// earnings per round with Total and Back.
+/// earnings per round with points and gaps pinned beside the entry.
 struct ChampionshipGridView: View {
     enum Mode { case recap, points }
 
@@ -60,8 +60,11 @@ struct ChampionshipGridView: View {
             }
             if mode == .recap {
                 RecapLegend(recaps: recaps)
-            } else if let ptsFlags, model.pointsView == .breakdown {
-                PointsLegend(flags: ptsFlags)
+            } else {
+                if let ptsFlags, model.pointsView == .breakdown {
+                    PointsLegend(flags: ptsFlags)
+                }
+                Legend(items: [LegendItem(text: "Gap to leader (previous position)")])
             }
         }
     }
@@ -179,7 +182,7 @@ struct ClassGridView: View {
     }
 
     private func grid(_ recap: Recap) -> some View {
-        let rounds = mode == .recap ? recap.rounds.filter { $0.hasParticipation(in: recap.rows) } : recap.rounds
+        let rounds = recap.rounds.filter { $0.hasParticipation(in: recap.rows) }
         let drivers = recap.championship.kind == "DRIVERS"
         let leader = recap.rows.map(\.totalPoints).max() ?? 0
         let color = model.classColor(champ.className)
@@ -190,21 +193,14 @@ struct ClassGridView: View {
             ? recap.rows.flatMap { $0.sessionPoints.values }.map { Points.marks($0).map(\.glyph).joined(separator: " ").count }.max() ?? 0
             : 0
 
-        var identColumns: [GridColumn] = [
-            .text("pos", "Pos", width: 52, align: .trailing),
-            .text("car", "#", width: 60, align: .trailing),
-            .text("name", drivers ? "Driver" : "Team", width: 236),
-        ]
-        if mode == .recap {
-            identColumns = [GridColumn(id: "entry", width: entryWidth, padH: 12) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(drivers ? "Driver" : "Team").font(PP.sans(PP.TextSize.xs, weight: 600))
-                    Text("Position · car · points").font(PP.sans(PP.TextSize.xs))
-                }
-                .foregroundStyle(PP.textMuted)
-                .lineLimit(1)
-            }]
-        }
+        let identColumns = [GridColumn(id: "entry", width: entryWidth, padH: 12) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(drivers ? "Driver" : "Team").font(PP.sans(PP.TextSize.xs, weight: 600))
+                Text("Position · car · points").font(PP.sans(PP.TextSize.xs))
+            }
+            .foregroundStyle(PP.textMuted)
+            .lineLimit(1)
+        }]
         let tightRounds = mode == .recap && availableWidth < 890
         var dataColumns: [GridColumn] = rounds.map { round in
             // Keep extra room for multi-race entries and long retirement chips.
@@ -221,46 +217,37 @@ struct ClassGridView: View {
                           padH: tightRounds ? 2 : 4,
                           current: model.currentEventId != nil && round.eventId == model.currentEventId)
         }
-        if mode == .points {
-            dataColumns.append(.text("total", "Total", width: 72, align: .trailing))
-            dataColumns.append(.text("back", "Back", width: 110, align: .trailing))
-        }
-
         var rows: [GridRowItem] = []
         var prevPoints: Double?
         for row in recap.rows {
             let back = leader - row.totalPoints
             let name = drivers ? (row.competitorName ?? row.competitorKey) : (row.teamName ?? "")
             let teamNames: [String] = drivers ? (row.teamNames?.isEmpty == false ? row.teamNames! : (row.teamName.map { [$0] } ?? [])) : []
-            let shownTeams = model.showTeams ? teamNames : []
+            let shownTeams = mode == .recap && model.showTeams ? teamNames : []
             // The primary label opens the championship competitor's profile;
             // team sub-lines open the team's (Privateer stays plain).
             let target: InfoTarget? = drivers ? InfoTarget.driver(named: name) : InfoTarget.team(named: name)
-            var ident: [AnyView]
-            if mode == .recap {
-                let entry = RecapEntryDetail(id: row.competitorKey, position: row.position,
-                                             carNumber: row.carNumber, name: name,
-                                             points: row.totalPoints, back: back, teams: teamNames)
-                let label = RecapEntryLabel(entry: entry, shownTeams: shownTeams)
-                if let target, let modals {
-                    ident = [AnyView(Button {
-                        modals.open(target)
-                    } label: {
-                        label
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(entry.accessibilityLabel)
-                    .accessibilityHint("Opens the profile"))]
-                } else {
-                    ident = [AnyView(label.accessibilityLabel(entry.accessibilityLabel))]
+            let entry = RecapEntryDetail(id: row.competitorKey, position: row.position,
+                                         carNumber: row.carNumber, name: name,
+                                         points: row.totalPoints, back: back, teams: teamNames,
+                                         gap: mode == .points ? prevPoints.map { $0 - row.totalPoints } : nil)
+            let label = RecapEntryLabel(entry: entry, shownTeams: shownTeams)
+            let ident: [AnyView]
+            if let target, let modals {
+                ident = [AnyView(Button {
+                    modals.open(target)
+                } label: {
+                    label
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel(entry.accessibilityLabel)
+                .accessibilityHint("Opens the profile"))]
             } else {
-                ident = [GridCell.pos(row.position), GridCell.car(row.carNumber ?? ""),
-                         GridCell.nameLink(name, target: target, sub: shownTeams.map { ($0, InfoTarget.team(named: $0)) })]
+                ident = [AnyView(label.accessibilityLabel(entry.accessibilityLabel))]
             }
 
             var cells: [AnyView] = []
-            var lines = (shownTeams.isEmpty ? 1 : 2) + (mode == .recap ? 1 : 0)
+            var lines = shownTeams.isEmpty ? 2 : 3
             for r in rounds {
                 if mode == .points {
                     guard let pts = row.points(round: r.round) else { cells.append(GridCell.skip()); continue }
@@ -285,23 +272,12 @@ struct ClassGridView: View {
                     cells.append(AnyView(RaceCellView(races: races, raceTags: raceTags[r.round] ?? [:], chipPadding: tightRounds ? 2 : 4).frame(maxWidth: .infinity)))
                 }
             }
-            if mode == .points {
-                cells.append(GridCell.num(Points.format(row.totalPoints), bold: true))
-                let gap: Double? = prevPoints.map { $0 - row.totalPoints }
-                cells.append(AnyView(HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    if back == 0 {
-                        Text("—").foregroundStyle(PP.textMuted)
-                    } else {
-                        Text("-\(Points.format(back))").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.textMuted)
-                        if let gap { Text("(\(gap == 0 ? "0" : "-\(Points.format(gap))"))").font(PP.mono(PP.TextSize.xs)).foregroundStyle(PP.textMuted.opacity(0.75)) }
-                    }
-                }))
-            }
             rows.append(GridRowItem(id: row.competitorKey, ident: ident, cells: cells, lines: lines))
             prevPoints = row.totalPoints
         }
         // Tag (16) + gap + a four-digit value (~34) + padding, plus the marks gutter.
-        let pointsColumnWidth: CGFloat = breakdown ? CGFloat(88 + marksWidth * 7 + (marksWidth > 0 ? 6 : 0)) : 64
+        let minimumPointsWidth: CGFloat = breakdown ? CGFloat(88 + marksWidth * 7 + (marksWidth > 0 ? 6 : 0)) : 60
+        let pointsColumnWidth = max(minimumPointsWidth, (availableWidth - entryWidth) / CGFloat(max(1, rounds.count)))
         dataColumns = dataColumns.map { col in
             col.id.hasPrefix("r") && mode == .points
                 ? GridColumn(id: col.id, width: pointsColumnWidth, align: .trailing, title: { col.title })
@@ -312,14 +288,14 @@ struct ClassGridView: View {
                          sections: [GridSection(id: String(champ.id),
                                                 band: ("\(champ.className ?? "") · \(Champs.champKindLabel(champ))", color),
                                                 rows: rows)],
-                         lineHeight: mode == .recap ? entryLineHeight : 20,
-                         cellPadV: mode == .recap ? 3 : 4,
-                         headerHeight: mode == .recap ? entryLineHeight * 2 : 40,
-                         separatesIdentity: mode == .recap,
-                         centersCells: mode == .recap)
+                         lineHeight: entryLineHeight,
+                         cellPadV: 3,
+                         headerHeight: entryLineHeight * 2,
+                         separatesIdentity: true,
+                         centersCells: true)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("\(champ.className ?? "") \(Champs.champKindLabel(champ)) — \(mode == .recap ? "season recap" : "championship points by round")")
-            if mode == .recap && dataColumns.reduce(0, { $0 + $1.width }) > availableWidth - entryWidth {
+            if dataColumns.reduce(0, { $0 + $1.width }) > availableWidth - entryWidth + 1 {
                 Label("Swipe for more rounds", systemImage: "arrow.right")
                     .font(PP.sans(PP.TextSize.xs))
                     .foregroundStyle(PP.textMuted)
@@ -337,11 +313,13 @@ private struct RecapEntryDetail: Identifiable {
     let points: Double
     let back: Double
     let teams: [String]
+    var gap: Double? = nil
 
     var accessibilityLabel: String {
         let car = carNumber.flatMap { $0.isEmpty ? nil : "Car \($0), " } ?? ""
         return "Position \(position), \(car)\(name), \(Points.format(points)) points"
             + (back > 0 ? ", \(Points.format(back)) behind leader" : ", championship leader")
+            + (gap.map { ", \(Points.format($0)) behind previous position" } ?? "")
     }
 }
 
@@ -384,6 +362,11 @@ private struct RecapEntryLabel: View {
                     .layoutPriority(1)
                     if entry.back > 0 {
                         Text("−\(Points.format(entry.back))")
+                            .font(PP.mono(PP.TextSize.xs))
+                            .foregroundStyle(PP.textMuted)
+                    }
+                    if let gap = entry.gap {
+                        Text("(\(gap == 0 ? "0" : "−\(Points.format(gap))"))")
                             .font(PP.mono(PP.TextSize.xs))
                             .foregroundStyle(PP.textMuted)
                     }
