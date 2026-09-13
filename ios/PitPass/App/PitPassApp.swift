@@ -28,6 +28,11 @@ struct PitPassApp: App {
                 .task { await session.bootstrap() }
         }
         .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                session.connectivity.resume()
+            } else {
+                session.connectivity.pause()
+            }
             if phase == .background { session.pads.scheduleBackgroundSyncIfNeeded() }
         }
     }

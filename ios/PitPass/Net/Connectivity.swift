@@ -3,7 +3,7 @@ import Observation
 import UIKit
 
 /// Port of the web app's `lib/connectivity.ts`: a heartbeat (HEAD /api/me
-/// every 30s) proves the backend is reachable right now — the OS's "online"
+/// every 30s while active) proves the backend is reachable right now — the OS's "online"
 /// flag is not trusted because it says yes on unusably bad paddock Wi-Fi.
 /// Foregrounding pings immediately so the badge is honest within a beat.
 @MainActor
@@ -25,22 +25,29 @@ final class Connectivity {
 
     private var client: APIClient?
     private var task: Task<Void, Never>?
-    private var foregroundObserver: (any NSObjectProtocol)?
 
     func start(client: APIClient) {
         self.client = client
+        pause()
+        resume()
+    }
+
+    func pause() {
         task?.cancel()
+        task = nil
+    }
+
+    func resume() {
+        guard client != nil, task == nil,
+              UIApplication.shared.applicationState == .active else { return }
         task = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.ping()
-                try? await Task.sleep(for: .seconds(Connectivity.interval))
-            }
-        }
-        if foregroundObserver == nil {
-            foregroundObserver = NotificationCenter.default.addObserver(
-                forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in await self?.ping() }
+                do {
+                    try await Task.sleep(for: .seconds(Connectivity.interval))
+                } catch {
+                    return
+                }
             }
         }
     }
@@ -55,11 +62,14 @@ final class Connectivity {
     }
 
     func ping() async {
-        guard let client else { return }
+        guard !Task.isCancelled, UIApplication.shared.applicationState == .active,
+              let client else { return }
         do {
             let elapsed = try await client.head("/api/me", timeout: Connectivity.timeout)
+            guard !Task.isCancelled else { return }
             status = elapsed > Connectivity.slow ? .degraded : .live
         } catch {
+            guard !Task.isCancelled else { return }
             status = .offline
         }
         lastChecked = .now

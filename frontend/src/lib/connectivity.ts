@@ -28,6 +28,7 @@ function update(next: Connectivity) {
 }
 
 async function ping() {
+  if (document.visibilityState !== 'visible') return
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), HEARTBEAT_TIMEOUT_MS)
   const started = Date.now()
@@ -50,18 +51,36 @@ async function ping() {
 }
 
 let started = false
+let heartbeat: ReturnType<typeof setInterval> | undefined
+
+function pauseHeartbeat() {
+  if (heartbeat !== undefined) {
+    clearInterval(heartbeat)
+    heartbeat = undefined
+  }
+}
+
+function resumeHeartbeat() {
+  pauseHeartbeat()
+  if (document.visibilityState !== 'visible') return
+  void ping()
+  heartbeat = setInterval(() => void ping(), HEARTBEAT_MS)
+}
 
 /** Idempotent; scratchpadSync starts it. Pings immediately, then every
- *  30s, plus on online/offline flips and on returning to the foreground. */
+ *  30s while visible, and immediately on returning to the foreground. */
 export function startConnectivityMonitor() {
   if (started) return
   started = true
-  void ping()
-  setInterval(() => void ping(), HEARTBEAT_MS)
-  window.addEventListener('online', () => void ping())
-  window.addEventListener('offline', () => update({ status: 'offline' }))
+  resumeHeartbeat()
+  window.addEventListener('online', resumeHeartbeat)
+  window.addEventListener('offline', () => {
+    pauseHeartbeat()
+    update({ status: 'offline' })
+  })
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') void ping()
+    if (document.visibilityState === 'visible') resumeHeartbeat()
+    else pauseHeartbeat()
   })
 }
 
