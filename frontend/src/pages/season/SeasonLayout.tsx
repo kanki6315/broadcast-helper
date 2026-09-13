@@ -1,4 +1,3 @@
-import PageLoading from '../../components/PageLoading'
 import { useEffect, useMemo, useState } from 'react'
 import {
   NavLink,
@@ -142,7 +141,13 @@ export default function SeasonLayout() {
 
   if (error) return <p className="error-panel">{error}</p>
   if (!hub) {
-    return <PageLoading key={seasonId} label="Loading season" />
+    return (
+      <div className="skeleton-block" aria-label="Loading season">
+        <span className="skeleton" />
+        <span className="skeleton" style={{ height: '8rem' }} />
+        <span className="skeleton" />
+      </div>
+    )
   }
 
   // Two levels: the strip stays pure years — skimmable tabular numerals —
