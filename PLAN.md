@@ -1312,8 +1312,9 @@ design and the sign-in flow in **docs/IOS.md**.
   and hands it to the share sheet (Print, Save to Files). GPS walk-to-box
   guidance and admin anchor capture ship in the same slice (Core Location +
   the ported lane geometry, unit-tested), and manufacturer SVGs render via
-  SwiftDraw. Not yet: editing prior-year notes (website). The website's sheet
-  page stays until the PDF has been checked against a real weekend's export.
+  SwiftDraw. Not yet: editing prior-year notes (website). The PDF export was
+  checked against a real weekend's website export on 2026-09-12 and matches;
+  the production Google sign-in was confirmed end to end the same day.
 - **Slice 4 — "Download this event / season" — ✅ DONE (2026-09-12).**
   `Store/Downloads.swift`: `DownloadPlan` derives each bundle's paths from
   the payloads (event: sheet, pit lane, both PDFs, photos, marks, results +
@@ -1338,8 +1339,9 @@ design and the sign-in flow in **docs/IOS.md**.
   extend page, conflict banner, save status) over a fitted `PKCanvasView`
   (monoline ink, vector eraser, white paper). Verified in the simulator with
   finger input against the local backend: web-seeded strokes render, iPad
-  strokes land on the server and re-import unchanged; real Pencil latency and
-  the "Only Draw with Apple Pencil" setting still need a device session.
+  strokes land on the server and re-import unchanged. Confirmed on a real
+  iPad with an Apple Pencil on 2026-09-12 (latency and the system "Only Draw
+  with Apple Pencil" setting).
 - **Slice 6 — retire the service worker — step 1 ✅ (2026-09-12).**
   `vite.config.ts` ships Workbox's self-destroying worker (`selfDestroying:
   true`: installs over the old one, unregisters, reloads the page once,
@@ -1351,6 +1353,20 @@ design and the sign-in flow in **docs/IOS.md**.
   **Step 2 ✅:** `vite-plugin-pwa`, the `registerSW` call, the manifest +
   PWA icons, the `/sw.js` + `/workbox-*.js` + manifest allowlist entries in
   SecurityConfig and `docs/PWA.md` removed. The website is a plain web app.
+- **Slice 7 — driver and team profiles — ✅ DONE (2026-09-12).**
+  `ios/PitPass/Views/Info/`: the website's DriverModal / TeamModal /
+  CareerStats natively — photo, flag + rating, pronunciation, seat line,
+  bio facts, career chips + per-series/per-season lines, one `GridTable`
+  matrix per championship (Result + Pts rows, per car for teams), roster
+  with liveries and crew links, lineage links, read-only broadcast notes.
+  `NameLink` replaces plain names on the sheet, entries, both standings
+  views, stats and results; `InfoTarget` resolves by id where the payload
+  has one and by name otherwise (`/api/drivers/search`, exact match
+  preferred). Drill-through pushes inside the sheet. `Model/ProfileModels`
+  mirrors api.ts; `Season/ProfileLogic` holds the pure ports (unit-tested).
+  The native recap entry-detail sheet is gone — the profile is the richer
+  answer. Not ported: the ⌘K search palette; bio/photo/notes editing
+  (website). Verified in the simulator against the local backend.
 - **Parity rule:** every web slice that changes a payload an iPad surface
   reads updates `ios/PitPass/Model` + the view in the same slice.
 

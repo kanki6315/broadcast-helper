@@ -180,11 +180,11 @@ struct ResultsTable: View {
             let team = teamInformative ? (r.teamName ?? "") : ""
             var cells: [AnyView] = [AnyView(VStack(alignment: .leading, spacing: 2) {
                 if !team.isEmpty {
-                    Text(team).font(PP.sans(PP.TextSize.sm, weight: 500)).foregroundStyle(PP.ink)
+                    NameLink(text: team, target: InfoTarget.team(named: team), font: PP.sans(PP.TextSize.sm, weight: 500), color: PP.ink)
                 }
                 if !crew.isEmpty && crew != team {
-                    Text(crew).font(PP.sans(PP.TextSize.sm, weight: team.isEmpty ? 500 : 400))
-                        .foregroundStyle(team.isEmpty ? PP.ink : PP.text)
+                    CrewLinks(names: crew, font: PP.sans(PP.TextSize.sm, weight: team.isEmpty ? 500 : 400),
+                              color: team.isEmpty ? PP.ink : PP.text)
                 }
                 if let vehicle = r.vehicle, !vehicle.isEmpty {
                     Text(vehicle).font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.text)
@@ -374,5 +374,24 @@ private struct StartingGridSheet: View {
         }
         .presentationBackground(PP.bg)
         .tint(PP.accentInk)
+    }
+}
+
+/// ResultsPage's DriverLinks: the backend joins crew names with ", " — split
+/// them back into profile links; TBD seats stay plain text.
+private struct CrewLinks: View {
+    let names: String
+    let font: Font
+    let color: Color
+
+    var body: some View {
+        let parts = CrewNames.split(names)
+        HStack(spacing: 0) {
+            ForEach(Array(parts.enumerated()), id: \.offset) { i, name in
+                if i > 0 { Text(", ").font(font).foregroundStyle(color) }
+                NameLink(text: name, target: InfoTarget.driver(named: name), font: font, color: color, lineLimit: nil)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 }

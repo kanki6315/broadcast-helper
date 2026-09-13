@@ -150,7 +150,8 @@ struct StatsView: View {
                     cells.append(AnyView(StatValue(col: "poles", value: row.quali.sessions > 0 ? row.quali.poles : nil)))
                     cells.append(AnyView(StatValue(col: "qualiTop5s", value: row.quali.sessions > 0 ? row.quali.top5s : nil)))
                 }
-                return GridRowItem(id: "\(row.id)-\(row.className)", ident: [GridCell.name(row.name), GridCell.car(row.car ?? "")], cells: cells, lines: 1)
+                let target: InfoTarget = mode == .drivers ? .driver(id: row.id) : .teamId(row.id)
+                return GridRowItem(id: "\(row.id)-\(row.className)", ident: [GridCell.nameLink(row.name, target: target), GridCell.car(row.car ?? "")], cells: cells, lines: 1)
             })
         }
         return GridTable(identColumns: ident, dataColumns: data, sections: sections, cellPadH: 5, headerHeight: 46)

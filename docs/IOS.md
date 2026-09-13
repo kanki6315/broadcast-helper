@@ -21,12 +21,16 @@ staleness problem, which is the class of bug being escaped.
 | 5. PencilKit scratchpad | done | Same stroke wire format as the web pad, local mirror, offline replay, conflict banner, FAB badge |
 | 6. Retire the service worker | done | Self-destroying worker deployed first, then `vite-plugin-pwa`, the manifest and the `/sw.js` allowlist removed |
 
-Known gaps: driver/team info modals (the website's ⌘K and name links) — names
-are plain text; grid headers don't pin to the viewport while scrolling; the
-website's sheet page stays until the app's PDF export has been compared with
-one real weekend's export. The scratchpad has been exercised in the
-simulator with finger input only — the first real Apple Pencil session is
-the proof for latency and the system "Only Draw with Apple Pencil" setting.
+Confirmed on a real iPad (2026-09-12): the Print / Save PDF export matches
+the website's export for a real weekend; the scratchpad with a real Apple
+Pencil (latency, and the system "Only Draw with Apple Pencil" setting); and
+the production Google sign-in end to end (device token minted, stored,
+`/api/me` answering with the email).
+
+| 7. Driver and team profiles | done | Names open the website's info modals: photo, bio, career stats, championship matrices, roster, lineage, notes (read-only) |
+
+Known gaps: the website's ⌘K search has no counterpart; grid headers don't
+pin to the viewport while scrolling.
 
 ## Layout
 
@@ -42,24 +46,27 @@ ios/
                 document), Downloads (the prefetch manifests, job and manager),
                 ImageDecoding (UIImage, SVG via SwiftDraw)
     Model/      Codable wire shapes — mirror frontend/src/lib/api.ts, same field names
-                (Models, SeasonModels, SheetModels)
+                (Models, SeasonModels, SheetModels, ProfileModels)
     Scratchpad/ PadDocument (the web's Stroke wire format + the LocalPad mirror),
                 PadBridge (PencilKit ↔ Stroke with identity), PadModel (one open pad:
                 load, mirror, debounced PUT, conflicts), PadSync (offline replay,
                 FAB badges, BGAppRefresh)
     Season/     SeasonModel (hub, classes, championship selection, recap cache),
                 SeasonLogic (pure ports of names.ts / raceForm.ts / venue.ts /
-                ChampionshipGrid derivations), PitLaneGeo (port of pitLaneGeo.ts)
+                ChampionshipGrid derivations), PitLaneGeo (port of pitLaneGeo.ts),
+                ProfileLogic (CareerStats.tsx lines, bio facts, name→driver rule)
     Design/     Theme (DESIGN.md tokens as `PP.*`), BrandMark (the SVG mark as a Shape),
                 FlowLayout (flex-wrap)
     Views/      RootView, HomeView, SignInView, SettingsView, TopBar, StatusViews,
                 SeriesDirectoryView, DownloadButton
       Season/   SeasonView shell + one file per tab, GridTable, SeasonWidgets
       Sheet/    SheetView, PdfViewerSheet, PitLaneSheet, RecapSheet, SheetPrint, ScratchpadSheet
+      Info/     InfoModal (targets, presenter, host, NameLink), DriverProfileView,
+                TeamProfileView, ProfileWidgets (career stats, matrices, notes)
     Resources/  Assets.xcassets (AppIcon, AccentColor #f0b84a), Fonts (Inter, JetBrains Mono)
   PitPassTests/ Swift Testing — OfflineStore, DataLoader (scripted transport), Downloads
                 (plan + job over a path-routed transport), Pad (wire format, mirror,
-                PencilKit bridge, syncer), PitLaneGeo
+                PencilKit bridge, syncer), PitLaneGeo, ProfileLogic
 ```
 
 Swift 6 with strict concurrency, iOS 18+, iPad only (`TARGETED_DEVICE_FAMILY
@@ -157,8 +164,8 @@ cases in `SecuredChainTest`.
 
 Google Cloud console: no change — the redirect URI is still Spring's
 `/login/oauth2/code/google`; the `pitpass://` hop happens after that. The
-real Google round trip has not yet been exercised end to end (local dev runs
-with auth off); the first production sign-in is the proof.
+real Google round trip was exercised end to end against production on
+2026-09-12 (local dev runs with auth off).
 
 ## Offline data (the service worker's replacement)
 
@@ -297,6 +304,7 @@ Component parity with the web CSS, so a screen reads the same on both:
 | `.sheet-*` / `.form-strip` / `.sheet-fabs` | `SheetView`, `StripRace`, `FabButtonStyle` |
 | `.pl-*` (pit lane, `.pl-guide`) | `PitLaneSheet` |
 | `.sp-*` (scratchpad chrome, swatches, conflict bar, save status) | `ScratchpadSheet` |
+| `.drv-link`, `.dm-*` (DriverModal / TeamModal / CareerStats) | `NameLink`, `DriverProfileView`, `TeamProfileView`, `CareerStatsView`, `ChampMatrixTable` |
 
 Rules carried over, not just colors: amber is the only voiced accent (≤10% of
 a screen, primary action + selection only); class colour is always paired
@@ -361,6 +369,39 @@ outlier rejection, PUT to the anchors endpoint — because the iPad in the
 lane is the device that knows where box 12 is. Upload and review stay on the
 website. Verified against the real Road America anchors with a simulated
 position.
+
+### Driver and team profiles
+
+`Views/Info/` is InfoModalProvider + DriverModal.tsx + TeamModal.tsx. Every
+name the website links is a `NameLink` here — the sheet's crews, the entries
+matrix (team and crew), both standings grids (the recap row and the points
+view's name cell with its team sub-line), the stats rows and the results
+classification (team, crew, the attributed qualifying or fastest-lap
+driver). `InfoTarget` is the website's `Open` union: a driver by id where
+the payload carries one (stats, a team roster), by name elsewhere — resolved
+like `openDriverByName`, through `/api/drivers/search` (network first, so a
+stored answer serves offline) with the exact match preferred; a team by name
+(the backend normalises spelling) or by entity id (stats, lineage). TBD
+seats and "Privateer" stay plain text.
+
+`.infoModalHost()` installs the presenter on a **navigation stack** (the
+home stack, the recap sheet's) — pushed screens inherit the stack's
+environment, not the root view's modifiers, which is where the first cut
+went wrong. Inside the sheet a second presenter *pushes* instead: driver →
+team → driver reads as drill-through with a Back button, where the website
+replaces one modal with the next. Every level carries Done. Where no host
+is installed the name renders as plain text rather than a dead button.
+
+Profiles and stats load through `Resource` (`/api/drivers/{id}/profile`,
+`/stats`, `/api/teams/profile?id=|name=`, `/api/teams/{id}/stats`), so a
+visited profile paints from the store offline and a changed one waits behind
+the usual nudge; the photo and roster liveries are `?v=`-stamped bytes
+(`CachedImage`). Profiles are not part of a Download bundle — only what has
+been opened is stored. The championship matrices are the `GridTable` with
+the row heads pinned (`ChampMatrixTable`: a Result row per driver or per
+car, and a Pts row when any points exist). Read-only by the usage model:
+bio, photo and the broadcast notes are edited on the website; the notes
+show here as text.
 
 ## Parity checklist
 

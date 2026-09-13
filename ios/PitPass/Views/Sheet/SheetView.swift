@@ -366,7 +366,7 @@ private struct EntryRows: View {
                             HStack(spacing: 0) {
                                 if let r = d.rating { Text("(\(r)) ").font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted) }
                                 else if d.isTbd { Text("(?) ").font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted) }
-                                Text(d.name).font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.text)
+                                NameLink(text: d.name, target: d.isTbd ? nil : InfoTarget.driver(named: d.name))
                             }
                         }
                         .lineLimit(1)

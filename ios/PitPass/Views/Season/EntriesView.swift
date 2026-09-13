@@ -71,7 +71,7 @@ struct EntriesView: View {
                     Text(car.carNumber).font(PP.mono(PP.TextSize.sm, weight: 700)).foregroundStyle(PP.text)
                     if car.isGuest { Badge(text: "G") }
                 }),
-                GridCell.name(car.teamName ?? ""),
+                GridCell.nameLink(car.teamName ?? "", target: InfoTarget.team(named: car.teamName)),
             ]
             return GridRowItem(id: "\(cls.className)-\(car.carNumber)", ident: ident, cells: cells, lines: lines)
         })
@@ -92,7 +92,9 @@ private struct LineupCell: View {
             ForEach(Array(crew.enumerated()), id: \.0) { i, d in
                 HStack(spacing: 4) {
                     if i == 0, changed { Circle().fill(PP.accent).frame(width: 6, height: 6) }
-                    Text(d.isTbd ? "TBD" : Names.short(d.name)).foregroundStyle(PP.text)
+                    NameLink(text: d.isTbd ? "TBD" : Names.short(d.name),
+                             target: d.isTbd ? nil : InfoTarget.driver(named: d.name),
+                             font: PP.sans(PP.TextSize.xs))
                     if let rating = d.rating { Text(rating).foregroundStyle(PP.textMuted) }
                 }
                 .font(PP.sans(PP.TextSize.xs))

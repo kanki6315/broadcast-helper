@@ -154,7 +154,7 @@ struct ClassGridView: View {
     let champ: ChampionshipSummary
     let mode: ChampionshipGridView.Mode
     @State private var availableWidth: CGFloat = 0
-    @State private var selectedEntry: RecapEntryDetail?
+    @Environment(\.infoModals) private var modals
     @ScaledMetric private var entryLineHeight: CGFloat = 24
 
     // The same entry layout in every orientation; reserve two rounds in narrow windows.
@@ -176,9 +176,6 @@ struct ClassGridView: View {
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { availableWidth = $0 }
-        .sheet(item: $selectedEntry) { entry in
-            RecapEntryDetailSheet(entry: entry)
-        }
     }
 
     private func grid(_ recap: Recap) -> some View {
@@ -236,22 +233,30 @@ struct ClassGridView: View {
             let name = drivers ? (row.competitorName ?? row.competitorKey) : (row.teamName ?? "")
             let teamNames: [String] = drivers ? (row.teamNames?.isEmpty == false ? row.teamNames! : (row.teamName.map { [$0] } ?? [])) : []
             let shownTeams = model.showTeams ? teamNames : []
+            // The primary label opens the championship competitor's profile;
+            // team sub-lines open the team's (Privateer stays plain).
+            let target: InfoTarget? = drivers ? InfoTarget.driver(named: name) : InfoTarget.team(named: name)
             var ident: [AnyView]
             if mode == .recap {
                 let entry = RecapEntryDetail(id: row.competitorKey, position: row.position,
                                              carNumber: row.carNumber, name: name,
                                              points: row.totalPoints, back: back, teams: teamNames)
-                ident = [AnyView(Button {
-                    selectedEntry = entry
-                } label: {
-                    RecapEntryLabel(entry: entry, shownTeams: shownTeams)
+                let label = RecapEntryLabel(entry: entry, shownTeams: shownTeams)
+                if let target, let modals {
+                    ident = [AnyView(Button {
+                        modals.open(target)
+                    } label: {
+                        label
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(entry.accessibilityLabel)
+                    .accessibilityHint("Opens the profile"))]
+                } else {
+                    ident = [AnyView(label.accessibilityLabel(entry.accessibilityLabel))]
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(entry.accessibilityLabel)
-                .accessibilityHint("Show full entry details"))]
             } else {
                 ident = [GridCell.pos(row.position), GridCell.car(row.carNumber ?? ""),
-                         GridCell.name(name, sub: shownTeams)]
+                         GridCell.nameLink(name, target: target, sub: shownTeams.map { ($0, InfoTarget.team(named: $0)) })]
             }
 
             var cells: [AnyView] = []
@@ -394,38 +399,6 @@ private struct RecapEntryLabel: View {
         }
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .contentShape(Rectangle())
-    }
-}
-
-private struct RecapEntryDetailSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    let entry: RecapEntryDetail
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: PP.Space.s3) {
-                    Text(entry.name).ppTitle()
-                    if let car = entry.carNumber, !car.isEmpty {
-                        Text("Car #\(car)").ppBody()
-                    }
-                    Text("Position \(entry.position) · \(Points.format(entry.points)) points")
-                        .font(PP.sans(PP.TextSize.base, weight: 600)).foregroundStyle(PP.ink)
-                    Text(entry.back > 0 ? "\(Points.format(entry.back)) points behind leader" : "Championship leader")
-                        .ppBody()
-                    ForEach(entry.teams, id: \.self) { Text($0).ppBody() }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(PP.Space.s5)
-            }
-            .background(PP.bg)
-            .navigationTitle("Entry details")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-        }
-        .presentationDetents([.medium, .large])
-        .presentationBackground(PP.bg)
-        .tint(PP.accentInk)
     }
 }
 
