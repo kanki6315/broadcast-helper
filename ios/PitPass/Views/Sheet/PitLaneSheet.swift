@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// PitLaneModal: the lane in physical order — box 1 / pit out at the top,
+/// The pit lane tab in physical order — box 1 / pit out at the top,
 /// pit in at the bottom — with the landmark rows the broadcaster orients by
 /// and collapsed runs of boxes used by the other series. Tapping a car starts
 /// walk-to-box guidance from the GPS anchors; admins can also mark anchors
@@ -8,7 +8,6 @@ import SwiftUI
 /// (the one write besides the scratchpad). Upload and review stay on the website.
 struct PitLaneSheet: View {
     @Environment(AppSession.self) private var session
-    @Environment(\.dismiss) private var dismiss
     let eventId: Int
     let sheet: Sheet
     @State private var assignments: Resource<PitAssignments>?
@@ -37,9 +36,13 @@ struct PitLaneSheet: View {
     private var isAdmin: Bool { if case let .ready(me) = session.phase { return me.isAdmin } else { return false } }
 
     var body: some View {
-        NavigationStack {
+        Group {
             ScrollView {
-                Group {
+                VStack(alignment: .leading, spacing: PP.Space.s2) {
+                    if let saved = assignments?.value {
+                        Text("\(saved.versionNote ?? saved.filename ?? "assignments") · uploaded \(saved.uploadedAt.prefix(10))")
+                            .font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted)
+                    }
                     if let saved = assignments?.value {
                         lane(saved)
                     } else if let error = assignments?.error {
@@ -54,29 +57,15 @@ struct PitLaneSheet: View {
                 .frame(maxWidth: .infinity)
             }
             .background(PP.surface.ignoresSafeArea())
-            .navigationTitle("Pit lane")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    VStack(spacing: 0) {
-                        Text("Pit lane").font(PP.sans(PP.TextSize.sm, weight: 600)).foregroundStyle(PP.ink)
-                        if let saved = assignments?.value {
-                            Text("\(saved.versionNote ?? saved.filename ?? "assignments") · uploaded \(saved.uploadedAt.prefix(10))")
-                                .font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted)
-                        }
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-            }
+
         }
-        .presentationBackground(PP.surface)
-        .presentationSizing(.page)
         .tint(PP.accentInk)
         .task {
             let r = Resource<PitAssignments>("/api/events/\(eventId)/pit-assignments")
             assignments = r
             await r.load(session.loader)
         }
+        .onAppear { if target != nil { location.start() } }
         .onDisappear { location.stop() }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
