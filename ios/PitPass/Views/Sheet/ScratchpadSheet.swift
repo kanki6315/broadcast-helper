@@ -218,6 +218,7 @@ struct ScratchpadSheet: View {
 /// uniform-width strokes; the vector eraser removes whole strokes like the
 /// web's eraser. Fingers scroll or draw per the system Pencil setting.
 private struct PadCanvas: UIViewRepresentable {
+    @Environment(WorkspaceState.self) private var workspace
     let model: PadModel
     @Binding var tool: ScratchpadSheet.Tool?
     let color: String
@@ -225,6 +226,10 @@ private struct PadCanvas: UIViewRepresentable {
 
     func makeUIView(context: Context) -> FittedCanvasView {
         let view = FittedCanvasView()
+        view.resumeY = workspace.offset("event.\(model.eventId).scratchpad").y
+        view.onScrollSaved = { y in
+            workspace.setOffset("event.\(model.eventId).scratchpad", CGPoint(x: 0, y: y))
+        }
         view.delegate = context.coordinator
         view.addInteraction(UIPencilInteraction(delegate: context.coordinator))
         #if targetEnvironment(simulator)
@@ -266,6 +271,10 @@ private struct PadCanvas: UIViewRepresentable {
         }
     }
 
+    static func dismantleUIView(_ view: FittedCanvasView, coordinator: Coordinator) {
+        view.saveScrollPosition()
+    }
+
     func makeCoordinator() -> Coordinator { Coordinator(model: model, tool: $tool) }
 
     final class Coordinator: NSObject, PKCanvasViewDelegate, UIPencilInteractionDelegate {
@@ -299,6 +308,13 @@ private struct PadCanvas: UIViewRepresentable {
             tool.wrappedValue = tool.wrappedValue == .eraser ? .pen : .eraser
         }
 
+        func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+            if !decelerate { (scrollView as? FittedCanvasView)?.saveScrollPosition() }
+        }
+        func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+            (scrollView as? FittedCanvasView)?.saveScrollPosition()
+        }
+
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
             guard !muted else { return }
             let undo = canvasView.undoManager
@@ -312,7 +328,14 @@ private struct PadCanvas: UIViewRepresentable {
 final class FittedCanvasView: PKCanvasView {
     var pageHeight: CGFloat = CGFloat(Pad.defaultPageHeight) { didSet { if pageHeight != oldValue { setNeedsLayout() } } }
     var onUndoState: ((Bool, Bool) -> Void)?
+    var resumeY: CGFloat?
+    var onScrollSaved: ((CGFloat) -> Void)?
     private var pending: PKDrawing?
+
+    func saveScrollPosition() {
+        guard resumeY == nil, zoomScale > 0 else { return }
+        onScrollSaved?(max(0, contentOffset.y + adjustedContentInset.top) / zoomScale)
+    }
 
     /// Replace the document, dropping PencilKit's undo history.
     func install(_ drawing: PKDrawing) {
@@ -329,6 +352,7 @@ final class FittedCanvasView: PKCanvasView {
         guard bounds.width > 0 else { return }
         let scale = bounds.width / Pad.width
         let size = CGSize(width: Pad.width * scale, height: pageHeight * scale)
+        let logicalY = zoomScale > 0 ? max(0, contentOffset.y + adjustedContentInset.top) / zoomScale : 0
         if minimumZoomScale != scale || maximumZoomScale != scale {
             minimumZoomScale = scale
             maximumZoomScale = scale
@@ -336,13 +360,18 @@ final class FittedCanvasView: PKCanvasView {
             contentSize = size
             // Re-zooming shifts the offset to keep the old centre; the first
             // fit (from a zero-size layout) would otherwise land mid-page.
-            contentOffset = CGPoint(x: 0, y: -adjustedContentInset.top)
+            contentOffset = CGPoint(x: 0, y: logicalY * scale - adjustedContentInset.top)
         }
         if contentSize != size { contentSize = size }
         if let pending {
             self.pending = nil
             drawing = pending
             undoManager?.removeAllActions()
+        }
+        if let resumeY, bounds.width > 0, bounds.height > 0 {
+            self.resumeY = nil
+            let maximum = max(-adjustedContentInset.top, contentSize.height - bounds.height + adjustedContentInset.bottom)
+            contentOffset = CGPoint(x: 0, y: min(maximum, max(-adjustedContentInset.top, resumeY * scale - adjustedContentInset.top)))
         }
     }
 

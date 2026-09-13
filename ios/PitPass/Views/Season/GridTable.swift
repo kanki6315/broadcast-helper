@@ -78,6 +78,7 @@ struct GridTable: View {
     var headerHeight: CGFloat = 40
     var separatesIdentity: Bool = false
     var centersCells: Bool = false
+    var resumeKey: String? = nil
 
     private let bandHeight: CGFloat = 26
 
@@ -117,6 +118,7 @@ struct GridTable: View {
                     column(data, ident: false)
                         .frame(minWidth: max(dataWidth, geo.size.width - pinnedWidth), alignment: .leading)
                 }
+                .resumeScrollIfNeeded(resumeKey)
                 .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             }
         }

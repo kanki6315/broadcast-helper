@@ -4,9 +4,11 @@ import SwiftUI
 /// this event's round column marked in amber. Selection is local to the sheet.
 struct RecapSheet: View {
     @Environment(AppSession.self) private var session
+    let currentEventId: Int
     @State private var model: SeasonModel
 
     init(seasonId: Int, currentEventId: Int) {
+        self.currentEventId = currentEventId
         let m = SeasonModel(seasonId: seasonId)
         m.currentEventId = currentEventId
         _model = State(initialValue: m)
@@ -29,6 +31,7 @@ struct RecapSheet: View {
                 }
                 .padding(PP.Space.s5)
             }
+            .resumeScroll("event.\(currentEventId).recap", ready: model.hub.value != nil)
             .background(PP.bg.ignoresSafeArea())
         }
         .infoModalHost()
