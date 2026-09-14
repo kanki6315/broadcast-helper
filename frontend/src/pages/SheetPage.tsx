@@ -136,7 +136,7 @@ function useScratchpadAttention(eventId: number): 'dirty' | 'conflict' | null {
 }
 
 export default function SheetPage({ eventId }: { eventId: number }) {
-  const { openDriverByName } = useInfoModal()
+  const { openDriverByName, openTeam } = useInfoModal()
   const isAdmin = useIsAdmin()
   const [sheet, setSheet] = useState<Sheet | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -291,22 +291,31 @@ export default function SheetPage({ eventId }: { eventId: number }) {
                     >
                       <tr>
                         <td className="col-num">
-                          {linked ? (
-                            // Activation bubbles to the row's onClick; the
-                            // button exists for keyboard reach and AT naming.
-                            <button
-                              type="button"
-                              className="sheet-carlink"
-                              aria-label={`Open team sheet for #${e.carNumber} ${e.teamName}`}
-                            >
-                              {e.carNumber}
-                            </button>
-                          ) : (
-                            e.carNumber
-                          )}
+                          <button
+                            type="button"
+                            className="sheet-carlink"
+                            title={`Open team info for ${e.teamName}`}
+                            aria-label={`Open team info for #${e.carNumber} ${e.teamName}`}
+                            onClick={(ev) => {
+                              ev.stopPropagation()
+                              openTeam(e.teamName)
+                            }}
+                          >
+                            {e.carNumber}
+                          </button>
                         </td>
                         <td className="col-team">
-                          {e.teamName}
+                          {linked ? (
+                            <button
+                              type="button"
+                              className="sheet-teamlink"
+                              aria-label={`Open team sheet for #${e.carNumber} ${e.teamName}`}
+                            >
+                              {e.teamName}
+                            </button>
+                          ) : (
+                            e.teamName
+                          )}
                           {e.isGuest && <span className="badge">GUEST</span>}
                         </td>
                         <td className="col-mfr">

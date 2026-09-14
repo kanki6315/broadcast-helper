@@ -175,15 +175,20 @@
   color: var(--ink);
 }
 
-/* Keyboard path into the team-sheets modal: the car number is a real button on
-   linked rows, visually just the number (activation bubbles to the row). */
-.sheet-carlink {
+/* Keep identity links visually quiet: car numbers open team info, while team
+   names on linked rows open the PDF through the row's click handler. */
+.sheet-carlink,
+.sheet-teamlink {
   padding: 0;
   border: none;
   background: none;
   font: inherit;
   color: inherit;
   cursor: pointer;
+}
+
+.sheet-teamlink {
+  text-align: inherit;
 }
 
 .sheet td.col-team {
