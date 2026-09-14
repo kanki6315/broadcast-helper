@@ -203,9 +203,8 @@
 
 /* Attribution lives with the crew, leaving the narrow Start column numeric. */
 .sheet-driver-starter .drv-link {
-  color: var(--accent-ink);
-  font-weight: 600;
   text-decoration: underline;
+  text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
 

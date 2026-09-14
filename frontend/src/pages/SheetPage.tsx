@@ -246,7 +246,7 @@ export default function SheetPage({ eventId }: { eventId: number }) {
           </span>
           <span className="l-note">start/finish in class</span>
           <span className="l-pole">P = pole</span>
-          <span className="l-pole">Underlined = starting driver</span>
+          <span className="l-note">Underlined = starting driver</span>
           <span>· = no result</span>
         </div>
       </header>
