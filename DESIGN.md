@@ -398,8 +398,9 @@ The standalone per-event reference (`/sheet/:eventId`), on the same token
 layer and result vocabulary as the recap: class bands with computed ink, one
 `tbody` per entry (main row + season form strip), zebra as the class colour
 mixed 8% into `--bg`, `.race-line` chips for start/finish. The Start column
-carries the short-form starting driver ("H. Grisham") under the grid slot
-where a grid file named one. Rows deep-link to
+shows only the grid slot. Where a grid file names a starting driver, their
+existing Drivers-list name is semibold amber and underlined, with an
+`Underlined = starting driver` legend; the iPad sheet and PDF use the same treatment. Rows deep-link to
 the team-sheets modal (the car number is a real button for keyboard reach);
 prior-year cells are contentEditable and save on blur. Its `@media print`
 block forces the light token values on the `.sheet` scope, so Print/Save-PDF

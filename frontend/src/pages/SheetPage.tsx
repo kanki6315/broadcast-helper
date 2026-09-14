@@ -246,6 +246,7 @@ export default function SheetPage({ eventId }: { eventId: number }) {
           </span>
           <span className="l-note">start/finish in class</span>
           <span className="l-pole">P = pole</span>
+          <span className="l-pole">Underlined = starting driver</span>
           <span>· = no result</span>
         </div>
       </header>
@@ -332,8 +333,11 @@ export default function SheetPage({ eventId }: { eventId: number }) {
                         <td className="col-drivers">
                           {e.drivers.map((d, i) => {
                             const flag = flagCode(d.nationality)
+                            const normalize = (name: string) => name.trim().replace(/\s+/g, ' ').toLowerCase()
+                            const isStarter = !d.isTbd && !!e.startingDriver?.trim()
+                              && normalize(d.name) === normalize(e.startingDriver)
                             return (
-                              <div key={i} className="sheet-driver">
+                              <div key={i} className={`sheet-driver${isStarter ? ' sheet-driver-starter' : ''}`} title={isStarter ? 'Starting driver' : undefined}>
                                 {flag && <span className={`fi fi-${flag}`} title={d.nationality ?? ''} />}
                                 <span>
                                   {d.rating ? (
@@ -349,6 +353,7 @@ export default function SheetPage({ eventId }: { eventId: number }) {
                                     <button
                                       type="button"
                                       className="drv-link"
+                                      aria-label={isStarter ? `${d.name}, starting driver` : undefined}
                                       onClick={(ev) => {
                                         ev.stopPropagation()
                                         openDriverByName(d.name)
@@ -364,7 +369,6 @@ export default function SheetPage({ eventId }: { eventId: number }) {
                         </td>
                         <td className="col-q">
                           {e.qualifying}
-                          {e.startingDriver && <span className="q-driver">{e.startingDriver}</span>}
                         </td>
                         <td
                           className={

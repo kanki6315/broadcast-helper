@@ -160,7 +160,9 @@ struct PrintTitle: View {
                 sheet.circuitName, sheet.eventDate,
             ].compactMap { $0 }.joined(separator: " · "))
                 .font(PP.sans(11)).foregroundStyle(SheetPrint.Ink.muted)
-                .padding(.top, 2).padding(.bottom, 10)
+                .padding(.top, 2).padding(.bottom, 4)
+            Text("Underlined = starting driver").font(PP.sans(9, weight: 600))
+                .foregroundStyle(SheetPrint.Ink.accentInk).padding(.bottom, 10)
         }
     }
 }
@@ -249,19 +251,19 @@ struct PrintEntry: View {
                 case .drivers:
                     VStack(alignment: .leading, spacing: 1) {
                         ForEach(Array(e.drivers.enumerated()), id: \.0) { _, d in
+                            let isStarter = e.isStartingDriver(d)
                             HStack(spacing: 4) {
                                 if let f = Flags.emoji(d.nationality) { Text(f).font(.system(size: 9 * scale)) }
                                 Text((d.rating.map { "(\($0)) " } ?? (d.isTbd ? "(?) " : "")) + d.name)
-                                    .font(PP.sans(9.5 * scale)).foregroundStyle(SheetPrint.Ink.text)
+                                    .font(PP.sans(9.5 * scale, weight: isStarter ? 600 : 400))
+                                    .foregroundStyle(isStarter ? SheetPrint.Ink.accentInk : SheetPrint.Ink.text)
+                                    .underline(isStarter)
                             }
                             .lineLimit(1)
                         }
                     }
                 case .q:
-                    VStack(spacing: 0) {
-                        Text(e.qualifying ?? "").font(PP.mono(9.5 * scale)).foregroundStyle(SheetPrint.Ink.text).lineLimit(1)
-                        if let s = e.startingDriver { Text(s).font(PP.sans(8 * scale)).foregroundStyle(SheetPrint.Ink.muted).lineLimit(1) }
-                    }
+                    Text(e.qualifying ?? "").font(PP.mono(9.5 * scale)).foregroundStyle(SheetPrint.Ink.text).lineLimit(1)
                 case .prior:
                     Text(e.priorYearNote ?? "").font(PP.sans(9.5 * scale)).foregroundStyle(e.priorYearAuto ? SheetPrint.Ink.info : SheetPrint.Ink.text)
                         .multilineTextAlignment(.center)

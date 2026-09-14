@@ -201,15 +201,12 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Starting driver under the grid slot — full name, quiet, only where a grid
- * file named one (multi-driver series). */
-.sheet .q-driver {
-  display: block;
-  font-family: var(--font-sans);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  white-space: normal;
-  overflow-wrap: anywhere;
+/* Attribution lives with the crew, leaving the narrow Start column numeric. */
+.sheet-driver-starter .drv-link {
+  color: var(--accent-ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .sheet-mfr-logo {
