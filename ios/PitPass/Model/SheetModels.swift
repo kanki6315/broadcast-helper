@@ -49,6 +49,15 @@ struct SheetEntry: Codable, Sendable, Hashable, Identifiable {
     var id: Int { entryId }
     func races(round: Int) -> [FormRace] { form[String(round)] ?? [] }
 
+    func isStartingDriver(_ driver: SheetDriver) -> Bool {
+        guard !driver.isTbd, let startingDriver else { return false }
+        func normalized(_ name: String) -> String {
+            name.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").lowercased()
+        }
+        let name = normalized(startingDriver)
+        return !name.isEmpty && normalized(driver.name) == name
+    }
+
     /// The sheet-size car photo, version-stamped (immutable once stored).
     var imagePath: String? { imageUrl ?? imageVersion.map { "/api/entries/\(entryId)/image?variant=sheet&v=\($0)" } }
 

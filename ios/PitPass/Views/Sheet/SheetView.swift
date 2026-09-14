@@ -195,6 +195,7 @@ struct SheetView: View {
                 LegendItem(swatch: .top5, text: "Top 5"), LegendItem(swatch: .dnf, text: "DNF"),
                 LegendItem(text: "start/finish in class"), LegendItem(text: "P = pole", accent: true),
                 LegendItem(text: "· = no result"),
+                LegendItem(text: "Underlined = starting driver", accent: true),
             ])
             .padding(.top, PP.Space.s3)
             ForEach(sheet.classes) { cls in
@@ -393,26 +394,24 @@ private struct EntryRows: View {
             case .drivers:
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(Array(entry.drivers.enumerated()), id: \.0) { _, d in
+                        let isStarter = entry.isStartingDriver(d)
                         HStack(spacing: 6) {
                             if let flag = Flags.emoji(d.nationality) { Text(flag).font(.system(size: 13)) }
                             HStack(spacing: 0) {
                                 if let r = d.rating { Text("(\(r)) ").font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted) }
                                 else if d.isTbd { Text("(?) ").font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted) }
-                                NameLink(text: d.name, target: d.isTbd ? nil : InfoTarget.driver(named: d.name))
+                                NameLink(text: d.name, target: d.isTbd ? nil : InfoTarget.driver(named: d.name),
+                                         font: PP.sans(PP.TextSize.sm, weight: isStarter ? 600 : 400),
+                                         color: isStarter ? PP.accentInk : PP.text)
+                                    .underline(isStarter)
+                                    .accessibilityLabel(d.name + (isStarter ? ", starting driver" : ""))
                             }
                         }
                         .lineLimit(1)
                     }
                 }
             case .q:
-                VStack(spacing: 0) {
-                    Text(entry.qualifying ?? "").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.text)
-                    if let s = entry.startingDriver {
-                        Text(s).font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted)
-                            .multilineTextAlignment(.center)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+                Text(entry.qualifying ?? "").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.text)
             case .prior:
                 Text(entry.priorYearNote ?? "").font(PP.sans(PP.TextSize.sm))
                     .foregroundStyle(entry.priorYearAuto ? PP.info : PP.text)
