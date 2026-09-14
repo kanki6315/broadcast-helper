@@ -161,8 +161,8 @@ struct PrintTitle: View {
             ].compactMap { $0 }.joined(separator: " · "))
                 .font(PP.sans(11)).foregroundStyle(SheetPrint.Ink.muted)
                 .padding(.top, 2).padding(.bottom, 4)
-            Text("Underlined = starting driver").font(PP.sans(9, weight: 600))
-                .foregroundStyle(SheetPrint.Ink.accentInk).padding(.bottom, 10)
+            Text("Underlined = starting driver").font(PP.sans(9))
+                .foregroundStyle(SheetPrint.Ink.muted).padding(.bottom, 10)
         }
     }
 }
@@ -254,10 +254,10 @@ struct PrintEntry: View {
                             let isStarter = e.isStartingDriver(d)
                             HStack(spacing: 4) {
                                 if let f = Flags.emoji(d.nationality) { Text(f).font(.system(size: 9 * scale)) }
-                                Text((d.rating.map { "(\($0)) " } ?? (d.isTbd ? "(?) " : "")) + d.name)
-                                    .font(PP.sans(9.5 * scale, weight: isStarter ? 600 : 400))
-                                    .foregroundStyle(isStarter ? SheetPrint.Ink.accentInk : SheetPrint.Ink.text)
-                                    .underline(isStarter)
+                                (Text(d.rating.map { "(\($0)) " } ?? (d.isTbd ? "(?) " : ""))
+                                    + Text(d.name).underline(isStarter))
+                                    .font(PP.sans(9.5 * scale))
+                                    .foregroundStyle(SheetPrint.Ink.text)
                             }
                             .lineLimit(1)
                         }

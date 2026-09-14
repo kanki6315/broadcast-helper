@@ -195,7 +195,7 @@ struct SheetView: View {
                 LegendItem(swatch: .top5, text: "Top 5"), LegendItem(swatch: .dnf, text: "DNF"),
                 LegendItem(text: "start/finish in class"), LegendItem(text: "P = pole", accent: true),
                 LegendItem(text: "· = no result"),
-                LegendItem(text: "Underlined = starting driver", accent: true),
+                LegendItem(text: "Underlined = starting driver"),
             ])
             .padding(.top, PP.Space.s3)
             ForEach(sheet.classes) { cls in
@@ -400,9 +400,7 @@ private struct EntryRows: View {
                             HStack(spacing: 0) {
                                 if let r = d.rating { Text("(\(r)) ").font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted) }
                                 else if d.isTbd { Text("(?) ").font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted) }
-                                NameLink(text: d.name, target: d.isTbd ? nil : InfoTarget.driver(named: d.name),
-                                         font: PP.sans(PP.TextSize.sm, weight: isStarter ? 600 : 400),
-                                         color: isStarter ? PP.accentInk : PP.text)
+                                NameLink(text: d.name, target: d.isTbd ? nil : InfoTarget.driver(named: d.name))
                                     .underline(isStarter)
                                     .accessibilityLabel(d.name + (isStarter ? ", starting driver" : ""))
                             }
