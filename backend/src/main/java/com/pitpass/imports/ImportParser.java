@@ -273,6 +273,11 @@ public final class ImportParser {
         List<String[]> lines = csvRows(content);
         Map<String, Integer> header = headerIndex(lines.get(0),
                 "POSITION", "NUMBER", "STATUS", "LAPS", "TOTAL_TIME");
+        // The header fixes the crew layout for the whole file. Seat 1 is the
+        // fastest-lap driver only under the single DRIVER_* block, where the
+        // car's only driver set its laps; a multi-driver file names none.
+        List<Integer> seats = csvDriverSeats(header);
+        Integer soleSeat = seats.isEmpty() ? 1 : null;
 
         List<RaceResultsImport.Row> rows = new ArrayList<>();
         Map<String, Integer> classCounters = new HashMap<>();
@@ -309,9 +314,9 @@ public final class ImportParser {
                     fastestLapTime,
                     zeroToNull(parseIntOrNull(cellOrNull(cells, header.get("FL_LAPNUM")))),
                     parseDoubleOrNull(cellOrNull(cells, header.get("FL_KPH"))),
-                    fastestLapTime != null ? csvSoleSeat(header) : null,
+                    fastestLapTime != null ? soleSeat : null,
                     null,
-                    csvDrivers(cells, header)
+                    csvDrivers(cells, header, seats)
             ));
         }
         return new RaceResultsImport(null, null, null, "RACE", 1,
@@ -330,6 +335,11 @@ public final class ImportParser {
         List<String[]> lines = csvRows(content);
         Map<String, Integer> header = headerIndex(lines.get(0),
                 "POS", "NUMBER", "LAP", "TIME", "KPH");
+        // The header fixes the crew layout for the whole file. Seat 1 is the
+        // fastest-lap driver only under the single DRIVER_* block, where the
+        // car's only driver set its laps; a multi-driver file names none.
+        List<Integer> seats = csvDriverSeats(header);
+        Integer soleSeat = seats.isEmpty() ? 1 : null;
 
         List<RaceResultsImport.Row> rows = new ArrayList<>();
         Map<String, Integer> classCounters = new HashMap<>();
@@ -362,9 +372,9 @@ public final class ImportParser {
                     classifyingTime,
                     zeroToNull(parseIntOrNull(cellOrNull(cells, header.get("LAP")))),
                     parseDoubleOrNull(cellOrNull(cells, header.get("KPH"))),
-                    classifyingTime != null ? csvSoleSeat(header) : null,
+                    classifyingTime != null ? soleSeat : null,
                     null,
-                    csvDrivers(cells, header)
+                    csvDrivers(cells, header, seats)
             ));
         }
         return new RaceResultsImport(null, null, null, "QUALIFYING", 1,
@@ -412,10 +422,11 @@ public final class ImportParser {
      * are cut short after their last populated block, and empty blocks are
      * skipped without renumbering the seats after them.
      */
-    private static List<RaceResultsImport.DriverRow> csvDrivers(String[] cells, Map<String, Integer> header) {
+    private static List<RaceResultsImport.DriverRow> csvDrivers(String[] cells, Map<String, Integer> header,
+                                                                List<Integer> seats) {
         List<RaceResultsImport.DriverRow> drivers = new ArrayList<>();
         csvDriver(cells, header, "DRIVER_", 1).ifPresent(drivers::add);
-        for (int seat : csvDriverSeats(header)) {
+        for (int seat : seats) {
             csvDriver(cells, header, "DRIVER" + seat + "_", seat).ifPresent(drivers::add);
         }
         return drivers;
@@ -430,13 +441,6 @@ public final class ImportParser {
                 .distinct()
                 .sorted()
                 .toList();
-    }
-
-    /** Seat 1 when the file's layout is the single DRIVER_* block, so the
-     *  car's only driver set its laps. A multi-driver file names no
-     *  fastest-lap driver, so the seat stays null rather than guessing. */
-    private static Integer csvSoleSeat(Map<String, Integer> header) {
-        return csvDriverSeats(header).isEmpty() ? 1 : null;
     }
 
     /** One DRIVER block under the given column prefix; LICENSE carries the
