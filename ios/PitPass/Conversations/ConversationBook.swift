@@ -54,6 +54,13 @@ final class ConversationBook {
     var error: String?
     var workingSession = "General weekend"
     var workingContext = "Before going live"
+    var eventSessionNames: [String] = []
+
+    /// Fixed choices work before timing data is imported. Keep historical/custom
+    /// labels selectable so existing notes never disappear from session filtering.
+    var sessionOptions: [String] {
+        ConversationSessions.options(eventSessionNames + records.map(\.session) + [workingSession])
+    }
     private var namespace: String?
 
     init(eventId: Int) { self.eventId = eventId }
@@ -87,7 +94,7 @@ final class ConversationBook {
                 records[index].transcriptionError = "Recording was interrupted. Play the saved audio or retry transcription."
             }
             if let latest = records.max(by: { $0.date < $1.date }) {
-                workingSession = latest.session
+                workingSession = ConversationSessions.selection(latest.session, in: sessionOptions)
                 workingContext = latest.context
             }
             try persist(records)
@@ -126,13 +133,26 @@ final class ConversationBook {
         }
     }
 
-    @discardableResult func remove(_ id: UUID) -> Bool {
-        let old = record(id)
-        let next = records.filter { $0.id != id }
+    @discardableResult func remove(_ id: UUID) -> Bool { remove(ids: [id]) }
+
+    /// Delete a driver's entire event history in one journal write, never a
+    /// sequence of partially successful individual removals.
+    @discardableResult func remove(ids: Set<UUID>) -> Bool {
+        let removed = records.filter { ids.contains($0.id) }
+        guard !removed.contains(where: \.recording) else {
+            error = "Stop recording before deleting this conversation."
+            return false
+        }
+        let next = records.filter { !ids.contains($0.id) }
         do {
             try persist(next)
             records = next
-            if let file = old?.audioFile, let url = audioURL(file) { try? FileManager.default.removeItem(at: url) }
+            error = nil
+            for record in removed {
+                if let file = record.audioFile, let url = audioURL(file) {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
             return true
         } catch { self.error = "Could not delete conversation: \(error.localizedDescription)"; return false }
     }
@@ -146,5 +166,27 @@ final class ConversationBook {
         guard writable, let directory else { throw CocoaError(.fileWriteNoPermission) }
         let data = try JSONEncoder().encode(values)
         try data.write(to: directory.appending(path: "conversations.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+}
+
+/// Session labels remain compatible with existing journals. Filtering compares
+/// normalized labels rather than fragile free-text equality.
+enum ConversationSessions {
+    static let defaults = ["General weekend", "Practice 1", "Practice 2", "Practice 3",
+                           "Qualifying", "Warm-up", "Race", "Race 1", "Race 2"]
+    static func key(_ label: String) -> String {
+        let clean = label.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return (clean.isEmpty ? "General weekend" : clean).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+    }
+    static func matches(_ lhs: String, _ rhs: String) -> Bool { key(lhs) == key(rhs) }
+    static func options(_ extra: [String]) -> [String] {
+        var seen = Set(defaults.map(key))
+        return defaults + extra.compactMap { label in
+            let clean = label.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            return !clean.isEmpty && seen.insert(key(clean)).inserted ? clean : nil
+        }.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+    static func selection(_ value: String, in options: [String]) -> String {
+        options.first { matches($0, value) } ?? "General weekend"
     }
 }
