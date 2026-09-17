@@ -1,0 +1,28 @@
+.calculator { display: grid; gap: 14px; }
+.calculator h2, .calculator p { margin: 0; }
+.calculator-note, .calculator-field small { color: var(--text-muted); font-size: .8125rem; }
+.calculator-field { display: grid; gap: 6px; font-size: .8125rem; font-weight: 600; max-width: 40rem; }
+.calculator-field select { width: 100%; }
+.calculator-actions { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
+.calculator-actions .calculator-field { flex: 1; min-width: 220px; }
+.calculator-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 6px; }
+.calculator-table { width: 100%; border-collapse: collapse; font-size: .8125rem; white-space: nowrap; }
+.calculator-table th, .calculator-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: right; }
+.calculator-table thead { background: var(--surface); color: var(--text-muted); }
+.calculator-table th:nth-child(2), .calculator-table tbody th { text-align: left; }
+.calculator-table td { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.calculator-table td small { display: block; color: var(--text-muted); margin-top: 3px; }
+.calculator-table input { width: 5rem; text-align: right; }
+.calculator-table select { min-width: 4.6rem; }
+.calculator-table .calculator-total { font-weight: 700; color: var(--ink); background: var(--accent-tint); }
+.calculator-breakdown { font-size: .8125rem; max-width: 75ch; }
+.calculator-breakdown summary { cursor: pointer; font-weight: 600; }
+.calculator-breakdown p { margin: 10px 0; }
+
+.calculator select, .calculator input {
+  padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: 4px;
+  background: var(--bg); color: var(--ink); font: inherit; min-height: 32px;
+}
+.calculator select:focus-visible, .calculator input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.calculator-table tbody th { max-width: 200px; white-space: normal; min-width: 145px; }
+.calculator-table button { font-family: var(--font-sans); }

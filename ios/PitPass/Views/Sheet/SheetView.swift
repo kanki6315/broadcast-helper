@@ -7,7 +7,7 @@ struct SheetRoute: Hashable {
 
 /// The event sheet — the on-screen broadcast reference for one event
 /// (SheetPage.tsx / sheet.css): header, one class section per class with the
-/// entry table and season-form strips, with five peer tabs. Read-only here:
+/// entry table and season-form strips, with six peer tabs. Read-only here:
 /// prior-year notes are edited on the website.
 struct SheetView: View {
     @Environment(AppSession.self) private var session
@@ -20,7 +20,7 @@ struct SheetView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var page: Page = .sheet
 
-    private enum Page: String { case sheet, recap, pitLane, scratchpad, conversations }
+    private enum Page: String { case sheet, recap, calculator, pitLane, scratchpad, conversations }
     @State private var book: ConversationBook
     @State private var conversationAudio = ConversationAudio()
     @State private var conversationPerson: ConversationPerson?
@@ -108,6 +108,9 @@ struct SheetView: View {
             Tab("Recap", systemImage: "chart.bar.xaxis", value: Page.recap) {
                 recapContent.environment(\.horizontalSizeClass, sizeClass)
             }
+            Tab("Calculator", systemImage: "plus.forwardslash.minus", value: Page.calculator) {
+                calculatorContent.environment(\.horizontalSizeClass, sizeClass)
+            }
             Tab("Pit lane", systemImage: "flag.checkered", value: Page.pitLane) {
                 pitLaneContent.environment(\.horizontalSizeClass, sizeClass)
             }
@@ -142,6 +145,17 @@ struct SheetView: View {
                 RecapSheet(seasonId: seasonId, currentEventId: eventId)
             } else {
                 ContentUnavailableView("No season recap", systemImage: "chart.bar.xaxis",
+                                       description: Text("This event is not linked to a season."))
+            }
+        } else { sheetLoadingState }
+    }
+
+    @ViewBuilder private var calculatorContent: some View {
+        if let value = sheet.value {
+            if let seasonId = value.seasonId {
+                CalculatorSheet(seasonId: seasonId, eventId: eventId)
+            } else {
+                ContentUnavailableView("No championship calculator", systemImage: "trophy",
                                        description: Text("This event is not linked to a season."))
             }
         } else { sheetLoadingState }

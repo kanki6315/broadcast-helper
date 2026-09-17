@@ -97,6 +97,7 @@ enum DownloadPlan {
 
     private static func recaps(_ hub: SeasonHub) -> [Fetch] {
         hub.championships.filter { $0.rowCount > 0 }.map { .document("/api/championships/\($0.id)/recap") }
+            + hub.championships.filter(ChampionshipCalculator.supported).map { .document("/api/championships/\($0.id)/calculator") }
     }
 
     private static func unique(_ fetches: [Fetch]) -> [Fetch] {
