@@ -102,9 +102,20 @@ public class AlKamelImportService {
      */
     public record PlanWeekend(String sourceEvent, String eventPath, String seriesPath, String eventName, int year,
                               String seriesFolder, Long seriesId, String seriesName, boolean loose,
-                              boolean f1Weekend, Long existingEventId, List<PlanSession> sessions,
+                              boolean preseason, boolean f1Weekend, Long existingEventId, List<PlanSession> sessions,
                               List<PlanFile> standings, boolean finalStandings, PlanFile entryList,
                               String error) {
+    }
+
+    /**
+     * A weekend that is not a round: the Roar Before the 24, a test, a
+     * prologue. Offered unticked — the Roar's qualifying race is importable
+     * (it set Daytona's grid) but it is no round, and the round numbering
+     * leaves it out by the same name.
+     */
+    static boolean isPreseason(String eventFolderName) {
+        String n = eventFolderName.toLowerCase(Locale.ROOT);
+        return n.contains("roar") || n.contains("test") || n.contains("prologue");
     }
 
     public record YearPlan(int year, List<PlanWeekend> weekends, List<String> unmatchedSeriesFolders) {
@@ -147,7 +158,11 @@ public class AlKamelImportService {
                 weekends.add(planWeekend(sourceEvent, event, sf.path(), sf.name(), series.get(), false, false));
             }
             if (!listing.looseSessions().isEmpty()) {
-                weekends.add(planWeekend(sourceEvent, event, event.path(), null, null, true, false));
+                // A weekend posted without series folders. Planning one series, it is
+                // that series' (so an already-imported one is recognised); planning
+                // all, the admin says whose it is.
+                SeriesRow assumed = onlySeriesId == null ? null : seriesRow(onlySeriesId);
+                weekends.add(planWeekend(sourceEvent, event, event.path(), null, assumed, true, false));
             }
         }
         markFinalStandings(weekends);
@@ -155,6 +170,13 @@ public class AlKamelImportService {
     }
 
     record SeriesRow(long id, String name) {
+    }
+
+    private SeriesRow seriesRow(long seriesId) {
+        return db.sql("SELECT id, name FROM series WHERE id = :id").param("id", seriesId)
+                .query((rs, i) -> new SeriesRow(rs.getLong("id"), rs.getString("name")))
+                .optional()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such series"));
     }
 
     /** A series folder's display name against the recorded names, exactly. */
@@ -214,14 +236,15 @@ public class AlKamelImportService {
         }
         Long existing = series == null ? null : findExistingEvent(series.id(), event.year(), sourceEvent);
         return new PlanWeekend(sourceEvent, event.path(), seriesPath, event.name(), event.year(), seriesFolder,
-                series == null ? null : series.id(), series == null ? null : series.name(), loose, f1, existing,
+                series == null ? null : series.id(), series == null ? null : series.name(), loose,
+                isPreseason(event.folderName()), f1, existing,
                 sessions, planStandings(contents.standings()), false, planFile(entryLists, Kind.ENTRY_LIST, f1),
                 null);
     }
 
     private static PlanWeekend failedWeekend(String sourceEvent, EventFolder event, String reason) {
         return new PlanWeekend(sourceEvent, event.path(), null, event.name(), event.year(), null, null, null, false,
-                false, null, List.of(), List.of(), false, null, reason);
+                isPreseason(event.folderName()), false, null, List.of(), List.of(), false, null, reason);
     }
 
     /** The one file to read for a kind, or the fact that nothing reads what is there. */
@@ -247,21 +270,24 @@ public class AlKamelImportService {
 
     /**
      * Every standings file, ticked by default where it is the best copy of its
-     * sheet: each JSON (one championship each from 2024), and among the PDFs
-     * the best of each name stem ("Championship Points" and "TPNAEC Points"
-     * are different sheets; "- Official" and "- Revised Official" are copies).
-     * Award sheets (Front Runner, Trueman-Akin, Sustainability) are listed but
-     * not ticked — they are not championships this tool tracks.
+     * sheet. Copies share a name stem — "- Official" and "- Revised Official"
+     * of the Championship Points PDF; the same "IWSC 01 GTP Drivers.json" in
+     * the Official and the Provisional points folder — and only the best copy
+     * (status, then amendment, then newest) is ticked. Different stems are
+     * different sheets ("Championship Points" vs "TPNAEC Points"), each ticked.
+     * PDFs are ticked only where the weekend has no JSON at all, and award
+     * sheets (Front Runner, Trueman-Akin, Sustainability) are listed but never
+     * ticked — they are not championships this tool tracks.
      */
-    private static List<PlanFile> planStandings(List<SourceFile> standings) {
+    static List<PlanFile> planStandings(List<SourceFile> standings) {
         boolean anyJson = standings.stream().anyMatch(f -> "JSON".equals(f.extension()));
-        Map<String, SourceFile> bestPdfByStem = new HashMap<>();
+        Map<String, SourceFile> bestByStem = new HashMap<>();
         for (SourceFile f : standings) {
-            if (!"PDF".equals(f.extension())) {
+            if (AlKamelCatalog.formatFor(Kind.STANDINGS, f.extension(), false).isEmpty()) {
                 continue;
             }
-            String stem = stem(f.name());
-            bestPdfByStem.merge(stem, f, (a, b) -> AlKamelCatalog.preference().compare(a, b) <= 0 ? a : b);
+            bestByStem.merge(f.extension() + ":" + stem(f.name()), f,
+                    (a, b) -> AlKamelCatalog.preference().compare(a, b) <= 0 ? a : b);
         }
         List<PlanFile> out = new ArrayList<>();
         for (SourceFile f : standings.stream().sorted(AlKamelCatalog.preference()).toList()) {
@@ -270,12 +296,17 @@ public class AlKamelImportService {
                 continue; // the CSV twin of a points JSON
             }
             boolean award = isAward(f.name());
-            boolean recommended = !award && ("JSON".equals(f.extension())
-                    ? true
-                    : !anyJson && bestPdfByStem.get(stem(f.name())) == f);
+            boolean bestCopy = bestByStem.get(f.extension() + ":" + stem(f.name())) == f;
+            // Among PDFs only the series' own points sheet is ticked: the cup sheets
+            // beside it (IMEC, TPNAEC, "Sebring 12H") lay their points out per
+            // checkpoint — Hour 6 / 12 / 18 / Finish — which the points parser does
+            // not read, so they are offered, not assumed.
+            boolean cupSheet = "PDF".equals(f.extension()) && !award && !isMainPointsSheet(f.name());
+            boolean recommended = !award && !cupSheet && bestCopy && ("JSON".equals(f.extension()) || !anyJson);
             out.add(new PlanFile(f.path(), f.name(), Kind.STANDINGS.name(), format.get().name(),
                     f.status().name(), f.amendment(), f.modified(), recommended,
-                    award ? "award sheet" : null, null));
+                    award ? "award sheet" : cupSheet ? "cup sheet — tick to try; its layout is untested" : null,
+                    null));
         }
         return out;
     }
@@ -284,6 +315,13 @@ public class AlKamelImportService {
         String n = name.toLowerCase(Locale.ROOT).replaceAll("\\.[^.]+$", "");
         n = STATUS_WORDS.matcher(n).replaceAll("");
         return n.replaceAll("^\\d+_", "").replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+    }
+
+    /** "00_Championship Points - Official.pdf" (2017 spells it "Champonship");
+     *  a cup's sheet carries its code first ("00_IMEC Championship Points"). */
+    static boolean isMainPointsSheet(String name) {
+        String s = stem(name);
+        return s.equals("championship points") || s.equals("champonship points");
     }
 
     private static boolean isAward(String name) {
@@ -309,8 +347,8 @@ public class AlKamelImportService {
         for (Integer i : latest.values()) {
             PlanWeekend w = weekends.get(i);
             weekends.set(i, new PlanWeekend(w.sourceEvent(), w.eventPath(), w.seriesPath(), w.eventName(),
-                    w.year(), w.seriesFolder(), w.seriesId(), w.seriesName(), w.loose(), w.f1Weekend(),
-                    w.existingEventId(), w.sessions(), w.standings(), true, w.entryList(), w.error()));
+                    w.year(), w.seriesFolder(), w.seriesId(), w.seriesName(), w.loose(), w.preseason(),
+                    w.f1Weekend(), w.existingEventId(), w.sessions(), w.standings(), true, w.entryList(), w.error()));
         }
     }
 
@@ -437,7 +475,7 @@ public class AlKamelImportService {
                 .map(f -> stateOf(f, client.url(f.path()), "STANDINGS", committed))
                 .toList();
         return new PlanWeekend(w.sourceEvent(), w.eventPath(), w.seriesPath(), w.eventName(), w.year(),
-                w.seriesFolder(), w.seriesId(), w.seriesName(), w.loose(), w.f1Weekend(), eventId, sessions,
+                w.seriesFolder(), w.seriesId(), w.seriesName(), w.loose(), w.preseason(), w.f1Weekend(), eventId, sessions,
                 standings, true, stateOf(w.entryList(), seriesPrefix, "ENTRY_LIST", committed), w.error());
     }
 

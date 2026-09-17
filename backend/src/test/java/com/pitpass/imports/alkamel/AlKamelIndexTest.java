@@ -139,6 +139,35 @@ class AlKamelIndexTest {
     }
 
     @Test
+    void anEmptyFileOnTheSiteIsNeverTheChosenCopy() {
+        // 2023 Sebring: the Official grid CSV was posted at 0 bytes; the amended
+        // Provisional beside it is the real grid.
+        SessionFiles race = index.session("23_2023/07_Sebring%20International%20Raceway/"
+                + "01_IMSA%20WeatherTech%20SportsCar%20Championship/202303181010_Race/");
+        List<SourceFile> grids = race.of(Kind.GRID);
+        SourceFile official = grids.stream().filter(f -> f.name().equals("00_Grid_Race_Official.CSV")).findFirst().orElseThrow();
+        assertTrue(official.empty());
+        assertEquals("00_Grid_Race_Provisional_Amended.CSV", race.best(Kind.GRID, false).orElseThrow().name());
+        assertEquals(1, race.best(Kind.GRID, false).orElseThrow().amendment());
+    }
+
+    @Test
+    void pointsFoldersLendTheirStatusToTheFilesInside() {
+        // 2026 VIR: "Points Data - Offiical/" (sic) and "Points Data - Provisional/"
+        // hold identically named championship JSONs; the folder says which is which.
+        SeriesContents vir = index.series("26_2026/18_VIRginia%20International%20Raceway/"
+                + "01_IMSA%20WeatherTech%20SportsCar%20Championship/");
+        List<SourceFile> gtpDrivers = vir.standings().stream()
+                .filter(f -> f.name().equals("IWSC 01 GTP Drivers.json")).toList();
+        assertEquals(2, gtpDrivers.size());
+        assertEquals(List.of(AlKamelCatalog.Status.OFFICIAL, AlKamelCatalog.Status.PROVISIONAL),
+                gtpDrivers.stream().map(SourceFile::status).sorted().toList());
+        SourceFile best = AlKamelCatalog.best(gtpDrivers, Kind.STANDINGS, false).orElseThrow();
+        assertEquals(AlKamelCatalog.Status.OFFICIAL, best.status());
+        assertTrue(best.path().contains("Offiical"));
+    }
+
+    @Test
     void aSprintSessionIn2017HasUnmarkedCsvResultsAndAPdfGrid() {
         SessionFiles race = index.session(W17 + "201704081305_Race/");
         assertEquals(3, race.of(Kind.RESULTS).size());

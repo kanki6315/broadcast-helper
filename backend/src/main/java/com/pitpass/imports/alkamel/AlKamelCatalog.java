@@ -37,18 +37,19 @@ public final class AlKamelCatalog {
 
     // ------------------------------------------------------------- listings
 
-    /** A folder or file row: the href, its text, then the "Last modified" cell.
-     *  Sort links ("?C=N;O=D") and the parent link ("/Results/") are skipped
-     *  by the leading-character class. */
+    /** A folder or file row: the href, its text, then the "Last modified" and
+     *  "Size" cells. Sort links ("?C=N;O=D") and the parent link ("/Results/")
+     *  are skipped by the leading-character class. */
     private static final Pattern ROW = Pattern.compile(
-            "<a href=\"([^\"?/][^\"]*)\">[^<]*</a></td><td align=\"right\">([0-9: -]+?)\\s*<");
+            "<a href=\"([^\"?/][^\"]*)\">[^<]*</a></td><td align=\"right\">([0-9: -]+?)\\s*</td>"
+            + "(?:<td align=\"right\">\\s*([^<]*?)\\s*</td>)?");
 
     /** The rows of an Apache index page, in the order served. */
     public static List<IndexEntry> parseListing(String html) {
         List<IndexEntry> out = new ArrayList<>();
         Matcher m = ROW.matcher(html);
         while (m.find()) {
-            out.add(IndexEntry.of(m.group(1), m.group(2).trim()));
+            out.add(IndexEntry.of(m.group(1), m.group(2).trim(), m.group(3)));
         }
         return out;
     }
@@ -92,7 +93,15 @@ public final class AlKamelCatalog {
         try {
             start = LocalDateTime.parse(m.group(1), SESSION_STAMP);
         } catch (DateTimeParseException e) {
-            return Optional.empty();
+            // A mistyped time ("202506141895_Race 1", 2025 Montréal) must not
+            // hide the session: keep the day, drop the time of day. A mistyped
+            // date is not a session folder.
+            try {
+                start = java.time.LocalDate.parse(m.group(1).substring(0, 8),
+                        DateTimeFormatter.BASIC_ISO_DATE).atStartOfDay();
+            } catch (DateTimeParseException e2) {
+                return Optional.empty();
+            }
         }
         String label = m.group(2).trim();
         return Optional.of(new SessionFolder(folderName, start, label, sessionType(label)));
@@ -209,7 +218,8 @@ public final class AlKamelCatalog {
             status = Status.UNOFFICIAL;
         } else if (n.contains("provisional")) {
             status = Status.PROVISIONAL;
-        } else if (n.contains("official")) {
+        } else if (n.contains("official") || n.contains("offiical")) {
+            // "Points Data - Offiical" is how 2026 spells its Official points folder.
             status = Status.OFFICIAL;
         } else {
             status = Status.UNMARKED;
@@ -236,12 +246,26 @@ public final class AlKamelCatalog {
      * @param modified the index's last-modified cell.
      */
     public record SourceFile(String path, String name, String modified, Kind kind,
-                             Status status, int amendment, String extension) {
+                             Status status, int amendment, String extension, boolean empty) {
+
+        public SourceFile(String path, String name, String modified, Kind kind,
+                          Status status, int amendment, String extension) {
+            this(path, name, modified, kind, status, amendment, extension, false);
+        }
 
         public static SourceFile of(String path, IndexEntry entry, Kind kind) {
+            return of(path, entry, kind, null);
+        }
+
+        /** A file inside a folder that carries the status ("Points Data -
+         *  Provisional/") takes the folder's when its own name says nothing. */
+        public static SourceFile of(String path, IndexEntry entry, Kind kind, Revision folder) {
             Revision r = revisionOf(entry.name());
+            if (r.status() == Status.UNMARKED && r.amendment() == 0 && folder != null) {
+                r = folder;
+            }
             return new SourceFile(path, entry.name(), entry.modified(), kind,
-                    r.status(), r.amendment(), extensionOf(entry.name()));
+                    r.status(), r.amendment(), extensionOf(entry.name()), entry.empty());
         }
     }
 
@@ -275,6 +299,7 @@ public final class AlKamelCatalog {
      *  the importer can read for that kind. */
     public static Optional<SourceFile> best(Collection<SourceFile> files, Kind kind, boolean f1Weekend) {
         return files.stream()
+                .filter(f -> !f.empty()) // a zero-byte "Official" copy loses to the amended Provisional beside it
                 .filter(f -> formatFor(kind, f.extension(), f1Weekend).isPresent())
                 .min(preference());
     }

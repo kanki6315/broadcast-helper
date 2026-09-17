@@ -63,6 +63,11 @@ class AlKamelCatalogTest {
                 AlKamelCatalog.parseSessionFolder("201701281430_Race").orElseThrow().type());
         assertEquals(SessionType.RACE,
                 AlKamelCatalog.parseSessionFolder("202505041015_Race 2").orElseThrow().type());
+        // 2025 Montréal's Race 1 folder carries minute 95: the day survives, the time does not.
+        SessionFolder typo = AlKamelCatalog.parseSessionFolder("202506141895_Race 1").orElseThrow();
+        assertEquals(LocalDateTime.of(2025, 6, 14, 0, 0), typo.start());
+        assertEquals("Race 1", typo.label());
+        assertTrue(AlKamelCatalog.parseSessionFolder("202599999999_Race 1").isEmpty());
         assertTrue(AlKamelCatalog.parseSessionFolder("00_Points").isEmpty());
         assertTrue(AlKamelCatalog.parseSessionFolder("POINTS DATA - Official").isEmpty());
     }
@@ -123,6 +128,20 @@ class AlKamelCatalogTest {
         assertEquals(new Revision(Status.PROVISIONAL, 1), AlKamelCatalog.revisionOf("03_Provisional REVISED Starting Grid.PDF"));
         assertEquals(new Revision(Status.UNOFFICIAL, 0), AlKamelCatalog.revisionOf("03_Results_Race 1_Unofficial.xml"));
         assertEquals(new Revision(Status.UNMARKED, 0), AlKamelCatalog.revisionOf("05_Results.CSV"));
+        // The site's own spelling of its 2026 Official points folder.
+        assertEquals(new Revision(Status.OFFICIAL, 0), AlKamelCatalog.revisionOf("Points Data - Offiical"));
+    }
+
+    @Test
+    void aFileInsideAStatusFolderInheritsTheFolderStatus() {
+        Revision folder = AlKamelCatalog.revisionOf("Points Data - Provisional");
+        IndexEntry plain = new IndexEntry("IWSC%2001%20GTP%20Drivers.json", "IWSC 01 GTP Drivers.json", false, "2026-08-23 21:20");
+        SourceFile inherited = SourceFile.of("x/" + plain.href(), plain, Kind.STANDINGS, folder);
+        assertEquals(Status.PROVISIONAL, inherited.status());
+        // A name that states its own status keeps it.
+        IndexEntry named = new IndexEntry("00_Points%20-%20Official.pdf", "00_Points - Official.pdf", false, "2026-08-28 15:18");
+        assertEquals(Status.OFFICIAL, SourceFile.of("x/" + named.href(), named, Kind.STANDINGS, folder).status());
+        assertEquals(Status.UNMARKED, SourceFile.of("x/" + plain.href(), plain, Kind.STANDINGS).status());
     }
 
     private static SourceFile file(String name, Kind kind, String modified) {

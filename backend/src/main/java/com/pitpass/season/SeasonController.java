@@ -94,7 +94,10 @@ public class SeasonController {
                                (SELECT count(*) FROM race_session rs WHERE rs.event_id = e.id)  AS session_count
                         FROM event e
                         WHERE e.season_id = :id
-                        ORDER BY e.round_ordinal NULLS LAST, e.event_date, e.id
+                        -- Calendar order: an unnumbered weekend (the Roar) sits at its
+                        -- date, before Daytona, not at the end. Rounds are numbered by
+                        -- date anyway, so this only moves the pre-season events.
+                        ORDER BY e.event_date NULLS LAST, e.round_ordinal NULLS LAST, e.id
                         """)
                 .param("id", id)
                 .query((rs, i) -> new CalendarEvent(rs.getLong("id"), rs.getString("name"),

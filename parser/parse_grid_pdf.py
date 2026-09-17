@@ -75,7 +75,9 @@ def _header_anchors(rows):
     so a full-set match is what tells the header apart from data.
     """
     for top, words in rows:
-        texts = [w["text"] for w in words]
+        # "Drivers" (2022 Toronto) and "Drivers*" (2017, footnoted bold/italic
+        # attribution) head the same column as "Driver".
+        texts = [re.sub(r"^Drivers\*?$", "Driver", w["text"]) for w in words]
         if texts == HEADER_LABELS:
             return top, [w["x0"] for w in words]
     raise ValueError("no grid header row (Pos Class Nr. Driver Team Car Time) found")

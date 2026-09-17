@@ -83,9 +83,16 @@ public class AlKamelClient {
         return entries;
     }
 
-    /** A file's bytes; refuses anything over the configured size cap. */
+    /** A file's bytes; refuses anything over the configured size cap, and an
+     *  empty file — the site does post those — is an error naming the cause,
+     *  not a parse failure downstream. */
     public byte[] download(String path) {
-        return fetch(path, maxDownloadBytes);
+        byte[] bytes = fetch(path, maxDownloadBytes);
+        if (bytes.length == 0) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "The file on the site is empty (0 bytes): " + url(path));
+        }
+        return bytes;
     }
 
     /** Forget every cached listing (tests, and a way out of a stale cache). */

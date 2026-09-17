@@ -25,6 +25,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class ImportService {
@@ -1183,6 +1185,16 @@ public class ImportService {
         ClassAndKind ck = match.isPresent()
                 ? deriveClassAndKind(imp.mainTitle(), match.get().matchedPrefix())
                 : deriveClassKindFromTail(imp.mainTitle());
+        // Carrera Cup NA's points JSON titles every file with the series alone and
+        // names the championship in the subtitle — "Pro Drivers - Championship
+        // Points Standings" — the same shape its 2025 PDF prints. Read the class
+        // and kind from there when the title itself carries none.
+        if (ck.kind() == null && imp.subTitle() != null) {
+            Matcher m = SUBTITLE_CHAMPIONSHIP.matcher(imp.subTitle().trim());
+            if (m.find()) {
+                ck = classKindOf(m.group(1));
+            }
+        }
         String seriesName = seriesId.map(this::seriesName).orElse(null);
         // Default: the primary championship, grouped under the series name. A cup
         // is the reviewer flipping is_cup and naming the family.
@@ -1331,12 +1343,30 @@ public class ImportService {
 
     /** Fallback class/kind when no series prefix matched: kind is the last word,
      *  class the word before it (works for single-token classes like GTP/DH). */
+    /** "Pro Drivers - Championship Points Standings": the championship a
+     *  standings subtitle names, when it names one. */
+    private static final Pattern SUBTITLE_CHAMPIONSHIP =
+            Pattern.compile("^(.+?)\\s+-\\s+Championship Points Standings\\b");
+
+    /** "Pro Drivers" → (Pro, DRIVERS); "Entrants" → (null, TEAMS); "" → nothing. */
+    private static ClassAndKind classKindOf(String phrase) {
+        String[] parts = phrase == null ? new String[0] : phrase.trim().split("\\s+");
+        if (parts.length == 0 || parts[0].isEmpty()) {
+            return new ClassAndKind(null, null);
+        }
+        if (parts.length == 1) {
+            return new ClassAndKind(null, canonicalKind(parts[0]));
+        }
+        return new ClassAndKind(String.join(" ", java.util.Arrays.copyOf(parts, parts.length - 1)),
+                canonicalKind(parts[parts.length - 1]));
+    }
+
     private static ClassAndKind deriveClassKindFromTail(String title) {
         String[] parts = title == null ? new String[0] : title.trim().split("\\s+");
         if (parts.length < 2) {
             return new ClassAndKind(null, null);
         }
-        return new ClassAndKind(parts[parts.length - 2], parts[parts.length - 1].toUpperCase());
+        return new ClassAndKind(parts[parts.length - 2], canonicalKind(parts[parts.length - 1]));
     }
 
     // ---------------------------------------------------------------- commit
@@ -1476,6 +1506,12 @@ public class ImportService {
             };
             if (eventId != null && batch.sourceEvent() != null) {
                 stampEventSource(eventId, batch.sourceEvent());
+            }
+            if (eventId != null) {
+                // The commit numbered the rounds before it wrote this batch's
+                // session; number them again now that the event's shape is known
+                // (a qualifying-only weekend has just stopped — or not — being a round).
+                renumberSeasonRounds(seasonIdOfEvent(eventId));
             }
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Stored payload no longer parses", e);
@@ -2128,7 +2164,8 @@ public class ImportService {
         // the primary championship, the cup's own name for a cup).
         String family = target.familyName() != null && !target.familyName().isBlank()
                 ? target.familyName().trim() : seriesName(seriesId);
-        long groupId = findOrCreateChampionshipGroup(seasonId, family, kind, isCup);
+        long groupId = findOrCreateChampionshipGroup(seasonId, family, kind, isCup,
+                sheetKindWording(imp.mainTitle(), kind));
 
         // Replace this championship wholesale (cascade removes sessions/rows/points).
         // is_overall survives the replace: it is set by hand (or by the no-class
@@ -2487,7 +2524,10 @@ public class ImportService {
      * vs the primary championship is confirmed by the reviewer, not inferred from
      * the name.
      */
-    private long findOrCreateChampionshipGroup(long seasonId, String family, String kind, boolean isCup) {
+    /** {@code sheetWording} is the sheet's own word for the kind ("Entrants"),
+     *  used for a brand-new group when no season before it set one. */
+    private long findOrCreateChampionshipGroup(long seasonId, String family, String kind, boolean isCup,
+                                               String sheetWording) {
         Optional<Long> existing = db.sql("""
                         SELECT id FROM championship_group
                         WHERE season_id = :seasonId AND family = :family AND kind IS NOT DISTINCT FROM :kind
@@ -2500,6 +2540,9 @@ public class ImportService {
         // The series' own wording for the kind carries over from last season's
         // group ("Entrants" stays "Entrants" without re-typing it every year).
         String kindLabel = inheritedKindLabel(seasonId, family, kind);
+        if (kindLabel == null) {
+            kindLabel = sheetWording;
+        }
         String label = family + " — " + (kindLabel != null ? kindLabel : kind == null || kind.isBlank()
                 ? "Overall"
                 : kind.charAt(0) + kind.substring(1).toLowerCase());
@@ -2547,14 +2590,43 @@ public class ImportService {
      * order. Idempotent: called after any event is created so the ordinal — the
      * axis for pre-round standings snapshots — stays correct as rounds arrive.
      */
-    private void renumberSeasonRounds(long seasonId) {
+    /**
+     * Number the season's rounds by date. A round is an event that races: a
+     * weekend whose sessions are all practice or qualifying — a test day — is
+     * not one, and takes no number, so the recap's round N still lines up
+     * with the standings' round N. An event with no sessions yet (created
+     * from an entry list before the weekend) is a round to come and keeps
+     * its place. The Roar Before the 24 is the one weekend that races without
+     * being a round — its "race" (2021–22) was the qualifying race that set
+     * Daytona's grid — so it is excluded by name.
+     */
+    void renumberSeasonRounds(long seasonId) {
         db.sql("""
-                        WITH ranked AS (
-                            SELECT id, row_number() OVER (ORDER BY event_date NULLS LAST, id) AS rn
-                            FROM event WHERE season_id = :seasonId
+                        WITH rounds AS (
+                            SELECT e.id
+                            FROM event e
+                            WHERE e.season_id = :seasonId
+                              AND e.name !~* '\\yroar\\y'
+                              AND (NOT EXISTS (SELECT 1 FROM race_session rs WHERE rs.event_id = e.id)
+                                   OR EXISTS (SELECT 1 FROM race_session rs
+                                              WHERE rs.event_id = e.id AND rs.session_type = 'RACE'))
+                        ),
+                        ranked AS (
+                            SELECT e.id, row_number() OVER (ORDER BY e.event_date NULLS LAST, e.id) AS rn
+                            FROM event e JOIN rounds r ON r.id = e.id
                         )
                         UPDATE event e SET round_ordinal = ranked.rn
                         FROM ranked WHERE ranked.id = e.id
+                        """)
+                .param("seasonId", seasonId)
+                .update();
+        db.sql("""
+                        UPDATE event e SET round_ordinal = NULL
+                        WHERE e.season_id = :seasonId
+                          AND (e.name ~* '\\yroar\\y'
+                               OR (EXISTS (SELECT 1 FROM race_session rs WHERE rs.event_id = e.id)
+                                   AND NOT EXISTS (SELECT 1 FROM race_session rs
+                                                   WHERE rs.event_id = e.id AND rs.session_type = 'RACE')))
                         """)
                 .param("seasonId", seasonId)
                 .update();
@@ -2673,14 +2745,50 @@ public class ImportService {
 
     private long upsertEntry(long eventId, String number, String className, String team,
                              String vehicle, String manufacturer, String group) {
+        // A source can print a car with no class at all — the 2024 Miami F1-weekend
+        // grid lists #74 with neither class nor time. The class then comes from
+        // what the event already knows (the qualifying imported before it); a
+        // car nothing has classified yet is a real gap, named rather than a
+        // NOT NULL violation.
+        if (className == null || className.isBlank()) {
+            // The class the event already has for the car. It has to be supplied on
+            // the INSERT itself: Postgres checks NOT NULL on the proposed row before
+            // ON CONFLICT gets a say, so a COALESCE in the update clause alone is
+            // not enough.
+            className = db.sql("SELECT class_name FROM entry WHERE event_id = :e AND car_number = :n AND class_name IS NOT NULL")
+                    .param("e", eventId).param("n", number).query(String.class).optional().orElse(null);
+            boolean known = className != null;
+            if (!known) {
+                // Not on this event yet (#74 skipped qualifying, so the grid is the
+                // first sheet naming it): borrow the class the car ran earlier in
+                // the season. A placeholder only — the race results committed after
+                // the grid carry the class and overwrite it.
+                className = db.sql("""
+                                SELECT en.class_name FROM entry en
+                                         JOIN event ev ON ev.id = en.event_id
+                                WHERE ev.season_id = (SELECT season_id FROM event WHERE id = :e)
+                                  AND en.car_number = :n AND en.class_name IS NOT NULL
+                                ORDER BY ev.event_date DESC NULLS LAST, ev.id DESC
+                                LIMIT 1
+                                """)
+                        .param("e", eventId).param("n", number).query(String.class).optional().orElse(null);
+            }
+            if (!known && className == null) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "Car #" + number + (team != null ? " (" + team + ")" : "")
+                        + " has no class in this file and nothing this season classifies it — import a file"
+                        + " that does (qualifying, results, entry list) first");
+            }
+        }
         // is_guest is deliberately untouched on update: it is user-managed state.
         // manufacturer/class_group only overwrite when the source supplies them —
-        // a metadata-poor import (grid CSV) must not erase entry-list richness.
+        // a metadata-poor import (grid CSV) must not erase entry-list richness;
+        // a class-less row keeps the class the event already has.
         return db.sql("""
                         INSERT INTO entry (event_id, car_number, class_name, team_name, team_id, vehicle, manufacturer, class_group)
                         VALUES (:eventId, :number, :className, :team, :teamId, :vehicle, :manufacturer, :group)
                         ON CONFLICT (event_id, car_number) DO UPDATE
-                            SET class_name = EXCLUDED.class_name,
+                            SET class_name = COALESCE(EXCLUDED.class_name, entry.class_name),
                                 team_name = EXCLUDED.team_name,
                                 team_id = EXCLUDED.team_id,
                                 vehicle = EXCLUDED.vehicle,
@@ -2768,8 +2876,38 @@ public class ImportService {
             if (known.isPresent()) {
                 return known.get();
             }
+            // No driver record yet, but the season's standings (JSON, full names)
+            // may already list the person: a driver who only ever raced the F1
+            // weekends has no full-named result anywhere else to match.
+            Optional<String> fromStandings = fullNameFromStandings(d.firstName().trim(), d.surname(), entryId);
+            if (fromStandings.isPresent()) {
+                String full = fromStandings.get().trim();
+                int cut = full.lastIndexOf(' ');
+                return findOrCreateDriver(full.substring(0, cut).trim(), full.substring(cut + 1).trim(),
+                        d.country(), d.hometown());
+            }
         }
         return findOrCreateDriver(d.firstName(), d.surname(), d.country(), d.hometown());
+    }
+
+    /** The one standings row of the entry's season whose key ends in this
+     *  surname and starts with this initial ("Andre Renha Fernandes" for
+     *  "A. R. FERNANDES"); empty unless exactly one fits. */
+    private Optional<String> fullNameFromStandings(String initials, String surname, long entryId) {
+        List<String> keys = db.sql("""
+                        SELECT DISTINCT r.competitor_key
+                        FROM standings_row r
+                                 JOIN championship c ON c.id = r.championship_id
+                                 JOIN championship_group g ON g.id = c.group_id
+                        WHERE c.season_id = (SELECT ev.season_id FROM entry e JOIN event ev ON ev.id = e.event_id WHERE e.id = :entryId)
+                          AND g.kind = 'DRIVERS'
+                          AND lower(r.competitor_key) LIKE '% ' || lower(:surname)
+                          AND upper(left(r.competitor_key, 1)) = :initial
+                        """)
+                .param("entryId", entryId).param("surname", surname.trim())
+                .param("initial", initials.substring(0, 1).toUpperCase(Locale.ROOT))
+                .query(String.class).list();
+        return keys.size() == 1 ? Optional.of(keys.get(0)) : Optional.empty();
     }
 
     private Optional<Long> findByInitial(String initials, String surname, long entryId) {
@@ -2899,9 +3037,45 @@ public class ImportService {
         int lastSpace = remainder.lastIndexOf(' ');
         if (lastSpace > 0) {
             return new ClassAndKind(remainder.substring(0, lastSpace).trim(),
-                    remainder.substring(lastSpace + 1).toUpperCase());
+                    canonicalKind(remainder.substring(lastSpace + 1)));
         }
-        return new ClassAndKind(null, remainder.isEmpty() ? null : remainder.toUpperCase());
+        return new ClassAndKind(null, remainder.isEmpty() ? null : canonicalKind(remainder));
+    }
+
+    /**
+     * A title's kind word as one of the closed kinds. Series word the same
+     * thing differently — Mustang Challenge and Carrera Cup rank "Entrants",
+     * WeatherTech "Teams" — and the word is only ever the sheet's wording for
+     * a kind, not a kind of its own. Unknown words come back upper-cased for
+     * the reviewer to sort out.
+     */
+    static String canonicalKind(String word) {
+        String w = word == null ? "" : word.trim().toUpperCase();
+        return switch (w) {
+            case "TEAM", "TEAMS", "ENTRANT", "ENTRANTS", "CREW", "CREWS" -> "TEAMS";
+            case "DRIVER", "DRIVERS" -> "DRIVERS";
+            case "MANUFACTURER", "MANUFACTURERS", "MAKE", "MAKES", "BRANDS" -> "MANUFACTURERS";
+            default -> w.isEmpty() ? null : w;
+        };
+    }
+
+    /**
+     * The sheet's own wording for its kind when it differs from the kind's
+     * plain name — "Entrants" on a TEAMS sheet — to seed a new championship
+     * group's wording when the series has none yet; null otherwise.
+     */
+    static String sheetKindWording(String mainTitle, String kind) {
+        if (mainTitle == null || kind == null) {
+            return null;
+        }
+        String[] parts = mainTitle.trim().split("\\s+");
+        String word = parts[parts.length - 1];
+        if (!kind.equals(canonicalKind(word))) {
+            return null;
+        }
+        String cased = word.substring(0, 1).toUpperCase() + word.substring(1).toLowerCase();
+        String plain = kind.charAt(0) + kind.substring(1).toLowerCase();
+        return cased.equals(plain) ? null : cased;
     }
 
     /** Normalize a class spelling for comparison: case- and space-insensitive. */

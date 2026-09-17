@@ -262,3 +262,44 @@ def test_pacca_decimal_points_survive(pacca):
     assert giltrap["key"] == "Marco GILTRAP"
     assert giltrap["total_points"] == 108.5
     assert giltrap["points_by_session"][0]["race_points"] == 4.5
+
+
+# --- 2025 Carrera Cup North America: the championship named on the standings line ----------
+
+PCCNA = SAMPLES / "2025_PCCNA_COTA_Points.pdf"
+
+
+@pytest.fixture(scope="module")
+def pccna():
+    return p.parse(PCCNA)
+
+
+@pytest.mark.skipif(not PCCNA.exists(), reason="sample PDF not present")
+def test_pccna_names_each_championship_from_the_standings_line(pccna):
+    # Line 1 of every page is just the series; "Masters Drivers - Championship
+    # Points Standings OFFICIAL" carries the championship. Read as line 1 alone,
+    # all six pages collapsed into one title and page 5 failed on its columns.
+    titles = [c["championship"]["main_title"] for c in pccna["championships"]]
+    assert titles == [
+        "Porsche Carrera Cup North America Pro Drivers",
+        "Porsche Carrera Cup North America Pro-Am Drivers",
+        "Porsche Carrera Cup North America Masters Drivers",
+        "Porsche Carrera Cup North America Entrants",
+        "Porsche Carrera Cup North America Rookie Drivers",
+    ]
+    assert all(c["championship"]["year"] == "2025" for c in pccna["championships"])
+
+
+@pytest.mark.skipif(not PCCNA.exists(), reason="sample PDF not present")
+def test_pccna_every_row_readds_to_its_printed_total(pccna):
+    for champ in pccna["championships"]:
+        assert champ["classification"], champ["championship"]["main_title"]
+        for row in champ["classification"]:
+            assert sum(s["total_points"] for s in row["points_by_session"]) == row["total_points"], (
+                f"{champ['championship']['main_title']} #{row['position']} {row['key']}"
+            )
+    pro = _one(pccna, "Pro Drivers")
+    assert _row(pro, 1)["key"] == "Ryan Yardley"
+    assert _row(pro, 1)["total_points"] == 313
+    assert len(pro["classification"]) == 46
+    assert len(pro["championship"]["sessions"]) == 32  # 16 rounds, each with a P / FL extra column

@@ -57,6 +57,7 @@ interface ConfirmBatch {
   id: number
   kind: string
   detail: string
+  summary: string
   guess: TargetGuess | null
   unknownClasses: string[]
   needsSession: boolean
@@ -190,6 +191,7 @@ export default function ConfirmImportStep({
         id,
         kind: b.kind,
         detail: batchDetail(b.summary),
+        summary: b.summary ?? '',
         guess: review?.guess ?? null,
         unknownClasses: review?.classReview.unknownClasses ?? [],
         needsSession: review?.needsSession ?? false,
@@ -352,7 +354,13 @@ export default function ConfirmImportStep({
     if (seriesId == null || allEvents === null) return null
     const sName = allSeries?.find((s) => s.id === seriesId)?.name
     if (!sName) return null
-    const createGroups = groups.filter((g) => g.eventId == null && g.itemKeys.length > 0)
+    // A weekend that only qualified — the Roar, a test day — takes no round
+    // number at commit, so it stays out of the preview too. Judged from its
+    // batches: a grid, or results whose session reads as a race.
+    const races = (g: EventGroupDraft) => g.itemKeys.some((k) =>
+      (itemByKey.get(k)?.batches ?? []).some((b) =>
+        b.kind === 'GRID' || (b.kind === 'RACE_RESULTS' && /\b(race|hour|heat|feature)\b/i.test(b.summary))))
+    const createGroups = groups.filter((g) => g.eventId == null && g.itemKeys.length > 0 && races(g))
     if (createGroups.length === 0) return null
     // Bucket by year (undated groups can't be previewed).
     const yearOf = (d: string | null) => (d ? new Date(d).getFullYear() : null)
@@ -377,7 +385,7 @@ export default function ConfirmImportStep({
       rows.push({ year, entries: merged })
     }
     return rows
-  }, [groups, seriesId, allEvents, allSeries])
+  }, [groups, seriesId, allEvents, allSeries, itemByKey])
 
   // --- commit --------------------------------------------------------------
 

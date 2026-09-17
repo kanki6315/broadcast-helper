@@ -184,6 +184,13 @@
   color: var(--accent-ink);
 }
 
+/* Publication status: an interim copy is dashed so it never reads as final. */
+.ak-chip.status-provisional,
+.ak-chip.status-unofficial {
+  border-style: dashed;
+  color: var(--text-muted);
+}
+
 /* ---- season + series ---- */
 
 .ak-setup {

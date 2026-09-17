@@ -109,15 +109,18 @@ class AlKamelImportServiceTest {
         assertNull(longBeach.entryList());
 
         // Daytona: results from the last hour folder, the unmarked grid, the
-        // pre-race entry list, and two standings sheets (the points and the
-        // endurance-cup points), each recommended once — not the award.
+        // pre-race entry list, and three standings sheets — the series' points
+        // sheet is ticked; the endurance-cup sheet (a checkpoint layout the
+        // parser doesn't read) and the award are offered unticked.
         PlanSession rolex = daytona.sessions().get(1);
         assertEquals("05_Results by Hour.CSV", rolex.results().name());
         assertEquals("03_Starting Grid.PDF", rolex.grid().name());
         assertEquals("02_Pre-Race Entry List.pdf", daytona.entryList().name());
         assertEquals("IMSA_PDF", daytona.entryList().format());
-        assertEquals(List.of("00_Championship Points - Revised Official.pdf", "02_TPNAEC Points - Official.pdf"),
+        assertEquals(List.of("00_Championship Points - Revised Official.pdf"),
                 daytona.standings().stream().filter(PlanFile::recommended).map(PlanFile::name).toList());
+        assertEquals(3, daytona.standings().size());
+        assertTrue(daytona.standings().stream().anyMatch(f -> f.name().startsWith("02_TPNAEC") && f.note().contains("cup")));
         assertTrue(daytona.standings().stream().allMatch(f -> "IMSA_POINTS_PDF".equals(f.format())));
 
         // Final standings: the later weekend of the two.

@@ -270,11 +270,24 @@ def _parse_rows(page, cols):
         # right; only the name needs draw order.
         by_x = sorted(label_chars, key=lambda c: c["x0"])
         car_chars = [c for c in by_x if is_number(c) and c["x0"] < TOTAL_MIN_X]
+        # Digits glued to the letters after them are part of the name ("311RS
+        # Motorsport"), not a car number: a number is its own word.
+        if car_chars:
+            last = max(car_chars, key=lambda c: c["x1"])
+            after = [c for c in by_x if is_name(c) and c["x0"] >= last["x1"] - 0.5]
+            if after and after[0]["x0"] - last["x1"] < 0.25 * (last["x1"] - last["x0"]):
+                car_chars = []
         car_number = "".join(c["text"] for c in car_chars) or None
         name_from = max((c["x1"] for c in car_chars), default=POS_MAX_X)
 
         name = " ".join("".join(
             c["text"] for c in label_chars if c["x0"] >= name_from and is_name(c)
+        ).split())
+        # The name with its own digits kept ("762 Motorsports"), for a sheet
+        # that turns out to have no car-number column at all.
+        name_with_digits = " ".join("".join(
+            c["text"] for c in label_chars
+            if c["x0"] >= POS_MAX_X and (is_name(c) or (c["text"].isdigit() and c["x0"] < TOTAL_MIN_X))
         ).split())
         total = "".join(
             c["text"] for c in by_x if c["x0"] >= TOTAL_MIN_X and is_number(c)
@@ -286,9 +299,20 @@ def _parse_rows(page, cols):
             "position": int("".join(c["text"] for c in pos_chars)),
             "car_number": car_number,
             "name": name,
+            "name_with_digits": name_with_digits,
             "total": int(total),
             "cells": _cell_values(chars, cols, numeric_from, points_font),
         })
+    # A Teams sheet numbers every car; a sheet where only some rows start with
+    # digits (an Entrants table with "311RS Motorsport" and "762 Motorsports"
+    # among plain names) has no car-number column, and those digits belong to
+    # the names.
+    if out and any(r["car_number"] is None for r in out):
+        for r in out:
+            r["car_number"] = None
+            r["name"] = r["name_with_digits"]
+    for r in out:
+        del r["name_with_digits"]
     return out
 
 
@@ -496,6 +520,29 @@ def _year_of(pdf, override):
     return m.group(1) if m else ""
 
 
+_STANDINGS_LINE = re.compile(r"^(.+?)\s+-\s+Championship Points Standings\b")
+
+
+def _title(page) -> str:
+    """The championship a page belongs to.
+
+    Most IMSA sheets put the whole title on line 1 ("IMSA WeatherTech
+    SportsCar Championship GTP Drivers") and a bare "Championship Points
+    Standings OFFICIAL" below. The 2025 Carrera Cup North America sheet puts
+    only the series on line 1 and names the championship on the standings
+    line — "Masters Drivers - Championship Points Standings OFFICIAL" — so
+    every page shared one title and a whole season's championships collapsed
+    into one (and failed on the first page whose columns differed).
+    """
+    lines = [l.strip() for l in (page.extract_text() or "").split("\n")]
+    title = lines[0] if lines else ""
+    for line in lines[1:6]:
+        m = _STANDINGS_LINE.match(line)
+        if m:
+            return f"{title} {m.group(1).strip()}".strip()
+    return title
+
+
 def parse(path: Path, year: int | None = None) -> dict:
     """PDF -> the points.json contract. Raises if any row fails its checksum."""
     pdf = pdfplumber.open(path)
@@ -516,7 +563,7 @@ def parse(path: Path, year: int | None = None) -> dict:
         cols = _columns(page)
         if not cols:
             continue  # not a standings grid
-        title = (page.extract_text() or "").split("\n")[0].strip()
+        title = _title(page)
         if not title:
             continue
         sessions = _sessions(cols)

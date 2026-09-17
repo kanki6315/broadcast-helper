@@ -49,6 +49,8 @@ interface PlanWeekend {
   seriesId: number | null
   seriesName: string | null
   loose: boolean
+  // The Roar, a test, a prologue: importable, not a round, unticked by default.
+  preseason: boolean
   f1Weekend: boolean
   existingEventId: number | null
   sessions: PlanSession[]
@@ -161,18 +163,37 @@ function weekendDate(w: PlanWeekend): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 }
 
-// "Q · CSV" / "R · JSON +grid +flags" per session, and what nothing reads.
+// "official", "provisional · amended 2", or nothing for a file whose name says nothing.
+function statusText(f: PlanFile): string {
+  const status = f.status === 'UNMARKED' ? '' : f.status.toLowerCase()
+  const amended = f.amendment > 0 ? `amended ${f.amendment}` : ''
+  return [status, amended].filter(Boolean).join(' · ')
+}
+
+// "12 standings JSON official" — the sheets a season import ticks, which
+// share one format and status (the best copy of each). Null when none.
+function standingsChip(w: PlanWeekend): string | null {
+  const picked = w.standings.filter((f) => f.recommended)
+  if (picked.length === 0) return null
+  const first = picked[0]
+  const noun = picked.length === 1 ? 'standings' : `${picked.length} standings`
+  return [noun, first.format ? fmt(first.format) : '', statusText(first)].filter(Boolean).join(' ')
+}
+
+// "Q · CSV official" / "R · JSON official · grid provisional · flags" per
+// session — each file with its own publication status — and what nothing reads.
 function sessionChip(s: PlanSession): { text: string; gap: string | null } {
   const letter = s.type === 'QUALIFYING' ? 'Q' : 'R'
   const parts: string[] = []
   const gaps: string[] = []
-  if (s.results?.format) parts.push(fmt(s.results.format))
+  const withStatus = (label: string, f: PlanFile) => [label, statusText(f)].filter(Boolean).join(' ')
+  if (s.results?.format) parts.push(withStatus(fmt(s.results.format), s.results))
   else if (s.results) gaps.push(`results: ${s.results.note ?? 'unreadable'}`)
   else gaps.push('no results')
-  if (s.grid?.format) parts.push('+grid')
+  if (s.grid?.format) parts.push(withStatus('grid', s.grid))
   else if (s.grid) gaps.push(`grid: ${s.grid.note ?? 'unreadable'}`)
-  if (s.flags?.format) parts.push('+flags')
-  return { text: `${letter} · ${parts.join(' ') || '—'}`, gap: gaps.length ? gaps.join('; ') : null }
+  if (s.flags?.format) parts.push(withStatus('flags', s.flags))
+  return { text: `${letter} · ${parts.join(' · ') || '—'}`, gap: gaps.length ? gaps.join('; ') : null }
 }
 
 function fmt(format: string): string {
@@ -303,9 +324,10 @@ export default function AlKamelImportModal({
       }
       const p = body as YearPlan
       setPlan(p)
-      // Default tick: weekends with something to read that aren't already here.
+      // Default tick: weekends with something to read that aren't already here
+      // and are rounds — the Roar and the tests wait for a deliberate tick.
       setPicked(new Set(p.weekends
-        .filter((w) => !w.error && w.existingEventId == null && filesFor(w, opts).length > 0)
+        .filter((w) => !w.error && !w.preseason && w.existingEventId == null && filesFor(w, opts).length > 0)
         .map(weekendKey)))
       const loose: Record<string, number> = {}
       if (seriesId != null) for (const w of p.weekends) if (w.loose) loose[weekendKey(w)] = seriesId
@@ -658,8 +680,8 @@ export default function AlKamelImportModal({
                               <span className="ak-weekend-name">{w.eventName}</span>
                               {weekendDate(w) && <span className="ak-weekend-date">{weekendDate(w)}</span>}
                               {w.existingEventId != null && <span className="badge ak-badge">imported</span>}
+                              {w.preseason && <span className="badge ak-badge" title="Not a round: imports as its own event without a round number">pre-season</span>}
                               {w.f1Weekend && <span className="badge ak-badge">F1 weekend</span>}
-                              {w.finalStandings && opts.standings && <span className="badge ak-badge">standings</span>}
                             </div>
                             <div className="ak-weekend-meta">
                               {w.loose ? (
@@ -685,7 +707,14 @@ export default function AlKamelImportModal({
                                     </span>
                                   )
                                 })}
-                                {w.entryList && opts.entryLists && <span className="ak-chip">entry list</span>}
+                                {w.entryList && opts.entryLists && (
+                                  <span className="ak-chip">{['entry list', statusText(w.entryList)].filter(Boolean).join(' ')}</span>
+                                )}
+                                {w.finalStandings && opts.standings && standingsChip(w) && (
+                                  <span className="ak-chip" title={w.standings.filter((f) => f.recommended).map((f) => f.name).join(', ')}>
+                                    {standingsChip(w)}
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>
@@ -769,11 +798,14 @@ export default function AlKamelImportModal({
                       <div className="ak-weekend-main">
                         <div className="ak-weekend-title">
                           <span className="ak-weekend-name">{x.label}</span>
+                          {statusText(x.file) && (
+                            <span className={`ak-chip status-${x.file.status.toLowerCase()}`}>{statusText(x.file)}</span>
+                          )}
                           {x.file.state && <span className={`ak-chip state-${x.file.state.toLowerCase()}`}>{STATE_LABEL[x.file.state]}</span>}
                         </div>
                         <div className="ak-weekend-meta">
                           <span>{x.file.name}</span>
-                          <span>{x.file.status.toLowerCase()}{x.file.amendment > 0 ? ` · amended ${x.file.amendment}` : ''}</span>
+                          {x.file.status === 'UNMARKED' && <span>no status in the name</span>}
                           {x.file.modified && <span>posted {x.file.modified}</span>}
                           {x.file.note && <span>{x.file.note}</span>}
                         </div>

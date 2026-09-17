@@ -94,6 +94,16 @@ pages is merged into one classification.
   `--year`. The reviewer confirms the season before commit.
 - **key** on a Drivers sheet is a person's name, so it is weaker than the JSON's
   car-number key: two drivers sharing a name would collide.
+- **main_title** is the page's first line — plus, when the standings line
+  below names the championship, that name. Most IMSA sheets print the whole
+  title on line 1 ("IMSA WeatherTech SportsCar Championship GTP Drivers") over
+  a bare "Championship Points Standings OFFICIAL". The 2025 Carrera Cup North
+  America sheet prints only the series on line 1 and "Masters Drivers -
+  Championship Points Standings OFFICIAL" below, so the title becomes "Porsche
+  Carrera Cup North America Masters Drivers". Before this, every page of that
+  sheet shared one title and the parser failed on the first page whose columns
+  differed (the Entrants sheet has no P / FL columns). Sample:
+  `samples/2025_PCCNA_COTA_Points.pdf`, five championships.
 
 ## PACCA layout (Carrera Cup Asia)
 

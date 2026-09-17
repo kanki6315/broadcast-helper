@@ -149,9 +149,13 @@ public class AlKamelIndex {
                 if (session.isPresent()) {
                     sessions.add(new SessionRef(path, session.get(), e.modified()));
                 } else if (AlKamelCatalog.isPointsFolder(e.name())) {
+                    // "Points Data - Offiical/" and "Points Data - Provisional/" sit side
+                    // by side in 2026 with identically named files inside: the folder
+                    // carries the status the files lack.
+                    AlKamelCatalog.Revision folder = AlKamelCatalog.revisionOf(e.name());
                     for (IndexEntry f : fresh ? client.listFresh(path) : client.list(path)) {
                         if (!f.directory()) { // "20_Unofficial and Provisional/" inside 2017's points folder
-                            standings.add(SourceFile.of(path + f.href(), f, Kind.STANDINGS));
+                            standings.add(SourceFile.of(path + f.href(), f, Kind.STANDINGS, folder));
                         }
                     }
                 }

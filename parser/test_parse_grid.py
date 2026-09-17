@@ -87,3 +87,19 @@ def test_rejects_non_grid_pdf():
         pytest.skip("entry-list sample not present")
     with pytest.raises(ValueError, match="Starting Grid"):
         p.parse(entry_list)
+
+
+TORONTO = HERE / "samples" / "2022_PCCNA_Toronto_Grid_R1.pdf"
+
+
+@pytest.mark.skipif(not TORONTO.exists(), reason="sample PDF not present")
+def test_drivers_header_word_is_the_driver_column():
+    # 2022 Toronto heads the column "Drivers"; the layout is otherwise the 2021 one.
+    doc = p.parse(TORONTO)
+    assert doc["session"] == "Race 1"
+    assert doc["rows"][0]["number"] == "6"
+    assert doc["rows"][0]["driver"] == "Trenton Estep"
+    assert doc["rows"][0]["class"] == "Pro"
+    assert doc["rows"][0]["time"] == "1:11.135"
+    assert len(doc["rows"]) >= 15
+

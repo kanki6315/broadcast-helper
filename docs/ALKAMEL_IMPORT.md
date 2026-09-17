@@ -276,6 +276,164 @@ sessions, so a CSV-era season imports complete apart from grids and standings.
 5. Grid PDF extension; 6. points PDF older layout. Each lifts "needs parser"
    rows in the year plan without touching the workflows.
 
+## Found on the first live run (2026-09-17)
+
+- 2026 weekends post **two points-data folders side by side**, `Points Data -
+  Offiical/` (the site's own spelling) and `Points Data - Provisional/`, with
+  identically named, status-less championship JSONs inside. The refresh
+  ticked both sets. Now the folder's status is inherited by the files inside
+  (`SourceFile.of(..., folderRevision)`), the misspelling counts as Official,
+  and `planStandings` ticks one copy per sheet — the best by status,
+  amendment and date — listing the rest unticked.
+- Every file's publication status is shown wherever it is offered: a status
+  chip on refresh rows (dashed for provisional / unofficial) and inside the
+  season rows' session chips ("R · JSON official · grid provisional"). Some
+  sessions only ever publish an Unofficial file (2026 VIR qualifying), and
+  the chip says so rather than hiding it.
+
+Found importing 2023 WeatherTech (2026-09-17):
+
+- **The site posts empty files.** 2023 Sebring's `00_Grid_Race_Official.CSV`
+  is 0 bytes; the amended Provisional beside it is the grid. The index's Size
+  column is now read (`IndexEntry.size` / `empty()`), an empty file is never
+  the chosen copy, and downloading one anyway fails with "empty (0 bytes)"
+  rather than "unrecognized CSV".
+- **Cup points sheets are a different layout.** `00_IMEC Championship
+  Points`, `00_IMEC MRRA Points`, `00_IMEC Sebring 12H Points`, `02_TPNAEC
+  Points` lay points out per checkpoint (Hour 6 / 12 / 18 / Finish); the
+  points parser reads the series sheet's Extra + Round pairs and fails its
+  checksum on these, loudly. Only the series' own points sheet
+  (`isMainPointsSheet`) is ticked by default; cup sheets are listed with
+  "cup sheet — tick to try". Reading them is parser work for later (the JSON
+  era already imports the cups from `POINTS DATA`).
+- **The Roar is not a round.** Imported as its own event (its qualifying
+  sets Daytona's grid) it took round ordinal 1, and the recap — which matches
+  championship round N to the event numbered N — shifted every column by
+  one. `renumberSeasonRounds` now numbers only events that race or have no
+  sessions yet; a qualifying-only or practice-only weekend gets a null
+  ordinal, and the commit renumbers again after writing its session so the
+  rule sees the event's real shape. The confirm step's round preview applies
+  the same rule to the weekends it is about to create. **Backfill** (done on
+  the local DB, owed in production): the renumber SQL in
+  `ImportService.renumberSeasonRounds`, run over every season.
+
+Found importing 2025 Carrera Cup NA (2026-09-17): its points PDF names the
+championship on the standings line ("Masters Drivers - Championship Points
+Standings OFFICIAL") under a series-only first line, so the points parser
+merged every page into one championship and failed on the Entrants page's
+different columns. `parse_points._title` now appends that name; the sheet
+yields Pro / Pro-Am / Masters Drivers, Entrants and Rookie Drivers, all
+checksummed (`parser/samples/2025_PCCNA_COTA_Points.pdf`). "Rookie Drivers"
+will review as class "Rookie", which the series has no class for — it is a
+cup, so the reviewer flips is_cup on that one batch. Its "Entrants" sheet
+used to review as a kind of its own and be set aside: "Entrants" (Mustang
+Challenge too), "Crews", "Team", "Makes" are now read as the closed kinds
+(`ImportService.canonicalKind` → TEAMS / DRIVERS / MANUFACTURERS), and a
+brand-new championship group takes the sheet's word as its wording
+(`sheetKindWording`) when no earlier season set one — so the season pages
+say "Entrants" without anyone typing it.
+
+Found importing 2022 WeatherTech (2026-09-17):
+
+- **The Roar races.** In 2021–22 the Roar ran a qualifying race (a `Race`
+  session folder) that set Daytona's grid, so the "an event that races is a
+  round" rule counted it and the recap shifted every column by one again.
+  `renumberSeasonRounds` now excludes events named like the Roar
+  (`~* '\yroar\y'`) outright, and the planner marks Roar / test / prologue
+  weekends `preseason` — badge "pre-season", unticked by default, still
+  importable as their own event. An unnumbered event stays visible: the
+  season calendar orders by date so it sits before Daytona with a
+  "pre-season" badge on the schedule, and the Results page lists it with a
+  "Pre-season" chip in place of "Rd N". The reference table and lineups
+  matrix key their columns by round number and so leave it out; the recap
+  cannot show it since it scores nothing. **Backfill** in production: the
+  renumber SQL again.
+- **Classes with no `class_style` row sort last.** WeatherTech had rows for
+  GTP / LMP2 / GTDPRO / GTD only, so the 2022 DPi and LMP3 tables fell to the
+  bottom. Added locally (owed in production, via Series → Class colours or
+  SQL): DPi at GTP's ordinal 0 and colour, LMP3 at 2 (`#f57c00`), GTLM at
+  GTDPRO's 3 and colour; GTDPRO/GTD moved to 3/4. Classes that never share a
+  season can share an ordinal.
+
+## Carrera Cup North America 2021–2025, imported and audited (2026-09-17)
+
+Driven through the API with `drive.py` / `refresh.py` / `audit.py` (session
+scratchpad, same calls the modal makes). Every weekend on the site is in the
+local DB with qualifying, both races, grids and results; 2022–2025 carry
+their four championships. What the run fixed on the way:
+
+- **A grid row with no class** (2024 Miami #74, Montréal #65 — the F1 grid
+  sheet prints neither class nor time for a car that skipped qualifying)
+  failed the entry INSERT's NOT NULL. `upsertEntry` now takes the class the
+  event already has, else the car's class earlier in the season, and a
+  class-less row never overwrites a known class; only a car nothing
+  classifies is refused, by name. (Postgres checks NOT NULL on the proposed
+  row before ON CONFLICT, so the value has to be supplied on the INSERT.)
+- **Loose weekends in single-series mode** (2023 COTA, 2024 COTA posted
+  without a series folder) are now that series', so an imported one is
+  recognised instead of duplicated.
+- **Standings JSON titled with the series alone** (Carrera Cup's `POINTS
+  DATA`: main_title "Porsche Carrera Cup North America", subtitle "Pro
+  Drivers - Championship Points Standings") review their class and kind from
+  the subtitle.
+- **Series aliases owed**: "Porsche Deluxe Carrera Cup North America" (2022
+  Sebring test, 2023), "Porsche Carrera Cup North America Presented by The
+  Cayman Islands" (2021–22). Without them a single-series plan silently
+  shows one weekend — the planner reports unmatched folders only in
+  all-series mode.
+- **Class aliases owed** for the F1-weekend sheets and the upper-case CSVs:
+  P → Pro, PA → Pro-Am, A → Am, M / MAS → Masters, PRO → Pro, PRO-AM →
+  Pro-Am. Before them 2023–25 held both spellings (the review can't flag a
+  variant on a brand-new season, since the season's known classes are empty
+  when the whole season commits at once). Entries were normalised locally;
+  `class_style` rows Pro / Pro-Am / Am / Masters / PA991 added.
+- **The 2022 Toronto grid PDF** heads its column "Drivers"; the grid parser
+  now accepts that (and 2017's "Drivers*"). Sample + test added.
+- **Initialled drivers on F1 sheets with no full-named result anywhere**
+  (2025 Miami "A. R. FERNANDES", "JP. VEGA") now resolve through the season's
+  standings rows, whose keys are full names. Re-refreshing Miami re-linked
+  four drivers; the initial-only records were deleted.
+- **2024 "PCCNA Pro" JSON** labels one Road Atlanta session "WeatherTech
+  Raceway", a ninth "round" that would shift the recap's last column;
+  patched in `championship_session` locally. Source slip.
+
+Second-pass audit (identity, positions, standings-vs-results): every race
+winner 2022–2025 holds that round's top race points in its class's Drivers
+championship (a guest, Laurin Heinrich at 2022 Petit R2, scores nothing and
+has no row; his entry is not flagged guest). Classified positions run 1..N in
+every race. The 2024 standings had been the Road Atlanta snapshot (COTA was
+a loose folder when they were ticked) — refreshed from COTA's `POINTS DATA`.
+Observations for the user: the "Pro Drivers" table is the whole field scored
+outright (Pro-Am and Masters drivers at the bottom), i.e. the outright
+championship under the class name "Pro"; 2025 "Rookie Drivers" is a cup with
+no entries of that class; team names drift across seasons (Kelly-Moss /
+Kellymoss / Kelly Moss, MRS GT Racing / MRS GT-Racing, Alegra Motorsports
+LLC / , LLC) and are separate `team` rows; CSV-era and F1-weekend events
+have no circuit name (the folder name usually is one).
+
+Known, not fixed (the audit's remaining findings are the sources' own):
+
+- **2021 standings**: the 2021 points PDF is another layout — the parser
+  merged adjacent event columns ("Watkins Glen Road America") and dropped the
+  first letter of every name — so the four championships it produced were
+  deleted. 2021 has results and grids only until that layout is read.
+- **2025 Montréal's Race 1 folder is `202506141895_Race 1`** — a stamp with
+  minute 95. The session-folder parser dropped it as not-a-stamp, so the
+  session vanished from the plan without a word. A mistyped time now keeps
+  the day (start at 00:00) and only a mistyped date disqualifies a folder;
+  Race 1 imported on refresh. Its session start sorts before qualifying —
+  the sheet itself carries no time to correct it from.
+- **Team names that begin with digits** ("311RS Motorsport", "762
+  Motorsports") were read as car number + name on the Entrants sheets: the
+  points parser assumed a Teams sheet numbers its cars. A number is now only
+  a car number when it is its own word and every row on the page has one;
+  otherwise the digits stay in the name. Both seasons' Entrants re-imported
+  and match their entries.
+- 2025 "Rookie Drivers" was committed as class "Rookie" by the earlier UI
+  run; it is a cup and should be flipped in Manage.
+- 2024 Jerez (a non-PCCNA weekend posted under the season with no series
+  folder) is skipped by name.
+
 ## Production notes
 
 - V52 migration; series aliases for the era folder names (data, via the UI).
