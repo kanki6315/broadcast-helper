@@ -4,7 +4,7 @@ name: PitPass
 options:
   bundleIdPrefix: com.arjunakankipati
   deploymentTarget:
-    iOS: "18.0"
+    iOS: "26.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
 settings:
@@ -19,7 +19,7 @@ settings:
     DEVELOPMENT_TEAM: "TDBAHN96B3"
     # Version the user sees (CFBundleShortVersionString). Bump this line for a release;
     # the build number (CFBundleVersion) is stamped by release.sh, never edited here.
-    MARKETING_VERSION: 0.1.8
+    MARKETING_VERSION: 0.1.9
     CURRENT_PROJECT_VERSION: 1
 packages:
   # SVG rasterizer (zlib licence): manufacturer marks are uploaded as SVG and
@@ -66,6 +66,7 @@ targets:
           - CFBundleURLName: com.arjunakankipati.pitpass.auth
             CFBundleURLSchemes: [pitpass]
         # Pit-lane walk-to-box guidance (PitLaneSheet) and anchor capture.
+        NSMicrophoneUsageDescription: Pit Pass records conversations so you can review and transcribe your pre-session reporting on this iPad.
         NSLocationWhenInUseUsageDescription: Pit Pass uses your location to guide you to a pit box along the lane.
         NSLocalNetworkUsageDescription: Debug builds can connect to a Pit Pass development server on your local network.
         # Local dev server is plain http://localhost:8731.

@@ -27,6 +27,13 @@ model, and phase roadmap.
 
 ## What it does today
 
+- **Log event conversations on iPad** in a fifth event tab: only spoken-to or
+  planned-contact drivers appear. Capture typed or handwritten notes, record
+  audio locally, and transcribe saved recordings in English on device with
+  SpeechAnalyzer (iPadOS 26+). Playback, bookmarks and takeaways stay linked to
+  the driver and session. Reporting is local to the account on this iPad; it
+  is not yet synchronized to the website or other devices.
+
 - **Import** timing-provider results, standings (team/driver/Michelin Endurance
   Cup championships), and starting-grid JSON, plus entry-list PDFs, starting-grid
   CSVs, championship-points PDFs, and flags/RC-message JSON — across multiple

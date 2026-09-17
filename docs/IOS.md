@@ -41,7 +41,8 @@ requests have been removed so more season rows are visible immediately.
 The Series library uses compact rows with expandable seasons. Selecting a
 season establishes the root workspace; All series switches back to the library
 without stacking another season in navigation history. Event broadcast workspaces
-remain pushed destinations with their own four tabs and a Back to series action.
+remain pushed destinations with five tabs (Sheet, Recap, Pit lane, Scratchpad,
+Conversations) and a Back to series action.
 
 Navigation preferences are stored locally in UserDefaults under a versioned key
 scoped to the server URL and signed-in owner. They do not expire: the last season,
@@ -95,7 +96,7 @@ ios/
                 PencilKit bridge, syncer), PitLaneGeo, ProfileLogic
 ```
 
-Swift 6 with strict concurrency, iOS 18+, iPad only (`TARGETED_DEVICE_FAMILY
+Swift 6 with strict concurrency, iPadOS 26+, iPad only (`TARGETED_DEVICE_FAMILY
 = 2`). One package: **SwiftDraw** (zlib licence, pinned in `project.yml`) for
 SVG rasterising. Everything user-facing is SwiftUI; UIKit appears only where
 SwiftUI has no primitive — decoding image bytes (UIImage), the light/dark
@@ -611,7 +612,7 @@ parity row. Where the web's derivation lives in `lib/*.ts`, its port is in
 Season screens use five native tabs: Overview, Races, Standings, Stats and
 Entries. The tab container uses compact navigation to keep
 the bar at the bottom on iPad, while content retains the actual size class.
-iPadOS 26 supplies Liquid Glass; iOS 18 retains standard system controls.
+iPadOS 26 is the minimum supported version and supplies Liquid Glass.
 The title menu switches year/stage, and class filtering uses an compact segmented control with configured class-colour swatches.
 Races uses a horizontally scrolling round selector, initially selecting the
 next dated event or the latest event, with results and event-sheet access below.
@@ -635,3 +636,51 @@ the in-app `AppIconPreview` and web icons are separate static assets.
 
 Validation: generated the Xcode project and built the unsigned app for a generic
 iOS device with Xcode 26.6 (deployment target remains iOS 18).
+
+
+### Event conversations (2026-09-16)
+
+The event workspace now has five native tabs: Sheet, Recap, Pit lane,
+Scratchpad, Conversations. The Conversations list contains only drivers with
+saved conversations or “Want to speak to” entries. The full event roster is
+available in the add/record chooser, with search by name, car and team.
+Unassigned recordings have their own section and can be assigned later.
+
+Each entry carries the driver/car/team snapshot, session label, broadcast
+context (Before going live / On air), time, topic/questions, takeaway and
+optional PencilKit ink. These are event-specific notes, separate from profile
+biographies. Notes save as edited; planned contacts can be marked as spoken to
+or recorded directly. Existing entries are reachable from the driver's sheet
+indicator; the driver name's context menu opens conversations even with no
+prior entry. The main scratchpad is unchanged.
+
+`Conversations/ConversationBook.swift` atomically persists JSON under Application
+Support/PitPass/Conversations/<SHA256(server|owner)>/<eventId>. Leading zeros in
+car numbers are retained. This is authored data, not cached reference material:
+clearing downloads or signing out does not delete it. It becomes accessible
+again when the same account signs in to the same server. There is no server
+sync or team sharing in this version. Delete removes the selected entry and
+its audio. Export audio through the system share sheet before uninstalling if
+it needs to be retained elsewhere.
+
+`ConversationAudio` records mono 24 kHz 16-bit PCM CAF files locally. CAF is
+chosen to tolerate interrupted recording better than a finalized MP4 container.
+The journal is written before capture starts; interruption/backgrounding stops
+capture, and reopening flags unfinished capture for review. Bookmarks preserve
+audio offsets. Saved files remain available if transcription fails. Back-to-back
+recordings queue for transcription; retry never overwrites newer typed notes.
+
+SpeechAnalyzer + SpeechTranscriber require iPadOS 26; English (en-US equivalent
+locale) is the only requested language. “Prepare English” installs system
+speech assets in advance. Transcription runs **after Stop & save**, on device,
+without uploading audio. Unsupported hardware or missing assets leave recording
+and notes usable with an explicit retry message. Transcripts have timestamped
+passages, playback seeking and “Add to takeaway”; they do not assign speakers or
+generate summaries. Microphone permission is requested only when recording.
+
+Validation: ConversationTests covers round trips (including ink/transcripts),
+sparse driver membership, namespace isolation, interrupted-recording recovery,
+and refusal to overwrite an unreadable journal. ConversationRenderTests provides
+synthetic native event-tab captures for light/dark review. Actual microphone
+quality and English asset/transcription behavior still require a supported
+physical iPad; simulator renders do not establish speech accuracy.

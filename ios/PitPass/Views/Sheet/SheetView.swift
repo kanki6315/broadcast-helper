@@ -7,7 +7,7 @@ struct SheetRoute: Hashable {
 
 /// The event sheet — the on-screen broadcast reference for one event
 /// (SheetPage.tsx / sheet.css): header, one class section per class with the
-/// entry table and season-form strips, with four peer tabs. Read-only here:
+/// entry table and season-form strips, with five peer tabs. Read-only here:
 /// prior-year notes are edited on the website.
 struct SheetView: View {
     @Environment(AppSession.self) private var session
@@ -20,14 +20,20 @@ struct SheetView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var page: Page = .sheet
 
-    private enum Page: String { case sheet, recap, pitLane, scratchpad }
+    private enum Page: String { case sheet, recap, pitLane, scratchpad, conversations }
+    @State private var book: ConversationBook
+    @State private var conversationAudio = ConversationAudio()
+    @State private var conversationPerson: ConversationPerson?
     @State private var padModel: PadModel?
     @State private var exporting = false
     @State private var exportURL: URL?
 
-    init(eventId: Int) {
+    init(eventId: Int, initialSheet: Sheet? = nil) {
         self.eventId = eventId
-        _sheet = State(initialValue: Resource<Sheet>("/api/events/\(eventId)/sheet"))
+        _book = State(initialValue: ConversationBook(eventId: eventId))
+        let resource = Resource<Sheet>("/api/events/\(eventId)/sheet")
+        if let initialSheet { resource.replace(initialSheet) }
+        _sheet = State(initialValue: resource)
     }
 
     var body: some View {
@@ -76,10 +82,11 @@ struct SheetView: View {
         .onChange(of: page) { _, value in workspace.set("event.\(eventId).tab", value.rawValue) }
         .task(id: eventId) {
             page = Page(rawValue: workspace.value("event.\(eventId).tab") ?? "") ?? .sheet
+            book.open(server: session.serverURL.absoluteString, owner: session.padOwner)
             session.freshness.reset()
             await sheet.load(session.loader, connectivity: session.connectivity, freshness: session.freshness)
         }
-        .onDisappear { padModel?.close() }
+        .onDisappear { padModel?.close(); conversationAudio.stop() }
         .sheet(item: Binding(get: { teamSheet.map { TeamSheetTarget(page: $0.page, title: $0.title) } }, set: { teamSheet = $0.map { ($0.page, $0.title) } })) { target in
             if let path = sheet.value?.teamSheetsPath {
                 PdfViewerSheet(path: path, title: target.title, page: target.page)
@@ -109,6 +116,12 @@ struct SheetView: View {
                     .environment(\.horizontalSizeClass, sizeClass)
             }
             .badge(scratchpadAttentionBadge)
+            Tab("Conversations", systemImage: "bubble.left.and.bubble.right", value: Page.conversations) {
+                if let value = sheet.value {
+                    ConversationsView(book: book, audio: conversationAudio, sheet: value, selectedPerson: $conversationPerson)
+                        .environment(\.horizontalSizeClass, sizeClass)
+                } else { sheetLoadingState }
+            }
         }
         // Keep native Liquid Glass tabs at the bottom on iPad as well as iPhone.
         // Each tab restores the actual size class for its adaptive content.
@@ -199,7 +212,11 @@ struct SheetView: View {
             ])
             .padding(.top, PP.Space.s3)
             ForEach(sheet.classes) { cls in
-                ClassSection(sheet: sheet, cls: cls, linked: sheet.teamSheetsPath != nil) { entry in
+                ClassSection(sheet: sheet, cls: cls, linked: sheet.teamSheetsPath != nil,
+                             book: book, openConversation: { person in
+                    conversationPerson = person
+                    page = .conversations
+                }) { entry in
                     teamSheet = (entry.teamSheetPage ?? 1, "#\(entry.carNumber) \(entry.teamName)")
                 }
                 .padding(.top, PP.Space.s5)
@@ -228,6 +245,8 @@ private struct ClassSection: View {
     let sheet: Sheet
     let cls: SheetClass
     let linked: Bool
+    let book: ConversationBook
+    let openConversation: (ConversationPerson) -> Void
     let openTeamSheet: (SheetEntry) -> Void
 
     /// Only rounds this class contested — a strip of "—" for the whole class is noise.
@@ -246,7 +265,7 @@ private struct ClassSection: View {
                     ForEach(Array(cls.entries.enumerated()), id: \.1.id) { i, entry in
                         EntryRows(sheet: sheet, cls: cls, entry: entry, rounds: classRounds,
                                   zebra: i % 2 == 1, linked: linked && entry.teamSheetPage != nil,
-                                  last: i == cls.entries.count - 1, openTeamSheet: openTeamSheet)
+                                  last: i == cls.entries.count - 1, book: book, openConversation: openConversation, openTeamSheet: openTeamSheet)
                     }
                 }
                 .frame(minWidth: 760)
@@ -364,15 +383,17 @@ private struct EntryRows: View {
     let zebra: Bool
     let linked: Bool
     let last: Bool
+    let book: ConversationBook
+    let openConversation: (ConversationPerson) -> Void
     let openTeamSheet: (SheetEntry) -> Void
 
     private var classColor: Color { Color(cssHex: cls.color) ?? PP.textMuted }
 
     var body: some View {
         VStack(spacing: 0) {
-            Button { if linked { openTeamSheet(entry) } } label: { mainRow }
-                .buttonStyle(.plain)
-                .disabled(!linked)
+            mainRow
+                .contentShape(Rectangle())
+                .onTapGesture { if linked { openTeamSheet(entry) } }
                 .accessibilityLabel(linked ? "Open team sheet for #\(entry.carNumber) \(entry.teamName)" : "#\(entry.carNumber) \(entry.teamName)")
             if !rounds.isEmpty, !entry.form.isEmpty { formStrip }
         }
@@ -402,10 +423,27 @@ private struct EntryRows: View {
                                 else if d.isTbd { Text("(?) ").font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted) }
                                 NameLink(text: d.name, target: d.isTbd ? nil : InfoTarget.driver(named: d.name))
                                     .underline(isStarter)
+                                    .contextMenu {
+                                        Button("Conversations", systemImage: "bubble.left.and.bubble.right") {
+                                            openConversation(ConversationPerson(entryId: entry.entryId, name: d.name, car: entry.carNumber, team: entry.teamName))
+                                        }
+                                    }
                                     .accessibilityLabel(d.name + (isStarter ? ", starting driver" : ""))
                             }
                         }
                         .lineLimit(1)
+                        if !d.isTbd {
+                            let person = ConversationPerson(entryId: entry.entryId, name: d.name, car: entry.carNumber, team: entry.teamName)
+                            let count = book.entries(for: person).count
+                            if count > 0 {
+                                Button { openConversation(person) } label: {
+                                    Label("Conversations (\(count))", systemImage: "bubble.left")
+                                        .font(.caption2)
+                                }
+                                .buttonStyle(.borderless)
+                                .tint(PP.accentInk)
+                            }
+                        }
                     }
                 }
             case .q:
