@@ -118,7 +118,20 @@ public class AlKamelImportService {
         return n.contains("roar") || n.contains("test") || n.contains("prologue");
     }
 
-    public record YearPlan(int year, List<PlanWeekend> weekends, List<String> unmatchedSeriesFolders) {
+    /**
+     * {@code duplicates} names weekend folders that repeat another folder's
+     * sessions for the same series — the site has posted a weekend twice
+     * ("17_Circuit of the Americas" and "19_Circuit of the Americas (MC)",
+     * 2025, identical sessions and results). Importing both gives the season
+     * a weekend too many and shifts every round after it.
+     */
+    public record YearPlan(int year, List<PlanWeekend> weekends, List<String> unmatchedSeriesFolders,
+                           List<DuplicateWeekend> duplicates) {
+    }
+
+    /** A weekend folder whose scoring sessions (same start, same label) are
+     *  all already in an earlier folder of the same series. */
+    public record DuplicateWeekend(String sourceEvent, String seriesFolder, String duplicateOf) {
     }
 
     public List<Integer> years() {
@@ -166,7 +179,43 @@ public class AlKamelImportService {
             }
         }
         markFinalStandings(weekends);
-        return new YearPlan(year, weekends, new ArrayList<>(unmatched));
+        return new YearPlan(year, weekends, new ArrayList<>(unmatched), duplicateWeekends(weekends));
+    }
+
+    /** Later folders whose scoring sessions all repeat an earlier folder's,
+     *  per series (loose weekends count as their own). */
+    static List<DuplicateWeekend> duplicateWeekends(List<PlanWeekend> weekends) {
+        Map<Object, List<PlanWeekend>> bySeries = new LinkedHashMap<>();
+        for (PlanWeekend w : weekends) {
+            if (w.error() == null && !w.sessions().isEmpty()) {
+                bySeries.computeIfAbsent(w.seriesId() != null ? w.seriesId() : "loose", k -> new ArrayList<>()).add(w);
+            }
+        }
+        List<DuplicateWeekend> out = new ArrayList<>();
+        for (List<PlanWeekend> series : bySeries.values()) {
+            for (int i = 1; i < series.size(); i++) {
+                PlanWeekend later = series.get(i);
+                java.util.Set<String> stamps = new java.util.HashSet<>();
+                for (PlanSession s : later.sessions()) {
+                    stamps.add(s.start() + "|" + s.label());
+                }
+                for (int j = 0; j < i; j++) {
+                    PlanWeekend earlier = series.get(j);
+                    if (earlier.sourceEvent().equals(later.sourceEvent())) {
+                        continue;
+                    }
+                    java.util.Set<String> earlierStamps = new java.util.HashSet<>();
+                    for (PlanSession s : earlier.sessions()) {
+                        earlierStamps.add(s.start() + "|" + s.label());
+                    }
+                    if (earlierStamps.containsAll(stamps)) {
+                        out.add(new DuplicateWeekend(later.sourceEvent(), later.seriesFolder(), earlier.sourceEvent()));
+                        break;
+                    }
+                }
+            }
+        }
+        return out;
     }
 
     record SeriesRow(long id, String name) {

@@ -54,12 +54,16 @@ class RoundNumberingTest {
         assertEquals(2, ordinal(sebring));
         assertEquals(3, ordinal(future));
 
-        // Un-marking an event drops its number and closes the gap.
-        db.sql("UPDATE event SET is_round = FALSE WHERE id = :e").param("e", sebring).update();
-        service.renumberSeasonRounds(seasonId);
+        // Un-marking an event drops its number and closes the gap; marking the
+        // Roar hands it one. Both through the admin's override, which renumbers.
+        service.setEventRound(sebring, false);
         assertEquals(List.of(daytona, future), numbered(seasonId));
         assertEquals(null, ordinal(sebring));
         assertEquals(2, ordinal(future));
+        service.setEventRound(roar, true);
+        assertEquals(List.of(roar, daytona, future), numbered(seasonId));
+        assertEquals(1, ordinal(roar));
+        assertEquals(3, ordinal(future));
     }
 
     private long event(long seasonId, String name, String date, boolean isRound) {

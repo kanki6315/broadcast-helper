@@ -13,6 +13,9 @@ interface EventSummary {
   seriesName: string
   sessionCount: number
   entryCount: number
+  // The round number, null while the event is no round (the Roar, a test).
+  roundOrdinal: number | null
+  isRound: boolean
 }
 
 interface EventEntry {
@@ -185,6 +188,30 @@ export default function EventDetailPage() {
   // The during-the-weekend refresh from the timing provider's site (admin only).
   const canRefresh = useIsAdmin()
   const [refreshOpen, setRefreshOpen] = useState(false)
+  const [roundBusy, setRoundBusy] = useState(false)
+
+  // Whether the weekend counts as a round: the admin's override for the
+  // planner's verdict (or an upload's default), renumbering the season.
+  async function setRound(isRound: boolean) {
+    setRoundBusy(true)
+    try {
+      const res = await fetch(`/api/events/${eventId}/round`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isRound }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        setError(err?.message ?? `Backend returned ${res.status}`)
+        return
+      }
+      loadDetail()
+    } catch {
+      setError('Failed to reach backend')
+    } finally {
+      setRoundBusy(false)
+    }
+  }
 
   function loadDetail() {
     void fetch(`/api/events/${eventId}`)
@@ -215,6 +242,25 @@ export default function EventDetailPage() {
           Sheet →
         </a>
       </h2>
+      <p>
+        {detail.event.isRound && detail.event.roundOrdinal != null
+          ? `Round ${detail.event.roundOrdinal}`
+          : 'Not a championship round'}
+        {canRefresh && (
+          <>
+            {' · '}
+            <label>
+              <input
+                type="checkbox"
+                checked={detail.event.isRound}
+                disabled={roundBusy}
+                onChange={(e) => void setRound(e.target.checked)}
+              />{' '}
+              counts as a round
+            </label>
+          </>
+        )}
+      </p>
       {canRefresh && (
         <p>
           <button type="button" className="btn" onClick={() => setRefreshOpen(true)}>

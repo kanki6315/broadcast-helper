@@ -120,4 +120,24 @@ class AlKamelPlanStandingsTest {
         assertEquals(List.of("20_Jerez"),
                 looseOnly.stream().filter(PlanWeekend::finalStandings).map(PlanWeekend::eventName).toList());
     }
+
+    @Test
+    void aFolderRepeatingAnEarlierFoldersSessionsIsFlaggedAsADuplicate() {
+        // 2025: "17_Circuit of the Americas" and "19_Circuit of the Americas (MC)"
+        // hold the same Mustang Challenge sessions; the second is the repeat.
+        PlanWeekend first = weekend("17_Circuit of the Americas", 3, false, "2025-09-06T16:40", false);
+        PlanWeekend repeat = new PlanWeekend("25_2025/19_Circuit of the Americas (MC)", "19/", "19/series/",
+                "Circuit of the Americas (MC)", 2025, "01_Mustang Challenge", 3L, "Mustang Challenge", false, false,
+                false, null, first.sessions(), List.of(), false, null, null);
+        PlanWeekend other = weekend("18_Charlotte", 3, false, "2025-10-04T14:00", false);
+        PlanWeekend otherSeries = new PlanWeekend("25_2025/19_Circuit of the Americas (MC)", "19/", "19/pccna/",
+                "Circuit of the Americas (MC)", 2025, "02_PCCNA", 9L, "PCCNA", false, false,
+                false, null, first.sessions(), List.of(), false, null, null);
+        List<AlKamelImportService.DuplicateWeekend> dupes =
+                AlKamelImportService.duplicateWeekends(List.of(first, repeat, other, otherSeries));
+        assertEquals(1, dupes.size());
+        assertEquals("25_2025/19_Circuit of the Americas (MC)", dupes.get(0).sourceEvent());
+        assertEquals("01_Mustang Challenge", dupes.get(0).seriesFolder());
+        assertEquals("25_2025/17_Circuit of the Americas", dupes.get(0).duplicateOf());
+    }
 }

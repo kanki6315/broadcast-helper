@@ -63,6 +63,9 @@ interface YearPlan {
   year: number
   weekends: PlanWeekend[]
   unmatchedSeriesFolders: string[]
+  // Weekend folders that repeat an earlier folder's sessions for the same
+  // series: the site posted the weekend twice. Unticked by default.
+  duplicates: { sourceEvent: string; seriesFolder: string | null; duplicateOf: string }[]
 }
 interface EventPlan {
   eventId: number
@@ -325,9 +328,12 @@ export default function AlKamelImportModal({
       const p = body as YearPlan
       setPlan(p)
       // Default tick: weekends with something to read that aren't already here
-      // and are rounds — the Roar and the tests wait for a deliberate tick.
+      // and are rounds — the Roar, the tests and a folder posted twice wait
+      // for a deliberate tick.
+      const dupes = new Set((p.duplicates ?? []).map((d) => `${d.sourceEvent}|${d.seriesFolder ?? 'loose'}`))
       setPicked(new Set(p.weekends
-        .filter((w) => !w.error && !w.preseason && w.existingEventId == null && filesFor(w, opts).length > 0)
+        .filter((w) => !w.error && !w.preseason && w.existingEventId == null && !dupes.has(weekendKey(w))
+          && filesFor(w, opts).length > 0)
         .map(weekendKey)))
       const loose: Record<string, number> = {}
       if (seriesId != null) for (const w of p.weekends) if (w.loose) loose[weekendKey(w)] = seriesId
@@ -638,6 +644,12 @@ export default function AlKamelImportModal({
 
             {plan && phase !== 'planning' && (
               <>
+                {(plan.duplicates ?? []).length > 0 && (
+                  <p className="ak-unmatched-head" role="status">
+                    Posted twice on the site — unticked, import one copy:{' '}
+                    {plan.duplicates.map((d) => `${d.sourceEvent.replace(/^[^/]*\//, '')} repeats ${d.duplicateOf.replace(/^[^/]*\//, '')}`).join('; ')}
+                  </p>
+                )}
                 {plan.unmatchedSeriesFolders.length > 0 && (
                   <div className="ak-unmatched">
                     <p className="ak-unmatched-head">

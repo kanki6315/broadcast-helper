@@ -495,8 +495,14 @@ Found and fixed on the way:
   Fernandes"; a driver whose whole name matches is now the same driver.
 - **The site posts 2025 Mustang Challenge COTA twice** ("17_Circuit of the
   Americas" and "19_Circuit of the Americas (MC)", identical sessions and
-  results). The plan offers both; untick one, or the season gets a seventh
-  weekend and the rounds shift.
+  results). The plan now names a later folder whose scoring sessions all
+  repeat an earlier folder's for the same series (`YearPlan.duplicates`) and
+  leaves it unticked; importing both would give the season a seventh weekend
+  and shift the rounds.
+- **An event's round flag is editable on its page** ("counts as a round",
+  admin only, `PUT /api/events/{id}/round`), renumbering the season — the
+  override for whatever the planner's pre-season verdict or an upload's
+  default decided.
 
 Known, by design or by source:
 

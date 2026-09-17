@@ -426,3 +426,44 @@ def test_a_page_whose_rows_cannot_be_read_fails(pccna21, monkeypatch):
     monkeypatch.setattr(p, "_runs", lambda chars: [])
     with pytest.raises(ValueError, match="none could be read|no event names"):
         p.parse(PCCNA21)
+
+
+# --- the 2022–2024 variants met on the full import --------------------------
+
+IMPC22 = SAMPLES / "2022_IMPC_Points.pdf"
+IMPC23 = SAMPLES / "2023_IMPC_Points.pdf"
+MC24R = SAMPLES / "2024_MC_Indy_Points_Revised.pdf"
+
+
+@pytest.mark.skipif(not IMPC22.exists(), reason="sample not present")
+def test_a_team_name_set_in_the_points_face_stays_out_of_the_cells():
+    # 2022 Pilot Challenge Teams page: team names share the points face and the
+    # long ones run into the cell area; glyphs a field claimed are not cells.
+    doc = p.parse(IMPC22)
+    teams = _one(doc, "Touring Car Teams")
+    row = _row(teams, 1)
+    assert (row["key"], row["team"], row["total_points"]) == ("1", "Bryan Herta Autosport w/ Curb Agajanian", 2920)
+    assert sum(len(c["classification"]) for c in doc["championships"]) == 246
+
+
+@pytest.mark.skipif(not IMPC23.exists(), reason="sample not present")
+def test_a_teams_page_with_no_points_header_still_finds_the_total():
+    # 2023 Pilot Challenge Teams page: the header row is "Pos Nr. TEAM" with no
+    # "Points", and the template's unlabelled zero column sits nearer the
+    # fallback boundary than the total does; the total is the run in the other face.
+    doc = p.parse(IMPC23)
+    row = _row(_one(doc, "Grand Sport Teams"), 1)
+    assert (row["key"], row["team"], row["total_points"]) == ("96", "Turner Motorsport", 2430)
+    assert len(_one(doc, "Grand Sport Drivers")["classification"]) == 106
+
+
+@pytest.mark.skipif(not MC24R.exists(), reason="sample not present")
+def test_an_all_arial_sheet_with_an_empty_overflow_page():
+    # 2024 Mustang Challenge "Revised" sheet: every field in one face, the header
+    # says "Point", and page 2 is a header-and-legend page with no rows.
+    doc = p.parse(MC24R)
+    assert [c["championship"]["main_title"] for c in doc["championships"]] == [
+        "Mustang Challenge DH Drivers", "Mustang Challenge DH Entrants", "Mustang Challenge DHL Drivers"]
+    assert _row(_one(doc, "DH Drivers"), 1)["key"] == "Robert Noaker"
+    assert _row(_one(doc, "DH Drivers"), 1)["total_points"] == 2910
+    assert len(_one(doc, "DH Drivers")["classification"]) == 36

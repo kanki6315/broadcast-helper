@@ -2737,6 +2737,18 @@ public class ImportService {
      * not consulted: a real round is qualifying-only from its Saturday import
      * until its race lands, and must keep its number throughout.
      */
+    /** Mark an event as a round or not — the admin's override for what the
+     *  Al Kamel planner's pre-season verdict (or nothing) set — and renumber
+     *  the season so the rounds close up around it. */
+    public void setEventRound(long eventId, boolean isRound) {
+        int updated = db.sql("UPDATE event SET is_round = :r WHERE id = :id")
+                .param("r", isRound).param("id", eventId).update();
+        if (updated == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such event");
+        }
+        renumberSeasonRounds(seasonIdOfEvent(eventId));
+    }
+
     void renumberSeasonRounds(long seasonId) {
         db.sql("""
                         WITH ranked AS (
