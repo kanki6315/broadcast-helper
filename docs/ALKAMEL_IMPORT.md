@@ -256,9 +256,23 @@ sessions, so a CSV-era season imports complete apart from grids and standings.
    cards showed a day early west of Greenwich. Not yet verified on the live
    site beyond the root listing; the first real run should be a single
    series of a JSON-era year (2024 Pilot Challenge).
-4. **Refresh event**: event plan + modal mode + event-page button. Verify on a
-   local event by importing a Provisional results file, then re-planning after
-   the Official one exists (the same folder, different best file → Updated).
+4. **Refresh event — DONE 2026-09-17.** `AlKamelImportService.planEvent`
+   behind `GET /api/imports/alkamel/events/{id}/plan[?sourceEvent=]`: reads
+   the event's stamped folder **fresh** (every listing bypasses the cache)
+   and marks each file NEW / UPDATED / UNCHANGED against the batches already
+   committed from that folder — same session folder and kind, then the very
+   URL at the very last-modified is unchanged, anything else is updated
+   (Provisional → Official, an amendment, a re-post). An event with no stamp
+   gets the season's weekends of its series as candidates, nearest its date
+   first; picking one plans that folder and the stamp lands when the batches
+   commit. The modal grew a "Refresh event" mode (series/event picker, per
+   file rows with state chips, unchanged files unticked) and the event page
+   an admin-only "Refresh from Al Kamel" button that opens it pre-pinned and
+   reads the site at once; the confirm step is pinned to the event. Verified
+   in the browser against the stub: a stamped event with an unchanged race
+   and a stale qualifying planned as updated / unchanged / new, staged (the
+   PDFs the stub lacks reported), committed onto the existing event, and the
+   re-plan flipped the qualifying to unchanged.
 5. Grid PDF extension; 6. points PDF older layout. Each lifts "needs parser"
    rows in the year plan without touching the workflows.
 

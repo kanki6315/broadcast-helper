@@ -945,7 +945,11 @@ display size.)
   endpoints, `AlKamelImportModal` on Manage → Imports, browser-driven
   weekend-by-weekend staging, group commits freeze a season's known classes
   at group start) landed 2026-09-17, verified against a local stub of the
-  site; next is the event refresh, then the older grid/points PDF layouts.
+  site; slice 4 (event refresh: fresh folder read, per-file new / updated /
+  unchanged against committed batches, candidate folders for unstamped
+  events, "Refresh from Al Kamel" on the event page) landed 2026-09-17 the
+  same way. Both workflows are now on the web app; still owed: the first run
+  against the live site, and the older grid/points PDF layouts.
 - **Still ahead:** design the automated prior-year-at-this-track feature,
   including change context (manufacturer, lineup, team) alongside the raw result.
   The **grid rundown sheet** (grid-order sheet with storyline fields) is

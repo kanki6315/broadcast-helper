@@ -146,6 +146,71 @@ class AlKamelImportServiceTest {
     }
 
     @Test
+    void refreshMarksEachFileAgainstWhatTheFolderAlreadyCommitted() {
+        long seriesId = weatherTech();
+        long seasonId = db.sql("INSERT INTO season (series_id, year) VALUES (:s, 2017) RETURNING id")
+                .param("s", seriesId).query(Long.class).single();
+        long eventId = db.sql("INSERT INTO event (season_id, name, event_date, source_ref) "
+                        + "VALUES (:s, 'Long Beach', '2017-04-08', :ref) RETURNING id")
+                .param("s", seasonId).param("ref", LB).query(Long.class).single();
+
+        // Nothing committed yet: everything is new, and the weekend is pinned to the event.
+        AlKamelImportService.EventPlan first = service.planEvent(eventId, null);
+        assertEquals(LB, first.sourceRef());
+        assertTrue(first.candidates().isEmpty());
+        PlanWeekend w = first.weekend();
+        assertEquals(eventId, w.existingEventId());
+        assertTrue(w.finalStandings(), "a refresh always offers the weekend's standings");
+        PlanSession race = w.sessions().get(1);
+        assertEquals("NEW", race.results().state());
+        assertEquals("NEW", race.grid().state());
+        assertEquals("NEW", w.standings().get(0).state());
+        assertTrue(race.results().recommended());
+
+        // Commit the race results as they are, the qualifying from an older copy.
+        String raceUrl = site.baseUrl() + race.results().path();
+        String qualiUrl = site.baseUrl() + w.sessions().get(0).results().path();
+        db.sql("INSERT INTO import_batch (kind, format, filename, payload, summary, status, source_url, source_modified, source_event) "
+                        + "VALUES ('RACE_RESULTS', 'IMSA_CSV', 'r', '{}'::jsonb, '', 'COMMITTED', :u, :m, :e)")
+                .param("u", raceUrl).param("m", race.results().modified()).param("e", LB).update();
+        db.sql("INSERT INTO import_batch (kind, format, filename, payload, summary, status, source_url, source_modified, source_event) "
+                        + "VALUES ('RACE_RESULTS', 'IMSA_CSV', 'q', '{}'::jsonb, '', 'COMMITTED', :u, '2000-01-01 00:00', :e)")
+                .param("u", qualiUrl).param("e", LB).update();
+
+        PlanWeekend again = service.planEvent(eventId, null).weekend();
+        PlanSession raceAgain = again.sessions().get(1);
+        assertEquals("UNCHANGED", raceAgain.results().state());
+        assertFalse(raceAgain.results().recommended(), "nothing to re-import");
+        assertEquals("NEW", raceAgain.grid().state());
+        assertEquals("UPDATED", again.sessions().get(0).results().state());
+        assertTrue(again.sessions().get(0).results().recommended());
+        // The refresh read the folders fresh: the session folders were listed twice.
+        assertTrue(site.requests.stream().filter(r -> r.endsWith("201704081305_Race/")).count() >= 2,
+                site.requests.toString());
+    }
+
+    @Test
+    void anUnstampedEventGetsCandidateFoldersNearestItsDateFirst() {
+        long seriesId = weatherTech();
+        long seasonId = db.sql("INSERT INTO season (series_id, year) VALUES (:s, 2017) RETURNING id")
+                .param("s", seriesId).query(Long.class).single();
+        long eventId = db.sql("INSERT INTO event (season_id, name, event_date) VALUES (:s, 'Long Beach', '2017-04-08') RETURNING id")
+                .param("s", seasonId).query(Long.class).single();
+
+        AlKamelImportService.EventPlan plan = service.planEvent(eventId, null);
+        assertNull(plan.weekend());
+        assertNull(plan.sourceRef());
+        assertEquals(List.of("Long Beach Street Circuit", "Daytona International Speedway"),
+                plan.candidates().stream().map(PlanWeekend::eventName).toList());
+
+        // Picking one reads that folder as the event's.
+        AlKamelImportService.EventPlan picked = service.planEvent(eventId, LB);
+        assertEquals(LB, picked.sourceRef());
+        assertEquals(eventId, picked.weekend().existingEventId());
+        assertEquals("NEW", picked.weekend().sessions().get(0).results().state());
+    }
+
+    @Test
     void stagesAWeekendsFilesInOrderAndReportsTheOnesThatFail() throws IOException {
         long seriesId = weatherTech();
         String quali = LB_WTSC + "201704071720_Qualifying/03_Results.CSV";

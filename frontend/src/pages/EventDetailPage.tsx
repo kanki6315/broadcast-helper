@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useIsAdmin } from '../lib/auth'
+import AlKamelImportModal from '../components/AlKamelImportModal'
 
 interface EventSummary {
   id: number
@@ -181,12 +182,20 @@ export default function EventDetailPage() {
   const { eventId } = useParams()
   const [detail, setDetail] = useState<EventDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // The during-the-weekend refresh from the timing provider's site (admin only).
+  const canRefresh = useIsAdmin()
+  const [refreshOpen, setRefreshOpen] = useState(false)
 
-  useEffect(() => {
+  function loadDetail() {
     void fetch(`/api/events/${eventId}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Backend returned ${r.status}`))))
       .then(setDetail)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to reach backend'))
+  }
+
+  useEffect(() => {
+    loadDetail()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId])
 
   if (error) return <p className="error">{error}</p>
@@ -206,6 +215,24 @@ export default function EventDetailPage() {
           Sheet →
         </a>
       </h2>
+      {canRefresh && (
+        <p>
+          <button type="button" className="btn" onClick={() => setRefreshOpen(true)}>
+            Refresh from Al Kamel
+          </button>{' '}
+          <span className="muted">read this weekend’s folder on the timing site and import what’s new.</span>
+        </p>
+      )}
+      {refreshOpen && (
+        <AlKamelImportModal
+          initialMode="refresh"
+          initialSeriesId={detail.seriesId}
+          initialEventId={detail.event.id}
+          onClose={() => setRefreshOpen(false)}
+          onStaged={() => {}}
+          onCommitted={() => loadDetail()}
+        />
+      )}
       <SessionFormatsSection
         seriesId={detail.seriesId}
         sessions={detail.sessions}

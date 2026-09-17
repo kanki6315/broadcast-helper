@@ -71,8 +71,21 @@ public class AlKamelImportService {
      * {@code recommended} is the plan's default tick.
      */
     public record PlanFile(String path, String name, String kind, String format, String status, int amendment,
-                           String modified, boolean recommended, String note) {
+                           String modified, boolean recommended, String note, String state) {
+
+        /** The same file with its refresh state, ticked unless nothing changed. */
+        PlanFile withState(String state) {
+            return new PlanFile(path, name, kind, format, status, amendment, modified,
+                    recommended && !"UNCHANGED".equals(state), note, state);
+        }
     }
+
+    /** An event refresh's verdict per file: nothing committed for this session
+     *  and kind yet, a different or newer copy than the last commit, or the
+     *  very file already committed. Null on a season plan. */
+    public static final String NEW = "NEW";
+    public static final String UPDATED = "UPDATED";
+    public static final String UNCHANGED = "UNCHANGED";
 
     /** A session folder with the chosen file per kind (null when the folder has
      *  no candidate of that kind at all). */
@@ -87,7 +100,7 @@ public class AlKamelImportService {
      * season that has a standings file: the one a past-season import stages by
      * default, since every weekend's snapshot would just overwrite the last.
      */
-    public record PlanWeekend(String sourceEvent, String eventPath, String eventName, int year,
+    public record PlanWeekend(String sourceEvent, String eventPath, String seriesPath, String eventName, int year,
                               String seriesFolder, Long seriesId, String seriesName, boolean loose,
                               boolean f1Weekend, Long existingEventId, List<PlanSession> sessions,
                               List<PlanFile> standings, boolean finalStandings, PlanFile entryList,
@@ -131,11 +144,10 @@ public class AlKamelImportService {
                 if (onlySeriesId != null && series.get().id() != onlySeriesId) {
                     continue;
                 }
-                weekends.add(planWeekend(sourceEvent, event, sf.name(), series.get(), false,
-                        () -> index.series(sf.path())));
+                weekends.add(planWeekend(sourceEvent, event, sf.path(), sf.name(), series.get(), false, false));
             }
             if (!listing.looseSessions().isEmpty()) {
-                weekends.add(planWeekend(sourceEvent, event, null, null, true, () -> index.series(event.path())));
+                weekends.add(planWeekend(sourceEvent, event, event.path(), null, null, true, false));
             }
         }
         markFinalStandings(weekends);
@@ -158,15 +170,14 @@ public class AlKamelImportService {
                 .optional();
     }
 
-    private interface ContentsSupplier {
-        SeriesContents get();
-    }
-
-    private PlanWeekend planWeekend(String sourceEvent, EventFolder event, String seriesFolder, SeriesRow series,
-                                    boolean loose, ContentsSupplier supplier) {
+    /** One weekend of one series, read from {@code seriesPath} (the event folder
+     *  itself for a weekend posted without series folders). {@code fresh}
+     *  bypasses the listing cache — an event refresh's whole point. */
+    private PlanWeekend planWeekend(String sourceEvent, EventFolder event, String seriesPath, String seriesFolder,
+                                    SeriesRow series, boolean loose, boolean fresh) {
         SeriesContents contents;
         try {
-            contents = supplier.get();
+            contents = index.series(seriesPath, fresh);
         } catch (ResponseStatusException e) {
             return failedWeekend(sourceEvent, event, e.getReason());
         }
@@ -176,7 +187,7 @@ public class AlKamelImportService {
         Map<SessionRef, SessionFiles> files = new LinkedHashMap<>();
         for (SessionRef ref : scoring) {
             try {
-                files.put(ref, index.session(ref.path()));
+                files.put(ref, index.session(ref.path(), fresh));
             } catch (ResponseStatusException e) {
                 return failedWeekend(sourceEvent, event, e.getReason());
             }
@@ -202,14 +213,14 @@ public class AlKamelImportService {
                     planFile(sf.of(Kind.FLAGS), Kind.FLAGS, f1)));
         }
         Long existing = series == null ? null : findExistingEvent(series.id(), event.year(), sourceEvent);
-        return new PlanWeekend(sourceEvent, event.path(), event.name(), event.year(), seriesFolder,
+        return new PlanWeekend(sourceEvent, event.path(), seriesPath, event.name(), event.year(), seriesFolder,
                 series == null ? null : series.id(), series == null ? null : series.name(), loose, f1, existing,
                 sessions, planStandings(contents.standings()), false, planFile(entryLists, Kind.ENTRY_LIST, f1),
                 null);
     }
 
     private static PlanWeekend failedWeekend(String sourceEvent, EventFolder event, String reason) {
-        return new PlanWeekend(sourceEvent, event.path(), event.name(), event.year(), null, null, null, false,
+        return new PlanWeekend(sourceEvent, event.path(), null, event.name(), event.year(), null, null, null, false,
                 false, null, List.of(), List.of(), false, null, reason);
     }
 
@@ -223,12 +234,12 @@ public class AlKamelImportService {
             SourceFile f = best.get();
             return new PlanFile(f.path(), f.name(), kind.name(),
                     AlKamelCatalog.formatFor(kind, f.extension(), f1).orElseThrow().name(),
-                    f.status().name(), f.amendment(), f.modified(), true, null);
+                    f.status().name(), f.amendment(), f.modified(), true, null, null);
         }
         SourceFile shown = candidates.stream().min(AlKamelCatalog.preference()).orElseThrow();
         String formats = String.join("/", candidates.stream().map(SourceFile::extension).distinct().sorted().toList());
         return new PlanFile(shown.path(), shown.name(), kind.name(), null, shown.status().name(),
-                shown.amendment(), shown.modified(), false, formats + " only — no parser reads it");
+                shown.amendment(), shown.modified(), false, formats + " only — no parser reads it", null);
     }
 
     private static final Pattern STATUS_WORDS = Pattern.compile(
@@ -264,7 +275,7 @@ public class AlKamelImportService {
                     : !anyJson && bestPdfByStem.get(stem(f.name())) == f);
             out.add(new PlanFile(f.path(), f.name(), Kind.STANDINGS.name(), format.get().name(),
                     f.status().name(), f.amendment(), f.modified(), recommended,
-                    award ? "award sheet" : null));
+                    award ? "award sheet" : null, null));
         }
         return out;
     }
@@ -297,9 +308,9 @@ public class AlKamelImportService {
         }
         for (Integer i : latest.values()) {
             PlanWeekend w = weekends.get(i);
-            weekends.set(i, new PlanWeekend(w.sourceEvent(), w.eventPath(), w.eventName(), w.year(),
-                    w.seriesFolder(), w.seriesId(), w.seriesName(), w.loose(), w.f1Weekend(), w.existingEventId(),
-                    w.sessions(), w.standings(), true, w.entryList(), w.error()));
+            weekends.set(i, new PlanWeekend(w.sourceEvent(), w.eventPath(), w.seriesPath(), w.eventName(),
+                    w.year(), w.seriesFolder(), w.seriesId(), w.seriesName(), w.loose(), w.f1Weekend(),
+                    w.existingEventId(), w.sessions(), w.standings(), true, w.entryList(), w.error()));
         }
     }
 
@@ -316,6 +327,141 @@ public class AlKamelImportService {
                         """)
                 .param("series", seriesId).param("year", year).param("ref", sourceEvent)
                 .query(Long.class).optional().orElse(null);
+    }
+
+    // ---------------------------------------------------------- event refresh
+
+    /**
+     * What an event refresh found. {@code weekend} is the event's folder read
+     * fresh with every file's state, or null when the event carries no folder
+     * stamp yet — then {@code candidates} are that season's weekends of the
+     * same series, nearest the event's date first, for the admin to pick from
+     * (the pick is stamped on the event when its batches commit).
+     */
+    public record EventPlan(long eventId, String eventName, int year, long seriesId, String seriesName,
+                            String sourceRef, PlanWeekend weekend, List<PlanWeekend> candidates) {
+    }
+
+    private record EventRow(String name, String sourceRef, java.time.LocalDate date, int year, long seriesId,
+                            String seriesName) {
+    }
+
+    /**
+     * Reads the event's weekend folder afresh — every listing bypasses the
+     * cache, since "what changed since last time" is the question — and marks
+     * each file NEW / UPDATED / UNCHANGED against the batches already committed
+     * from that folder. {@code chosenSourceEvent} names the folder when the
+     * event has no stamp yet (or the admin overrides it).
+     */
+    public EventPlan planEvent(long eventId, String chosenSourceEvent) {
+        EventRow ev = db.sql("""
+                        SELECT e.name, e.source_ref, e.event_date, s.year, s.series_id, sr.name AS series_name
+                        FROM event e JOIN season s ON s.id = e.season_id JOIN series sr ON sr.id = s.series_id
+                        WHERE e.id = :id
+                        """)
+                .param("id", eventId)
+                .query((rs, i) -> new EventRow(rs.getString("name"), rs.getString("source_ref"),
+                        rs.getObject("event_date", java.time.LocalDate.class), rs.getInt("year"),
+                        rs.getLong("series_id"), rs.getString("series_name")))
+                .optional()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such event"));
+        String ref = chosenSourceEvent != null && !chosenSourceEvent.isBlank() ? chosenSourceEvent.trim()
+                : ev.sourceRef();
+        if (ref == null) {
+            List<PlanWeekend> candidates = planYear(ev.year(), ev.seriesId()).weekends().stream()
+                    .filter(w -> w.error() == null && (w.existingEventId() == null || w.existingEventId() == eventId))
+                    .sorted(Comparator.comparingLong(w -> daysFrom(w, ev.date())))
+                    .limit(6)
+                    .toList();
+            return new EventPlan(eventId, ev.name(), ev.year(), ev.seriesId(), ev.seriesName(), null, null, candidates);
+        }
+        YearFolder yearFolder = index.year(ev.year()).orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND, "Al Kamel publishes no " + ev.year() + " folder"));
+        EventFolder folder = index.events(yearFolder).stream()
+                .filter(f -> (yearFolder.folderName() + "/" + f.folderName()).equals(ref))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "The site no longer lists the folder \"" + ref + "\""));
+        EventListing listing = index.event(folder.path(), true);
+        PlanWeekend weekend = null;
+        for (SeriesFolder sf : listing.series()) {
+            Optional<SeriesRow> series = resolveSeries(sf.name());
+            if (series.isPresent() && series.get().id() == ev.seriesId()) {
+                weekend = planWeekend(ref, folder, sf.path(), sf.name(), series.get(), false, true);
+                break;
+            }
+        }
+        if (weekend == null && !listing.looseSessions().isEmpty()) {
+            weekend = planWeekend(ref, folder, folder.path(), null, null, true, true);
+        }
+        if (weekend == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "The folder \"" + ref + "\" has no " + ev.seriesName() + " sessions");
+        }
+        return new EventPlan(eventId, ev.name(), ev.year(), ev.seriesId(), ev.seriesName(), ref,
+                withStates(weekend, eventId), List.of());
+    }
+
+    private static long daysFrom(PlanWeekend w, java.time.LocalDate date) {
+        LocalDateTime start = w.sessions().stream().map(PlanSession::start).min(Comparator.naturalOrder()).orElse(null);
+        if (start == null || date == null) {
+            return Long.MAX_VALUE / 2;
+        }
+        return Math.abs(java.time.temporal.ChronoUnit.DAYS.between(date, start.toLocalDate()));
+    }
+
+    private record Committed(String url, String modified, String kind) {
+    }
+
+    /** Every file's state against what this folder already committed, and the
+     *  weekend pinned to the event it refreshes. */
+    private PlanWeekend withStates(PlanWeekend w, long eventId) {
+        List<Committed> committed = db.sql("""
+                        SELECT source_url, source_modified, kind FROM import_batch
+                        WHERE source_event = :e AND status = 'COMMITTED' AND source_url IS NOT NULL
+                        """)
+                .param("e", w.sourceEvent())
+                .query((rs, i) -> new Committed(rs.getString("source_url"), rs.getString("source_modified"),
+                        rs.getString("kind")))
+                .list();
+        List<PlanSession> sessions = new ArrayList<>();
+        for (PlanSession s : w.sessions()) {
+            String prefix = client.url(s.path());
+            sessions.add(new PlanSession(s.path(), s.start(), s.label(), s.type(),
+                    stateOf(s.results(), prefix, "RACE_RESULTS", committed),
+                    stateOf(s.grid(), prefix, "GRID", committed),
+                    stateOf(s.flags(), prefix, "FLAGS", committed)));
+        }
+        String seriesPrefix = client.url(w.seriesPath() != null ? w.seriesPath() : w.eventPath());
+        List<PlanFile> standings = w.standings().stream()
+                .map(f -> stateOf(f, client.url(f.path()), "STANDINGS", committed))
+                .toList();
+        return new PlanWeekend(w.sourceEvent(), w.eventPath(), w.seriesPath(), w.eventName(), w.year(),
+                w.seriesFolder(), w.seriesId(), w.seriesName(), w.loose(), w.f1Weekend(), eventId, sessions,
+                standings, true, stateOf(w.entryList(), seriesPrefix, "ENTRY_LIST", committed), w.error());
+    }
+
+    /**
+     * A file's state: the committed batches of its kind under {@code prefix}
+     * (the session folder for session files, the series folder for an entry
+     * list, the file itself for a standings sheet) decide — none is NEW, the
+     * very URL at the very last-modified is UNCHANGED, anything else UPDATED
+     * (the Official copy replacing the Provisional, an amendment, a re-post).
+     */
+    private PlanFile stateOf(PlanFile f, String prefix, String batchKind, List<Committed> committed) {
+        if (f == null) {
+            return null;
+        }
+        String url = client.url(f.path());
+        List<Committed> same = committed.stream()
+                .filter(c -> batchKind.equals(c.kind()) && c.url().startsWith(prefix))
+                .toList();
+        if (same.isEmpty()) {
+            return f.withState(NEW);
+        }
+        boolean unchanged = same.stream().anyMatch(c -> url.equals(c.url())
+                && java.util.Objects.equals(c.modified(), f.modified()));
+        return f.withState(unchanged ? UNCHANGED : UPDATED);
     }
 
     // ----------------------------------------------------------------- stage

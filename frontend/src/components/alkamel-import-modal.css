@@ -101,6 +101,89 @@
   margin: 0;
 }
 
+/* ---- modes (season / refresh) ---- */
+
+.ak-modes {
+  display: inline-flex;
+  align-self: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  gap: 2px;
+}
+
+.ak-mode {
+  border: none;
+  background: none;
+  padding: 5px 14px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+.ak-mode:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.ak-mode.on {
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: var(--shadow-raise);
+}
+
+.ak-mode:disabled {
+  cursor: default;
+}
+
+/* ---- refresh: event pin + file list ---- */
+
+.ak-pin {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ak-actions-flat {
+  border-top: none;
+  padding-top: 0;
+}
+
+.ak-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ak-file {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.ak-file.off {
+  opacity: 0.62;
+}
+
+.ak-chip.state-new,
+.ak-chip.state-updated {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
 /* ---- season + series ---- */
 
 .ak-setup {
