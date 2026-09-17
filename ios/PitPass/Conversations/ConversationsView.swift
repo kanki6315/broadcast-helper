@@ -468,9 +468,12 @@ private struct ConversationSwipeDelete: ViewModifier {
     func body(content: Content) -> some View {
         content
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                Button(role: .destructive) { confirming = true } label: {
+                // A destructive swipe role removes the row optimistically.
+                // Only the confirmation button below should perform deletion.
+                Button { confirming = true } label: {
                     Label("Delete", systemImage: "trash")
                 }
+                .tint(.red)
                 .buttonStyle(.automatic)
                 .disabled(busy)
             }
