@@ -85,6 +85,7 @@ class AlKamelCatalogTest {
                 AlKamelCatalog.classifySessionFile("03_Results_Qualifying - GTD Position.CSV"));
         assertEquals(Optional.empty(), AlKamelCatalog.classifySessionFile("05_Results by Class_Race_Official.JSON"));
         assertEquals(Optional.empty(), AlKamelCatalog.classifySessionFile("03_Results by 2nd Fastest Lap_Qualifying.CSV"));
+        assertEquals(Optional.empty(), AlKamelCatalog.classifySessionFile("07_Results by Driver Fastest Lap after 3S.PDF"));
 
         assertEquals(Optional.of(Kind.GRID), AlKamelCatalog.classifySessionFile("02_Grid_Race_Official.CSV"));
         assertEquals(Optional.of(Kind.GRID), AlKamelCatalog.classifySessionFile("01_Starting Grid.PDF"));

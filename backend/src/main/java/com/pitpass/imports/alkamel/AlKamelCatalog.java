@@ -140,7 +140,8 @@ public final class AlKamelCatalog {
      *  that is imported as its own file. "by Hour" is NOT excluded — in the last
      *  hour folder of an endurance race it is the final classification. */
     private static final List<String> RESULTS_EXCLUDED = List.of(
-            "by class", "byclass", "2nd fastest", "by 2nd", "2ndfl", "by division", "by group");
+            "by class", "byclass", "2nd fastest", "by 2nd", "2ndfl", "by division", "by group",
+            "fastest lap"); // "07_Results by Driver Fastest Lap after 3S" (2017) is a lap table
 
     /**
      * What a file in a session folder is, or empty for the many reports the

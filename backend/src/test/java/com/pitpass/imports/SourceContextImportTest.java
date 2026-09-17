@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * A results CSV fetched from the Al Kamel site knows its series, event, date
@@ -71,13 +72,23 @@ class SourceContextImportTest {
         assertEquals("2021-05-15", review.guess().eventDate());
         assertNull(review.guess().eventId(), "nothing to attach to yet");
 
+        // The race from the same folder, staged before anything commits — the
+        // qualifying lists one class (GTD), the race four; in one group the
+        // empty season is seeded by the group as a whole, not by whichever
+        // batch happens to commit first.
+        SourceContext raceCtx = new SourceContext(
+                "https://example.test/Results/21_2021/x/03_Results_Race_Official.CSV", "2021-05-19 17:35", FOLDER,
+                2021, seriesName, "Mid-Ohio Sports Car Course", LocalDateTime.of(2021, 5, 16, 14, 40), "Race");
+        BatchSummary race = service.stage(FOLDER + "/x/03_Results_Race_Official.CSV",
+                fixture("03_Results_Race_Official.CSV"), ImportFormat.IMSA_CSV, raceCtx).get(0);
+
         // Group-commit into a new event, the way the confirm step does.
         ImportTarget target = new ImportTarget(seriesId, null, null, null, null, null, null, null, null,
                 null, null, null, null, true, null, null, null);
         GroupCommitResult result = service.commitGroup(new GroupCommitRequest(
                 List.of(new ProposedEvent("e1", null, "Mid-Ohio Sports Car Course", "2021-05-15")),
-                List.of(new GroupBatch(batch.id(), "e1", target))));
-        assertEquals(1, result.committed(), result.results().toString());
+                List.of(new GroupBatch(batch.id(), "e1", target), new GroupBatch(race.id(), "e1", target))));
+        assertEquals(2, result.committed(), result.results().toString());
 
         Map<String, Object> event = db.sql("""
                         SELECT e.id, e.event_date, e.source_ref, e.round_ordinal, e.circuit_name
@@ -90,25 +101,30 @@ class SourceContextImportTest {
         assertNull(event.get("circuit_name"), "a CSV names no circuit and the folder is not one");
         long eventId = (Long) event.get("id");
 
-        Map<String, Object> session = db.sql(
-                        "SELECT name, session_type, ordinal, session_start FROM race_session WHERE event_id = :e")
+        Map<String, Object> session = db.sql("""
+                        SELECT name, session_type, ordinal, session_start FROM race_session
+                        WHERE event_id = :e AND session_type = 'QUALIFYING'
+                        """)
                 .param("e", eventId).query().singleRow();
         assertEquals("Qualifying - GTD Position", session.get("name"));
-        assertEquals("QUALIFYING", session.get("session_type"));
         assertNotNull(session.get("session_start"));
         int results = db.sql("SELECT count(*) FROM result r JOIN race_session s ON s.id = r.session_id WHERE s.event_id = :e")
                 .param("e", eventId).query(Integer.class).single();
-        assertEquals(13, results);
+        assertEquals(13 + 25, results, "qualifying and race rows both landed");
+        int classes = db.sql("SELECT count(DISTINCT class_name) FROM entry WHERE event_id = :e")
+                .param("e", eventId).query(Integer.class).single();
+        assertTrue(classes > 1, "the race's other classes were accepted, not rejected against GTD");
 
         // The next file from the same folder finds the event by its stamp.
-        SourceContext raceCtx = new SourceContext(
-                "https://example.test/Results/21_2021/x/03_Results_Race_Official.CSV", "2021-05-19 17:35", FOLDER,
-                2021, seriesName, "Mid-Ohio Sports Car Course", LocalDateTime.of(2021, 5, 16, 14, 40), "Race");
-        BatchSummary race = service.stage(FOLDER + "/x/03_Results_Race_Official.CSV",
-                fixture("03_Results_Race_Official.CSV"), ImportFormat.IMSA_CSV, raceCtx).get(0);
-        ImportReview raceReview = service.reviewTarget(race.id(), null, null, null);
-        assertEquals(eventId, raceReview.guess().eventId());
-        assertFalse(raceReview.needsSession());
+        SourceContext laterCtx = new SourceContext(
+                "https://example.test/Results/21_2021/x/03_Results_Qualifying - GTD Points.CSV", "2021-05-15 19:52",
+                FOLDER, 2021, seriesName, "Mid-Ohio Sports Car Course", LocalDateTime.of(2021, 5, 15, 12, 45),
+                "Qualifying - GTD Points");
+        BatchSummary later = service.stage(FOLDER + "/x/03_Results_Qualifying - GTD Points.CSV",
+                fixture("03_Results_Qualifying - GTD Points.CSV"), ImportFormat.IMSA_CSV, laterCtx).get(0);
+        ImportReview laterReview = service.reviewTarget(later.id(), null, null, null);
+        assertEquals(eventId, laterReview.guess().eventId());
+        assertFalse(laterReview.needsSession());
     }
 
     @Test

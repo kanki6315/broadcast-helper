@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import Combobox, { type ComboOption } from '../components/Combobox'
+import AlKamelImportModal from '../components/AlKamelImportModal'
 import IRacingImportModal from '../components/IRacingImportModal'
 import UploadFilesModal from '../components/UploadFilesModal'
 import { formatEventDate } from '../lib/importGroups'
@@ -205,6 +206,7 @@ export default function ImportsPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [iracingOpen, setIracingOpen] = useState(false)
+  const [alkamelOpen, setAlkamelOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
 
   // One shared series/events fetch powers every review row's typeahead — the
@@ -534,7 +536,11 @@ export default function ImportsPage() {
         <button type="button" className="btn" disabled={busy} onClick={() => setIracingOpen(true)}>
           Fetch from iRacing
         </button>
-        <span className="muted">pull results, grids, and standings straight from the Data API.</span>
+        <span className="import-or">or</span>
+        <button type="button" className="btn" disabled={busy} onClick={() => setAlkamelOpen(true)}>
+          Fetch from Al Kamel
+        </button>
+        <span className="muted">pull a past IMSA season from the timing provider's results site.</span>
       </div>
       {error && <p className="error">{error}</p>}
       {uploadOpen && (
@@ -547,6 +553,13 @@ export default function ImportsPage() {
       {iracingOpen && (
         <IRacingImportModal
           onClose={() => setIracingOpen(false)}
+          onStaged={onBatchesStaged}
+          onCommitted={onBatchesCommitted}
+        />
+      )}
+      {alkamelOpen && (
+        <AlKamelImportModal
+          onClose={() => setAlkamelOpen(false)}
           onStaged={onBatchesStaged}
           onCommitted={onBatchesCommitted}
         />

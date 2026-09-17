@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.HashSet;
 import java.util.Set;
 
 @Service
@@ -1526,25 +1527,71 @@ public class ImportService {
         Map<String, List<GroupBatch>> grouped = groupByEventKey(req.batches());
 
         List<BatchResult> results = new ArrayList<>();
-        // Standings and any other keyless batches: each its own transaction.
-        for (GroupBatch gb : grouped.getOrDefault(null, List.of())) {
-            results.add(commitOneInTx(gb, null));
-        }
-        // Event groups: all the group's batches in one transaction, event resolved once.
-        for (Map.Entry<String, List<GroupBatch>> e : grouped.entrySet()) {
-            if (e.getKey() == null) {
-                continue;
+        try {
+            // Standings and any other keyless batches: each its own transaction.
+            for (GroupBatch gb : grouped.getOrDefault(null, List.of())) {
+                results.add(commitOneInTx(gb, null));
             }
-            results.addAll(commitEventGroup(byKey.get(e.getKey()), e.getValue()));
+            // Event groups: all the group's batches in one transaction, event resolved once.
+            for (Map.Entry<String, List<GroupBatch>> e : grouped.entrySet()) {
+                if (e.getKey() == null) {
+                    continue;
+                }
+                results.addAll(commitEventGroup(byKey.get(e.getKey()), e.getValue()));
+            }
+        } finally {
+            classSeeding.remove();
         }
 
         int committed = (int) results.stream().filter(r -> "COMMITTED".equals(r.status())).count();
         return new GroupCommitResult(committed, results.size() - committed, results);
     }
 
+    private record SeasonKey(long seriesId, int year) {
+    }
+
+    /**
+     * Seasons that had no classes when the current group commit began. The
+     * review judged "unknown class" against the season as it was; inside the
+     * group the first batch's rows would otherwise become the canon that the
+     * next batch is held to — a qualifying CSV listing one class, then the race
+     * listing four, failed on "Unrecognized class" for the classes the review
+     * had waved through. For these seasons the whole group is the seed.
+     * Request-scoped: set and cleared by {@link #commitGroup}.
+     */
+    private final ThreadLocal<Set<SeasonKey>> classSeeding = ThreadLocal.withInitial(HashSet::new);
+
+    private void markClassSeeding(ProposedEvent pe, List<GroupBatch> batches) {
+        try {
+            SeasonKey key;
+            if (pe.eventId() != null) {
+                key = db.sql("SELECT s.series_id, s.year FROM season s JOIN event e ON e.season_id = s.id WHERE e.id = :id")
+                        .param("id", pe.eventId())
+                        .query((rs, i) -> new SeasonKey(rs.getLong("series_id"), rs.getInt("year")))
+                        .optional().orElse(null);
+            } else {
+                Long seriesId = batches.get(0).target().seriesId();
+                LocalDate date = eventMetaFromBatch(batches.get(0).batchId()).date();
+                key = seriesId == null || date == null ? null : new SeasonKey(seriesId, date.getYear());
+            }
+            if (key == null) {
+                return;
+            }
+            boolean empty = findSeasonId(key.seriesId(), key.year())
+                    .map(sn -> seasonEntryClasses(sn).isEmpty()).orElse(true);
+            if (empty) {
+                classSeeding.get().add(key);
+            }
+        } catch (RuntimeException ignored) {
+            // Marking is an optimisation of the gate, never a reason to fail the group;
+            // the commit below reports any real problem.
+        }
+    }
+
     /** Commit one group's batches in a single transaction; roll the whole group
      *  back (batches stay STAGED) on any failure, reporting it per batch. */
     private List<BatchResult> commitEventGroup(ProposedEvent pe, List<GroupBatch> batches) {
+        markClassSeeding(pe, batches);
         try {
             long eventId = txTemplate.execute(status -> {
                 long resolved = pe.eventId() != null ? attachEventId(pe.eventId()) : createGroupEvent(pe, batches);
@@ -2864,6 +2911,14 @@ public class ImportService {
 
     /** The season's canonical classes: the distinct entry (entry-list) classes. */
     private List<String> seasonEntryClasses(long seasonId) {
+        if (!classSeeding.get().isEmpty()) {
+            boolean seeding = db.sql("SELECT series_id, year FROM season WHERE id = :id").param("id", seasonId)
+                    .query((rs, i) -> new SeasonKey(rs.getLong("series_id"), rs.getInt("year")))
+                    .optional().map(k -> classSeeding.get().contains(k)).orElse(false);
+            if (seeding) {
+                return List.of();
+            }
+        }
         return db.sql("""
                         SELECT DISTINCT e.class_name
                         FROM entry e

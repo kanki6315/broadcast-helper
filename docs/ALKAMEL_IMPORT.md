@@ -232,9 +232,30 @@ sessions, so a CSV-era season imports complete apart from grids and standings.
    real 2021 Mid-Ohio CSVs: stage with context → review self-places → group
    commit creates the dated event with `source_ref` and the split-named
    qualifying session → the race CSV from the same folder guesses that event.
-3. **Past season**: plan + stage endpoints, modal, progress loop. Verify
-   locally on 2024 Pilot Challenge (JSON era, standings JSON), then 2019
-   WeatherTech (CSV era, endurance folders, PDF-only grids marked "needs parser").
+3. **Past season — DONE 2026-09-17.** `AlKamelImportService` (`planYear`,
+   `stage`) behind `/api/imports/alkamel/{years,plan,stage}` (admin-only
+   matcher in `SecurityConfig`), `AlKamelImportModal` on Manage → Imports.
+   The plan is one row per weekend × series with the chosen file per session
+   and kind, "already imported" via `source_ref`, a series picker for weekends
+   posted without a series folder, and unmatched series folders mapped through
+   the existing alias API. Standings: every JSON, plus the best PDF per name
+   stem, ticked by default only on the series' final weekend; award sheets
+   listed unticked. F1 weekends are detected by shape (no machine-readable
+   results, PDF ones present). The browser stages one weekend per POST with a
+   progress bar and a stop-after-this-one; failures accumulate; then the
+   confirm step. Verified end to end in the browser against a local stub of
+   the site (`stub_site.py` in the session scratchpad, launch configs
+   `alkamel-stub` + `backend-alkamel-stub`): a two-weekend 2017 planned,
+   staged (PDFs the stub lacked reported as 404 failures, CSVs staged),
+   grouped one card per weekend, committed, re-plan showed both as imported.
+   That run exposed a group-commit rule worth knowing: **the season's known
+   classes are frozen at group start** (`classSeeding`, request-scoped) —
+   before, the first batch in a group (a one-class qualifying CSV) seeded the
+   canon the next batch (the four-class race) was rejected against, though the
+   review had promised nothing unknown. Also fixed: bare dates in the confirm
+   cards showed a day early west of Greenwich. Not yet verified on the live
+   site beyond the root listing; the first real run should be a single
+   series of a JSON-era year (2024 Pilot Challenge).
 4. **Refresh event**: event plan + modal mode + event-page button. Verify on a
    local event by importing a Provisional results file, then re-planning after
    the Official one exists (the same folder, different best file → Updated).
