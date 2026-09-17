@@ -2,7 +2,12 @@
 
 Web: Season → Calculator. iPad: Event → Calculator.
 
-Select an IMSA WeatherTech teams championship, then add only the teams to compare.
+Select an IMSA WeatherTech teams championship and enable one to four class panels.
+At least one class stays enabled. All panels share the event and championship
+family; each class has independent teams, positions, adjustments, totals and gaps.
+Wide layouts place multiple panels in two columns; smaller windows stack them.
+Hiding and re-enabling a class retains its scenario for this page visit.
+Then add only the teams to compare within each class.
 Assign qualifying and race positions in class with the row selectors. Choosing
 an occupied position swaps those two teams in that column; omitted positions
 contribute zero. The projected table sorts by total and shows rank and gap among
@@ -24,9 +29,10 @@ all actual standings remain unchanged. An event already covered by the imported
 ledger (or followed by a scored round) is blocked to avoid double-counting; this
 version does not reconstruct historical pre-event standings.
 
-Scenario state lives only in the calculator view. Changing the championship or
-event, leaving the page, or resetting discards it; no scenario is posted to the
-server. iPad event/season downloads include eligible calculator baselines for
+Scenario state lives only in the calculator view. Changing the championship family or
+event, or leaving the page, discards all class scenarios. Reset scenario clears
+only its own class panel; no scenario is posted to the server.
+iPad event/season downloads include eligible calculator baselines for
 offline access. Existing downloads need a refresh to acquire this new document.
 New native baseline data is adopted explicitly and resets the scenario.
 

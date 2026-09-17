@@ -6,51 +6,87 @@ import './calculator.css'
 
 export default function CalculatorPage() {
   const { hub, classFilter } = useSeason()
-  const championships = hub.championships.filter(supportedChampionship).filter(c => !classFilter || c.className === classFilter)
-  const [champId, setChampId] = useState(0)
-  const champ = championships.find(c => c.id === champId) ?? championships[0]
+  return <CalculatorClasses key={hub.id} initialClass={classFilter} />
+}
+function CalculatorClasses({ initialClass }: { initialClass: string | null }) {
+  const { hub, classes, classColor } = useSeason()
+  const supported = hub.championships.filter(supportedChampionship)
+  const families = [...new Set(supported.map(c => c.isCup))]
+  const [cup, setCup] = useState(families[0] ?? false)
+  const championships = supported.filter(c => c.isCup === cup)
+    .sort((a, b) => classes.findIndex(c => c.name === a.className) - classes.findIndex(c => c.name === b.className))
+    .filter((c, i, all) => all.findIndex(other => other.className === c.className) === i).slice(0, 4)
+  const [enabled, setEnabled] = useState<string[]>([initialClass ?? championships[0]?.className ?? ''])
+  const available = championships.map(c => c.className ?? '')
+  const visible = enabled.filter(name => available.includes(name))
+  const shown = visible.length ? visible : available.slice(0, 1)
+  const [eventId, setEventId] = useState(0)
+  const [drafts, setDrafts] = useState<Record<number, Scenario>>({})
   return <section className="calculator">
     <h2>Championship calculator</h2>
-    <p className="calculator-note">If the race finished like this. Compare selected teams using the latest imported points.</p>
-    {!champ ? <p className="empty-state">Import IMSA WeatherTech team standings to calculate a scenario for this class.</p> : <>
-      <label className="calculator-field">Championship<select aria-label="Championship" value={champ.id} onChange={e => setChampId(Number(e.target.value))}>
-        {championships.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
-      </select></label>
-      <ChampionshipScenario key={champ.id} champId={champ.id} cup={champ.isCup} />
+    <p className="calculator-note">Enable one to four classes. Each panel compares its own selected teams.</p>
+    {!championships.length ? <p className="empty-state">Import IMSA WeatherTech team standings to calculate a scenario.</p> : <>
+      <div className="calculator-context">
+        <label className="calculator-field">Championship<select aria-label="Championship" value={String(cup)} onChange={e => { setCup(e.target.value === 'true'); setDrafts({}) }}>
+          {families.map(isCup => <option key={String(isCup)} value={String(isCup)}>{isCup ? 'Michelin Endurance Cup' : 'WeatherTech Championship'}</option>)}
+        </select></label>
+        <label className="calculator-field">Event<select aria-label="Event" value={eventId || hub.events[0]?.id || 0} onChange={e => { setEventId(Number(e.target.value)); setDrafts({}) }}>
+          {hub.events.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+        </select></label>
+      </div>
+      <div className="class-chips" role="group" aria-label="Visible calculator classes">
+        {championships.map(c => {
+          const name = c.className ?? ''
+          const active = shown.includes(name)
+          return <button key={c.id} type="button" className={`class-chip${active ? ' active' : ''}`} aria-pressed={active}
+            aria-label={`Show ${name}`} disabled={active && shown.length === 1}
+            style={{ '--chip-color': classColor(name) } as React.CSSProperties}
+            onClick={() => setEnabled(active ? shown.filter(n => n !== name) : [...shown, name])}><i className="swatch" />{name || c.title}</button>
+        })}
+      </div>
+      <p className="calculator-note" role="status">{shown.length} {shown.length === 1 ? 'class' : 'classes'} shown. Hiding a class keeps its scenario while you stay on this page.</p>
+      <div className={`calculator-panels${shown.length > 1 ? ' multiple' : ''}`}>
+        {championships.filter(c => shown.includes(c.className ?? '')).map(c => <section key={c.id} className="calculator-panel" aria-label={`${c.className} calculator`}>
+          <h3>{c.className ?? c.title}</h3>
+          <ChampionshipScenario champId={c.id} cup={cup} eventId={eventId} suggestEvent={id => setEventId(old => old || id)}
+            scenario={drafts[c.id] ?? {}} setScenario={update => setDrafts(old => ({ ...old, [c.id]: typeof update === 'function' ? update(old[c.id] ?? {}) : update }))} />
+        </section>)}
+      </div>
     </>}
   </section>
 }
-function ChampionshipScenario({ champId, cup }: { champId: number; cup: boolean }) {
+function ChampionshipScenario({ champId, cup, eventId, suggestEvent, scenario, setScenario }: {
+  champId: number; cup: boolean; eventId: number; suggestEvent: (id: number) => void
+  scenario: Scenario; setScenario: React.Dispatch<React.SetStateAction<Scenario>>
+}) {
   const { hub } = useSeason()
   const [recap, setRecap] = useState<Recap | null>(null)
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
-  const [eventId, setEventId] = useState(0)
   useEffect(() => {
     let cancelled = false
     setError('')
     getJson<Recap>(`/api/championships/${champId}/calculator`).then(data => {
-      if (cancelled) return
-      setRecap(data)
-      setEventId(hub.events.find(e => !baselineIssue(data, e.id))?.id ?? hub.events[0]?.id ?? 0)
+      if (!cancelled) setRecap(data)
     }).catch(e => { if (!cancelled) setError(String(e.message ?? e)) })
     return () => { cancelled = true }
-  }, [champId, hub.events, attempt])
+  }, [champId, attempt])
+  useEffect(() => {
+    if (recap && !eventId) suggestEvent(hub.events.find(e => !baselineIssue(recap, e.id))?.id ?? hub.events[0]?.id ?? 0)
+  }, [recap, eventId, hub.events, suggestEvent])
   if (error) return <div role="alert" className="error-panel">{error} <button onClick={() => setAttempt(n => n + 1)}>Retry</button></div>
-  if (!recap) return <p role="status">Loading imported standings…</p>
   if (!hub.events.length) return <p className="empty-state">Add an event to this season to start a scenario.</p>
+  if (!recap || !eventId) return <p role="status">Loading imported standings…</p>
   const issue = baselineIssue(recap, eventId)
   const last = [...recap.rounds].reverse().find(r => recap.rows.some(row => Object.hasOwn(row.pointsByRound, r.round)))
   return <>
-    <label className="calculator-field">Event<select aria-label="Event" value={eventId} onChange={e => setEventId(Number(e.target.value))}>
-      {hub.events.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-    </select></label>
     <p className="calculator-note">Baseline: latest imported totals{last ? ` · through ${last.venue}` : ''}. {cup ? 'Checkpoints for an unscored event are simulated below.' : 'Qualifying for an unscored weekend is added below.'}</p>
-    {issue ? <p className="error-panel" role="status">{issue}</p> : <ScenarioEditor key={eventId} recap={recap} cup={cup} eventId={eventId} />}
+    {issue ? <p className="error-panel" role="status">{issue}</p> : <ScenarioEditor key={eventId} recap={recap} cup={cup} eventId={eventId} scenario={scenario} setScenario={setScenario} />}
   </>
 }
-function ScenarioEditor({ recap, cup, eventId }: { recap: Recap; cup: boolean; eventId: number }) {
-  const [scenario, setScenario] = useState<Scenario>({})
+function ScenarioEditor({ recap, cup, eventId, scenario, setScenario }: {
+  recap: Recap; cup: boolean; eventId: number; scenario: Scenario; setScenario: React.Dispatch<React.SetStateAction<Scenario>>
+}) {
   const phases = cup ? (recap.rounds.find(r => r.eventId === eventId)?.sessions.map(s => s.name) ?? []) : ['Qualifying', 'Race']
   const rows = project(recap, scenario, cup, phases.length)
   const remaining = recap.rows.filter(r => !scenario[r.competitorKey])
