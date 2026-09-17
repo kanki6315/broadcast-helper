@@ -3,6 +3,7 @@ import AVFoundation
 import PencilKit
 
 struct ConversationsView: View {
+    @Environment(AppSession.self) private var appSession
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dynamicTypeSize) private var typeSize
     @Bindable var book: ConversationBook
@@ -20,7 +21,7 @@ struct ConversationsView: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
     }
     private var visibleRecords: [Conversation] {
-        book.records.filter { !onlySession || $0.session == book.workingSession }
+        book.records.filter { !onlySession || ConversationSessions.matches($0.session, book.workingSession) }
     }
     private var people: [ConversationPerson] {
         book.people.filter { person in visibleRecords.contains { $0.person?.id == person.id } }
@@ -29,7 +30,7 @@ struct ConversationsView: View {
     var body: some View {
         List {
             Section {
-                ConversationContext(session: $book.workingSession, context: $book.workingContext)
+                ConversationContext(session: $book.workingSession, context: $book.workingContext, options: book.sessionOptions)
                 actionLayout {
                     Button("Record conversation", systemImage: "mic") { recordingChoice = true; adding = .spoken }
                         .buttonStyle(.borderedProminent).tint(PP.accent).foregroundStyle(PP.onAccent)
@@ -67,6 +68,8 @@ struct ConversationsView: View {
                             } else if let planned = entries.first { Text(planned.topic).foregroundStyle(.secondary) }
                         }.padding(.vertical, 5)
                     }.buttonStyle(.plain)
+                    .modifier(ConversationSwipeDelete(book: book, audio: audio,
+                        ids: Set(book.entries(for: person).map(\.id)), personName: person.name))
                 }
                 if people.isEmpty && visibleRecords.isEmpty {
                     ContentUnavailableView("No conversations yet", systemImage: "bubble.left.and.bubble.right",
@@ -78,6 +81,7 @@ struct ConversationsView: View {
                 Section("Assign a driver") {
                     ForEach(unassigned) { record in
                         Button { detail = record } label: { ConversationRow(record: record) }.buttonStyle(.plain)
+                            .modifier(ConversationSwipeDelete(book: book, audio: audio, ids: [record.id]))
                     }
                 }
             }
@@ -98,6 +102,12 @@ struct ConversationsView: View {
         .scrollContentBackground(.hidden)
         .background(PP.bg)
         .task { await audio.checkAssets() }
+        .task(id: sheet.eventId) {
+            let resource = Resource<EventResults>("/api/events/\(sheet.eventId)/results")
+            await resource.load(appSession.loader)
+            resource.applyPendingUpdate()
+            book.eventSessionNames = resource.value?.sessions.map(\.name) ?? []
+        }
         .sheet(item: $adding, onDismiss: {
             detail = pendingDetail
             pendingDetail = nil
@@ -127,9 +137,15 @@ extension Conversation.Kind: Identifiable { var id: String { rawValue } }
 private struct ConversationContext: View {
     @Binding var session: String
     @Binding var context: String
+    let options: [String]
     var body: some View {
-        TextField("Session (e.g. Qualifying)", text: $session)
-            .accessibilityLabel("Session")
+        Picker("Session", selection: Binding(
+            get: { ConversationSessions.selection(session, in: options) },
+            set: { session = $0 }
+        )) {
+            ForEach(options, id: \.self) { Text($0).tag($0) }
+        }
+        .pickerStyle(.menu)
         Picker("Broadcast context", selection: $context) {
             Text("Before going live").tag("Before going live")
             Text("On air").tag("On air")
@@ -201,6 +217,7 @@ private struct ConversationPersonView: View {
             } header: { Text("#\(person.car) · \(person.team)") }
             ForEach(book.entries(for: person)) { record in
                 Button { path.append(record.id) } label: { ConversationRow(record: record) }.buttonStyle(.plain)
+                    .modifier(ConversationSwipeDelete(book: book, audio: audio, ids: [record.id]))
             }
             if let error = audio.error ?? book.error { Text(error).foregroundStyle(PP.error) }
         }
@@ -270,7 +287,7 @@ private struct ConversationDetail: View {
                                 Text("#\(person.car) · \(person.name)").tag(Optional(person))
                             }
                         }
-                        ConversationContext(session: field(\.session, fallback: "General weekend"), context: field(\.context, fallback: "Before going live"))
+                        ConversationContext(session: field(\.session, fallback: "General weekend"), context: field(\.context, fallback: "Before going live"), options: book.sessionOptions)
                         DatePicker("When", selection: field(\.date, fallback: Date()))
                         if record.kind == .planned {
                             Button("Record this conversation", systemImage: "mic") {
@@ -434,4 +451,40 @@ private struct ConversationInk: UIViewRepresentable {
 func conversationTime(_ seconds: Double) -> String {
     let n = seconds.isFinite ? max(0, Int(seconds)) : 0
     return String(format: "%02d:%02d", n / 60, n % 60)
+}
+
+/// Native swipe affordance at every list level. Driver deletion always names its
+/// full-weekend scope, even when the list is currently filtered to one session.
+private struct ConversationSwipeDelete: ViewModifier {
+    let book: ConversationBook
+    let audio: ConversationAudio
+    let ids: Set<UUID>
+    var personName: String? = nil
+    @State private var confirming = false
+
+    private var busy: Bool {
+        audio.preparing || ids.contains(where: { $0 == audio.recordingId || $0 == audio.transcribing })
+    }
+    func body(content: Content) -> some View {
+        content
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button(role: .destructive) { confirming = true } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .buttonStyle(.automatic)
+                .disabled(busy)
+            }
+            .confirmationDialog(personName.map { "Delete all conversations for \($0)?" }
+                ?? "Delete this conversation?", isPresented: $confirming, titleVisibility: .visible) {
+                Button(personName == nil ? "Delete conversation" : "Delete all \(ids.count) entries", role: .destructive) {
+                    guard !busy else { return }
+                    _ = book.remove(ids: ids)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(personName == nil
+                    ? "This removes the note, handwriting and any saved audio."
+                    : "This removes all notes, planned contacts and audio for this driver across the entire event, including other sessions.")
+            }
+    }
 }

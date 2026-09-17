@@ -82,4 +82,50 @@ import Testing
         #expect(!reopened.save(Conversation(person: person)))
         #expect(try Data(contentsOf: file) == corrupt)
     }
+    @Test func sessionPickerPreservesImportedAndLegacyLabelsWithoutDuplicates() {
+        let options = ConversationSessions.options([" qualifying ", "PRACTICE  1", "Qualifying GTD", "Old custom session", ""])
+        #expect(options.filter { ConversationSessions.matches($0, "qualifying") }.count == 1)
+        #expect(options.contains("Qualifying GTD"))
+        #expect(options.contains("Old custom session"))
+        #expect(ConversationSessions.matches(" General   WEEKEND ", "General weekend"))
+        #expect(ConversationSessions.matches("", "General weekend"))
+        #expect(!ConversationSessions.matches("Race 1", "Race 2"))
+        #expect(ConversationSessions.selection(" QUALIFYING ", in: options) == "Qualifying")
+    }
+
+    @Test func driverDeletionRemovesAllSessionsAndAudioButLeavesOtherDrivers() throws {
+        let dir = root()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let book = ConversationBook(eventId: 1)
+        book.open(server: "s", owner: "a", root: dir)
+        var spoken = Conversation(person: person, session: "Practice 1", audioFile: "audio.caf")
+        spoken.takeaway = "A note"
+        let url = try #require(book.audioURL("audio.caf"))
+        try Data([1, 2]).write(to: url)
+        #expect(book.save(spoken))
+        #expect(book.save(Conversation(person: person, kind: .planned, session: "Race")))
+        let other = Conversation(person: nil, takeaway: "Keep this")
+        #expect(book.save(other))
+        #expect(book.remove(ids: Set(book.entries(for: person).map(\.id))))
+        #expect(book.people.isEmpty)
+        #expect(book.records == [other])
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        let restored = ConversationBook(eventId: 1)
+        restored.open(server: "s", owner: "a", root: dir)
+        #expect(restored.records == [other])
+    }
+
+    @Test func batchDeletionRejectsActiveRecordingWithoutPartialRemoval() {
+        let dir = root()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let book = ConversationBook(eventId: 1)
+        book.open(server: "s", owner: "a", root: dir)
+        let note = Conversation(person: person)
+        let active = Conversation(person: person, recording: true)
+        #expect(book.save(note))
+        #expect(book.save(active))
+        #expect(!book.remove(ids: [note.id, active.id]))
+        #expect(book.records.count == 2)
+    }
+
 }
