@@ -9,6 +9,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Parses timing-provider JSON files into normalized import records.
@@ -270,6 +273,11 @@ public final class ImportParser {
         List<String[]> lines = csvRows(content);
         Map<String, Integer> header = headerIndex(lines.get(0),
                 "POSITION", "NUMBER", "STATUS", "LAPS", "TOTAL_TIME");
+        // The header fixes the crew layout for the whole file. Seat 1 is the
+        // fastest-lap driver only under the single DRIVER_* block, where the
+        // car's only driver set its laps; a multi-driver file names none.
+        List<Integer> seats = csvDriverSeats(header);
+        Integer soleSeat = seats.isEmpty() ? 1 : null;
 
         List<RaceResultsImport.Row> rows = new ArrayList<>();
         Map<String, Integer> classCounters = new HashMap<>();
@@ -306,9 +314,9 @@ public final class ImportParser {
                     fastestLapTime,
                     zeroToNull(parseIntOrNull(cellOrNull(cells, header.get("FL_LAPNUM")))),
                     parseDoubleOrNull(cellOrNull(cells, header.get("FL_KPH"))),
-                    fastestLapTime != null ? 1 : null,
+                    fastestLapTime != null ? soleSeat : null,
                     null,
-                    csvDriver(cells, header)
+                    csvDrivers(cells, header, seats)
             ));
         }
         return new RaceResultsImport(null, null, null, "RACE", 1,
@@ -327,6 +335,11 @@ public final class ImportParser {
         List<String[]> lines = csvRows(content);
         Map<String, Integer> header = headerIndex(lines.get(0),
                 "POS", "NUMBER", "LAP", "TIME", "KPH");
+        // The header fixes the crew layout for the whole file. Seat 1 is the
+        // fastest-lap driver only under the single DRIVER_* block, where the
+        // car's only driver set its laps; a multi-driver file names none.
+        List<Integer> seats = csvDriverSeats(header);
+        Integer soleSeat = seats.isEmpty() ? 1 : null;
 
         List<RaceResultsImport.Row> rows = new ArrayList<>();
         Map<String, Integer> classCounters = new HashMap<>();
@@ -359,9 +372,9 @@ public final class ImportParser {
                     classifyingTime,
                     zeroToNull(parseIntOrNull(cellOrNull(cells, header.get("LAP")))),
                     parseDoubleOrNull(cellOrNull(cells, header.get("KPH"))),
-                    classifyingTime != null ? 1 : null,
+                    classifyingTime != null ? soleSeat : null,
                     null,
-                    csvDriver(cells, header)
+                    csvDrivers(cells, header, seats)
             ));
         }
         return new RaceResultsImport(null, null, null, "QUALIFYING", 1,
@@ -399,20 +412,53 @@ public final class ImportParser {
         return header;
     }
 
-    /** The single DRIVER_* column block (one driver per car in these files). */
-    private static List<RaceResultsImport.DriverRow> csvDriver(String[] cells, Map<String, Integer> header) {
-        String firstName = cellOrNull(cells, header.get("DRIVER_FIRSTNAME"));
-        String surname = stripNameMarker(cellOrNull(cells, header.get("DRIVER_SECONDNAME")));
-        if (firstName == null && surname == null) {
-            return List.of();
+    private static final Pattern CSV_DRIVER_GROUP =
+            Pattern.compile("DRIVER(\\d+)_(?:FIRSTNAME|SECONDNAME)");
+
+    /**
+     * The row's crew. Single-driver series (Carrera Cup) publish one DRIVER_*
+     * block; multi-driver series (WeatherTech, Pilot Challenge) publish
+     * numbered DRIVER1_* .. DRIVER6_* blocks, where DRIVERn is seat n. Rows
+     * are cut short after their last populated block, and empty blocks are
+     * skipped without renumbering the seats after them.
+     */
+    private static List<RaceResultsImport.DriverRow> csvDrivers(String[] cells, Map<String, Integer> header,
+                                                                List<Integer> seats) {
+        List<RaceResultsImport.DriverRow> drivers = new ArrayList<>();
+        csvDriver(cells, header, "DRIVER_", 1).ifPresent(drivers::add);
+        for (int seat : seats) {
+            csvDriver(cells, header, "DRIVER" + seat + "_", seat).ifPresent(drivers::add);
         }
-        return List.of(new RaceResultsImport.DriverRow(
-                1,
+        return drivers;
+    }
+
+    /** The seat numbers of the DRIVERn_* blocks the header declares, ascending. */
+    private static List<Integer> csvDriverSeats(Map<String, Integer> header) {
+        return header.keySet().stream()
+                .map(CSV_DRIVER_GROUP::matcher)
+                .filter(Matcher::matches)
+                .map(m -> Integer.parseInt(m.group(1)))
+                .distinct()
+                .sorted()
+                .toList();
+    }
+
+    /** One DRIVER block under the given column prefix; LICENSE carries the
+     *  rating (Platinum/Gold/...) in both layouts. */
+    private static Optional<RaceResultsImport.DriverRow> csvDriver(
+            String[] cells, Map<String, Integer> header, String prefix, int seat) {
+        String firstName = cellOrNull(cells, header.get(prefix + "FIRSTNAME"));
+        String surname = stripNameMarker(cellOrNull(cells, header.get(prefix + "SECONDNAME")));
+        if (firstName == null && surname == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new RaceResultsImport.DriverRow(
+                seat,
                 firstName,
                 surname,
-                cellOrNull(cells, header.get("DRIVER_LICENSE")),
-                cellOrNull(cells, header.get("DRIVER_HOMETOWN")),
-                cellOrNull(cells, header.get("DRIVER_COUNTRY"))
+                cellOrNull(cells, header.get(prefix + "LICENSE")),
+                cellOrNull(cells, header.get(prefix + "HOMETOWN")),
+                cellOrNull(cells, header.get(prefix + "COUNTRY"))
         ));
     }
 
