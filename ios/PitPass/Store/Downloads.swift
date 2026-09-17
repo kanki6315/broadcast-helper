@@ -338,7 +338,7 @@ final class DownloadManager {
         activity[key] = .running(DownloadProgress())
         // Keep going for a while if the person switches to Safari mid-download.
         let background = UIApplication.shared.beginBackgroundTask(withName: "download \(key)")
-        let job = PrefetchJob(loader: loader) { progress in
+        let job = PrefetchJob(loader: loader) { [weak self] progress in
             Task { @MainActor [weak self] in
                 guard let self, self.isRunning(target) else { return }
                 self.activity[key] = .running(progress)

@@ -78,7 +78,7 @@ struct Wordmark: View {
     var body: some View {
         HStack(spacing: PP.Space.s2) {
             BrandMark(size: markSize)
-            (Text("Pit ").foregroundColor(PP.ink) + Text("Pass").foregroundColor(PP.accentInk))
+            Text("\(Text("Pit ").foregroundColor(PP.ink))\(Text("Pass").foregroundColor(PP.accentInk))")
                 .font(PP.sans(textSize, weight: 650))
                 .tracking(textSize * -0.01)
         }

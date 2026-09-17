@@ -9,7 +9,7 @@ struct ResultsClassificationTable: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: true) {
-            ResultsClassificationLayout(columns: columns, availableWidth: availableWidth) {
+            ResultsClassificationLayout(columns: columns.map { .init(id: $0.id, width: $0.width) }, availableWidth: availableWidth) {
                 ForEach(columns) { column in
                     column.title
                         .multilineTextAlignment(column.align == .trailing ? .trailing : column.align == .center ? .center : .leading)
@@ -51,7 +51,13 @@ struct ResultsClassificationTable: View {
 /// before sharing spare width between the entry and timing columns. At narrow
 /// split-view widths the complete table scrolls instead of clipping values.
 private struct ResultsClassificationLayout: Layout {
-    let columns: [GridColumn]
+    // Layout crosses isolation boundaries; view-bearing GridColumns stay in the view.
+    struct Column: Sendable {
+        let id: String
+        let width: CGFloat
+    }
+
+    let columns: [Column]
     let availableWidth: CGFloat
 
     private struct Measurements {

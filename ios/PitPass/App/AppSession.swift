@@ -118,7 +118,7 @@ final class AppSession {
 
     /// Revoke this device's token (best effort) and forget everything local.
     func signOut() async {
-        try? await client.send("DELETE", "/api/auth/device")
+        _ = try? await client.send("DELETE", "/api/auth/device")
         Keychain.deviceToken = nil
         await clearOfflineData(includingPads: true)
         await bootstrap()

@@ -101,7 +101,7 @@ final class PadSyncer {
     private func watch(_ connectivity: Connectivity) {
         withObservationTracking {
             _ = connectivity.status
-        } onChange: {
+        } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let live = connectivity.status == .live
