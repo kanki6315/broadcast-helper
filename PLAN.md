@@ -895,6 +895,44 @@ display size.)
   events: every Race 1 grid time equals that car's qualifying time (177/177).
   Known source typo: 2026 Miami prints STADTLANDER in the race, STADLANDER
   elsewhere.
+- **Split sessions: 2021 class-split qualifying (V51) — ✅ DONE (2026-09-16).**
+  2021 IMSA WeatherTech qualified each class group separately — "Qualifying -
+  GTD Position", "Qualifying - GTD Points GTLM", "Qualifying - LMP3 Position -
+  Points" — 12 events with 3–4 unnumbered qualifying sessions each (the Roar
+  split by class too, and PCCNA's 2026 Road America ran "Miami Make-Up - Race
+  2"). Keyed (event, type, ordinal) with the ordinal from a trailing number,
+  every one of them landed on QUALIFYING 1 and each commit wiped the last.
+  `SessionNames.splitLabel` finds a name's **split label** (text beyond its type
+  word and a *separate-word* trailing number — "LMP2" is no ordinal, and
+  `ImportParser.sessionOrdinal` now agrees); a labelled session is its own:
+  `resolveSessionSlot` reuses the ordinal of a same-named session (case and
+  separators ignored) or takes the next free one. Plain names keep the old
+  rule, so "Race"/"Race 1" drift still collapses; names without their type word
+  ("Heat 1", "Feature", "Hour 6") are untouched, and iRacing (which numbers its
+  own sessions) is exempt by format. CSVs carry no session metadata, so the
+  **Al Kamel file name** supplies the name (`sessionNameFromFilename`: "03_Results_
+  Qualifying - GTD Position.CSV") — it also pre-fills the ordinal ("Race 2" → 2)
+  and the review shows the split name (`sessionNameHint`) instead of the ordinal
+  box. Split also meant **purpose**: "GTD Position" set the GTD grid while "GTD
+  Points" only scored points (and set GTLM's grid in the same session).
+  `result.points_only` (V51) marks a class named "Points" but not "Position" in
+  its session's label; pole/quali stats (season, series, driver, team) and the
+  sheet's Q column skip those rows. Results page tabs read "Q · GTD Position"
+  when a weekend has several qualifying sessions, and points-only rows carry a
+  PTS chip. Verified on the real 2021 Mid-Ohio files (4 sessions kept apart,
+  13 GTD Points rows flagged, 3 poles not 4). **Backfill:** a split file committed
+  before this change landed on (event, QUALIFYING, 1). JSON-sourced sessions kept
+  their file's name, so re-importing every split file of the event finds the
+  survivor by name and the rest take fresh ordinals — nothing stale remains.
+  CSV-sourced sessions were named "Qualifying" (the reviewer's display name),
+  which no split file matches: after the event's split files are re-imported,
+  the old "Qualifying" session still holds the last file's results and
+  double-counts that class's pole and Q positions — delete its `result` rows,
+  then the `race_session`, once its replacement is in. Every 2021 WeatherTech
+  event in production is CSV-sourced. The iPad app labels split sessions the
+  same way as the web (`ResultsView.sessionLabel`). The multi-driver CSV
+  layout (`DRIVER1_…`/`DRIVER2_…`) that these files use now imports crews too —
+  see the multi-driver results/qualifying CSV entry above.
 - **Still ahead:** design the automated prior-year-at-this-track feature,
   including change context (manufacturer, lineup, team) alongside the raw result.
   The **grid rundown sheet** (grid-order sheet with storyline fields) is
