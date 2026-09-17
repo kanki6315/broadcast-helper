@@ -90,7 +90,9 @@ struct ConversationsView: View {
                     Text(audio.assetStatus).font(.footnote)
                     Spacer()
                     if audio.preparingAssets { ProgressView() }
-                    else { Button("Prepare English") { Task { await audio.checkAssets(download: true) } } }
+                    else if !audio.englishReady {
+                        Button("Prepare English") { Task { await audio.checkAssets(download: true) } }
+                    }
                 }
                 Text("Saved on this iPad for your account. Audio and notes are not uploaded or shared.")
                     .font(.footnote).foregroundStyle(.secondary)

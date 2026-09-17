@@ -10,6 +10,7 @@ final class ConversationAudio: NSObject, AVAudioRecorderDelegate {
     private(set) var transcribing: UUID?
     private(set) var elapsed: Double = 0
     private(set) var assetStatus = "English transcription not checked"
+    private(set) var englishReady = false
     private(set) var preparingAssets = false
     var error: String?
     private var recorder: AVAudioRecorder?
@@ -43,8 +44,12 @@ final class ConversationAudio: NSObject, AVAudioRecorderDelegate {
                 try await request.downloadAndInstall()
             }
             let status = await AssetInventory.status(forModules: [transcriber])
-            assetStatus = status == .installed ? "English ready · On device" : "Download English for offline transcription"
-        } catch { assetStatus = error.localizedDescription }
+            englishReady = status == .installed
+            assetStatus = englishReady ? "English ready · On device" : "Download English for offline transcription"
+        } catch {
+            englishReady = false
+            assetStatus = error.localizedDescription
+        }
     }
 
     func start(_ draft: Conversation, in book: ConversationBook) async -> UUID? {
