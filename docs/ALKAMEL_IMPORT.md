@@ -176,21 +176,27 @@ minus `NN_`; date = earliest session in the group. Set-aside rules unchanged
 Both were tried on real 2017 Long Beach WeatherTech files (kept in this
 session's scratchpad; add them as `backend/src/test/resources/fixtures/imsa-2017/`).
 
-- **Grid PDF (2016–2020)**: same column layout as the 2021 Carrera Cup sheet the
-  parser was built on, but titled **"Race Official Starting Grid"** (no race
-  number — the parser's title regex rejects it), header **"Drivers\*"**, crews
-  printed "R. Taylor / J. Taylor" with **bold = qualifying driver, italic =
-  starting driver**. So attribution *is* recoverable from fonts, which the 2021
-  layout could not offer. Work: accept the numberless title (ordinal from the
-  folder label), split crews on " / ", emit `qualifying_driver` /
-  `starting_driver` as initialled names and resolve them through the stored
-  lineup (`resolveDriver` already handles "N. LASTOCHKIN"-style names). Small.
-- **Points PDF (before 2024)**: the parser recognises the 2017 headers (9
-  championships, sessions "Fast Lap" + "Round N" per event) but reads **0
-  rows** — it separates names from points by font, and the 2017 sheet uses only
-  Arial and Arial Bold. Two fixes: a layout branch for the older sheet, and
-  **"0 rows" must fail hard** (today it passes the checksum trivially and would
-  stage empty championships). Medium.
+- **Grid PDF (2016–2021, crew sheets)** — done 2026-09-17 for the 2021 layout:
+  same column layout as the 2021 Carrera Cup sheet the parser was built on, but
+  titled **"Race Official Starting Grid"** (no race number), header
+  **"Drivers\*"**, crews printed "F. Nasr / M. Conway / P. Derani" with the
+  roles marked by emphasis the legend under the title explains — 2021
+  WeatherTech "Bold: Starting Driver", 2021 Pilot Challenge "Bold: Starting
+  Driver / Underline: Qualifying Driver"; 2017 used bold = qualifying driver,
+  italic = starting driver. Bold on these sheets is text render mode 2, not a
+  font, so `parse_grid_pdf.py` runs a second pdfminer pass to record each
+  glyph's render mode; an underline is a hairline rect under the name; the
+  legend is parsed, never assumed. Rows carry `drivers` (initialled names) and
+  `starting_driver_seat` / `qualifying_driver_seat`; `mapGridPdfJson` turns
+  them into the row's roster and seats, resolved at commit through the stored
+  lineup like an initialled results name. Italic (2017) is not yet detected —
+  the 2017–2020 sheets still need checking against real files.
+- **Points PDF (before 2024)**: 2021's sheets read (see the audit notes
+  below). The parser recognises the 2017 headers (9 championships, sessions
+  "Fast Lap" + "Round N" per event) but reads **0 rows** — it separates names
+  from points by font, and the 2017 sheet uses only Arial and Arial Bold.
+  Remaining fix: a layout branch for the older sheet. "0 rows" now fails
+  hard rather than staging empty championships. Medium.
 - Flags PDF (2022–25, 206 sessions): no parser; out of scope. Those seasons
   import without stewards' notes.
 
@@ -413,10 +419,22 @@ have no circuit name (the folder name usually is one).
 
 Known, not fixed (the audit's remaining findings are the sources' own):
 
-- **2021 standings**: the 2021 points PDF is another layout — the parser
-  merged adjacent event columns ("Watkins Glen Road America") and dropped the
-  first letter of every name — so the four championships it produced were
-  deleted. 2021 has results and grids only until that layout is read.
+- **2021 standings** (fixed 2026-09-17): the 2021 points PDFs read now. The
+  parser reads each row and each event name as the text runs the sheet was
+  drawn with instead of by x thresholds and baseline drift, which is what had
+  merged adjacent event columns ("Watkins Glen Road America"), dropped the
+  first letter of every Carrera Cup name and read no rows at all off the
+  Pilot Challenge, Prototype Challenge and Super Trofeo sheets (their totals
+  sit 0.6pt below the baseline). Events may now own different numbers of
+  columns (Carrera Cup's three-race finale), a "Pole" column lands in
+  `pole_points`, and the template's unlabelled zero columns on the Pilot and
+  Prototype sheets are tolerated. All six 2021 season-final sheets
+  (WeatherTech, Pilot Challenge, Prototype Challenge, Carrera Cup, MX-5 Cup,
+  Super Trofeo) parse with every row re-adding to its printed total. A page
+  with columns but no rows now fails the import instead of staging an empty
+  table. Super Trofeo titles name no series ("PRO Driver Championship"), so a
+  fetched sheet takes the folder's series as a title prefix, and a trailing
+  "Championship"/"Cup" no longer masquerades as the kind.
 - **2025 Montréal's Race 1 folder is `202506141895_Race 1`** — a stamp with
   minute 95. The session-folder parser dropped it as not-a-stamp, so the
   session vanished from the plan without a word. A mistyped time now keeps
@@ -433,6 +451,70 @@ Known, not fixed (the audit's remaining findings are the sources' own):
   run; it is a cup and should be flipped in Manage.
 - 2024 Jerez (a non-PCCNA weekend posted under the season with no series
   folder) is skipped by name.
+
+## Full 2021–2026 import, four series, validated locally (2026-09-17)
+
+Driven through the API the way the modal does (a scratchpad script: plan per
+series, stage every recommended file per weekend, review, one commit-group per
+season; then a pre-season pass for the Roar weekends and standings-only /
+grid-only re-stage passes), into a throwaway database `pit_pass_full` seeded
+with the dev database's series, alias and class rows. WeatherTech, Pilot
+Challenge, Mustang Challenge and Carrera Cup North America, every weekend
+with results, grids, entry lists where the site has them, and the season-final
+standings. Every commit group landed; nothing was left for the review table.
+
+Found and fixed on the way:
+
+- **Loose folders stole the final-standings mark.** Planning one series
+  attributes every folder posted without a series folder to it, and such a
+  folder carries its own points sheet — "PCCNA COTA" 2023 and "Jerez" 2024
+  outranked Road Atlanta by date for every series, so 2023–24 imported no
+  season standings (and Carrera Cup 2023 a mid-season snapshot). A loose
+  weekend now takes the mark only when the series has no proper one.
+- **Series aliases** for the era folder names: "IMSA WeatherTech SportsCar
+  Championships" (2021, plural), "IMSA Michelin Pilot SportsCar Challenge"
+  (2021–22), "_Porsche Carrera Cup North America" (2021), "Mustang Challenge
+  North America" (2026). **Class aliases** for Pilot Challenge: the points
+  sheets say "Grand Sport" / "Touring Car" where the results say GS / TCR.
+- **Cup sheets in the JSON era**: the `POINTS DATA` folder holds the Michelin
+  Endurance Cup tables (one "OVERALL" and one per-race checkpoint file per
+  class and kind) beside the season tables, all recommended since the
+  cup-sheet rule covered PDFs only. The reviewer's call, made in the script:
+  the OVERALL ones commit as cups (family "Michelin Endurance Cup"), the
+  checkpoint ones are left out; "GS BRONZE" is a Bronze Cup on GS; "Rookie"
+  a cup with no class; 2021's "Pro & Pro-Am Drivers" the outright table (no
+  class). The modal still needs the reviewer to do this by hand.
+- **Points parser**: a Teams page with no "Points" header (2023 Pilot
+  Challenge) let the template's unlabelled zero column pose as the total; a
+  team name set in the points face ran into the cells (2022); an all-Arial
+  "Revised" sheet (2024 Mustang) has an empty overflow page. All read now.
+- **Grid parser**: the 2021 crew sheets (see above); Laguna Seca 2021 prints
+  "Nr.Drivers*" as one word.
+- **Driver identity**: "A. R. FERNANDES" off an F1 sheet resolves to
+  "Andre Renha / Fernandes" while the timing JSON says "Andre / Renha
+  Fernandes"; a driver whose whole name matches is now the same driver.
+- **The site posts 2025 Mustang Challenge COTA twice** ("17_Circuit of the
+  Americas" and "19_Circuit of the Americas (MC)", identical sessions and
+  results). The plan offers both; untick one, or the season gets a seventh
+  weekend and the rounds shift.
+
+Known, by design or by source:
+
+- **The 2021–2023 WeatherTech season-final sheets print whole classes as
+  DNP at rounds they raced** — LMP2 and LMP3 at Daytona each year, GTD at
+  Detroit and the Watkins Glen 240 in 2021, GTD at Long Beach and CTMP in
+  2022 — and their printed totals exclude those rounds, so the import is
+  faithful to the sheet (every row re-adds to its total). The results for
+  those races are imported in full; only the standings' per-round columns
+  are the sheet's. Read as IMSA's class-specific full-season round sets
+  (the sprint-cup years); worth confirming before relying on per-round
+  standings for those classes.
+- 2023 GTP Daytona: the race winner (#60) is not the top scorer (#10) — the
+  Meyer Shank points penalty, real.
+- 2026 standings list the whole calendar, so they carry more rounds than the
+  events imported so far.
+- Grid attribution stays null where an initialled crew name does not resolve
+  uniquely through the stored lineup; never guessed.
 
 ## Production notes
 
