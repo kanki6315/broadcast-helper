@@ -25,6 +25,9 @@ import java.time.LocalDateTime;
  *                       null for series-level files (standings, entry list).
  * @param sessionLabel   the session folder's label ("Qualifying - GTD Position",
  *                       "Race 2"), null for series-level files.
+ * @param preseason      the planner's verdict that the weekend is not a round
+ *                       (the Roar, a test, a prologue): the event a batch
+ *                       creates at commit is marked {@code is_round = false}.
  */
 public record SourceContext(
         String sourceUrl,
@@ -34,6 +37,12 @@ public record SourceContext(
         String seriesName,
         String eventName,
         LocalDateTime sessionStart,
-        String sessionLabel
+        String sessionLabel,
+        boolean preseason
 ) {
+    /** A context for an ordinary round. */
+    public SourceContext(String sourceUrl, String sourceModified, String sourceEvent, Integer year,
+                         String seriesName, String eventName, LocalDateTime sessionStart, String sessionLabel) {
+        this(sourceUrl, sourceModified, sourceEvent, year, seriesName, eventName, sessionStart, sessionLabel, false);
+    }
 }

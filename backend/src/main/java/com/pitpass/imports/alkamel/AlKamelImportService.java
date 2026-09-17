@@ -302,10 +302,16 @@ public class AlKamelImportService {
             // checkpoint — Hour 6 / 12 / 18 / Finish — which the points parser does
             // not read, so they are offered, not assumed.
             boolean cupSheet = "PDF".equals(f.extension()) && !award && !isMainPointsSheet(f.name());
-            boolean recommended = !award && !cupSheet && bestCopy && ("JSON".equals(f.extension()) || !anyJson);
+            // The JSON era files the Endurance Cup twice per class and kind: the
+            // season table ("… Overall") and a checkpoint after each endurance
+            // race ("… MRRA"). Only the season table is a standings import.
+            boolean checkpoint = "JSON".equals(f.extension()) && isCupCheckpoint(f.name());
+            boolean recommended = !award && !cupSheet && !checkpoint && bestCopy
+                    && ("JSON".equals(f.extension()) || !anyJson);
             out.add(new PlanFile(f.path(), f.name(), Kind.STANDINGS.name(), format.get().name(),
                     f.status().name(), f.amendment(), f.modified(), recommended,
-                    award ? "award sheet" : cupSheet ? "cup sheet — tick to try; its layout is untested" : null,
+                    award ? "award sheet" : cupSheet ? "cup sheet — tick to try; its layout is untested"
+                            : checkpoint ? "cup checkpoint after one race — the Overall file is the season table" : null,
                     null));
         }
         return out;
@@ -324,14 +330,28 @@ public class AlKamelImportService {
         return s.equals("championship points") || s.equals("champonship points");
     }
 
+    /** "03 IMEC GTP Drivers Standings MRRA.json": a cup's standing after one
+     *  race, beside the "… Overall" season table. */
+    static boolean isCupCheckpoint(String name) {
+        String words = " " + name.toUpperCase(Locale.ROOT).replaceAll("\\.[^.]+$", "").replaceAll("[^\\p{L}\\p{N}]+", " ") + " ";
+        return words.contains(" IMEC ") && !words.contains(" OVERALL ");
+    }
+
     private static boolean isAward(String name) {
         String n = name.toLowerCase(Locale.ROOT);
         return n.contains("award") || n.contains("sustainability") || n.contains("trueman") || n.contains("akin");
     }
 
-    /** Per series (loose weekends count as their own), the latest weekend with
-     *  standings gets the final-standings mark. */
-    private static void markFinalStandings(List<PlanWeekend> weekends) {
+    /**
+     * Per series, the latest weekend with standings gets the final-standings
+     * mark. A weekend posted without a series folder only takes it when the
+     * series has no proper weekend with standings at all: planning one series
+     * attributes every loose folder to it, and a loose folder carries its own
+     * points sheet (a Carrera Cup weekend under a WeatherTech plan; Jerez),
+     * which would otherwise outrank the series' real finale by date and leave
+     * the season with the wrong sheet — or none.
+     */
+    static void markFinalStandings(List<PlanWeekend> weekends) {
         Map<Object, Integer> latest = new HashMap<>();
         for (int i = 0; i < weekends.size(); i++) {
             PlanWeekend w = weekends.get(i);
@@ -340,7 +360,11 @@ public class AlKamelImportService {
             }
             Object key = w.seriesId() != null ? w.seriesId() : "loose";
             Integer prev = latest.get(key);
-            if (prev == null || latestStart(w).compareTo(latestStart(weekends.get(prev))) >= 0) {
+            boolean better = prev == null
+                    || (weekends.get(prev).loose() && !w.loose())
+                    || (weekends.get(prev).loose() == w.loose()
+                        && latestStart(w).compareTo(latestStart(weekends.get(prev))) >= 0);
+            if (better) {
                 latest.put(key, i);
             }
         }
@@ -510,8 +534,10 @@ public class AlKamelImportService {
                           LocalDateTime sessionStart, String sessionLabel) {
     }
 
-    /** One weekend of one series to stage. */
-    public record StageRequest(int year, String sourceEvent, String eventName, Long seriesId, List<FileRef> files) {
+    /** One weekend of one series to stage. {@code preseason} is the plan's
+     *  verdict that the weekend is no round, carried to the commit. */
+    public record StageRequest(int year, String sourceEvent, String eventName, Long seriesId, List<FileRef> files,
+                               boolean preseason) {
     }
 
     public record Failure(String path, String name, String reason) {
@@ -548,7 +574,8 @@ public class AlKamelImportService {
                 ImportFormat format = ImportFormat.valueOf(f.format());
                 byte[] bytes = client.download(f.path());
                 SourceContext ctx = new SourceContext(client.url(f.path()), f.modified(), req.sourceEvent(),
-                        req.year(), seriesName, req.eventName(), f.sessionStart(), f.sessionLabel());
+                        req.year(), seriesName, req.eventName(), f.sessionStart(), f.sessionLabel(),
+                        req.preseason());
                 batches.addAll(imports.stage(filenameOf(f.path()), bytes, format, ctx));
             } catch (ResponseStatusException e) {
                 failures.add(new Failure(f.path(), name, e.getReason()));

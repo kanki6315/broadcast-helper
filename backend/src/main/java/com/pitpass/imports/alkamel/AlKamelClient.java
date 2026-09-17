@@ -2,6 +2,7 @@ package com.pitpass.imports.alkamel;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.server.ResponseStatusException;
@@ -36,7 +37,19 @@ public class AlKamelClient {
 
     private static final String USER_AGENT = "PitPass/1.0 (results importer; admin-triggered)";
 
-    private final RestClient http = RestClient.create();
+    /** Every fetch runs on the admin's request thread, so a stalled connection
+     *  or body must give up rather than park that thread for good. */
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
+    private static final Duration READ_TIMEOUT = Duration.ofSeconds(60);
+
+    private final RestClient http = RestClient.builder().requestFactory(requestFactory()).build();
+
+    private static SimpleClientHttpRequestFactory requestFactory() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(CONNECT_TIMEOUT);
+        factory.setReadTimeout(READ_TIMEOUT);
+        return factory;
+    }
     private final String baseUrl;
     private final Duration delay;
     private final Duration listingTtl;

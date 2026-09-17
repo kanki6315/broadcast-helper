@@ -226,7 +226,7 @@ class AlKamelImportServiceTest {
                 new FileRef(LB_WTSC + "201704081305_Race/01_Starting%20Grid.PDF", "GRID", "IMSA_GRID_PDF", null,
                         LocalDateTime.of(2017, 4, 8, 13, 5), "Race"),
                 new FileRef(quali, "RESULTS", "IMSA_CSV", "2017-04-07 19:00", LocalDateTime.of(2017, 4, 7, 17, 20),
-                        "Qualifying"))));
+                        "Qualifying")), false));
 
         assertEquals(3, result.requested());
         assertEquals(2, result.staged());

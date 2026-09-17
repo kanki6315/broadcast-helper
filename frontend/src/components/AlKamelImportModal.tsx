@@ -422,7 +422,7 @@ export default function AlKamelImportModal({
 
   interface Job {
     label: string
-    body: { year: number; sourceEvent: string; eventName: string; seriesId: number; files: FileRef[] }
+    body: { year: number; sourceEvent: string; eventName: string; seriesId: number; files: FileRef[]; preseason: boolean }
   }
 
   async function runJobs(jobs: Job[], pinSeries: number | null, pinEvent: number | null) {
@@ -473,7 +473,7 @@ export default function AlKamelImportModal({
     void runJobs(
       chosen.map((w) => ({
         label: `${w.eventName}${w.seriesName ? ` · ${w.seriesName}` : ''}`,
-        body: { year: w.year, sourceEvent: w.sourceEvent, eventName: w.eventName, seriesId: (w.seriesId ?? looseSeries[weekendKey(w)])!, files: filesFor(w, opts) },
+        body: { year: w.year, sourceEvent: w.sourceEvent, eventName: w.eventName, seriesId: (w.seriesId ?? looseSeries[weekendKey(w)])!, files: filesFor(w, opts), preseason: w.preseason },
       })),
       seriesId,
       null,
@@ -484,7 +484,7 @@ export default function AlKamelImportModal({
     if (!eventPlan?.weekend || !refChosen.length) return
     const w = eventPlan.weekend
     void runJobs(
-      [{ label: eventPlan.eventName, body: { year: w.year, sourceEvent: w.sourceEvent, eventName: eventPlan.eventName, seriesId: eventPlan.seriesId, files: refChosen.map((x) => x.ref) } }],
+      [{ label: eventPlan.eventName, body: { year: w.year, sourceEvent: w.sourceEvent, eventName: eventPlan.eventName, seriesId: eventPlan.seriesId, files: refChosen.map((x) => x.ref), preseason: w.preseason } }],
       eventPlan.seriesId,
       eventPlan.eventId,
     )

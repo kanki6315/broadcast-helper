@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.HashSet;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -32,19 +31,22 @@ import java.util.regex.Pattern;
 public class ImportService {
 
     /** sourceUrl / sourceEvent are set only on batches fetched from the Al
-     *  Kamel site (see {@link SourceContext}); null for uploads and iRacing. */
+     *  Kamel site (see {@link SourceContext}); null for uploads and iRacing.
+     *  sourcePreseason is the planner's verdict that the fetched weekend is no
+     *  round; false for everything else. */
     public record BatchSummary(long id, String kind, String format, String filename, String status,
-                               String summary, OffsetDateTime createdAt, String sourceUrl, String sourceEvent) {
+                               String summary, OffsetDateTime createdAt, String sourceUrl, String sourceEvent,
+                               boolean sourcePreseason) {
     }
 
     private static final String BATCH_COLUMNS =
-            "id, kind, format, filename, status, summary, created_at, source_url, source_event";
+            "id, kind, format, filename, status, summary, created_at, source_url, source_event, source_preseason";
 
     private static BatchSummary batchRow(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new BatchSummary(rs.getLong("id"), rs.getString("kind"),
                 rs.getString("format"), rs.getString("filename"), rs.getString("status"),
                 rs.getString("summary"), rs.getObject("created_at", OffsetDateTime.class),
-                rs.getString("source_url"), rs.getString("source_event"));
+                rs.getString("source_url"), rs.getString("source_event"), rs.getBoolean("source_preseason"));
     }
 
     private final JdbcClient db;
@@ -163,13 +165,41 @@ public class ImportService {
                     f.sessionType(), f.sessionOrdinal(), f.reportMark(), f.reportMessage(),
                     f.sessionStart() != null ? f.sessionStart() : ctx.sessionStart(),
                     f.circuitName(), f.circuitLengthM(), f.circuitCountry(), f.rows());
-        } else if (payload instanceof StandingsImport st && format == ImportFormat.IMSA_POINTS_PDF
-                && ctx.year() != null) {
-            payload = new StandingsImport(st.name(), st.mainTitle(), st.subTitle(), String.valueOf(ctx.year()),
-                    st.sessions(), st.rows());
+        } else if (payload instanceof StandingsImport st && format == ImportFormat.IMSA_POINTS_PDF) {
+            // A sheet that names no series at all ("PRO Driver Championship",
+            // Lamborghini Super Trofeo 2021) takes the folder's, so the title
+            // resolves the way every other series' does.
+            String title = withSeriesPrefix(st.mainTitle(), ctx.seriesName());
+            String year = ctx.year() != null ? String.valueOf(ctx.year()) : st.year();
+            payload = new StandingsImport(title.equals(st.mainTitle()) ? st.name() : title, title, st.subTitle(),
+                    year, st.sessions(), st.rows());
         }
         return new Staged(s.kind(), payload, s.summary());
     }
+
+    /**
+     * The title with the series' name in front when the title names no series
+     * of its own — judged by whether any distinctive word of the series name
+     * (four letters or more, not a generic "cup"/"championship"/"series")
+     * appears in the title. A title that names its series in other words
+     * ("IMSA WeatherTech…" for a series recorded without the "IMSA") is left
+     * alone; a title that names nothing gets the prefix.
+     */
+    static String withSeriesPrefix(String mainTitle, String seriesName) {
+        if (mainTitle == null || seriesName == null || seriesName.isBlank()) {
+            return mainTitle;
+        }
+        String title = " " + mainTitle.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+", " ") + " ";
+        for (String word : seriesName.toLowerCase(Locale.ROOT).split("[^\\p{L}\\p{N}]+")) {
+            if (word.length() >= 4 && !GENERIC_SERIES_WORDS.contains(word) && title.contains(" " + word + " ")) {
+                return mainTitle;
+            }
+        }
+        return seriesName.trim() + " " + mainTitle.trim();
+    }
+
+    private static final Set<String> GENERIC_SERIES_WORDS = Set.of(
+            "championship", "series", "challenge", "presented", "north", "america", "imsa");
 
     /** The event a fetched weekend already created or attached to, by the
      *  folder key stamped on it at commit. Empty for uploads. */
@@ -501,9 +531,9 @@ public class ImportService {
         for (Staged s : staged) {
             long id = db.sql("""
                             INSERT INTO import_batch (kind, format, filename, payload, summary,
-                                                      source_url, source_modified, source_event)
+                                                      source_url, source_modified, source_event, source_preseason)
                             VALUES (:kind, :format, :filename, :payload::jsonb, :summary,
-                                    :sourceUrl, :sourceModified, :sourceEvent)
+                                    :sourceUrl, :sourceModified, :sourceEvent, :sourcePreseason)
                             RETURNING id
                             """)
                     .param("kind", s.kind())
@@ -514,6 +544,7 @@ public class ImportService {
                     .param("sourceUrl", source == null ? null : source.sourceUrl())
                     .param("sourceModified", source == null ? null : source.sourceModified())
                     .param("sourceEvent", source == null ? null : source.sourceEvent())
+                    .param("sourcePreseason", source != null && source.preseason())
                     .query(Long.class)
                     .single();
             out.add(get(id));
@@ -725,11 +756,14 @@ public class ImportService {
     /**
      * Maps the grid-PDF sidecar's JSON onto GridImport. Session metadata stays
      * null (there is none in the sheet, so the reviewer flow fires) except the
-     * ordinal from the title's race number. The sheet names one driver per
-     * slot with no roster to resolve a seat against, so attribution stays
-     * null — readers fall back to the entry's sole crew member, which is
-     * always right in the single-driver series that publish these; the
-     * results import supplies the roster itself.
+     * ordinal from the title's race number, where the title has one. A
+     * single-driver sheet names one driver per slot with no roster to resolve
+     * a seat against, so attribution stays null — readers fall back to the
+     * entry's sole crew member. A crew sheet (WeatherTech, Pilot Challenge
+     * through 2021) lists the crew as initialled names and marks the starting
+     * and qualifying driver by emphasis; those come through as the row's
+     * roster and seats, and resolve at commit through the stored lineup the
+     * way an initialled results name does.
      */
     static GridImport mapGridPdfJson(JsonNode root) {
         List<GridImport.Row> rows = new ArrayList<>();
@@ -741,6 +775,18 @@ public class ImportService {
             }
             String className = r.path("class").asText(null);
             Integer inClass = classCounters.merge(className, 1, Integer::sum);
+            List<RaceResultsImport.DriverRow> crew = new ArrayList<>();
+            int seat = 0;
+            for (JsonNode d : r.path("drivers")) {
+                String name = d.path("name").asText("").trim();
+                int cut = name.lastIndexOf(' ');
+                if (cut > 0) {
+                    crew.add(new RaceResultsImport.DriverRow(++seat, name.substring(0, cut).trim(),
+                            name.substring(cut + 1).trim(), null, null, null));
+                }
+            }
+            Integer starting = r.path("starting_driver_seat").isInt() ? r.path("starting_driver_seat").asInt() : null;
+            Integer qualifying = r.path("qualifying_driver_seat").isInt() ? r.path("qualifying_driver_seat").asInt() : null;
             rows.add(new GridImport.Row(
                     r.path("position").asInt(),
                     inClass,
@@ -751,13 +797,15 @@ public class ImportService {
                     r.path("car").asText(null),
                     null,
                     r.path("time").asText(null),
-                    null,
-                    null,
-                    List.of()
+                    starting != null && starting <= crew.size() ? starting : null,
+                    qualifying != null && qualifying <= crew.size() ? qualifying : null,
+                    crew
             ));
         }
+        // A numberless title ("Race Official Starting Grid") is the weekend's
+        // one race: ordinal 1, as the folder label confirms at staging.
         return new GridImport(null, null, null, null,
-                root.path("race").asInt(1), null, null, null, null, rows);
+                root.path("race").isInt() ? root.path("race").asInt() : 1, null, null, null, null, rows);
     }
 
     /** Stages a Formula 1 support-race sheet via the Python sidecar, which
@@ -945,6 +993,10 @@ public class ImportService {
             }
             List<String> known = seasonEntryClasses(seasonId.get());
             String className = deriveClassAndKind(imp.mainTitle(), match.matchedPrefix()).className();
+            CupGuess cup = cupOf(imp.mainTitle(), className);
+            if (cup != null) {
+                className = cup.className();
+            }
             List<String> unknown = isUnknownClass(className, known, classAliasesForSeason(seasonId.get()))
                     ? List.of(className) : List.of();
             return new ClassReview(known, unknown);
@@ -1196,10 +1248,69 @@ public class ImportService {
             }
         }
         String seriesName = seriesId.map(this::seriesName).orElse(null);
-        // Default: the primary championship, grouped under the series name. A cup
-        // is the reviewer flipping is_cup and naming the family.
+        // Default: the primary championship, grouped under the series name. The
+        // cups a title names outright (the Endurance Cup tables beside the
+        // season tables, a Bronze or Rookie cup) come pre-flipped with their
+        // family; any other cup is the reviewer flipping is_cup.
+        CupGuess cup = cupOf(imp.mainTitle(), ck.className());
         return new TargetGuess(seriesId.orElse(null), seriesName, year, null, null, null, null,
-                ck.className(), ck.kind(), Boolean.FALSE, seriesName);
+                cup != null ? cup.className() : ck.className(), ck.kind(),
+                cup != null, cup != null ? cup.family() : seriesName);
+    }
+
+    /** A cup a standings title names, with the family it files under and the
+     *  class it scores (null for a cup across classes). */
+    record CupGuess(String family, String className) {
+    }
+
+    /**
+     * The cups the JSON era publishes beside the season tables and the sheets
+     * name outright: "IMSA Michelin Endurance Cup GT Daytona PRO Drivers"
+     * (per class; the title spells the class out, the season's entries use
+     * the code), "…Grand Sport BRONZE Drivers" (the class's Bronze cup),
+     * "…Rookie Drivers" (no class). Null for a season table.
+     */
+    static CupGuess cupOf(String mainTitle, String className) {
+        String title = mainTitle == null ? "" : mainTitle.trim();
+        String words = " " + title.toUpperCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{N}]+", " ") + " ";
+        if (words.contains(" MICHELIN ENDURANCE CUP ") || words.contains(" IMEC ")) {
+            // "GT Daytona PRO Drivers", or the JSON's own "LMP2 DRIVERS OVERALL":
+            // walk back to the kind word, the class is what precedes it.
+            List<String> rest = new ArrayList<>(List.of(stripTitleDecoration(title
+                    .replaceFirst("(?i)^.*?michelin endurance cup\\s*", "")
+                    .replaceFirst("(?i)^IMEC\\s*", "")).split("\\s+")));
+            while (rest.size() > 1 && !CLOSED_KINDS.contains(canonicalKind(rest.get(rest.size() - 1)))) {
+                rest.remove(rest.size() - 1);
+            }
+            String phrase = rest.size() > 1 ? String.join(" ", rest.subList(0, rest.size() - 1)) : "";
+            return new CupGuess("Michelin Endurance Cup", imsaClassCode(phrase));
+        }
+        if (words.contains(" BRONZE ")) {
+            String cls = className == null ? "" : className.replaceAll("(?i)\\s*bronze\\s*", " ").trim();
+            return new CupGuess("Bronze Cup", cls.isEmpty() ? null : cls);
+        }
+        if (words.contains(" ROOKIE ")) {
+            return new CupGuess("Rookie Cup", null);
+        }
+        return null;
+    }
+
+    private static final Set<String> CLOSED_KINDS = Set.of("DRIVERS", "TEAMS", "MANUFACTURERS");
+
+    /** IMSA's spelled-out class names as the codes its entries carry. */
+    static String imsaClassCode(String phrase) {
+        String key = phrase == null ? "" : phrase.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+        return switch (key) {
+            case "" -> null;
+            case "gtdaytonapro", "gtdpro" -> "GTDPRO";
+            case "gtdaytona", "gtd" -> "GTD";
+            case "gtp" -> "GTP";
+            case "gtlm", "gtlemans" -> "GTLM";
+            case "lmp2" -> "LMP2";
+            case "lmp3" -> "LMP3";
+            case "dpi" -> "DPi";
+            default -> phrase.trim();
+        };
     }
 
     /** Class review for a known season: which of the batch's class spellings
@@ -1362,7 +1473,7 @@ public class ImportService {
     }
 
     private static ClassAndKind deriveClassKindFromTail(String title) {
-        String[] parts = title == null ? new String[0] : title.trim().split("\\s+");
+        String[] parts = title == null ? new String[0] : stripTitleDecoration(title.trim()).split("\\s+");
         if (parts.length < 2) {
             return new ClassAndKind(null, null);
         }
@@ -1507,10 +1618,10 @@ public class ImportService {
             if (eventId != null && batch.sourceEvent() != null) {
                 stampEventSource(eventId, batch.sourceEvent());
             }
-            if (eventId != null) {
-                // The commit numbered the rounds before it wrote this batch's
-                // session; number them again now that the event's shape is known
-                // (a qualifying-only weekend has just stopped — or not — being a round).
+            if (eventId != null && batch.sourcePreseason()) {
+                // The planner judged the weekend no round (the Roar, a test): the
+                // event it landed in takes no round number.
+                db.sql("UPDATE event SET is_round = FALSE WHERE id = :id").param("id", eventId).update();
                 renumberSeasonRounds(seasonIdOfEvent(eventId));
             }
         } catch (JsonProcessingException e) {
@@ -1587,50 +1698,76 @@ public class ImportService {
     }
 
     /**
-     * Seasons that had no classes when the current group commit began. The
-     * review judged "unknown class" against the season as it was; inside the
-     * group the first batch's rows would otherwise become the canon that the
-     * next batch is held to — a qualifying CSV listing one class, then the race
-     * listing four, failed on "Unrecognized class" for the classes the review
-     * had waved through. For these seasons the whole group is the seed.
+     * Seasons that had no classes when the current group commit began, each
+     * with the group's own classes as its canon. The review judged "unknown
+     * class" against the season as it was; inside the group the first batch's
+     * rows would otherwise become the canon that the next batch is held to — a
+     * qualifying CSV listing one class, then the race listing four, failed on
+     * "Unrecognized class" for the classes the review had waved through. For
+     * these seasons the canon is the union of the group's class spellings
+     * (first spelling wins, case and spaces ignored), so a later batch's
+     * "Gtd " still folds onto the first's "GTD" instead of standing beside it.
      * Request-scoped: set and cleared by {@link #commitGroup}.
      */
-    private final ThreadLocal<Set<SeasonKey>> classSeeding = ThreadLocal.withInitial(HashSet::new);
+    private final ThreadLocal<Map<SeasonKey, List<String>>> classSeeding = ThreadLocal.withInitial(HashMap::new);
 
-    private void markClassSeeding(ProposedEvent pe, List<GroupBatch> batches) {
+    /** Called inside the group's transaction once its event is resolved, so a
+     *  season the group itself just created (a new series) is seen too. */
+    private void markClassSeeding(long eventId, List<GroupBatch> batches) {
         try {
-            SeasonKey key;
-            if (pe.eventId() != null) {
-                key = db.sql("SELECT s.series_id, s.year FROM season s JOIN event e ON e.season_id = s.id WHERE e.id = :id")
-                        .param("id", pe.eventId())
-                        .query((rs, i) -> new SeasonKey(rs.getLong("series_id"), rs.getInt("year")))
-                        .optional().orElse(null);
-            } else {
-                Long seriesId = batches.get(0).target().seriesId();
-                LocalDate date = eventMetaFromBatch(batches.get(0).batchId()).date();
-                key = seriesId == null || date == null ? null : new SeasonKey(seriesId, date.getYear());
-            }
-            if (key == null) {
+            SeasonKey key = db.sql("SELECT s.series_id, s.year FROM season s JOIN event e ON e.season_id = s.id WHERE e.id = :id")
+                    .param("id", eventId)
+                    .query((rs, i) -> new SeasonKey(rs.getLong("series_id"), rs.getInt("year")))
+                    .optional().orElse(null);
+            if (key == null || classSeeding.get().containsKey(key)) {
                 return;
             }
             boolean empty = findSeasonId(key.seriesId(), key.year())
                     .map(sn -> seasonEntryClasses(sn).isEmpty()).orElse(true);
-            if (empty) {
-                classSeeding.get().add(key);
+            if (!empty) {
+                return;
             }
+            List<String> canon = new ArrayList<>();
+            for (GroupBatch gb : batches) {
+                for (String c : payloadClasses(gb.batchId())) {
+                    if (c != null && !c.isBlank() && canon.stream().noneMatch(k -> normClass(k).equals(normClass(c)))) {
+                        canon.add(c);
+                    }
+                }
+            }
+            classSeeding.get().put(key, canon);
         } catch (RuntimeException ignored) {
             // Marking is an optimisation of the gate, never a reason to fail the group;
             // the commit below reports any real problem.
         }
     }
 
+    /** The class spellings an event-kind batch's rows carry. */
+    private List<String> payloadClasses(long batchId) {
+        BatchSummary batch = get(batchId);
+        String payload = payloadJson(batchId);
+        try {
+            return switch (batch.kind()) {
+                case "RACE_RESULTS" -> json.readValue(payload, RaceResultsImport.class).rows().stream()
+                        .map(RaceResultsImport.Row::className).toList();
+                case "GRID" -> json.readValue(payload, GridImport.class).rows().stream()
+                        .map(GridImport.Row::className).toList();
+                case "ENTRY_LIST" -> json.readValue(payload, EntryListImport.class).entries().stream()
+                        .map(EntryListImport.Entry::className).toList();
+                default -> List.of();
+            };
+        } catch (JsonProcessingException e) {
+            return List.of();
+        }
+    }
+
     /** Commit one group's batches in a single transaction; roll the whole group
      *  back (batches stay STAGED) on any failure, reporting it per batch. */
     private List<BatchResult> commitEventGroup(ProposedEvent pe, List<GroupBatch> batches) {
-        markClassSeeding(pe, batches);
         try {
             long eventId = txTemplate.execute(status -> {
                 long resolved = pe.eventId() != null ? attachEventId(pe.eventId()) : createGroupEvent(pe, batches);
+                markClassSeeding(resolved, batches);
                 for (GroupBatch gb : batches) {
                     commit(gb.batchId(), withEvent(gb.target(), resolved, pe.name()));
                 }
@@ -2591,43 +2728,28 @@ public class ImportService {
      * axis for pre-round standings snapshots — stays correct as rounds arrive.
      */
     /**
-     * Number the season's rounds by date. A round is an event that races: a
-     * weekend whose sessions are all practice or qualifying — a test day — is
-     * not one, and takes no number, so the recap's round N still lines up
-     * with the standings' round N. An event with no sessions yet (created
-     * from an entry list before the weekend) is a round to come and keeps
-     * its place. The Roar Before the 24 is the one weekend that races without
-     * being a round — its "race" (2021–22) was the qualifying race that set
-     * Daytona's grid — so it is excluded by name.
+     * Number the season's rounds by date. A round is an event with
+     * {@code is_round} set — every event unless it was marked otherwise (the
+     * Roar Before the 24, a test day, a prologue: the Al Kamel planner's
+     * pre-season verdict, stamped at commit). The others sit on the calendar
+     * with no number, so the recap's round N still lines up with the
+     * standings' round N. The shape of an event's sessions is deliberately
+     * not consulted: a real round is qualifying-only from its Saturday import
+     * until its race lands, and must keep its number throughout.
      */
     void renumberSeasonRounds(long seasonId) {
         db.sql("""
-                        WITH rounds AS (
-                            SELECT e.id
-                            FROM event e
-                            WHERE e.season_id = :seasonId
-                              AND e.name !~* '\\yroar\\y'
-                              AND (NOT EXISTS (SELECT 1 FROM race_session rs WHERE rs.event_id = e.id)
-                                   OR EXISTS (SELECT 1 FROM race_session rs
-                                              WHERE rs.event_id = e.id AND rs.session_type = 'RACE'))
-                        ),
-                        ranked AS (
+                        WITH ranked AS (
                             SELECT e.id, row_number() OVER (ORDER BY e.event_date NULLS LAST, e.id) AS rn
-                            FROM event e JOIN rounds r ON r.id = e.id
+                            FROM event e
+                            WHERE e.season_id = :seasonId AND e.is_round
                         )
                         UPDATE event e SET round_ordinal = ranked.rn
                         FROM ranked WHERE ranked.id = e.id
                         """)
                 .param("seasonId", seasonId)
                 .update();
-        db.sql("""
-                        UPDATE event e SET round_ordinal = NULL
-                        WHERE e.season_id = :seasonId
-                          AND (e.name ~* '\\yroar\\y'
-                               OR (EXISTS (SELECT 1 FROM race_session rs WHERE rs.event_id = e.id)
-                                   AND NOT EXISTS (SELECT 1 FROM race_session rs
-                                                   WHERE rs.event_id = e.id AND rs.session_type = 'RACE')))
-                        """)
+        db.sql("UPDATE event SET round_ordinal = NULL WHERE season_id = :seasonId AND NOT is_round")
                 .param("seasonId", seasonId)
                 .update();
     }
@@ -2881,9 +3003,12 @@ public class ImportService {
             // weekends has no full-named result anywhere else to match.
             Optional<String> fromStandings = fullNameFromStandings(d.firstName().trim(), d.surname(), entryId);
             if (fromStandings.isPresent()) {
+                // The key ends in the sheet's surname (that is how it matched), so
+                // split there — "Kelvin van der Linde" is Kelvin / van der Linde, the
+                // way the results JSON spells it, not Kelvin van der / Linde.
                 String full = fromStandings.get().trim();
-                int cut = full.lastIndexOf(' ');
-                return findOrCreateDriver(full.substring(0, cut).trim(), full.substring(cut + 1).trim(),
+                int cut = full.length() - d.surname().trim().length();
+                return findOrCreateDriver(full.substring(0, cut).trim(), full.substring(cut).trim(),
                         d.country(), d.hometown());
             }
         }
@@ -2901,7 +3026,7 @@ public class ImportService {
                                  JOIN championship_group g ON g.id = c.group_id
                         WHERE c.season_id = (SELECT ev.season_id FROM entry e JOIN event ev ON ev.id = e.event_id WHERE e.id = :entryId)
                           AND g.kind = 'DRIVERS'
-                          AND lower(r.competitor_key) LIKE '% ' || lower(:surname)
+                          AND lower(right(r.competitor_key, length(:surname) + 1)) = ' ' || lower(:surname)
                           AND upper(left(r.competitor_key, 1)) = :initial
                         """)
                 .param("entryId", entryId).param("surname", surname.trim())
@@ -2959,6 +3084,32 @@ public class ImportService {
      *  source that omits them. */
     long findOrCreateDriver(String firstName, String surname, String country, String hometown) {
         record DriverRow(long id, String first, String surname) {
+        }
+        // Sources split the same person differently — an F1-paddock sheet's
+        // "A. R. FERNANDES" resolves to "Andre Renha" / "Fernandes", the timing
+        // JSON says "Andre" / "Renha Fernandes" — so a driver whose whole name
+        // matches is the same driver, whatever the split.
+        Optional<DriverRow> sameName = db.sql("""
+                        UPDATE driver SET country = COALESCE(:country, country),
+                                          hometown = COALESCE(:hometown, hometown)
+                        WHERE id = (SELECT id FROM driver
+                                    WHERE lower(regexp_replace(first_name || ' ' || surname, '\\s+', ' ', 'g'))
+                                        = lower(regexp_replace(:first || ' ' || :surname, '\\s+', ' ', 'g'))
+                                    ORDER BY id LIMIT 1)
+                        RETURNING id, first_name, surname
+                        """)
+                .param("first", firstName == null ? "" : firstName.trim())
+                .param("surname", surname == null ? "" : surname.trim())
+                .param("country", country)
+                .param("hometown", hometown)
+                .query((rs, i) -> new DriverRow(rs.getLong("id"), rs.getString("first_name"), rs.getString("surname")))
+                .optional();
+        if (sameName.isPresent()) {
+            DriverRow found = sameName.get();
+            // The same split as the stored row gets the usual recasing; a
+            // different split keeps the stored spelling, which came first.
+            recaseIfShouty(found.id(), found.first(), found.surname(), firstName, surname);
+            return found.id();
         }
         DriverRow row = db.sql("""
                         INSERT INTO driver (first_name, surname, country, hometown)
@@ -3033,7 +3184,7 @@ public class ImportService {
      * null className.
      */
     private static ClassAndKind deriveClassAndKind(String mainTitle, String matchedPrefix) {
-        String remainder = mainTitle.substring(matchedPrefix.length()).trim();
+        String remainder = stripTitleDecoration(mainTitle.substring(matchedPrefix.length()).trim());
         int lastSpace = remainder.lastIndexOf(' ');
         if (lastSpace > 0) {
             return new ClassAndKind(remainder.substring(0, lastSpace).trim(),
@@ -3041,6 +3192,30 @@ public class ImportService {
         }
         return new ClassAndKind(null, remainder.isEmpty() ? null : canonicalKind(remainder));
     }
+
+    /**
+     * A title's tail without the words some sheets hang after the kind — "PRO
+     * Driver Championship", "P3-1 Bronze Drivers Cup" — so the kind word is
+     * last again. Only trailing words go, and only while the word before them
+     * is not already a kind; the series prefix ("…SportsCar Championship") has
+     * been removed before this is called.
+     */
+    static String stripTitleDecoration(String title) {
+        String t = title == null ? "" : title.trim();
+        while (true) {
+            int lastSpace = t.lastIndexOf(' ');
+            if (lastSpace <= 0) {
+                return t;
+            }
+            String last = t.substring(lastSpace + 1).toLowerCase(Locale.ROOT);
+            if (!TITLE_DECORATION.contains(last)) {
+                return t;
+            }
+            t = t.substring(0, lastSpace).trim();
+        }
+    }
+
+    private static final Set<String> TITLE_DECORATION = Set.of("championship", "championships", "standings", "cup");
 
     /**
      * A title's kind word as one of the closed kinds. Series word the same
@@ -3086,11 +3261,11 @@ public class ImportService {
     /** The season's canonical classes: the distinct entry (entry-list) classes. */
     private List<String> seasonEntryClasses(long seasonId) {
         if (!classSeeding.get().isEmpty()) {
-            boolean seeding = db.sql("SELECT series_id, year FROM season WHERE id = :id").param("id", seasonId)
+            List<String> seeded = db.sql("SELECT series_id, year FROM season WHERE id = :id").param("id", seasonId)
                     .query((rs, i) -> new SeasonKey(rs.getLong("series_id"), rs.getInt("year")))
-                    .optional().map(k -> classSeeding.get().contains(k)).orElse(false);
-            if (seeding) {
-                return List.of();
+                    .optional().map(k -> classSeeding.get().get(k)).orElse(null);
+            if (seeded != null) {
+                return seeded;
             }
         }
         return db.sql("""

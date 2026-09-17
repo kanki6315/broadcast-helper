@@ -32,10 +32,22 @@ public record IndexEntry(String href, String name, boolean directory, String mod
     }
 
     static IndexEntry of(String href, String modified, String size) {
+        // Apache leaves "&" (and a few others) unencoded in the path and then
+        // HTML-escapes the attribute, so a name with "&" arrives as "&amp;": undo
+        // that before decoding, and fetch the raw "&", which the server accepts.
+        href = unescapeHtml(href);
         boolean dir = href.endsWith("/");
         String decoded = URLDecoder.decode(href.replace("+", "%2B"), StandardCharsets.UTF_8);
         String name = dir ? decoded.substring(0, decoded.length() - 1) : decoded;
         return new IndexEntry(href, name, dir, modified, size);
+    }
+
+    static String unescapeHtml(String s) {
+        if (s.indexOf('&') < 0) {
+            return s;
+        }
+        return s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
+                .replace("&#39;", "'").replace("&#x27;", "'").replace("&amp;", "&");
     }
 
     /** A file the index lists at zero bytes. */

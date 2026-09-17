@@ -47,6 +47,9 @@ interface BatchListItem {
   // The "YY_YYYY/NN_Event" folder a batch was fetched from on the Al Kamel
   // site; null for uploads and iRacing. A weekend's fetched batches share it.
   sourceEvent?: string | null
+  // The planner's verdict that the fetched weekend is no round (the Roar, a
+  // test): the event it creates takes no round number. False otherwise.
+  sourcePreseason?: boolean
 }
 
 const EVENT_KINDS = new Set(['RACE_RESULTS', 'GRID', 'FLAGS', 'ENTRY_LIST'])
@@ -62,6 +65,7 @@ interface ConfirmBatch {
   unknownClasses: string[]
   needsSession: boolean
   newCarNumbers: string[]
+  preseason: boolean
 }
 // The draggable unit: one file / subsession (its batches share a filename).
 interface ConfirmItem {
@@ -196,14 +200,17 @@ export default function ConfirmImportStep({
         unknownClasses: review?.classReview.unknownClasses ?? [],
         needsSession: review?.needsSession ?? false,
         newCarNumbers: review?.rosterDiff?.newCars.map((c) => c.number) ?? [],
+        preseason: b.sourcePreseason ?? false,
       }
       if (!EVENT_KINDS.has(b.kind)) {
         standingsBatches.push(cb)
         continue
       }
       // Fetched batches group by the weekend folder they came from — one card
-      // per event with every session inside; uploads and subsessions by file.
-      const key = b.sourceEvent ?? b.filename
+      // per event with every session inside — and by series, since one folder
+      // holds every series that raced that weekend and each is its own event;
+      // uploads and subsessions group by file.
+      const key = b.sourceEvent != null ? `${b.sourceEvent}|${cb.guess?.seriesId ?? ''}` : b.filename
       if (!itemMap.has(key)) {
         itemMap.set(key, {
           key,
@@ -271,7 +278,7 @@ export default function ConfirmImportStep({
         g.itemKeys.push(it.key)
         continue
       }
-      const bk = `${(it.circuit ?? '').toLowerCase()}|${it.date ?? ''}`
+      const bk = `${it.seriesId ?? ''}|${(it.circuit ?? '').toLowerCase()}|${it.date ?? ''}`
       let gk = bucketKey.get(bk)
       if (!gk) {
         gk = newGroupKey()
@@ -354,13 +361,12 @@ export default function ConfirmImportStep({
     if (seriesId == null || allEvents === null) return null
     const sName = allSeries?.find((s) => s.id === seriesId)?.name
     if (!sName) return null
-    // A weekend that only qualified — the Roar, a test day — takes no round
-    // number at commit, so it stays out of the preview too. Judged from its
-    // batches: a grid, or results whose session reads as a race.
-    const races = (g: EventGroupDraft) => g.itemKeys.some((k) =>
-      (itemByKey.get(k)?.batches ?? []).some((b) =>
-        b.kind === 'GRID' || (b.kind === 'RACE_RESULTS' && /\b(race|hour|heat|feature)\b/i.test(b.summary))))
-    const createGroups = groups.filter((g) => g.eventId == null && g.itemKeys.length > 0 && races(g))
+    // Every new event takes a round number at commit — an entry list before
+    // the weekend is a round to come — except one the planner marked
+    // pre-season (the Roar, a test day), which stays out of the preview too.
+    const preseason = (g: EventGroupDraft) => g.itemKeys.every((k) =>
+      (itemByKey.get(k)?.batches ?? []).every((b) => b.preseason))
+    const createGroups = groups.filter((g) => g.eventId == null && g.itemKeys.length > 0 && !preseason(g))
     if (createGroups.length === 0) return null
     // Bucket by year (undated groups can't be previewed).
     const yearOf = (d: string | null) => (d ? new Date(d).getFullYear() : null)
@@ -396,10 +402,17 @@ export default function ConfirmImportStep({
     ...standings.filter((b) => excludeReason(b)).map((b) => b.id),
   ]
   const commitCount = includedItems.reduce((n, it) => n + it.batches.length, 0) + includedStandings.length
-  const canCommit = seriesId != null && commitCount > 0 && phase === 'review'
+  // A group's series: the pin, else what its sessions were fetched or guessed
+  // for — so one weekend folder's several series commit each to their own —
+  // else the series chosen above.
+  const groupSeries = (g: EventGroupDraft): number | null =>
+    pinnedSeriesId ?? g.itemKeys.map((k) => itemByKey.get(k)?.seriesId ?? null).find((s) => s != null) ?? seriesId
+  const everyGroupHasSeries = groups.filter((g) => g.itemKeys.length > 0).every((g) => groupSeries(g) != null)
+    && includedStandings.every((b) => (b.guess?.seriesId ?? seriesId) != null)
+  const canCommit = (seriesId != null || everyGroupHasSeries) && commitCount > 0 && phase === 'review'
 
   async function commit(retryFailedOnly = false) {
-    if (seriesId == null) return
+    if (seriesId == null && !everyGroupHasSeries) return
     setPhase('committing')
     setError(null)
 
@@ -411,7 +424,7 @@ export default function ConfirmImportStep({
     const eventPayload = wantGroups.map((g) => ({ key: g.key, eventId: g.eventId, name: g.name, eventDate: g.date }))
     const batchPayload: { batchId: number; eventKey: string | null; target: unknown }[] = []
     const eventTarget = (g: EventGroupDraft) => ({
-      seriesId,
+      seriesId: groupSeries(g),
       newSeriesName: null,
       eventId: null,
       eventName: null, // the group supplies the name
@@ -448,7 +461,7 @@ export default function ConfirmImportStep({
         batchId: b.id,
         eventKey: null,
         target: {
-          seriesId,
+          seriesId: b.guess?.seriesId ?? seriesId,
           newSeriesName: null,
           eventId: null,
           eventName: null,
@@ -538,7 +551,12 @@ export default function ConfirmImportStep({
         </p>
       )}
 
-      {seriesId == null ? (
+      {seriesId == null && everyGroupHasSeries ? (
+        <p className="cis-intro">
+          Each event commits to the series its files were fetched for. Check each session is under the
+          right event — drag to move, or use “Move to…”. Round numbers are set by date.
+        </p>
+      ) : seriesId == null ? (
         <div className="cis-series-need">
           <p className="cis-need-note">Choose the series these imports belong to.</p>
           <SeriesEventPicker

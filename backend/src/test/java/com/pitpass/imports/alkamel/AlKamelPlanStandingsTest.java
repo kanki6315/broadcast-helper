@@ -4,8 +4,12 @@ import com.pitpass.imports.alkamel.AlKamelCatalog.Kind;
 import com.pitpass.imports.alkamel.AlKamelCatalog.SourceFile;
 import com.pitpass.imports.alkamel.AlKamelCatalog.Status;
 import com.pitpass.imports.alkamel.AlKamelImportService.PlanFile;
+import com.pitpass.imports.alkamel.AlKamelImportService.PlanSession;
+import com.pitpass.imports.alkamel.AlKamelImportService.PlanWeekend;
 import org.junit.jupiter.api.Test;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -68,5 +72,52 @@ class AlKamelPlanStandingsTest {
         assertEquals(true, AlKamelImportService.isPreseason("06_Sebring Prologue"));
         assertEquals(false, AlKamelImportService.isPreseason("02_Daytona International Speedway"));
         assertEquals(false, AlKamelImportService.isPreseason("07_Sebring International Raceway"));
+    }
+
+    @Test
+    void endurenceCupCheckpointsAreListedButNotTicked() {
+        List<SourceFile> standings = List.of(
+                file("Points Data - Official", "01 IWSC GTP Drivers Standings.json", Status.OFFICIAL, 0, "2025-10-12 20:00"),
+                file("Points Data - Official", "20 IMEC GTP Drivers Standings Overall.json", Status.OFFICIAL, 0, "2025-10-12 20:00"),
+                file("Points Data - Official", "21 IMEC GTP Drivers Standings MRRA.json", Status.OFFICIAL, 0, "2025-10-12 20:00"));
+        List<PlanFile> plan = AlKamelImportService.planStandings(standings);
+        assertEquals(List.of("01 IWSC GTP Drivers Standings.json", "20 IMEC GTP Drivers Standings Overall.json"),
+                plan.stream().filter(PlanFile::recommended).map(PlanFile::name).toList());
+        assertEquals("cup checkpoint after one race — the Overall file is the season table",
+                plan.stream().filter(f -> f.name().contains("MRRA")).findFirst().orElseThrow().note());
+    }
+
+    private static PlanWeekend weekend(String event, long seriesId, boolean loose, String start, boolean withStandings) {
+        List<PlanSession> sessions = List.of(new PlanSession(event + "/race/", LocalDateTime.parse(start), "Race", "RACE",
+                null, null, null));
+        List<PlanFile> standings = withStandings
+                ? List.of(new PlanFile(event + "/points.pdf", "00_Championship Points - Official.pdf", "STANDINGS",
+                        "IMSA_POINTS_PDF", "OFFICIAL", 0, null, true, null, null))
+                : List.of();
+        return new PlanWeekend("25_2025/" + event, event + "/", event + "/series/", event, 2025, loose ? null : "01_Series",
+                seriesId, "Series", loose, false, false, null, sessions, standings, false, null, null);
+    }
+
+    @Test
+    void aLooseFolderNeverOutranksTheSeriesRealFinaleForStandings() {
+        // Planning one series attributes every folder posted without a series
+        // folder to it; Jerez, posted last and carrying its own points sheet,
+        // must not take the final-standings mark from Road Atlanta.
+        List<PlanWeekend> weekends = new ArrayList<>(List.of(
+                weekend("02_Daytona", 1, false, "2025-01-25T13:40", true),
+                weekend("19_Road Atlanta", 1, false, "2025-10-11T12:10", true),
+                weekend("20_Jerez", 1, true, "2025-11-15T10:00", true)));
+        AlKamelImportService.markFinalStandings(weekends);
+        assertEquals(List.of("19_Road Atlanta"),
+                weekends.stream().filter(PlanWeekend::finalStandings).map(PlanWeekend::eventName).toList());
+
+        // With no proper weekend carrying standings, the latest loose one does.
+        List<PlanWeekend> looseOnly = new ArrayList<>(List.of(
+                weekend("02_Daytona", 1, false, "2025-01-25T13:40", false),
+                weekend("07_COTA", 1, true, "2025-09-06T10:00", true),
+                weekend("20_Jerez", 1, true, "2025-11-15T10:00", true)));
+        AlKamelImportService.markFinalStandings(looseOnly);
+        assertEquals(List.of("20_Jerez"),
+                looseOnly.stream().filter(PlanWeekend::finalStandings).map(PlanWeekend::eventName).toList());
     }
 }
