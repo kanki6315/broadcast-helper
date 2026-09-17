@@ -13,6 +13,8 @@ the standard the one-make cups share; other series' PDFs vary by timing provider
 | --- | --- | --- |
 | `parse_entry_list.py` | entry-list PDF | [`entries.json`](SCHEMA.md) |
 | `parse_points.py` | championship-points PDF | [`points.json`](POINTS_SCHEMA.md) |
+| `parse_grid_pdf.py` | IMSA starting-grid PDF | grid JSON (see docstring) |
+| `parse_f1_pdf.py` | F1 support-race results / qualifying / grid PDF | results-or-grid JSON (see docstring) |
 | `extract_team_sheet_pages.py` | team-sheets PDF | car number → first page map |
 
 `extract_team_sheet_pages.py` is a locator, not a parser: it reads the first
@@ -64,6 +66,7 @@ python parse_entry_list.py samples/01_IWSC_Pre-Event_Entry_List.pdf -o /tmp/entr
 python parse_entry_list.py path/to/EntryList.pdf
 
 python parse_points.py samples/2024_MC_FullSeason_Points.pdf -o /tmp/points.json
+python parse_f1_pdf.py samples/2026_PCCNA_Miami_Results_R1.pdf
 ```
 `--series IWSC` overrides entry-list series detection; `--strict` exits non-zero
 if the parsed entry count doesn't match the PDF's "Total Entries" header.

@@ -203,7 +203,8 @@ which concretely realizes the `(series, file-kind)` plugin model above. `AUTO`
 stays the default and resolves to a concrete family; `import_batch.format`
 records which parser ran. Document-kind detection lives inside each family. One
 upload can stage **several** batches — a points PDF holds every championship of
-the series. A later family, `IRACING_JSON`, reads iRacing subsessions from an
+the series. `F1_PDF` reads Formula 1 support-race sheets (results,
+qualifying, grid). A later family, `IRACING_JSON`, reads iRacing subsessions from an
 exported file *or* the live Data API (same payload either way) and adds a
 fetch-driven import UI alongside upload. Full detail in Phase 3.
 
@@ -849,6 +850,36 @@ display size.)
   bits were extracted for reuse: `lib/useSeriesEvents` (the series/events fetch),
   `lib/importGroups` (filename→round grouping + kind labels), and
   `ImportStatusIcon`.
+- **F1 support-race PDFs (`F1_PDF`) — ✅ DONE (2026-09-16).** Carrera Cup NA's
+  Formula 1 weekends (Miami every year, Montréal 2024–25, Austin 2025) publish
+  F1-paddock-style sheets, and Al Kamel posts them as **PDF only** — the XML
+  beside some is the *Unofficial* race copy, so an XML importer would read the
+  wrong version. `parser/parse_f1_pdf.py` reads all three documents (race
+  classification, qualifying classification, staggered two-column starting
+  grid), told apart by title; `F1PdfMapper` maps them onto the shared results
+  and grid shapes. No date on any sheet → the reviewer-picks-the-event flow,
+  with the title's session type/race number as the picker hints. Geometry, not
+  text: values join the column whose header centre is nearest, and every word
+  joins the **car-number anchor** with the nearest vertical centre — long
+  names/teams are shrunk and wrapped around the row, which a fixed-tolerance
+  row cluster splits off. Rows sort by printed position (2024 Miami R1 prints
+  P25 after P29). Retirements follow the timing JSON (classified DNF = status
+  `Classified` + `not_finished`); the NOT CLASSIFIED block keeps its rows with
+  null positions; the `* PENALTIES` / `NOTES` pages become the session's
+  `report_message` (stewards' notes). Grids name each car's one driver, so they
+  carry starting/qualifying attribution (seat 1) — which the IMSA grid PDF
+  can't. **Initialled names** ("N. LASTOCHKIN", "A. R. FERNANDES") resolve in
+  `ImportService.resolveDriver` to a known driver with that surname + initial —
+  this car number this season, else this season, else anyone — only on a
+  unique match; otherwise the literal name is created. Commit a weekend's grids
+  first so their full names seed the lineups. Surnames print in capitals and
+  are cased for *new* drivers only (`nameCase`: McCann, O'Connell, De La
+  Torre); lookups ignore case. Classes print as P/PA/A (2023–24) or
+  PRO/PRO-AM/Pro-Am/MAS — case-insensitive matching covers PRO/PRO-AM, the rest
+  want one class alias each. Validated on all 34 sheets from the 7 affected
+  events: every Race 1 grid time equals that car's qualifying time (177/177).
+  Known source typo: 2026 Miami prints STADTLANDER in the race, STADLANDER
+  elsewhere.
 - **Still ahead:** design the automated prior-year-at-this-track feature,
   including change context (manufacturer, lineup, team) alongside the raw result.
   The **grid rundown sheet** (grid-order sheet with storyline fields) is
