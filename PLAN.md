@@ -482,6 +482,21 @@ display size.)
   entry-list richness. **Next slices on this seam:** manual entry (paste-a-table
   → editable grid → staged as a normal batch, `format=MANUAL`) and per-provider
   PDF parsers (e.g. `CCA_PDF`, config-mapped sidecar scripts).
+- **Multi-driver results/qualifying CSV crews — ✅ DONE (2026-09-16).** The
+  results and qualifying CSVs (`parseResultsCsv` / `parseQualifyingCsv`) read
+  only the single-driver `DRIVER_*` block (Carrera Cup), so the 2017–2023
+  WeatherTech / Pilot Challenge CSVs — numbered `DRIVER1_*`..`DRIVER6_*` blocks
+  — committed entries and results with **no driver_assignment rows** (blank
+  Results Drivers column, races missing from driver stats). `csvDrivers` now
+  reads every `DRIVERn_*` block the header declares (seat = n, empty blocks
+  skipped without renumbering, `(J)` markers stripped, `LICENSE` → rating, same
+  as the single path). These files name no fastest-lap driver, so
+  `fastest_lap_driver_seat` is null on multi-driver rows instead of a guessed
+  seat 1 (single-driver files keep seat 1). Fixtures: 2021 Mid-Ohio WeatherTech
+  race + class qualifying CSVs (`fixtures/imsa-2021/`). **Backfill:** any
+  multi-driver CSV session already committed has no crews — re-import those
+  files (commit is idempotent: same session key, results + assignments
+  replaced).
 - **Championship points PDF (`IMSA_POINTS_PDF`) — ✅ DONE (2026-07-15).** The
   second sidecar (`parser/parse_points.py`), for series/seasons with no standings
   JSON — 2024 Mustang Challenge. Emits the standings JSON shape, so the existing
@@ -985,9 +1000,8 @@ display size.)
   `Car`/`Cars`, never bare cross-references or turn/lap/article numbers), computed
   at read time — never stored, so the heuristic can change without a re-import —
   driving a car filter on the log. **Still dropped from the results JSON:** the
-  session-level `fastest_lap` block (overall pole + driver). **Not parsed:** a
-  qualifying-results CSV (`IMSA_CSV` recognizes only grid CSVs) — matters for the
-  older VP Racing CSV-only events.
+  session-level `fastest_lap` block (overall pole + driver). (The qualifying-results
+  CSV once listed here as unparsed is now handled by `IMSA_CSV`.)
 - **Recap round matching by ordinal — ✅ DONE (2026-07-17).** The recap matched
   each championship round to its season event by `venueAbbrev`, which is not
   unique within a season: Spa ("Circuit de Spa-Francorchamps") and Le Mans
