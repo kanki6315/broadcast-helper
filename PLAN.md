@@ -937,9 +937,12 @@ display size.)
   `docs/ALKAMEL_IMPORT.md`).** Two admin-clicked workflows fed from the timing
   provider's open results index: import a past season (all or one series) and
   refresh one event during a weekend. Slice 1 (catalog + client + index walker,
-  `imports/alkamel/`, fixture-driven tests plus a guarded live check) landed
-  2026-09-16; next are the source context on staged batches (V52), the
-  past-season plan/stage endpoints + modal, then the event refresh.
+  `imports/alkamel/`, fixture-driven tests plus a guarded live check) and
+  slice 2 (source context on staged batches: `SourceContext`, V52
+  `import_batch.source_*` + `event.source_ref`, context-completed payloads
+  self-place and group-commit like timing JSON, confirm step groups by
+  weekend folder) landed 2026-09-16; next are the past-season plan/stage
+  endpoints + modal, then the event refresh.
 - **Still ahead:** design the automated prior-year-at-this-track feature,
   including change context (manufacturer, lineup, team) alongside the raw result.
   The **grid rundown sheet** (grid-order sheet with storyline fields) is

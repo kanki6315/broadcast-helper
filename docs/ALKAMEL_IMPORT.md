@@ -216,10 +216,22 @@ sessions, so a CSV-era season imports complete apart from grids and standings.
    Provisional; 2021's series folder is "…SportsCar Championship**s**"; 2025
    PCCNA's points folder is `POINTS DATA` with no status suffix; the "Sprint
    Cup" and award PDFs beside the points sheet are left unclassified.
-2. **Source context** through stage / review / commit, V52, confirm-step
-   grouping by event. Test: a context-bearing 2021 CSV reviews with
-   `needsSession=false`, group-commits into a new dated event, stamps
-   `source_ref`.
+2. **Source context — DONE 2026-09-16.** `SourceContext` record;
+   `ImportService.stage(filename, bytes, format, context)` completes blanks in
+   the staged payload (`applyContext`: series name, event name, session start,
+   session label + its ordinal when the payload names no session; a points
+   PDF takes the folder's year) so `needsSession` is false and the ordinary
+   JSON-branch commit runs. V52 adds `import_batch.source_url /
+   source_modified / source_event` and `event.source_ref`; the four event-kind
+   commits now return their event id so `commit()` stamps the folder key (first
+   stamp wins). The review's event guess tries the season's `source_ref` match
+   before the circuit-and-date one. `BatchSummary` carries `sourceUrl` /
+   `sourceEvent`; `ConfirmImportStep` groups fetched batches by `sourceEvent`
+   (uploads still by filename) and the imports table shows a path-shaped
+   filename's leaf. `SourceContextImportTest` proves the whole path on the
+   real 2021 Mid-Ohio CSVs: stage with context → review self-places → group
+   commit creates the dated event with `source_ref` and the split-named
+   qualifying session → the race CSV from the same folder guesses that event.
 3. **Past season**: plan + stage endpoints, modal, progress loop. Verify
    locally on 2024 Pilot Challenge (JSON era, standings JSON), then 2019
    WeatherTech (CSV era, endurance folders, PDF-only grids marked "needs parser").

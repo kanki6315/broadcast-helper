@@ -576,7 +576,8 @@ export default function ImportsPage() {
                 <Fragment key={b.id}>
                   <tr>
                     <td>{b.id}</td>
-                    <td>{b.filename}</td>
+                    {/* A fetched file's name is its path under the season folder; show the leaf. */}
+                    <td title={b.filename}>{b.filename.slice(b.filename.lastIndexOf('/') + 1)}</td>
                     <td>{KIND_LABEL[b.kind] ?? b.kind}</td>
                     <td>{b.format}</td>
                     <td>{b.summary}</td>

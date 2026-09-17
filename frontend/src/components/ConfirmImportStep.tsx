@@ -44,6 +44,9 @@ interface BatchListItem {
   filename: string
   summary: string | null
   status: string
+  // The "YY_YYYY/NN_Event" folder a batch was fetched from on the Al Kamel
+  // site; null for uploads and iRacing. A weekend's fetched batches share it.
+  sourceEvent?: string | null
 }
 
 const EVENT_KINDS = new Set(['RACE_RESULTS', 'GRID', 'FLAGS', 'ENTRY_LIST'])
@@ -196,7 +199,9 @@ export default function ConfirmImportStep({
         standingsBatches.push(cb)
         continue
       }
-      const key = b.filename
+      // Fetched batches group by the weekend folder they came from — one card
+      // per event with every session inside; uploads and subsessions by file.
+      const key = b.sourceEvent ?? b.filename
       if (!itemMap.has(key)) {
         itemMap.set(key, {
           key,

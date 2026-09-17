@@ -28,8 +28,20 @@ import java.util.Set;
 @Service
 public class ImportService {
 
+    /** sourceUrl / sourceEvent are set only on batches fetched from the Al
+     *  Kamel site (see {@link SourceContext}); null for uploads and iRacing. */
     public record BatchSummary(long id, String kind, String format, String filename, String status,
-                               String summary, OffsetDateTime createdAt) {
+                               String summary, OffsetDateTime createdAt, String sourceUrl, String sourceEvent) {
+    }
+
+    private static final String BATCH_COLUMNS =
+            "id, kind, format, filename, status, summary, created_at, source_url, source_event";
+
+    private static BatchSummary batchRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new BatchSummary(rs.getLong("id"), rs.getString("kind"),
+                rs.getString("format"), rs.getString("filename"), rs.getString("status"),
+                rs.getString("summary"), rs.getObject("created_at", OffsetDateTime.class),
+                rs.getString("source_url"), rs.getString("source_event"));
     }
 
     private final JdbcClient db;
@@ -72,7 +84,7 @@ public class ImportService {
     // ---------------------------------------------------------------- staging
 
     /** One family parser's output, ready for the shared import_batch insert. */
-    private record Staged(String kind, Object payload, String summary) {
+    record Staged(String kind, Object payload, String summary) {
     }
 
     /**
@@ -81,6 +93,17 @@ public class ImportService {
      * series — each becomes its own batch, reviewed and committed separately.
      */
     public List<BatchSummary> stage(String filename, byte[] content, ImportFormat format) {
+        return stage(filename, content, format, null);
+    }
+
+    /**
+     * As above, for a file fetched from the Al Kamel site: the {@link SourceContext}
+     * completes what the payload leaves blank (series, event, session start and
+     * label for a CSV or a PDF sheet; the season year for a points PDF) so the
+     * batch reviews and commits like a timing JSON, and the batch records where
+     * it came from.
+     */
+    public List<BatchSummary> stage(String filename, byte[] content, ImportFormat format, SourceContext source) {
         ImportFormat resolved = format == ImportFormat.AUTO ? resolveAuto(content) : format;
         List<Staged> staged = switch (resolved) {
             case AUTO -> throw new IllegalStateException("AUTO must be resolved before staging");
@@ -92,7 +115,83 @@ public class ImportService {
             case F1_PDF -> List.of(stageF1Pdf(filename, content));
             case IRACING_JSON -> stageIRacingJson(content);
         };
-        return persist(staged, resolved, filename);
+        if (source != null) {
+            staged = staged.stream().map(s -> applyContext(s, resolved, source)).toList();
+        }
+        return persist(staged, resolved, filename, source);
+    }
+
+    /**
+     * Completes a staged payload from its source context. Only blanks are
+     * filled: a payload that names its own session keeps it. A session-level
+     * file with no session name takes the folder label and the ordinal that
+     * label carries ("Race 2" → 2). A points PDF takes the folder's year — its
+     * own guess is the PDF creation date, wrong for a season republished in
+     * January. Entry lists carry their own dates and are left alone.
+     */
+    static Staged applyContext(Staged s, ImportFormat format, SourceContext ctx) {
+        Object payload = s.payload();
+        if (payload instanceof RaceResultsImport r) {
+            boolean fillName = r.sessionName() == null && ctx.sessionLabel() != null;
+            payload = new RaceResultsImport(
+                    r.championshipName() != null ? r.championshipName() : ctx.seriesName(),
+                    r.eventName() != null ? r.eventName() : ctx.eventName(),
+                    fillName ? ctx.sessionLabel() : r.sessionName(),
+                    r.sessionType(),
+                    fillName ? ImportParser.sessionOrdinal(ctx.sessionLabel()) : r.sessionOrdinal(),
+                    r.reportMark(), r.reportMessage(),
+                    r.sessionStart() != null ? r.sessionStart() : ctx.sessionStart(),
+                    r.circuitName(), r.circuitLengthM(), r.circuitCountry(), r.rows());
+        } else if (payload instanceof GridImport g) {
+            boolean fillName = g.sessionName() == null && ctx.sessionLabel() != null;
+            payload = new GridImport(
+                    g.championshipName() != null ? g.championshipName() : ctx.seriesName(),
+                    g.eventName() != null ? g.eventName() : ctx.eventName(),
+                    fillName ? ctx.sessionLabel() : g.sessionName(),
+                    g.sessionType(),
+                    fillName ? ImportParser.sessionOrdinal(ctx.sessionLabel()) : g.sessionOrdinal(),
+                    g.sessionStart() != null ? g.sessionStart() : ctx.sessionStart(),
+                    g.circuitName(), g.circuitLengthM(), g.circuitCountry(), g.rows());
+        } else if (payload instanceof FlagsImport f) {
+            payload = new FlagsImport(
+                    f.championshipName() != null ? f.championshipName() : ctx.seriesName(),
+                    f.eventName() != null ? f.eventName() : ctx.eventName(),
+                    f.sessionName() != null ? f.sessionName() : ctx.sessionLabel(),
+                    f.sessionType(), f.sessionOrdinal(), f.reportMark(), f.reportMessage(),
+                    f.sessionStart() != null ? f.sessionStart() : ctx.sessionStart(),
+                    f.circuitName(), f.circuitLengthM(), f.circuitCountry(), f.rows());
+        } else if (payload instanceof StandingsImport st && format == ImportFormat.IMSA_POINTS_PDF
+                && ctx.year() != null) {
+            payload = new StandingsImport(st.name(), st.mainTitle(), st.subTitle(), String.valueOf(ctx.year()),
+                    st.sessions(), st.rows());
+        }
+        return new Staged(s.kind(), payload, s.summary());
+    }
+
+    /** The event a fetched weekend already created or attached to, by the
+     *  folder key stamped on it at commit. Empty for uploads. */
+    private Optional<Long> findEventBySource(long seasonId, String sourceEvent) {
+        if (sourceEvent == null || sourceEvent.isBlank()) {
+            return Optional.empty();
+        }
+        return db.sql("SELECT id FROM event WHERE season_id = :s AND source_ref = :ref ORDER BY id LIMIT 1")
+                .param("s", seasonId).param("ref", sourceEvent).query(Long.class).optional();
+    }
+
+    /** Stamp the folder key on the event a fetched batch landed in — once; the
+     *  first stamp stays, so a stray attach can't relabel an event. */
+    private void stampEventSource(long eventId, String sourceEvent) {
+        db.sql("UPDATE event SET source_ref = :ref WHERE id = :id AND source_ref IS NULL")
+                .param("ref", sourceEvent).param("id", eventId).update();
+    }
+
+    /** The review's event guess: the season's event stamped with this batch's
+     *  source folder wins, else the venue-and-weekend match. */
+    private Long guessEvent(Optional<Long> seriesId, Integer year, String circuit, LocalDate date,
+                            String sourceEvent) {
+        return seriesId.flatMap(sid -> year == null ? Optional.<Long>empty() : findSeasonId(sid, year))
+                .flatMap(sn -> findEventBySource(sn, sourceEvent).or(() -> findMatchingEvent(sn, circuit, date)))
+                .orElse(null);
     }
 
     /**
@@ -390,11 +489,18 @@ public class ImportService {
     }
 
     private List<BatchSummary> persist(List<Staged> staged, ImportFormat format, String filename) {
+        return persist(staged, format, filename, null);
+    }
+
+    private List<BatchSummary> persist(List<Staged> staged, ImportFormat format, String filename,
+                                       SourceContext source) {
         List<BatchSummary> out = new ArrayList<>();
         for (Staged s : staged) {
             long id = db.sql("""
-                            INSERT INTO import_batch (kind, format, filename, payload, summary)
-                            VALUES (:kind, :format, :filename, :payload::jsonb, :summary)
+                            INSERT INTO import_batch (kind, format, filename, payload, summary,
+                                                      source_url, source_modified, source_event)
+                            VALUES (:kind, :format, :filename, :payload::jsonb, :summary,
+                                    :sourceUrl, :sourceModified, :sourceEvent)
                             RETURNING id
                             """)
                     .param("kind", s.kind())
@@ -402,6 +508,9 @@ public class ImportService {
                     .param("filename", filename)
                     .param("payload", toJson(s.payload()))
                     .param("summary", s.summary())
+                    .param("sourceUrl", source == null ? null : source.sourceUrl())
+                    .param("sourceModified", source == null ? null : source.sourceModified())
+                    .param("sourceEvent", source == null ? null : source.sourceEvent())
                     .query(Long.class)
                     .single();
             out.add(get(id));
@@ -749,25 +858,15 @@ public class ImportService {
     }
 
     public List<BatchSummary> list() {
-        return db.sql("""
-                        SELECT id, kind, format, filename, status, summary, created_at
-                        FROM import_batch ORDER BY id DESC
-                        """)
-                .query((rs, i) -> new BatchSummary(rs.getLong("id"), rs.getString("kind"),
-                        rs.getString("format"), rs.getString("filename"), rs.getString("status"),
-                        rs.getString("summary"), rs.getObject("created_at", OffsetDateTime.class)))
+        return db.sql("SELECT " + BATCH_COLUMNS + " FROM import_batch ORDER BY id DESC")
+                .query((rs, i) -> batchRow(rs))
                 .list();
     }
 
     public BatchSummary get(long id) {
-        return db.sql("""
-                        SELECT id, kind, format, filename, status, summary, created_at
-                        FROM import_batch WHERE id = :id
-                        """)
+        return db.sql("SELECT " + BATCH_COLUMNS + " FROM import_batch WHERE id = :id")
                 .param("id", id)
-                .query((rs, i) -> new BatchSummary(rs.getLong("id"), rs.getString("kind"),
-                        rs.getString("format"), rs.getString("filename"), rs.getString("status"),
-                        rs.getString("summary"), rs.getObject("created_at", OffsetDateTime.class)))
+                .query((rs, i) -> batchRow(rs))
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such import batch"));
     }
@@ -961,12 +1060,12 @@ public class ImportService {
             switch (batch.kind()) {
                 case "ENTRY_LIST" -> {
                     EntryListImport imp = json.readValue(payload, EntryListImport.class);
-                    guess = guessEntryList(imp);
+                    guess = guessEntryList(imp, batch.sourceEvent());
                     fileCars = carRefs(imp);
                 }
                 case "RACE_RESULTS" -> {
                     RaceResultsImport imp = json.readValue(payload, RaceResultsImport.class);
-                    guess = guessRaceResults(imp);
+                    guess = guessRaceResults(imp, batch.sourceEvent());
                     fileCars = carRefs(imp);
                     needsSession = imp.sessionStart() == null;
                     if (needsSession) {
@@ -983,10 +1082,10 @@ public class ImportService {
                         }
                     }
                 }
-                case "FLAGS" -> guess = guessFlags(json.readValue(payload, FlagsImport.class));
+                case "FLAGS" -> guess = guessFlags(json.readValue(payload, FlagsImport.class), batch.sourceEvent());
                 case "GRID" -> {
                     GridImport imp = json.readValue(payload, GridImport.class);
-                    guess = guessGrid(imp);
+                    guess = guessGrid(imp, batch.sourceEvent());
                     fileCars = carRefs(imp);
                     needsSession = imp.sessionStart() == null;
                     if (needsSession) {
@@ -1030,50 +1129,42 @@ public class ImportService {
         }
     }
 
-    private TargetGuess guessEntryList(EntryListImport imp) {
+    private TargetGuess guessEntryList(EntryListImport imp, String sourceEvent) {
         Integer year = imp.event().startDate() != null ? imp.event().startDate().getYear() : null;
         Optional<Long> seriesId = findSeriesByCode(imp.event().series());
         LocalDate date = imp.event().endDate() != null ? imp.event().endDate() : imp.event().startDate();
-        Long eventGuess = seriesId.flatMap(sid -> year == null ? Optional.<Long>empty()
-                : findSeasonId(sid, year)).flatMap(sn -> findMatchingEvent(sn, imp.event().circuit(), date))
-                .orElse(null);
+        Long eventGuess = guessEvent(seriesId, year, imp.event().circuit(), date, sourceEvent);
         return new TargetGuess(seriesId.orElse(null), seriesId.map(this::seriesName).orElse(null), year,
                 eventGuess, imp.event().name(), imp.event().circuit(),
                 date != null ? date.toString() : null, null, null, null, null);
     }
 
-    private TargetGuess guessRaceResults(RaceResultsImport imp) {
+    private TargetGuess guessRaceResults(RaceResultsImport imp, String sourceEvent) {
         Integer year = imp.sessionStart() != null ? imp.sessionStart().getYear() : null;
         Optional<Long> seriesId = findSeriesByName(imp.championshipName());
         LocalDate date = imp.sessionStart() != null ? imp.sessionStart().toLocalDate() : null;
-        Long eventGuess = seriesId.flatMap(sid -> year == null ? Optional.<Long>empty()
-                : findSeasonId(sid, year)).flatMap(sn -> findMatchingEvent(sn, imp.circuitName(), date))
-                .orElse(null);
+        Long eventGuess = guessEvent(seriesId, year, imp.circuitName(), date, sourceEvent);
         return new TargetGuess(seriesId.orElse(null), seriesId.map(this::seriesName).orElse(null), year,
                 eventGuess, imp.eventName(), imp.circuitName(),
                 date != null ? date.toString() : null, null, null, null, null);
     }
 
     /** Same event resolution as results: the flags file shares the session header. */
-    private TargetGuess guessFlags(FlagsImport imp) {
+    private TargetGuess guessFlags(FlagsImport imp, String sourceEvent) {
         Integer year = imp.sessionStart() != null ? imp.sessionStart().getYear() : null;
         Optional<Long> seriesId = findSeriesByName(imp.championshipName());
         LocalDate date = imp.sessionStart() != null ? imp.sessionStart().toLocalDate() : null;
-        Long eventGuess = seriesId.flatMap(sid -> year == null ? Optional.<Long>empty()
-                : findSeasonId(sid, year)).flatMap(sn -> findMatchingEvent(sn, imp.circuitName(), date))
-                .orElse(null);
+        Long eventGuess = guessEvent(seriesId, year, imp.circuitName(), date, sourceEvent);
         return new TargetGuess(seriesId.orElse(null), seriesId.map(this::seriesName).orElse(null), year,
                 eventGuess, imp.eventName(), imp.circuitName(),
                 date != null ? date.toString() : null, null, null, null, null);
     }
 
-    private TargetGuess guessGrid(GridImport imp) {
+    private TargetGuess guessGrid(GridImport imp, String sourceEvent) {
         Integer year = imp.sessionStart() != null ? imp.sessionStart().getYear() : null;
         Optional<Long> seriesId = findSeriesByName(imp.championshipName());
         LocalDate date = imp.sessionStart() != null ? imp.sessionStart().toLocalDate() : null;
-        Long eventGuess = seriesId.flatMap(sid -> year == null ? Optional.<Long>empty()
-                : findSeasonId(sid, year)).flatMap(sn -> findMatchingEvent(sn, imp.circuitName(), date))
-                .orElse(null);
+        Long eventGuess = guessEvent(seriesId, year, imp.circuitName(), date, sourceEvent);
         return new TargetGuess(seriesId.orElse(null), seriesId.map(this::seriesName).orElse(null), year,
                 eventGuess, imp.eventName(), imp.circuitName(),
                 date != null ? date.toString() : null, null, null, null, null);
@@ -1365,16 +1456,25 @@ public class ImportService {
         }
         String payload = payloadJson(id);
         try {
-            switch (batch.kind()) {
+            // Event-kind commits hand back the event they landed in, so a fetched
+            // batch can stamp its source folder on it (standings hang off a
+            // championship, not an event).
+            Long eventId = switch (batch.kind()) {
                 // iRacing numbers its own sessions; every other source's session
                 // name is what tells a split session apart (SessionNames).
                 case "RACE_RESULTS" -> commitRaceResults(json.readValue(payload, RaceResultsImport.class), target,
                         nameKeyed(batch));
                 case "GRID" -> commitGrid(json.readValue(payload, GridImport.class), target, nameKeyed(batch));
                 case "FLAGS" -> commitFlags(json.readValue(payload, FlagsImport.class), target, nameKeyed(batch));
-                case "STANDINGS" -> commitStandings(json.readValue(payload, StandingsImport.class), target);
+                case "STANDINGS" -> {
+                    commitStandings(json.readValue(payload, StandingsImport.class), target);
+                    yield null;
+                }
                 case "ENTRY_LIST" -> commitEntryList(json.readValue(payload, EntryListImport.class), target);
                 default -> throw new IllegalStateException("Unknown batch kind " + batch.kind());
+            };
+            if (eventId != null && batch.sourceEvent() != null) {
+                stampEventSource(eventId, batch.sourceEvent());
             }
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Stored payload no longer parses", e);
@@ -1661,7 +1761,7 @@ public class ImportService {
         return new SessionSlot(next, name, label);
     }
 
-    private void commitRaceResults(RaceResultsImport imp, ImportTarget target, boolean nameKeyed) {
+    private long commitRaceResults(RaceResultsImport imp, ImportTarget target, boolean nameKeyed) {
         long seasonId;
         long eventId;
         String sessionType;
@@ -1761,6 +1861,7 @@ public class ImportService {
         // recompute AUTO format assignments within the same transaction.
         raceFormats.autoAssignEvent(eventId);
         teamAssignments.applySeason(seasonId);
+        return eventId;
     }
 
     /**
@@ -1770,7 +1871,7 @@ public class ImportService {
      * (later-generated) file refresh the stewards' notes without a null wiping
      * what a results file already stored.
      */
-    private void commitFlags(FlagsImport imp, ImportTarget target, boolean nameKeyed) {
+    private long commitFlags(FlagsImport imp, ImportTarget target, boolean nameKeyed) {
         if (imp.sessionStart() == null) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "Flags file has no session date; cannot determine the season");
@@ -1810,9 +1911,10 @@ public class ImportService {
                     .param("lap", row.lap())
                     .update();
         }
+        return eventId;
     }
 
-    private void commitGrid(GridImport imp, ImportTarget target, boolean nameKeyed) {
+    private long commitGrid(GridImport imp, ImportTarget target, boolean nameKeyed) {
         long seasonId;
         long eventId;
         String sessionType;
@@ -1919,6 +2021,7 @@ public class ImportService {
         // keep format assignments in step with the new shape.
         raceFormats.autoAssignEvent(eventId);
         teamAssignments.applySeason(seasonId);
+        return eventId;
     }
 
     /**
@@ -2061,7 +2164,7 @@ public class ImportService {
         }
     }
 
-    private void commitEntryList(EntryListImport imp, ImportTarget target) {
+    private long commitEntryList(EntryListImport imp, ImportTarget target) {
         // Unparsed driver lines mean the parser saw a layout it didn't recognize.
         // Per the entries.json contract these must fail loud, not import silently.
         List<String> unparsed = imp.entries().stream()
@@ -2152,6 +2255,7 @@ public class ImportService {
         }
         removeOrphanedEntries(eventId, carRefs(imp), target);
         teamAssignments.applySeason(seasonId);
+        return eventId;
     }
 
     // ---------------------------------------------------------------- helpers
