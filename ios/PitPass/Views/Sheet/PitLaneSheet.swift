@@ -83,7 +83,7 @@ struct PitLaneSheet: View {
         let anchors = assignments?.value?.anchors ?? []
         let guidance = location.fix.map { PitLaneGeo.guide(anchors: anchors, fix: GeoFix(lat: $0.lat, lng: $0.lng), targetBox: target.boxNumber) } ?? nil
         return HStack(alignment: .firstTextBaseline, spacing: PP.Space.s3) {
-            (Text("#\(target.carNumber) \(target.team)").fontWeight(.semibold).foregroundColor(PP.ink) + Text(" · box \(target.boxNumber)"))
+            Text("\(Text("#\(target.carNumber) \(target.team)").fontWeight(.semibold).foregroundColor(PP.ink)) · box \(target.boxNumber)")
                 .font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.text).lineLimit(1)
             Group {
                 if anchors.count < 2 {
@@ -94,10 +94,12 @@ struct PitLaneSheet: View {
                     if guidance.arrived {
                         Text("You're at box \(target.boxNumber)").fontWeight(.semibold).foregroundStyle(PP.ink)
                     } else {
-                        (Text("\(PitLaneGeo.guidanceText(guidance)) toward ")
-                         + Text(guidance.direction == .pitIn ? "pit in" : "pit out").fontWeight(.semibold).foregroundColor(PP.ink)
-                         + Text(" · you're near box \(Int(guidance.currentBox.rounded()))")
-                         + Text((location.fix?.accuracy ?? 0) > 25 ? " · GPS weak (±\(Int(((location.fix?.accuracy ?? 0) * PitLaneGeo.feetPerMeter).rounded())) ft)" : "").foregroundColor(PP.error))
+                        let direction = Text(guidance.direction == .pitIn ? "pit in" : "pit out")
+                            .fontWeight(.semibold).foregroundColor(PP.ink)
+                        let accuracy = location.fix?.accuracy ?? 0
+                        let gpsWarning = Text(accuracy > 25 ? " · GPS weak (±\(Int((accuracy * PitLaneGeo.feetPerMeter).rounded())) ft)" : "")
+                            .foregroundColor(PP.error)
+                        Text("\(PitLaneGeo.guidanceText(guidance)) toward \(direction) · you're near box \(Int(guidance.currentBox.rounded()))\(gpsWarning)")
                     }
                 } else {
                     Text("Locating…")
