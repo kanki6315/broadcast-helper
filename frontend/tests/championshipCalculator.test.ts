@@ -52,3 +52,17 @@ test('only supported IMSA team championships are offered', () => {
   assert.ok(!supportedChampionship({ ...c, kind: 'DRIVERS' }))
   assert.ok(!supportedChampionship({ ...c, seriesName: 'Mustang Challenge' }))
 })
+
+test('Pilot Challenge teams score race only, with penalties and no baseline mutation', () => {
+  const c = { seriesName: 'IMSA Michelin Pilot Challenge', kind: 'TEAMS', rowCount: 3, isCup: false } as ChampionshipSummary
+  assert.ok(supportedChampionship(c))
+  assert.ok(supportedChampionship({ ...c, seriesName: 'IMPC' }))
+  assert.ok(!supportedChampionship({ ...c, isCup: true, groupTitle: 'Bronze Cup' }))
+  assert.ok(!supportedChampionship({ ...c, kind: 'DRIVERS' }))
+  const pilot = { ...recap, championship: { ...recap.championship, seriesName: c.seriesName } }
+  const before = JSON.stringify(pilot)
+  const rows = project(pilot, { '6': { positions: [1], adjustment: -10 }, '7': { positions: [2], adjustment: 0 } }, false, 1)
+  assert.deepEqual(rows.map(r => [r.total, r.added, r.gap]), [[1340, 340, 0], [1300, 320, 40]])
+  assert.equal(project(pilot, { '6': { positions: [0], adjustment: 0 } }, false, 1)[0].added, 0)
+  assert.equal(JSON.stringify(pilot), before)
+})

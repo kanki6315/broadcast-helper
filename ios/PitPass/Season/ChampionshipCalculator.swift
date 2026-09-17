@@ -3,6 +3,10 @@ import Foundation
 /// Pure scenario arithmetic. Does not mutate Recap, SeasonModel or the offline store.
 enum ChampionshipCalculator {
     static let sourceURL = URL(string: "https://www.imsa.com/wp-content/uploads/sites/32/2026/05/20/2026-IMSA-SPORTING-REGULATIONS-and-SSR-IWSC-Blackline-031126.pdf")!
+    static let pilotSourceURL = URL(string: sourceURL.absoluteString.replacingOccurrences(of: "IWSC", with: "IMPC"))!
+    static func isPilotChallenge(_ name: String) -> Bool {
+        name.localizedCaseInsensitiveContains("pilot challenge") || name.uppercased() == "IMPC"
+    }
     enum Phase { case qualifying, race, checkpoint }
     struct Entry {
         var positions: [Int]
@@ -21,7 +25,7 @@ enum ChampionshipCalculator {
     static func supported(_ c: ChampionshipSummary) -> Bool {
         let imsa = c.seriesName.localizedCaseInsensitiveContains("weathertech") || c.seriesName.uppercased() == "IMSA"
         let family = (c.groupTitle ?? c.title).lowercased()
-        return imsa && c.kind == "TEAMS" && c.rowCount > 0 && (!c.isCup || family.contains("endurance") || family.contains("imec"))
+        return (imsa || isPilotChallenge(c.seriesName)) && c.kind == "TEAMS" && c.rowCount > 0 && (!c.isCup || (!isPilotChallenge(c.seriesName) && (family.contains("endurance") || family.contains("imec"))))
     }
     static func points(_ position: Int, phase: Phase) -> Double {
         guard position > 0 else { return 0 }
@@ -45,7 +49,7 @@ enum ChampionshipCalculator {
             guard let entry = scenario[row.competitorKey] else { return nil }
             let awards = (0..<phaseCount).map { i in
                 points(entry.positions.indices.contains(i) ? entry.positions[i] : 0,
-                       phase: cup ? .checkpoint : i == 0 ? .qualifying : .race)
+                       phase: cup ? .checkpoint : i == 0 && !isPilotChallenge(recap.championship.seriesName) ? .qualifying : .race)
             }
             let added = awards.reduce(0, +) + entry.adjustment
             return Projection(row: row, awards: awards, added: added, total: row.totalPoints + added)
