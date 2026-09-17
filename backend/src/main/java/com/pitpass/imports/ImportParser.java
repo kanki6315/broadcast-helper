@@ -733,9 +733,10 @@ public final class ImportParser {
      * of its type ("Race", "Qualifying") -> 1. This is the stable per-event key
      * (with session_type), so re-import overwrites regardless of name drift.
      */
-    private static int sessionOrdinal(String sessionName) {
+    static int sessionOrdinal(String sessionName) {
         if (sessionName != null) {
-            var m = java.util.regex.Pattern.compile("(\\d+)\\s*$").matcher(sessionName);
+            // A separate word: "Race 2" is 2, but "Qualifying - LMP2" names a class.
+            var m = java.util.regex.Pattern.compile("(?:^|\\s)(\\d+)\\s*$").matcher(sessionName);
             if (m.find()) {
                 return Integer.parseInt(m.group(1));
             }

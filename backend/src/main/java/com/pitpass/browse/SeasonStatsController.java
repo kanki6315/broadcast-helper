@@ -20,7 +20,8 @@ import java.util.Objects;
  * Stats tab's "All-time" toggle). Counts are in-class facts: a win is
  * {@code position_in_class = 1}. Poles come only from QUALIFYING session
  * results, never a race's starting grid — a reversed feature grid's front row
- * is not a pole. A race result credits every crew member; a quali claim
+ * is not a pole — and never from a points-only result (2021's split "GTD
+ * Points" sessions scored points without setting the grid). A race result credits every crew member; a quali claim
  * credits only the qualifying driver of record (grid attribution, or the sole
  * crew member of a solo entry). The importers own all writes.
  */
@@ -161,6 +162,7 @@ public class SeasonStatsController {
                                    ) AS driver_id
                             FROM result r
                                      JOIN race_session rs ON rs.id = r.session_id AND rs.session_type = 'QUALIFYING'
+                                          AND NOT r.points_only
                                      JOIN event ev ON ev.id = rs.event_id
                                      JOIN season s ON s.id = ev.season_id
                                      JOIN entry en ON en.id = r.entry_id
@@ -305,6 +307,7 @@ public class SeasonStatsController {
                                count(*) FILTER (WHERE r.position_in_class <= 5) AS top5s
                         FROM result r
                                  JOIN race_session rs ON rs.id = r.session_id AND rs.session_type = 'QUALIFYING'
+                                          AND NOT r.points_only
                                  JOIN event ev ON ev.id = rs.event_id
                                  JOIN season s ON s.id = ev.season_id
                                  JOIN entry en ON en.id = r.entry_id

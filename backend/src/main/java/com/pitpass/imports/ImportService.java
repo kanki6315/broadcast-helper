@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class ImportService {
@@ -650,18 +651,21 @@ public class ImportService {
     private Staged stageImsaCsv(String filename, byte[] content) {
         try {
             if (ImportParser.looksLikeGridCsv(content)) {
-                GridImport parsed = ImportParser.parseGridCsv(content);
+                GridImport parsed = withFileSession(ImportParser.parseGridCsv(content), filename);
                 return new Staged("GRID", parsed,
-                        "Starting grid CSV — %d cars".formatted(parsed.rows().size()));
+                        "Starting grid CSV%s — %d cars".formatted(sessionSuffix(parsed.sessionName()),
+                                parsed.rows().size()));
             }
             if (ImportParser.looksLikeResultsCsv(content)) {
-                RaceResultsImport parsed = ImportParser.parseResultsCsv(content);
+                RaceResultsImport parsed = withFileSession(ImportParser.parseResultsCsv(content), filename);
                 return new Staged("RACE_RESULTS", parsed,
-                        "Race results CSV — %d entries".formatted(parsed.rows().size()));
+                        "Race results CSV%s — %d entries".formatted(sessionSuffix(parsed.sessionName()),
+                                parsed.rows().size()));
             }
             if (ImportParser.looksLikeQualifyingCsv(content)) {
-                RaceResultsImport parsed = ImportParser.parseQualifyingCsv(content);
-                String summary = "Qualifying results CSV — %d entries".formatted(parsed.rows().size());
+                RaceResultsImport parsed = withFileSession(ImportParser.parseQualifyingCsv(content), filename);
+                String summary = "Qualifying results CSV%s — %d entries".formatted(
+                        sessionSuffix(parsed.sessionName()), parsed.rows().size());
                 // The "Results by 2nd Fastest Lap" sheet shares this header. It is
                 // a secondary classification that only exists to set the next
                 // race's grid — which is imported as its own grid file — so it is
@@ -680,6 +684,33 @@ public class ImportService {
                 "Unrecognized IMSA CSV: expected a starting-grid header (POSITION;CLASS;NUMBER;...),"
                 + " a race-results header (POSITION;NUMBER;STATUS;...),"
                 + " or a qualifying header (POS;NUMBER;LAP;TIME;...)");
+    }
+
+    /** A CSV carries no session metadata, but an Al Kamel file name does
+     *  ("03_Results_Qualifying - GTD Position.CSV"): keep it as the session's
+     *  name and ordinal hint. The header still decides race vs qualifying. */
+    static RaceResultsImport withFileSession(RaceResultsImport imp, String filename) {
+        String name = SessionNames.sessionNameFromFilename(filename);
+        if (name == null) {
+            return imp;
+        }
+        return new RaceResultsImport(imp.championshipName(), imp.eventName(), name, imp.sessionType(),
+                ImportParser.sessionOrdinal(name), imp.reportMark(), imp.reportMessage(), imp.sessionStart(),
+                imp.circuitName(), imp.circuitLengthM(), imp.circuitCountry(), imp.rows());
+    }
+
+    static GridImport withFileSession(GridImport imp, String filename) {
+        String name = SessionNames.sessionNameFromFilename(filename);
+        if (name == null) {
+            return imp;
+        }
+        return new GridImport(imp.championshipName(), imp.eventName(), name, imp.sessionType(),
+                ImportParser.sessionOrdinal(name), imp.sessionStart(), imp.circuitName(),
+                imp.circuitLengthM(), imp.circuitCountry(), imp.rows());
+    }
+
+    private static String sessionSuffix(String sessionName) {
+        return sessionName == null ? "" : " (" + sessionName + ")";
     }
 
     public List<BatchSummary> list() {
@@ -851,6 +882,9 @@ public class ImportService {
                                // carries no such hint.
                                String sessionTypeHint,
                                Integer sessionOrdinalHint,
+                               // A split session's own name ("Qualifying - GTD Position"):
+                               // it is numbered at commit, so the ordinal picker doesn't apply.
+                               String sessionNameHint,
                                // GRID only: no slot has a time — the fingerprint of a grid set
                                // by something other than qualifying. The UI uses it to suggest
                                // filling in the grid basis.
@@ -885,6 +919,7 @@ public class ImportService {
             boolean needsSession = false;
             String sessionTypeHint = null;
             Integer sessionOrdinalHint = null;
+            String sessionNameHint = null;
             boolean gridTimesAllBlank = false;
             List<CarRef> fileCars = null;
             TargetGuess guess;
@@ -902,6 +937,8 @@ public class ImportService {
                     if (needsSession) {
                         sessionTypeHint = normalizeSessionType(imp.sessionType(), imp.sessionName());
                         sessionOrdinalHint = imp.sessionOrdinal();
+                        sessionNameHint = SessionNames.splitLabel(sessionTypeHint, imp.sessionName()) != null
+                                ? imp.sessionName() : null;
                         if (chosenEventId != null && "STAGED".equals(batch.status())) {
                             cr = classReviewForSeason(seasonIdOfEvent(chosenEventId),
                                     imp.rows().stream().map(RaceResultsImport.Row::className).toList());
@@ -920,6 +957,8 @@ public class ImportService {
                     if (needsSession) {
                         sessionTypeHint = normalizeSessionType(imp.sessionType(), imp.sessionName());
                         sessionOrdinalHint = imp.sessionOrdinal();
+                        sessionNameHint = SessionNames.splitLabel(sessionTypeHint, imp.sessionName()) != null
+                                ? imp.sessionName() : null;
                     }
                     gridTimesAllBlank = !imp.rows().isEmpty() && imp.rows().stream()
                             .allMatch(r -> r.time() == null || r.time().isBlank());
@@ -950,9 +989,9 @@ public class ImportService {
                 }
             }
             return new ImportReview(batch.kind(), guess, cr, needsSession,
-                    sessionTypeHint, sessionOrdinalHint, gridTimesAllBlank, rosterDiff);
+                    sessionTypeHint, sessionOrdinalHint, sessionNameHint, gridTimesAllBlank, rosterDiff);
         } catch (JsonProcessingException e) {
-            return new ImportReview(batch.kind(), null, cr, false, null, null, false, null);
+            return new ImportReview(batch.kind(), null, cr, false, null, null, null, false, null);
         }
     }
 
@@ -1292,9 +1331,12 @@ public class ImportService {
         String payload = payloadJson(id);
         try {
             switch (batch.kind()) {
-                case "RACE_RESULTS" -> commitRaceResults(json.readValue(payload, RaceResultsImport.class), target);
-                case "GRID" -> commitGrid(json.readValue(payload, GridImport.class), target);
-                case "FLAGS" -> commitFlags(json.readValue(payload, FlagsImport.class), target);
+                // iRacing numbers its own sessions; every other source's session
+                // name is what tells a split session apart (SessionNames).
+                case "RACE_RESULTS" -> commitRaceResults(json.readValue(payload, RaceResultsImport.class), target,
+                        nameKeyed(batch));
+                case "GRID" -> commitGrid(json.readValue(payload, GridImport.class), target, nameKeyed(batch));
+                case "FLAGS" -> commitFlags(json.readValue(payload, FlagsImport.class), target, nameKeyed(batch));
                 case "STANDINGS" -> commitStandings(json.readValue(payload, StandingsImport.class), target);
                 case "ENTRY_LIST" -> commitEntryList(json.readValue(payload, EntryListImport.class), target);
                 default -> throw new IllegalStateException("Unknown batch kind " + batch.kind());
@@ -1543,7 +1585,48 @@ public class ImportService {
         throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "No series selected for this import");
     }
 
-    private void commitRaceResults(RaceResultsImport imp, ImportTarget target) {
+    private static boolean nameKeyed(BatchSummary batch) {
+        return !ImportFormat.IRACING_JSON.name().equals(batch.format());
+    }
+
+    private record SessionSlot(int ordinal, String name, String splitLabel) {
+    }
+
+    /**
+     * Where a session lands within its event. A plain name keeps the ordinal it
+     * was given ("Race 2" -> 2). A split name ("Qualifying - GTD Position") is
+     * its own session: re-importing it finds the session of the same name, and
+     * a new one takes the next free ordinal of its type — otherwise every
+     * unnumbered split session would overwrite ordinal 1.
+     */
+    private SessionSlot resolveSessionSlot(long eventId, String sessionType, int ordinal, String name,
+                                           boolean nameKeyed) {
+        String label = nameKeyed ? SessionNames.splitLabel(sessionType, name) : null;
+        if (label == null) {
+            return new SessionSlot(ordinal, name, null);
+        }
+        record Existing(int ordinal, String name) {
+        }
+        List<Existing> existing = db.sql("""
+                        SELECT ordinal, name FROM race_session
+                        WHERE event_id = :eventId AND session_type = :type
+                        ORDER BY ordinal
+                        """)
+                .param("eventId", eventId)
+                .param("type", sessionType)
+                .query((rs, i) -> new Existing(rs.getInt("ordinal"), rs.getString("name")))
+                .list();
+        String key = SessionNames.normalize(name);
+        for (Existing e : existing) {
+            if (key.equals(SessionNames.normalize(e.name()))) {
+                return new SessionSlot(e.ordinal(), name, label);
+            }
+        }
+        int next = existing.stream().mapToInt(Existing::ordinal).max().orElse(0) + 1;
+        return new SessionSlot(next, name, label);
+    }
+
+    private void commitRaceResults(RaceResultsImport imp, ImportTarget target, boolean nameKeyed) {
         long seasonId;
         long eventId;
         String sessionType;
@@ -1576,8 +1659,16 @@ public class ImportService {
             }
             sessionType = resolveCsvSessionType(imp.sessionType(), target.sessionType());
             sessionOrdinal = target.sessionOrdinal() != null ? target.sessionOrdinal() : imp.sessionOrdinal();
-            sessionName = sessionDisplayName(sessionType, sessionOrdinal);
+            // A split session keeps the name its file carries; the reviewer's
+            // ordinal can't tell "GTD Position" from "GTD Points".
+            sessionName = SessionNames.splitLabel(sessionType, imp.sessionName()) != null
+                    ? imp.sessionName() : sessionDisplayName(sessionType, sessionOrdinal);
         }
+        SessionSlot slot = resolveSessionSlot(eventId, sessionType, sessionOrdinal, sessionName, nameKeyed);
+        Set<String> pointsOnly = "QUALIFYING".equals(sessionType)
+                ? SessionNames.pointsOnlyClasses(slot.splitLabel(),
+                        imp.rows().stream().map(RaceResultsImport.Row::className).distinct().toList())
+                : Set.of();
         requireNewEntriesAck(eventId, carRefs(imp), target, "results file");
         // Read the canonical class set before upserting entries, so the file's
         // own rows don't seed it (see canonicalizeClass).
@@ -1592,8 +1683,8 @@ public class ImportService {
         // "Race 1" updates its predecessor instead of adding a second RACE
         // session. Then replace only this session's results; a starting grid
         // imported separately hangs off the same session and must survive.
-        long sessionId = findOrCreateRaceSession(eventId, sessionType, sessionOrdinal,
-                sessionName, imp.sessionStart(), imp.reportMark(), imp.reportMessage());
+        long sessionId = findOrCreateRaceSession(eventId, sessionType, slot.ordinal(),
+                slot.name(), imp.sessionStart(), imp.reportMark(), imp.reportMessage());
         db.sql("DELETE FROM result WHERE session_id = :sessionId").param("sessionId", sessionId).update();
 
         for (RaceResultsImport.Row row : imp.rows()) {
@@ -1606,10 +1697,10 @@ public class ImportService {
                             INSERT INTO result (session_id, entry_id, position_overall, position_in_class, status,
                                                 not_finished, not_finished_cause, laps, elapsed_time, gap_first,
                                                 gap_previous, fastest_lap_time, fastest_lap_number, fastest_lap_kph,
-                                                fastest_lap_driver_seat, pit_stops)
+                                                fastest_lap_driver_seat, pit_stops, points_only)
                             VALUES (:sessionId, :entryId, :posOverall, :posInClass, :status,
                                     :notFinished, :notFinishedCause, :laps, :elapsedTime, :gapFirst,
-                                    :gapPrevious, :flTime, :flNumber, :flKph, :flSeat, :pitStops)
+                                    :gapPrevious, :flTime, :flNumber, :flKph, :flSeat, :pitStops, :pointsOnly)
                             """)
                     .param("sessionId", sessionId)
                     .param("entryId", entryId)
@@ -1627,6 +1718,7 @@ public class ImportService {
                     .param("flKph", row.fastestLapKph())
                     .param("flSeat", row.fastestLapDriverSeat())
                     .param("pitStops", row.pitStops())
+                    .param("pointsOnly", pointsOnly.contains(row.className()))
                     .update();
         }
         removeOrphanedEntries(eventId, carRefs(imp), target);
@@ -1643,7 +1735,7 @@ public class ImportService {
      * (later-generated) file refresh the stewards' notes without a null wiping
      * what a results file already stored.
      */
-    private void commitFlags(FlagsImport imp, ImportTarget target) {
+    private void commitFlags(FlagsImport imp, ImportTarget target, boolean nameKeyed) {
         if (imp.sessionStart() == null) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "Flags file has no session date; cannot determine the season");
@@ -1656,8 +1748,10 @@ public class ImportService {
         renumberSeasonRounds(seasonId);
 
         String sessionType = normalizeSessionType(imp.sessionType(), imp.sessionName());
-        long sessionId = findOrCreateRaceSession(eventId, sessionType, imp.sessionOrdinal(),
-                imp.sessionName(), imp.sessionStart(), imp.reportMark(), imp.reportMessage());
+        SessionSlot slot = resolveSessionSlot(eventId, sessionType, imp.sessionOrdinal(), imp.sessionName(),
+                nameKeyed);
+        long sessionId = findOrCreateRaceSession(eventId, sessionType, slot.ordinal(),
+                slot.name(), imp.sessionStart(), imp.reportMark(), imp.reportMessage());
         db.sql("DELETE FROM session_flag WHERE session_id = :sessionId").param("sessionId", sessionId).update();
 
         List<FlagsImport.FlagRow> rows = imp.rows();
@@ -1683,7 +1777,7 @@ public class ImportService {
         }
     }
 
-    private void commitGrid(GridImport imp, ImportTarget target) {
+    private void commitGrid(GridImport imp, ImportTarget target, boolean nameKeyed) {
         long seasonId;
         long eventId;
         String sessionType;
@@ -1713,9 +1807,11 @@ public class ImportService {
                 eventId = createDescribedEvent(seasonId, target);
             }
             sessionType = normalizeSessionType(target.sessionType(), null); // null -> RACE
-            sessionOrdinal = target.sessionOrdinal() != null ? target.sessionOrdinal() : 1;
-            sessionName = sessionDisplayName(sessionType, sessionOrdinal);
+            sessionOrdinal = target.sessionOrdinal() != null ? target.sessionOrdinal() : imp.sessionOrdinal();
+            sessionName = SessionNames.splitLabel(sessionType, imp.sessionName()) != null
+                    ? imp.sessionName() : sessionDisplayName(sessionType, sessionOrdinal);
         }
+        SessionSlot slot = resolveSessionSlot(eventId, sessionType, sessionOrdinal, sessionName, nameKeyed);
         requireNewEntriesAck(eventId, carRefs(imp), target, "grid file");
         List<String> knownClasses = seasonEntryClasses(seasonId);
         Map<String, String> classAliases = classAliasesForSeason(seasonId);
@@ -1726,8 +1822,8 @@ public class ImportService {
         // The grid belongs to a race session; find-or-create it by the stable key
         // (the results file may not have been imported yet), then replace only its
         // grid rows — the session's results, if any, are untouched.
-        long sessionId = findOrCreateRaceSession(eventId, sessionType, sessionOrdinal,
-                sessionName, imp.sessionStart(), null, null);
+        long sessionId = findOrCreateRaceSession(eventId, sessionType, slot.ordinal(),
+                slot.name(), imp.sessionStart(), null, null);
         // The reviewer's note on how this grid was set ("2nd fastest qualifying
         // lap", "Championship points — qualifying cancelled"). A targeted
         // UPDATE, not part of the shared session upsert: grid commits are the

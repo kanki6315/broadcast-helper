@@ -218,7 +218,7 @@ public class SheetController {
         db.sql("""
                         SELECT r.entry_id, min(r.position_in_class) AS pos
                         FROM result r JOIN race_session rs ON rs.id = r.session_id
-                        WHERE rs.event_id = :id AND rs.session_type = 'QUALIFYING'
+                        WHERE rs.event_id = :id AND rs.session_type = 'QUALIFYING' AND NOT r.points_only
                         GROUP BY r.entry_id
                         """)
                 .param("id", id)

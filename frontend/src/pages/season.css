@@ -952,6 +952,20 @@ td.lineup-changed {
   font-weight: 600;
 }
 
+/* 2021 split qualifying: a class-position that scored points but set no grid. */
+.points-only {
+  margin-left: var(--space-1);
+  padding: 0 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: help;
+}
+
 /* ==== stewards' notes ==== */
 
 /* Same bones as .error-panel, but neutral: these are facts to know, not a
