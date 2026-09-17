@@ -36,6 +36,42 @@ final class ChampionshipCalculatorTests: XCTestCase {
         XCTAssertNil(ChampionshipCalculator.baselineIssue(recap, eventId: 22))
         XCTAssertNotNil(ChampionshipCalculator.baselineIssue(recap, eventId: 99))
     }
+    func testClassWorkspaceLayouts() async throws {
+        let names = ["GTP", "LMP2", "GTD PRO", "GTD"]
+        let championships = names.enumerated().map { i, name in
+            ChampionshipSummary(id: i + 1, title: "\(name) Teams", groupTitle: "IMSA", className: name,
+                                kind: "TEAMS", kindLabel: nil, isCup: false, year: 2026, seasonId: 1, seriesName: "IMSA", rowCount: 3)
+        }
+        let recaps = Dictionary(uniqueKeysWithValues: championships.map { ($0.id, recap) })
+        let drafts = Dictionary(uniqueKeysWithValues: championships.map { ($0.id, scenario) })
+        for (count, width) in [(1, 1194), (2, 1194), (3, 1194), (4, 1194), (4, 834), (4, 507)] {
+            let size = CGSize(width: width, height: 1400)
+            let view = ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Championship calculator").ppTitle()
+                    CalculatorClassWorkspace(championships: championships, eventId: 22, initialRecaps: recaps,
+                                             initiallyShown: Set(names.prefix(count)), initialScenarios: drafts)
+                }.padding(24)
+            }.background(PP.bg).environment(AppSession()).environment(\.colorScheme, width == 834 ? .light : .dark)
+            let host = UIHostingController(rootView: view)
+            let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+            window.rootViewController = host
+            window.isHidden = false
+            host.view.frame = window.bounds
+            host.view.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(300))
+            host.view.layoutIfNeeded()
+            let image = UIGraphicsImageRenderer(size: size).image { _ in
+                host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Calculator classes \(count) \(width)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            try image.pngData()?.write(to: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("calculator-classes-\(count)-\(width).png"))
+            window.isHidden = true
+        }
+    }
     func testCalculatorLayouts() async throws {
         for (width, scheme) in [(CGFloat(1194), ColorScheme.dark), (CGFloat(834), ColorScheme.light), (CGFloat(507), ColorScheme.dark)] {
             let size = CGSize(width: width, height: 834)
@@ -43,7 +79,7 @@ final class ChampionshipCalculatorTests: XCTestCase {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Championship calculator").ppTitle()
                     Text("WeatherTech · GTP Teams / Sebring").font(.headline)
-                    CalculatorEditor(recap: recap, eventId: 22, scenario: scenario)
+                    CalculatorEditor(recap: recap, eventId: 22, scenario: .constant(scenario))
                 }.padding(24)
             }.background(PP.bg).environment(\.colorScheme, scheme)
             let host = UIHostingController(rootView: view)

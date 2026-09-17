@@ -5,7 +5,6 @@ struct CalculatorSheet: View {
     @Environment(AppSession.self) private var session
     let eventId: Int
     @State private var hub: Resource<SeasonHub>
-    @State private var championshipId = 0
 
     init(seasonId: Int, eventId: Int) {
         self.eventId = eventId
@@ -18,15 +17,7 @@ struct CalculatorSheet: View {
                 Text("If the race finished like this. Compare selected teams using the latest imported points.")
                     .font(.subheadline).foregroundStyle(PP.textMuted)
                 if let value = hub.value {
-                    let championships = value.championships.filter(ChampionshipCalculator.supported)
-                    if let selected = championships.first(where: { $0.id == championshipId }) ?? championships.first {
-                        Picker("Championship", selection: Binding(get: { selected.id }, set: { championshipId = $0 })) {
-                            ForEach(championships) { Text($0.title).tag($0.id) }
-                        }.pickerStyle(.menu)
-                        CalculatorChampionshipView(championship: selected, eventId: eventId).id(selected.id)
-                    } else {
-                        EmptyState(message: "Import IMSA WeatherTech team standings to calculate a scenario.")
-                    }
+                    CalculatorClassWorkspace(championships: value.championships.filter(ChampionshipCalculator.supported), eventId: eventId)
                 } else if let error = hub.error {
                     ErrorPanel(message: error)
                     Button("Retry") { Task { await hub.load(session.loader) } }
@@ -39,46 +30,141 @@ struct CalculatorSheet: View {
     }
 }
 
+/// Class panels keep drafts above their visibility boundary, so hiding a class
+/// cannot discard work or alter another class's simulated positions.
+struct CalculatorClassWorkspace: View {
+    let championships: [ChampionshipSummary]
+    let eventId: Int
+    var initialRecaps: [Int: Recap] = [:]
+    @State private var cup = false
+    @State private var enabled = Set<String>()
+    @State private var drafts: [Int: [String: ChampionshipCalculator.Entry]] = [:]
+    @State private var width: CGFloat = 0
+
+    init(championships: [ChampionshipSummary], eventId: Int, initialRecaps: [Int: Recap] = [:],
+         initiallyShown: Set<String> = [], initialScenarios: [Int: [String: ChampionshipCalculator.Entry]] = [:]) {
+        self.championships = championships
+        self.eventId = eventId
+        self.initialRecaps = initialRecaps
+        _enabled = State(initialValue: initiallyShown)
+        _drafts = State(initialValue: initialScenarios)
+    }
+    private var available: [ChampionshipSummary] {
+        let family = championships.contains { $0.isCup == cup } ? cup : !cup
+        var seen = Set<String>()
+        return Array(championships.filter { $0.isCup == family && seen.insert($0.className ?? "").inserted }.prefix(4))
+    }
+    private var shown: Set<String> {
+        let valid = enabled.intersection(available.map { $0.className ?? "" })
+        return valid.isEmpty ? Set(available.prefix(1).map { $0.className ?? "" }) : valid
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: PP.Space.s3) {
+            if available.isEmpty {
+                EmptyState(message: "Import IMSA WeatherTech team standings to calculate a scenario.")
+            } else {
+                Picker("Championship", selection: $cup) {
+                    if championships.contains(where: { !$0.isCup }) { Text("WeatherTech Championship").tag(false) }
+                    if championships.contains(where: { $0.isCup }) { Text("Michelin Endurance Cup").tag(true) }
+                }.pickerStyle(.menu)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: PP.Space.s2) { classButtons }
+                    VStack(alignment: .leading, spacing: PP.Space.s1) { classButtons }
+                }
+                Text("\(shown.count) \(shown.count == 1 ? "class" : "classes") shown. Hiding a class keeps its scenario while you stay on this page.")
+                    .font(.caption).foregroundStyle(PP.textMuted)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .topLeading), count: width >= 1100 && shown.count > 1 ? 2 : 1), alignment: .leading, spacing: PP.Space.s5) {
+                    ForEach(available.filter { shown.contains($0.className ?? "") }) { champ in
+                        VStack(alignment: .leading, spacing: PP.Space.s3) {
+                            Divider()
+                            Text(champ.className ?? champ.title).font(.headline)
+                            CalculatorChampionshipView(championship: champ, eventId: eventId, scenario: Binding(
+                                get: { drafts[champ.id] ?? [:] },
+                                set: { drafts[champ.id] = $0 }
+                            ), initialRecap: initialRecaps[champ.id])
+                            .id(champ.id)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel("\(champ.className ?? champ.title) calculator")
+                    }
+                }
+            }
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .onChange(of: cup) { _, _ in drafts = [:] }
+        .onChange(of: eventId) { _, _ in drafts = [:] }
+        .onAppear { if !championships.contains(where: { !$0.isCup }) { cup = true } }
+        .tint(PP.accentInk)
+    }
+    @ViewBuilder private var classButtons: some View {
+        ForEach(available) { champ in
+            let name = champ.className ?? ""
+            let active = shown.contains(name)
+            Button {
+                var next = shown
+                if active { next.remove(name) } else { next.insert(name) }
+                enabled = next
+            } label: {
+                Label(name.isEmpty ? champ.title : name, systemImage: active ? "checkmark.circle.fill" : "circle")
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.bordered)
+            .tint(active ? PP.accentInk : PP.textMuted)
+            .disabled(active && shown.count == 1)
+            .accessibilityLabel("Show \(name)")
+            .accessibilityValue(active ? "Shown" : "Hidden")
+        }
+    }
+}
+
 private struct CalculatorChampionshipView: View {
     @Environment(AppSession.self) private var session
     let championship: ChampionshipSummary
     let eventId: Int
     @State private var resource: Resource<Recap>
     @State private var revision = 0
-    init(championship: ChampionshipSummary, eventId: Int) {
+    @Binding var scenario: [String: ChampionshipCalculator.Entry]
+    private let initialRecap: Recap?
+    init(championship: ChampionshipSummary, eventId: Int, scenario: Binding<[String: ChampionshipCalculator.Entry]>, initialRecap: Recap? = nil) {
         self.championship = championship
+        self.initialRecap = initialRecap
         self.eventId = eventId
-        _resource = State(initialValue: Resource<Recap>("/api/championships/\(championship.id)/calculator"))
+        _scenario = scenario
+        let resource = Resource<Recap>("/api/championships/\(championship.id)/calculator")
+        if let initialRecap { resource.replace(initialRecap) }
+        _resource = State(initialValue: resource)
     }
     var body: some View {
         VStack(alignment: .leading, spacing: PP.Space.s3) {
             if let recap = resource.value {
                 if resource.isStale { Text("Using cached imported standings.").foregroundStyle(PP.textMuted) }
                 if resource.pendingUpdate != nil {
-                    Button("Use updated standings and reset scenario") { resource.applyPendingUpdate(); revision += 1 }
+                    Button("Use updated standings and reset scenario") { resource.applyPendingUpdate(); scenario = [:]; revision += 1 }
                 }
                 if let issue = ChampionshipCalculator.baselineIssue(recap, eventId: eventId) {
                     ErrorPanel(message: issue)
                 } else {
-                    CalculatorEditor(recap: recap, eventId: eventId).id(revision)
+                    CalculatorEditor(recap: recap, eventId: eventId, scenario: $scenario).id(revision)
                 }
             } else if let error = resource.error {
                 ErrorPanel(message: error)
                 Button("Retry") { Task { await resource.load(session.loader) } }
             } else { ProgressView("Loading imported standings…") }
         }
-        .task { await resource.load(session.loader, connectivity: session.connectivity, freshness: session.freshness) }
+        .task { if initialRecap == nil { await resource.load(session.loader, connectivity: session.connectivity, freshness: session.freshness) } }
     }
 }
 
 struct CalculatorEditor: View {
     let recap: Recap
     let eventId: Int
-    @State private var scenario: [String: ChampionshipCalculator.Entry] = [:]
-    init(recap: Recap, eventId: Int, scenario: [String: ChampionshipCalculator.Entry] = [:]) {
+    @Binding var scenario: [String: ChampionshipCalculator.Entry]
+    init(recap: Recap, eventId: Int, scenario: Binding<[String: ChampionshipCalculator.Entry]>) {
         self.recap = recap
         self.eventId = eventId
-        _scenario = State(initialValue: scenario)
+        _scenario = scenario
     }
     private var phases: [String] {
         recap.championship.isCup ? (recap.rounds.first { $0.eventId == eventId }?.sessions.map(\.name) ?? []) : ["Qualifying", "Race"]
