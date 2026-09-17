@@ -648,6 +648,15 @@ saved conversations or “Want to speak to” entries. The full event roster is
 available in the add/record chooser, with search by name, car and team.
 Unassigned recordings have their own section and can be assigned later.
 
+Session is a menu picker in both the working context and conversation details.
+Choices include standard pre-import sessions, imported event session names and
+existing journal labels. Matching ignores case and whitespace, preserving old
+notes without making the session filter depend on exact free-text spelling.
+Swipe-to-delete is available on driver, conversation, planned-contact and
+unassigned-recording rows. Driver deletion confirms that it removes the entire
+event history (all sessions) in one journal update, including associated audio.
+Active recording or transcription prevents deletion of the affected rows.
+
 Each entry carries the driver/car/team snapshot, session label, broadcast
 context (Before going live / On air), time, topic/questions, takeaway and
 optional PencilKit ink. These are event-specific notes, separate from profile
