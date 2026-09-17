@@ -56,7 +56,7 @@ pages is merged into one classification.
               "total_points": 330,                     // race + bonus
               "race_points": 320,
               "bonus_points": 10,                      // see below
-              "pole_points": 0,                        // always 0 from a PDF
+              "pole_points": 0,                        // a "Pole" column, where the sheet has one
               "fastest_lap_points": 0,                 // always 0 from a PDF
               "penalty_points": 0,                     // always 0 from a PDF
               "status": ""                             // "" | did_not_race | not_classified
@@ -71,6 +71,9 @@ pages is merged into one classification.
 
 ## Field notes / loader guidance
 
+- **pole_points** from a PDF is the sheet's "Pole" column where it prints one
+  (2021 Carrera Cup North America and Lamborghini Super Trofeo; "Pole**" where
+  a footnote applies), the bonus on the round to its right. Otherwise 0.
 - **bonus_points** is the sheet's "Extra" column: pole and fastest-lap points
   already added together. On a 2024 Mustang sheet a 20 is both bonuses and a 10
   is one of them — and the sheet never says which, so 31 of that season's 44
@@ -94,6 +97,16 @@ pages is merged into one classification.
   `--year`. The reviewer confirms the season before commit.
 - **key** on a Drivers sheet is a person's name, so it is weaker than the JSON's
   car-number key: two drivers sharing a name would collide.
+- **main_title** is the page's first line — plus, when the standings line
+  below names the championship, that name. Most IMSA sheets print the whole
+  title on line 1 ("IMSA WeatherTech SportsCar Championship GTP Drivers") over
+  a bare "Championship Points Standings OFFICIAL". The 2025 Carrera Cup North
+  America sheet prints only the series on line 1 and "Masters Drivers -
+  Championship Points Standings OFFICIAL" below, so the title becomes "Porsche
+  Carrera Cup North America Masters Drivers". Before this, every page of that
+  sheet shared one title and the parser failed on the first page whose columns
+  differed (the Entrants sheet has no P / FL columns). Sample:
+  `samples/2025_PCCNA_COTA_Points.pdf`, five championships.
 
 ## PACCA layout (Carrera Cup Asia)
 

@@ -75,6 +75,17 @@ pit-pass:
   # subsession file instead, which is byte-identical to what the API returns.
   # The client id is issued by iRacing on request and cannot be self-served —
   # they paused issuance in 2025, so treat ours as irreplaceable.
+  # Al Kamel results site (IMSA's timing provider): an open Apache index with no
+  # API. Every fetch is behind an admin's click — never scheduled — with a pause
+  # before each uncached request and listings cached so re-planning is free.
+  # The base URL is overridden only to point tests at a stub.
+  alkamel:
+    base-url: ${ALKAMEL_BASE_URL:https://imsa.results.alkamelcloud.com/Results/}
+    delay-ms: ${ALKAMEL_DELAY_MS:350}
+    listing-cache-seconds: ${ALKAMEL_LISTING_CACHE_SECONDS:600}
+    # A results JSON is a few hundred kB and a points PDF a few MB; anything
+    # bigger is not a file this importer reads.
+    max-download-bytes: ${ALKAMEL_MAX_DOWNLOAD_BYTES:26214400}
   iracing:
     client-id: ${IRACING_CLIENT_ID:}
     client-secret: ${IRACING_CLIENT_SECRET:}

@@ -602,9 +602,11 @@ export default function ResultsPage() {
   const [gridOpen, setGridOpen] = useState(false)
   const tabsRef = useRef<HTMLDivElement>(null)
 
-  // Rounds that have sessions to show, latest first pick.
+  // Events that have sessions to show, latest first pick. A weekend with no
+  // round number — the Roar, a test that ran timed sessions — is still an
+  // event with results; it just isn't a round.
   const rounds = useMemo(
-    () => hub.events.filter((e) => e.roundOrdinal != null && e.sessionCount > 0),
+    () => hub.events.filter((e) => e.sessionCount > 0),
     [hub.events],
   )
 
@@ -687,7 +689,7 @@ export default function ResultsPage() {
             onClick={() => setParam('event', String(e.id))}
           >
             <span className="venue">{venueOf(e.name, e.circuitName)}</span>
-            <span className="rd">Rd {e.roundOrdinal}</span>
+            <span className="rd">{e.roundOrdinal != null ? `Rd ${e.roundOrdinal}` : 'Pre-season'}</span>
           </button>
         ))}
       </div>

@@ -933,6 +933,23 @@ display size.)
   same way as the web (`ResultsView.sessionLabel`). The multi-driver CSV
   layout (`DRIVER1_…`/`DRIVER2_…`) that these files use now imports crews too —
   see the multi-driver results/qualifying CSV entry above.
+- **Al Kamel import automation — IN PROGRESS (plan 2026-09-16, see
+  `docs/ALKAMEL_IMPORT.md`).** Two admin-clicked workflows fed from the timing
+  provider's open results index: import a past season (all or one series) and
+  refresh one event during a weekend. Slice 1 (catalog + client + index walker,
+  `imports/alkamel/`, fixture-driven tests plus a guarded live check) and
+  slice 2 (source context on staged batches: `SourceContext`, V52
+  `import_batch.source_*` + `event.source_ref`, context-completed payloads
+  self-place and group-commit like timing JSON, confirm step groups by
+  weekend folder) landed 2026-09-16; slice 3 (past-season plan + stage
+  endpoints, `AlKamelImportModal` on Manage → Imports, browser-driven
+  weekend-by-weekend staging, group commits freeze a season's known classes
+  at group start) landed 2026-09-17, verified against a local stub of the
+  site; slice 4 (event refresh: fresh folder read, per-file new / updated /
+  unchanged against committed batches, candidate folders for unstamped
+  events, "Refresh from Al Kamel" on the event page) landed 2026-09-17 the
+  same way. Both workflows are now on the web app; still owed: the first run
+  against the live site, and the older grid/points PDF layouts.
 - **Still ahead:** design the automated prior-year-at-this-track feature,
   including change context (manufacturer, lineup, team) alongside the raw result.
   The **grid rundown sheet** (grid-order sheet with storyline fields) is

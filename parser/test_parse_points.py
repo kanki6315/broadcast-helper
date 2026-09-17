@@ -147,8 +147,8 @@ def test_a_row_that_fails_its_checksum_raises(mc, monkeypatch):
     # loudly rather than emit points that look plausible.
     real = p._cell_values
 
-    def corrupt(chars, cols, numeric_from, points_font):
-        cells = real(chars, cols, numeric_from, points_font)
+    def corrupt(*args, **kwargs):
+        cells = real(*args, **kwargs)
         return ["999" if c and c[0].isdigit() else c for c in cells]
 
     monkeypatch.setattr(p, "_cell_values", corrupt)
@@ -262,3 +262,208 @@ def test_pacca_decimal_points_survive(pacca):
     assert giltrap["key"] == "Marco GILTRAP"
     assert giltrap["total_points"] == 108.5
     assert giltrap["points_by_session"][0]["race_points"] == 4.5
+
+
+# --- 2025 Carrera Cup North America: the championship named on the standings line ----------
+
+PCCNA = SAMPLES / "2025_PCCNA_COTA_Points.pdf"
+
+
+@pytest.fixture(scope="module")
+def pccna():
+    return p.parse(PCCNA)
+
+
+@pytest.mark.skipif(not PCCNA.exists(), reason="sample PDF not present")
+def test_pccna_names_each_championship_from_the_standings_line(pccna):
+    # Line 1 of every page is just the series; "Masters Drivers - Championship
+    # Points Standings OFFICIAL" carries the championship. Read as line 1 alone,
+    # all six pages collapsed into one title and page 5 failed on its columns.
+    titles = [c["championship"]["main_title"] for c in pccna["championships"]]
+    assert titles == [
+        "Porsche Carrera Cup North America Pro Drivers",
+        "Porsche Carrera Cup North America Pro-Am Drivers",
+        "Porsche Carrera Cup North America Masters Drivers",
+        "Porsche Carrera Cup North America Entrants",
+        "Porsche Carrera Cup North America Rookie Drivers",
+    ]
+    assert all(c["championship"]["year"] == "2025" for c in pccna["championships"])
+
+
+@pytest.mark.skipif(not PCCNA.exists(), reason="sample PDF not present")
+def test_pccna_every_row_readds_to_its_printed_total(pccna):
+    for champ in pccna["championships"]:
+        assert champ["classification"], champ["championship"]["main_title"]
+        for row in champ["classification"]:
+            assert sum(s["total_points"] for s in row["points_by_session"]) == row["total_points"], (
+                f"{champ['championship']['main_title']} #{row['position']} {row['key']}"
+            )
+    pro = _one(pccna, "Pro Drivers")
+    assert _row(pro, 1)["key"] == "Ryan Yardley"
+    assert _row(pro, 1)["total_points"] == 313
+    assert len(pro["classification"]) == 46
+    assert len(pro["championship"]["sessions"]) == 32  # 16 rounds, each with a P / FL extra column
+
+
+# --- the 2021 sheets ----------------------------------------------------------
+#
+# Three season-final sheets from the Al Kamel site, each exercising a rule the
+# 2024+ sheets never needed:
+#   * Carrera Cup — the name column starts left of the old position threshold
+#     (every name lost its first letter), events own unequal numbers of columns
+#     (a three-race finale), and a "Pole" column precedes each weekend's first
+#     round.
+#   * Prototype Challenge — the total sits 0.6pt below the row's baseline (read
+#     as name text, every row was dropped), the Teams page sets the team name in
+#     the points face, and the template prints unlabelled zero columns (a pole
+#     slot before every round) that must not corrupt the labelled cells.
+#   * Super Trofeo — titles that name no series ("PRO Driver Championship"),
+#     "Pole**" columns, and a Dealer sheet keyed on the dealer's name.
+
+PCCNA21 = SAMPLES / "2021_PCCNA_Points.pdf"
+IPC21 = SAMPLES / "2021_IPC_Points.pdf"
+LST21 = SAMPLES / "2021_LST_Points.pdf"
+
+
+@pytest.fixture(scope="module")
+def pccna21():
+    if not PCCNA21.exists():
+        pytest.skip("2021 Carrera Cup sample not present")
+    return p.parse(PCCNA21)
+
+
+@pytest.fixture(scope="module")
+def ipc21():
+    if not IPC21.exists():
+        pytest.skip("2021 Prototype Challenge sample not present")
+    return p.parse(IPC21)
+
+
+@pytest.fixture(scope="module")
+def lst21():
+    if not LST21.exists():
+        pytest.skip("2021 Super Trofeo sample not present")
+    return p.parse(LST21)
+
+
+@pytest.mark.parametrize("fixture", ["pccna21", "ipc21", "lst21"])
+def test_2021_every_row_readds_to_its_printed_total(fixture, request):
+    doc = request.getfixturevalue(fixture)
+    assert doc["championships"]
+    for champ in doc["championships"]:
+        assert champ["classification"], champ["championship"]["main_title"]
+        for row in champ["classification"]:
+            assert sum(s["total_points"] for s in row["points_by_session"]) == row["total_points"]
+
+
+def _events(champ):
+    out = []
+    for s in champ["championship"]["sessions"]:
+        if not out or out[-1][0] != s["event_name"]:
+            out.append((s["event_name"], []))
+        out[-1][1].append(s["session_name"])
+    return out
+
+
+def test_2021_carrera_cup_names_keep_their_first_letter(pccna21):
+    top = _row(_one(pccna21, "Pro & Pro-Am Drivers"), 1)
+    assert top["key"] == "Seb Priaulx(J)"
+    assert _row(_one(pccna21, "Entrants"), 1)["key"] == "Kelly-Moss Road and Race"
+
+
+def test_2021_carrera_cup_events_own_unequal_column_blocks(pccna21):
+    # Indianapolis and the Michelin Raceway finale ran three races, every other
+    # weekend two: the names cannot be spread over equal blocks.
+    assert _events(_one(pccna21, "Pro-Am Drivers")) == [
+        ("Sebring", ["Round 1", "Round 2"]),
+        ("CotA", ["Round 3", "Round 4"]),
+        ("Watkins Glen", ["Round 5", "Round 6"]),
+        ("Road America", ["Round 7", "Round 8"]),
+        ("Indianapolis", ["Round 9", "Round 10", "Round 11"]),
+        ("VIR", ["Round 12", "Round 13"]),
+        ("Michelin Raceway", ["Round 14", "Round 15", "Round 16"]),
+    ]
+    # The Pro page adds a "Pole" column before each weekend's first round; it is
+    # a bonus on that round, not a session, so the sessions line up page to page.
+    assert _events(_one(pccna21, "Pro & Pro-Am Drivers")) == _events(_one(pccna21, "Pro-Am Drivers"))
+
+
+def test_2021_pole_column_lands_in_pole_points(pccna21):
+    priaulx = _row(_one(pccna21, "Pro & Pro-Am Drivers"), 1)
+    r1 = priaulx["points_by_session"][0]
+    assert (r1["race_points"], r1["pole_points"], r1["bonus_points"], r1["total_points"]) == (25, 10, 0, 35)
+    assert priaulx["total_points"] == 371
+
+
+def test_2021_prototype_challenge_reads_rows_and_team_page(ipc21):
+    drivers = _one(ipc21, "P3-1 Drivers")
+    assert len(drivers["classification"]) == 48
+    assert _row(drivers, 1)["key"] == "Dakota Dickerson"
+    assert _events(drivers) == [
+        ("Daytona", ["Round 1"]), ("Sebring", ["Round 2"]), ("Mid-Ohio", ["Round 3"]),
+        ("Watkins Glen", ["Round 4"]), ("VIR", ["Round 5"]), ("Michelin Raceway", ["Round 6"]),
+    ]
+    # The team name is set in the points face on this sheet; still the name.
+    team = _row(_one(ipc21, "P3-1 Teams"), 1)
+    assert (team["key"], team["team"], team["total_points"]) == ("54", "MLT Motorsports", 1850)
+
+
+def test_2021_super_trofeo_titles_and_pole_footnote(lst21):
+    titles = [c["championship"]["main_title"] for c in lst21["championships"]]
+    assert titles == [
+        "PRO Driver Championship", "PRO-AM Driver Championship", "AM Driver Championship",
+        "LB Cup Driver Championship", "Team Championship", "Dealer Championship",
+    ]
+    antinucci = _row(_one(lst21, "PRO Driver Championship"), 1)
+    assert antinucci["key"] == "Richard Antinucci"
+    assert [s["pole_points"] for s in antinucci["points_by_session"]][:4] == [0, 0, 1, 1]
+    assert _row(_one(lst21, "Dealer Championship"), 1)["key"] == "Palm Beach"
+
+
+def test_a_page_whose_rows_cannot_be_read_fails(pccna21, monkeypatch):
+    # Rows are on the page (positions in the left column) but the reader gets
+    # none of them: that is a layout failure, not an empty sheet.
+    monkeypatch.setattr(p, "_runs", lambda chars: [])
+    with pytest.raises(ValueError, match="none could be read|no event names"):
+        p.parse(PCCNA21)
+
+
+# --- the 2022–2024 variants met on the full import --------------------------
+
+IMPC22 = SAMPLES / "2022_IMPC_Points.pdf"
+IMPC23 = SAMPLES / "2023_IMPC_Points.pdf"
+MC24R = SAMPLES / "2024_MC_Indy_Points_Revised.pdf"
+
+
+@pytest.mark.skipif(not IMPC22.exists(), reason="sample not present")
+def test_a_team_name_set_in_the_points_face_stays_out_of_the_cells():
+    # 2022 Pilot Challenge Teams page: team names share the points face and the
+    # long ones run into the cell area; glyphs a field claimed are not cells.
+    doc = p.parse(IMPC22)
+    teams = _one(doc, "Touring Car Teams")
+    row = _row(teams, 1)
+    assert (row["key"], row["team"], row["total_points"]) == ("1", "Bryan Herta Autosport w/ Curb Agajanian", 2920)
+    assert sum(len(c["classification"]) for c in doc["championships"]) == 246
+
+
+@pytest.mark.skipif(not IMPC23.exists(), reason="sample not present")
+def test_a_teams_page_with_no_points_header_still_finds_the_total():
+    # 2023 Pilot Challenge Teams page: the header row is "Pos Nr. TEAM" with no
+    # "Points", and the template's unlabelled zero column sits nearer the
+    # fallback boundary than the total does; the total is the run in the other face.
+    doc = p.parse(IMPC23)
+    row = _row(_one(doc, "Grand Sport Teams"), 1)
+    assert (row["key"], row["team"], row["total_points"]) == ("96", "Turner Motorsport", 2430)
+    assert len(_one(doc, "Grand Sport Drivers")["classification"]) == 106
+
+
+@pytest.mark.skipif(not MC24R.exists(), reason="sample not present")
+def test_an_all_arial_sheet_with_an_empty_overflow_page():
+    # 2024 Mustang Challenge "Revised" sheet: every field in one face, the header
+    # says "Point", and page 2 is a header-and-legend page with no rows.
+    doc = p.parse(MC24R)
+    assert [c["championship"]["main_title"] for c in doc["championships"]] == [
+        "Mustang Challenge DH Drivers", "Mustang Challenge DH Entrants", "Mustang Challenge DHL Drivers"]
+    assert _row(_one(doc, "DH Drivers"), 1)["key"] == "Robert Noaker"
+    assert _row(_one(doc, "DH Drivers"), 1)["total_points"] == 2910
+    assert len(_one(doc, "DH Drivers")["classification"]) == 36

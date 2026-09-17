@@ -87,3 +87,68 @@ def test_rejects_non_grid_pdf():
         pytest.skip("entry-list sample not present")
     with pytest.raises(ValueError, match="Starting Grid"):
         p.parse(entry_list)
+
+
+TORONTO = HERE / "samples" / "2022_PCCNA_Toronto_Grid_R1.pdf"
+
+
+@pytest.mark.skipif(not TORONTO.exists(), reason="sample PDF not present")
+def test_drivers_header_word_is_the_driver_column():
+    # 2022 Toronto heads the column "Drivers"; the layout is otherwise the 2021 one.
+    doc = p.parse(TORONTO)
+    assert doc["session"] == "Race 1"
+    assert doc["rows"][0]["number"] == "6"
+    assert doc["rows"][0]["driver"] == "Trenton Estep"
+    assert doc["rows"][0]["class"] == "Pro"
+    assert doc["rows"][0]["time"] == "1:11.135"
+    assert len(doc["rows"]) >= 15
+
+
+
+# --- 2021 crew sheets (WeatherTech, Pilot Challenge) --------------------------
+#
+# IMSA's own series printed a numberless "Race Official Starting Grid" through
+# 2021, with the whole crew in the driver cell and roles marked by emphasis the
+# legend explains: bold (render mode 2, not a font) = starting driver, and on
+# the Pilot Challenge sheet an underline (a hairline rect) = qualifying driver.
+
+IWSC21 = Path(__file__).parent / "samples" / "2021_IWSC_Daytona_Grid.pdf"
+IMPC21 = Path(__file__).parent / "samples" / "2021_IMPC_Sebring_Grid.pdf"
+
+
+@pytest.mark.skipif(not IWSC21.exists(), reason="sample not present")
+def test_2021_numberless_title_and_bold_starting_driver():
+    doc = p.parse(IWSC21)
+    assert (doc["session"], doc["race"], doc["revised"]) == ("Race", None, False)
+    row = doc["rows"][0]
+    assert row["number"] == "31" and row["class"] == "DPi"
+    assert [d["name"] for d in row["drivers"]] == ["F. Nasr", "M. Conway", "P. Derani", "C. Elliott"]
+    assert row["starting_driver_seat"] == 1
+    assert row["qualifying_driver_seat"] is None  # this sheet's legend marks starters only
+    assert all(r.get("starting_driver_seat") for r in doc["rows"])
+
+
+@pytest.mark.skipif(not IMPC21.exists(), reason="sample not present")
+def test_2021_underline_marks_the_qualifying_driver():
+    doc = p.parse(IMPC21)
+    rows = doc["rows"]
+    assert doc["race"] is None
+    assert [d["name"] for d in rows[0]["drivers"]] == ["M. Root", "J. Heylen"]
+    assert (rows[0]["starting_driver_seat"], rows[0]["qualifying_driver_seat"]) == (1, 1)
+    # Row 2's underline sits under the second name.
+    assert rows[1]["driver"] == "K. Wittmer / O. Fidani"
+    assert rows[1]["qualifying_driver_seat"] == 2
+    assert all(r.get("qualifying_driver_seat") for r in rows)
+
+
+LAGUNA21 = Path(__file__).parent / "samples" / "2021_IWSC_Laguna_Grid.pdf"
+
+
+@pytest.mark.skipif(not LAGUNA21.exists(), reason="sample not present")
+def test_2021_header_with_nr_and_drivers_run_together():
+    # "Pos Class Nr.Drivers* Team Car Time": the Nr. and Driver anchors come apart.
+    doc = p.parse(LAGUNA21)
+    row = doc["rows"][0]
+    assert (row["number"], row["driver"], row["team"]) == ("10", "R. Taylor / F. Albuquerque", "Konica Minolta Acura ARX-05")
+    assert row["time"] == "1:14.441"
+    assert all(r.get("starting_driver_seat") and r.get("qualifying_driver_seat") for r in doc["rows"])

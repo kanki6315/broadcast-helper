@@ -73,6 +73,9 @@ public class SecurityConfig {
                         // The roster and denied-login lists are admin-only even
                         // for reads — must precede the general GET rule below.
                         .requestMatchers("/api/users/**").access(live.admin())
+                        // Planning an Al Kamel import lists an external site;
+                        // reads included, that is an admin's action.
+                        .requestMatchers("/api/imports/alkamel/**").access(live.admin())
                         // A viewer's scratchpad is their own writable surface —
                         // the controller pins the row to the caller's email, so
                         // member() is sufficient here.

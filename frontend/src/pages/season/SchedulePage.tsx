@@ -38,6 +38,9 @@ export default function SchedulePage() {
                 <td style={{ fontWeight: 500 }}>
                   {e.name}
                   {upcoming && <span className="badge muted">upcoming</span>}
+                  {e.roundOrdinal == null && e.sessionCount > 0 && (
+                    <span className="badge muted" title="Ran sessions but is not a championship round">pre-season</span>
+                  )}
                 </td>
                 <td>{e.circuitName}</td>
                 <td className="num">{e.eventDate}</td>

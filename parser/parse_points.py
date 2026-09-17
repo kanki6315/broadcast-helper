@@ -33,6 +33,19 @@ Why this is geometry-driven rather than text-driven:
     C19u0rb0 Aga3j5ani2a6n0"). Names and points are set in different fonts, so
     the two runs separate cleanly — and the '/' in "w/" stays part of the name
     instead of being read as a did-not-participate sentinel.
+  * Within a row, the position, car number, name and total are each drawn as
+    one text run (Crystal Reports draws each field whole), so the row is read
+    as runs — glyphs consecutive in draw order that each start where the last
+    ended — rather than by x thresholds or baseline drift. The 2021 sheets
+    moved the name column 3pt left of the old threshold (every name lost its
+    first letter) and set the total 0.6pt below the baseline (read as name
+    text, so every row was dropped); runs are indifferent to both.
+  * Event names over the columns are runs too, one per event and one per
+    wrapped line, which is what tells "Sebring" from "CotA" when the gap
+    between them is no wider than the space inside "Road America". Columns
+    then go to names by nearest centre, each name owning a contiguous block —
+    blocks need not be equal (2021 Carrera Cup gave its finale four rounds
+    and every other weekend two).
 
 Every row is verified by re-adding its cells to the printed total. That checksum
 is what caught the flush-column collision in the first place, so it is a hard
@@ -57,12 +70,15 @@ import pdfplumber
 
 # --- layout constants -------------------------------------------------------
 
-# Left of this x is the finishing-position column; the name/car number follow.
-POS_MAX_X = 50.0
-# The total-points column sits right of this; a car number, where present, sits
-# left of it. Both are digits on the row's own baseline, so x is what separates
-# them.
+# The total-points column is found from the "Points" header over it; this is
+# the fallback when a page has no such header row. A car number, where present,
+# is the digits-only run left of the name.
 TOTAL_MIN_X = 150.0
+# A right-aligned total may start a little left of its header's first glyph.
+TOTAL_SLACK = 8.0
+# Glyphs of one text run start where the previous glyph ended, give or take
+# kerning; a wider gap (or a different baseline) starts a new run.
+RUN_GAP = 1.5
 # The points columns start a little left of the first rotated header anchor.
 # The gap absorbs right-aligned cells that overhang their anchor.
 NUMERIC_LEAD = 12.0
@@ -73,9 +89,13 @@ EVENT_BAND_HEIGHT = 30.0
 # ~10pt and the widest within-row baseline drift seen is 0.4pt.
 ROW_TOLERANCE = 2.0
 
-# The one column label that is a bonus rather than a session of its own. Its
-# points belong to the session in the column immediately to its right.
+# The column labels that are a bonus rather than a session of their own. Their
+# points belong to the session in the next session column to the right:
+# "Extra" (Mustang Challenge, undifferentiated) lands in bonus_points, "Pole"
+# (2021 Carrera Cup / Super Trofeo, "Pole**" where a footnote applies) in
+# pole_points.
 BONUS_LABEL = "Extra"
+POLE_LABEL = re.compile(r"(?i)^pole\b")
 
 # The PDF prints its own legend: "/ DNP  * DNS". These map onto the status values
 # the standings JSON uses, confirmed against a season published in both formats.
@@ -129,91 +149,174 @@ def _rotated_headers(page):
     )
 
 
-def _band_words(page, header_top, first_anchor_x):
-    """The event-name words sitting above the rotated column headers."""
-    return [
-        w for w in page.extract_words()
-        if w["bottom"] <= header_top + 1
-        and w["top"] >= header_top - EVENT_BAND_HEIGHT
-        and w["x0"] >= first_anchor_x - 20
+def _runs(chars):
+    """Characters (in draw order) grouped into the text runs they were drawn as.
+
+    A run is consecutive glyphs on one baseline, each starting where the last
+    ended. The generator draws every field as one run, so a run is a field:
+    a name is one run however far it overprints, and two names side by side
+    with no space glyph between them are two.
+    """
+    runs = []
+    for c in chars:
+        if runs:
+            last = runs[-1][-1]
+            if abs(c["top"] - last["top"]) <= RUN_GAP and -RUN_GAP <= c["x0"] - last["x1"] <= RUN_GAP:
+                runs[-1].append(c)
+                continue
+        runs.append([c])
+    return runs
+
+
+def _text(run):
+    return "".join(c["text"] for c in run).strip()
+
+
+def _event_names(page, header_top, first_anchor_x):
+    """The event names above the rotated column headers, as [(centre_x, text)].
+
+    One run per name on the top line of the band; a name that wraps ("Watkins"
+    / "Glen 1") continues in a run on the line below, attached to the top-line
+    run nearest it.
+    """
+    band = [
+        c for c in page.chars
+        if c.get("upright", True)
+        and c["bottom"] <= header_top + 1
+        and c["top"] >= header_top - EVENT_BAND_HEIGHT
+        and c["x0"] >= first_anchor_x - 20
     ]
+    runs = [r for r in _runs(band) if _text(r)]
+    if not runs:
+        return []
+    top_line = min(r[0]["top"] for r in runs)
+    names = [[r] for r in runs if abs(r[0]["top"] - top_line) <= RUN_GAP]
+    centre = lambda r: (r[0]["x0"] + r[-1]["x1"]) / 2
+    for r in runs:
+        if abs(r[0]["top"] - top_line) <= RUN_GAP:
+            continue
+        min(names, key=lambda nm: abs(centre(nm[0]) - centre(r))).append(r)
+    return sorted(
+        (centre(nm[0]), " ".join(_text(r) for r in sorted(nm, key=lambda r: r[0]["top"])))
+        for nm in names
+    )
+
+
+def _blocks(xs, centres):
+    """Split the sorted column positions into len(centres) contiguous blocks,
+    one per name, minimising the distance from each block's centre to its name's.
+
+    Dynamic programme over (columns used, names used); blocks may differ in
+    width, which is what a season with a three-race finale needs.
+    """
+    n, k = len(xs), len(centres)
+    if k == 0 or k > n:
+        raise ValueError(f"cannot map {k} event name(s) onto {n} columns")
+    inf = float("inf")
+    best = [[inf] * (n + 1) for _ in range(k + 1)]
+    cut = [[0] * (n + 1) for _ in range(k + 1)]
+    best[0][0] = 0.0
+    for j in range(1, k + 1):
+        for i in range(j, n + 1):
+            for s in range(j - 1, i):
+                if best[j - 1][s] == inf:
+                    continue
+                cost = best[j - 1][s] + abs(sum(xs[s:i]) / (i - s) - centres[j - 1])
+                if cost < best[j][i]:
+                    best[j][i], cut[j][i] = cost, s
+    sizes, i = [], n
+    for j in range(k, 0, -1):
+        s = cut[j][i]
+        sizes.append(i - s)
+        i = s
+    return list(reversed(sizes))
 
 
 def _columns(page):
     """Points columns as [{label, x, event}], left to right.
 
-    Every event owns the same number of columns — 4 for Mustang Challenge
-    (Extra+Round, twice) and 2 for WeatherTech (Qualifying+Race) — and its name
-    is centred over that block. So rather than guessing where one name ends and
-    the next begins from the gaps between words (the gap between "Beach" and
-    "WeatherTech" is 7.6pt on a Drivers page but 4.6pt on a Teams page, against
-    2.3pt for the space inside "Long Beach" — far too tight to separate on),
-    split the columns into equal blocks and let each word fall to the nearest
-    block centre. Words landing on the same block are one event name.
-
-    The block count is whichever divisor of the column count names every block:
-    tried largest first, so the finest split that still works wins.
+    Each event's name is centred over its block of columns. The names are read
+    as text runs (see _event_names) and the columns split into as many
+    contiguous blocks as there are names, each block to the name whose centre
+    it sits under.
     """
     anchors = _rotated_headers(page)
     if not anchors:
         return []
     header_top = min(c["top"] for c in page.chars if not c.get("upright", True))
-    words = _band_words(page, header_top, anchors[0][0])
-    if not words:
+    names = _event_names(page, header_top, anchors[0][0])
+    if not names:
         raise ValueError("found rotated column headers but no event names above them")
-
-    n = len(anchors)
-    for events in [d for d in range(n, 0, -1) if n % d == 0]:
-        per_event = n // events
-        blocks = [anchors[i * per_event:(i + 1) * per_event] for i in range(events)]
-        centres = [sum(x for x, _ in b) / len(b) for b in blocks]
-
-        assigned = defaultdict(list)
-        for w in words:
-            wc = (w["x0"] + w["x1"]) / 2
-            assigned[min(range(events), key=lambda i: abs(centres[i] - wc))].append(w)
-        if len(assigned) != events:
-            continue  # a block with no name over it: wrong split, try coarser
-
-        names = [
-            " ".join(w["text"] for w in sorted(assigned[i], key=lambda w: (round(w["top"]), w["x0"])))
-            for i in range(events)
-        ]
-        return [
-            {"label": label, "x": x, "event": names[i]}
-            for i, block in enumerate(blocks)
-            for x, label in block
-        ]
-    raise ValueError(f"could not map {len(words)} event name(s) onto {n} columns")
+    sizes = _blocks([x for x, _ in anchors], [cx for cx, _ in names])
+    # The rotated glyphs' horizontal centre, which a right-aligned cell sits
+    # under; x is their left edge and stays the column's key.
+    centres = defaultdict(list)
+    for c in page.chars:
+        if not c.get("upright", True):
+            centres[round(c["x0"])].append((c["x0"] + c["x1"]) / 2)
+    cols = []
+    start = 0
+    for (_, event), size in zip(names, sizes):
+        for x, label in anchors[start:start + size]:
+            cols.append({"label": " ".join(label.split()), "x": x,
+                         "cx": sum(centres[x]) / len(centres[x]), "event": event})
+        start += size
+    return cols
 
 
 def _rows(page):
-    """Upright characters grouped into visual rows, as [(top, chars)].
+    """Upright characters grouped into visual rows, as [(top, chars)], each
+    row's characters back in draw order.
 
-    A row's name can sit a fraction of a point above its own numbers (0.4pt on a
-    Teams sheet, where the team name is set on a slightly different baseline from
-    the car number beside it), so rows cluster with a tolerance rather than key
-    on an exact top. Row pitch is ~10pt, so neighbours never merge.
+    A row's fields can sit a fraction of a point off each other's baseline
+    (0.4–0.7pt between a name and its total), so rows cluster with a tolerance
+    rather than key on an exact top. Row pitch is ~10pt, so neighbours never
+    merge. Draw order is what _runs needs: a name is drawn whole even where it
+    overprints the numbers drawn after it.
     """
     rows = []
-    for c in sorted((c for c in page.chars if c.get("upright", True)), key=lambda c: c["top"]):
+    indexed = [(i, c) for i, c in enumerate(page.chars) if c.get("upright", True)]
+    for i, c in sorted(indexed, key=lambda ic: ic[1]["top"]):
         if rows and c["top"] - rows[-1][0] <= ROW_TOLERANCE:
-            rows[-1][1].append(c)
+            rows[-1][1].append((i, c))
         else:
-            rows.append((c["top"], [c]))
-    return rows
+            rows.append((c["top"], [(i, c)]))
+    return [(top, [c for _, c in sorted(chars)]) for top, chars in rows]
 
 
-def _cell_values(chars, cols, numeric_from, points_font):
+def _points_header(page):
+    """The "Points" header over the total column, as (x0, x1), or None when
+    the page has no "Pos … Points" line."""
+    for _, chars in _rows(page):
+        runs = sorted((r for r in _runs(chars) if _text(r)), key=lambda r: r[0]["x0"])
+        if len(runs) >= 2 and _text(runs[0]) == "Pos" and _text(runs[-1]).startswith("Point"):
+            return runs[-1][0]["x0"], runs[-1][-1]["x1"]
+    return None
+
+
+def _cell_values(chars, cols, numeric_from, points_font, claimed=()):
     """Raw text per points column, bucketing each character by its centre x.
 
-    Only glyphs in the points font count: that is what keeps an overprinting
-    team name out of the numbers.
+    Only glyphs in the points font count, and none that a field run already
+    claimed: that is what keeps an overprinting team name out of the numbers
+    even where the sheet sets the name in the points face (2022 Pilot
+    Challenge Teams). Bucketing is per character because a bonus
+    and its round can render flush ("10320"); the midpoint between their
+    anchors is what splits them.
+
+    A sheet can also carry cells under no header at all: the 2021 Pilot and
+    Prototype Challenge sheets print the template's pole slot before every
+    round and two spare round slots after the last, all zero, with the labels
+    suppressed. Those fall into the neighbouring labelled bucket as a run of
+    their own (a cell is one run; a gap separates it from the next). The run
+    under the header is the cell; any other run in the bucket must be empty
+    or zero, or the sheet has a column nothing can attribute.
     """
     edges = [(cols[i]["x"] + cols[i + 1]["x"]) / 2 for i in range(len(cols) - 1)]
-    buckets = defaultdict(str)
+    buckets = defaultdict(list)
+    claimed_ids = {id(c) for c in claimed}
     for c in chars:
-        if c["fontname"] != points_font:
+        if c["fontname"] != points_font or id(c) in claimed_ids:
             continue
         cx = (c["x0"] + c["x1"]) / 2
         if cx < numeric_from:
@@ -221,98 +324,134 @@ def _cell_values(chars, cols, numeric_from, points_font):
         idx = 0
         while idx < len(edges) and cx > edges[idx]:
             idx += 1
-        buckets[idx] += c["text"]
-    return [buckets.get(i, "").strip() for i in range(len(cols))]
+        buckets[idx].append(c)
+    out = []
+    for i, col in enumerate(cols):
+        runs = []
+        for c in sorted(buckets.get(i, []), key=lambda c: c["x0"]):
+            if runs and c["x0"] - runs[-1][-1]["x1"] <= RUN_GAP:
+                runs[-1].append(c)
+            else:
+                runs.append([c])
+        runs = [r for r in runs if _text(r)]
+        if not runs:
+            out.append("")
+            continue
+        cell = min(runs, key=lambda r: abs((r[0]["x0"] + r[-1]["x1"]) / 2 - col["cx"]))
+        for r in runs:
+            if r is not cell and _text(r) != "0":
+                raise ValueError(
+                    f"a cell {_text(r)!r} under no column header, beside {col['label']!r} "
+                    f"(the header names only the cell {_text(cell)!r})")
+        out.append(_text(cell))
+    return out
 
 
 def _parse_rows(page, cols):
     """Standings rows on one page: [{position, car_number, name, total, cells}]."""
-    numeric_from = cols[0]["x"] - NUMERIC_LEAD
+    header = _points_header(page)
+    points_x = header[0] if header else TOTAL_MIN_X
+    # The points cells start right of the total column: just past its header
+    # where the page has one (a template's unlabelled pole slot can sit closer
+    # to the total than the first labelled column does), else a little left of
+    # the first column anchor.
+    numeric_from = header[1] + 1 if header else cols[0]["x"] - NUMERIC_LEAD
     out = []
+    seen_rows = 0
     for _, row_chars in _rows(page):
-        chars = sorted(row_chars, key=lambda c: c["x0"])
-        pos_chars = [c for c in chars if c["x0"] < POS_MAX_X and c["text"].isdigit()]
-        if not pos_chars:
-            continue  # header, legend or footer line, not a competitor
-
-        # Points share the position column's font; the name, car number and total
-        # are set in the other face. Both are read off the row rather than
-        # hardcoded, so a sheet in different fonts still parses.
-        points_font = pos_chars[0]["fontname"]
-        baseline = round(pos_chars[0]["top"], 2)
-        # Deliberately left in the order the PDF draws them, not x order: a name
-        # long enough to overprint the totals interleaves with them on the page,
-        # so reading by x splices the two together ("COMPETIT ION"). Each text
-        # run is drawn whole, so draw order keeps the name intact.
-        label_chars = [c for c in row_chars if c["x0"] >= POS_MAX_X and c["fontname"] != points_font]
-        if not label_chars:
+        runs = sorted((r for r in _runs(row_chars) if _text(r)), key=lambda r: r[0]["x0"])
+        if not runs:
             continue
-
-        # Telling the name apart from the numbers printed through it. A Teams
-        # sheet sets the team name a fraction of a point off the row's baseline,
-        # which is the only thing separating "Bryan Herta Autosport with
-        # PR1/Mathiasen" from its total: same font, interleaved x, and the name
-        # carries a digit of its own. Every other sheet puts the name on the
-        # row's baseline, where it is instead the digits that give the numbers
-        # away.
-        if {round(c["top"], 2) for c in label_chars} - {baseline}:
-            def is_name(c):
-                return round(c["top"], 2) != baseline
-        else:
-            def is_name(c):
-                return not c["text"].isdigit()
-
-        def is_number(c):
-            return not is_name(c) and c["text"].isdigit()
-
-        # A Teams sheet numbers the car between position and team name; Drivers
-        # and Manufacturers sheets have no such column. Numbers read left to
-        # right; only the name needs draw order.
-        by_x = sorted(label_chars, key=lambda c: c["x0"])
-        car_chars = [c for c in by_x if is_number(c) and c["x0"] < TOTAL_MIN_X]
-        car_number = "".join(c["text"] for c in car_chars) or None
-        name_from = max((c["x1"] for c in car_chars), default=POS_MAX_X)
-
-        name = " ".join("".join(
-            c["text"] for c in label_chars if c["x0"] >= name_from and is_name(c)
-        ).split())
-        total = "".join(
-            c["text"] for c in by_x if c["x0"] >= TOTAL_MIN_X and is_number(c)
-        )
-        if not name or not total:
+        # A competitor row leads with its position: a digits-only run left of
+        # the points columns. Anything else is a header, legend or footer line.
+        first = _text(runs[0])
+        if not first.isdigit() or runs[0][0]["x0"] >= numeric_from:
             continue
+        seen_rows += 1
+        # Points share the position's font. The fields — car number, name and
+        # total — are the runs that start left of the points cells, whatever
+        # their face: usually the other one, but a 2021 Teams sheet sets the
+        # team name in the points face.
+        points_font = runs[0][0]["fontname"]
+        fields = [r for r in runs[1:] if r[0]["x0"] < numeric_from]
+
+        # Among the label fields: the digits-only run under the "Points" header
+        # is the total; a digits-only run before the name is the car number (a
+        # Teams sheet); everything else is the name, however many runs it took
+        # ("Seb Priaulx" + "(J)") and however far it overprints the numbers. A
+        # name that merely starts with digits ("311RS Motorsport") is one run
+        # with its letters, so it never reads as a car number.
+        # The car number is the digits-only run before the name; the total is
+        # the rightmost digits-only run under the "Points" header, preferring
+        # one set in the other face when both faces offer one (a page with no
+        # header falls back to a guessed boundary, and a points cell can then
+        # start left of it — it stays unclaimed and reads as a cell). Any other
+        # digits-only run after the name is such a cell too.
+        car_run = None
+        name_runs, digit_runs = [], []
+        for r in fields:
+            text = _text(r)
+            if text.isdigit() and not name_runs and car_run is None and r[0]["x0"] < points_x - TOTAL_SLACK:
+                car_run = r
+            elif text.isdigit():
+                digit_runs.append(r)
+            else:
+                name_runs.append(r)
+        candidates = [r for r in digit_runs if r[0]["x0"] >= points_x - TOTAL_SLACK]
+        other_face = [r for r in candidates if r[0]["fontname"] != points_font]
+        total_run = (other_face or candidates or [None])[-1]
+        fields = [r for r in (runs[0], car_run, *name_runs, total_run) if r is not None]
+        if total_run is None or not name_runs:
+            continue
+        name = ""
+        for r in name_runs:
+            if name and r[0]["x0"] - prev_x1 > RUN_GAP:
+                name += " "
+            name += _text(r)
+            prev_x1 = r[-1]["x1"]
 
         out.append({
-            "position": int("".join(c["text"] for c in pos_chars)),
-            "car_number": car_number,
-            "name": name,
-            "total": int(total),
-            "cells": _cell_values(chars, cols, numeric_from, points_font),
+            "position": int(first),
+            "car_number": _text(car_run) if car_run else None,
+            "name": " ".join(name.split()),
+            "total": int(_text(total_run)),
+            "cells": _cell_values(row_chars, cols, numeric_from, points_font,
+                                  claimed=[c for r in fields for c in r]),
         })
+    if seen_rows and not out:
+        # Rows are there but none read: a layout the row reader does not
+        # understand, not an empty page. Fail rather than stage nobody.
+        raise ValueError(f"{seen_rows} competitor rows on the page but none could be read")
     return out
 
 
 def _sessions(cols):
-    """Columns -> ordered sessions, each with the bonus column feeding it.
+    """Columns -> ordered sessions, each with the bonus columns feeding it.
 
-    "Extra" is not a session: it is a bonus on the round to its right. Every
-    other label ("Round 3", "Qualifying", "Race") names a session of its own,
-    matching how the standings JSON names them.
+    "Extra" and "Pole" are not sessions: each is a bonus on the round to its
+    right. Every other label ("Round 3", "Qualifying", "Race") names a session
+    of its own, matching how the standings JSON names them.
     """
     sessions = []
-    pending_bonus = None
+    pending_bonus = pending_pole = None
     for idx, col in enumerate(cols):
         if col["label"] == BONUS_LABEL:
             pending_bonus = idx
+            continue
+        if POLE_LABEL.match(col["label"]):
+            pending_pole = idx
             continue
         sessions.append({
             "session_index": len(sessions) + 1,
             "event_name": col["event"],
             "session_name": col["label"],
             "_col": idx,
-            "_bonus_col": pending_bonus if pending_bonus is not None else None,
+            "_bonus_col": pending_bonus,
+            "_pole_col": pending_pole,
         })
-        pending_bonus = None
+        pending_bonus = pending_pole = None
+    if pending_bonus is not None or pending_pole is not None:
+        raise ValueError("a bonus column has no session column to its right")
     return sessions
 
 
@@ -323,25 +462,27 @@ def _points_for(row, sessions):
     for s in sessions:
         raw = row["cells"][s["_col"]]
         bonus_raw = row["cells"][s["_bonus_col"]] if s["_bonus_col"] is not None else ""
+        pole_raw = row["cells"][s["_pole_col"]] if s["_pole_col"] is not None else ""
 
         status = SENTINEL_STATUS.get(raw, "")
         race = int(raw) if raw.isdigit() else 0
         bonus = int(bonus_raw) if bonus_raw.isdigit() else 0
-        if not raw.isdigit() and raw not in SENTINEL_STATUS and raw != "":
-            raise ValueError(f"unreadable cell {raw!r} in {s['session_name']!r}")
-        if not bonus_raw.isdigit() and bonus_raw not in SENTINEL_STATUS and bonus_raw != "":
-            raise ValueError(f"unreadable bonus {bonus_raw!r} in {s['session_name']!r}")
+        pole = int(pole_raw) if pole_raw.isdigit() else 0
+        for kind, cell in (("cell", raw), ("bonus", bonus_raw), ("pole", pole_raw)):
+            if not cell.isdigit() and cell not in SENTINEL_STATUS and cell != "":
+                raise ValueError(f"unreadable {kind} {cell!r} in {s['session_name']!r}")
 
-        running += race + bonus
+        running += race + bonus + pole
         out.append({
             "session_index": s["session_index"],
-            "total_points": race + bonus,
+            "total_points": race + bonus + pole,
             "race_points": race,
-            # The PDF gives one undifferentiated bonus. Where a JSON exists it
-            # splits this into pole vs fastest lap; from a PDF we cannot, so it
-            # is recorded as-is rather than guessed into the wrong bucket.
+            # An "Extra" column is one undifferentiated bonus. Where a JSON
+            # exists it splits this into pole vs fastest lap; from a PDF we
+            # cannot, so it is recorded as-is rather than guessed into the wrong
+            # bucket. A "Pole" column, by contrast, says what it is.
             "bonus_points": bonus,
-            "pole_points": 0,
+            "pole_points": pole,
             "fastest_lap_points": 0,
             "penalty_points": 0,
             "status": status,
@@ -496,6 +637,29 @@ def _year_of(pdf, override):
     return m.group(1) if m else ""
 
 
+_STANDINGS_LINE = re.compile(r"^(.+?)\s+-\s+Championship Points Standings\b")
+
+
+def _title(page) -> str:
+    """The championship a page belongs to.
+
+    Most IMSA sheets put the whole title on line 1 ("IMSA WeatherTech
+    SportsCar Championship GTP Drivers") and a bare "Championship Points
+    Standings OFFICIAL" below. The 2025 Carrera Cup North America sheet puts
+    only the series on line 1 and names the championship on the standings
+    line — "Masters Drivers - Championship Points Standings OFFICIAL" — so
+    every page shared one title and a whole season's championships collapsed
+    into one (and failed on the first page whose columns differed).
+    """
+    lines = [l.strip() for l in (page.extract_text() or "").split("\n")]
+    title = lines[0] if lines else ""
+    for line in lines[1:6]:
+        m = _STANDINGS_LINE.match(line)
+        if m:
+            return f"{title} {m.group(1).strip()}".strip()
+    return title
+
+
 def parse(path: Path, year: int | None = None) -> dict:
     """PDF -> the points.json contract. Raises if any row fails its checksum."""
     pdf = pdfplumber.open(path)
@@ -516,7 +680,7 @@ def parse(path: Path, year: int | None = None) -> dict:
         cols = _columns(page)
         if not cols:
             continue  # not a standings grid
-        title = (page.extract_text() or "").split("\n")[0].strip()
+        title = _title(page)
         if not title:
             continue
         sessions = _sessions(cols)
@@ -525,7 +689,13 @@ def parse(path: Path, year: int | None = None) -> dict:
         # column layout and continue the classification.
         if [s["session_name"] for s in entry["sessions"]] != [s["session_name"] for s in sessions]:
             raise ValueError(f"page {pno}: column layout differs from earlier {title!r} page")
-        for row in _parse_rows(page, cols):
+        try:
+            rows = _parse_rows(page, cols)
+        except ValueError as e:
+            raise ValueError(f"page {pno}: {title!r}: {e}") from None
+        if not rows:
+            continue  # an overflow page: header and legend, no competitor rows
+        for row in rows:
             points, recomputed = _points_for(row, sessions)
             if recomputed != row["total"]:
                 raise ValueError(

@@ -29,10 +29,14 @@ public class BrowseController {
         this.imageUrls = imageUrls;
     }
 
+    /** {@code isRound} is whether the event takes a round number (the Roar and
+     *  test weekends do not); {@code roundOrdinal} is that number, null while
+     *  the event is no round. */
     public record EventSummary(long id, String name, String circuitName, LocalDate eventDate,
                                int year, long seasonId, String seriesName,
                                String seasonKind, String seasonLabel,
-                               long sessionCount, long entryCount) {
+                               long sessionCount, long entryCount,
+                               Integer roundOrdinal, boolean isRound) {
     }
 
     @GetMapping("/events")
@@ -41,7 +45,8 @@ public class BrowseController {
                         SELECT e.id, e.name, e.circuit_name, e.event_date, s.year, s.id AS season_id, sr.name AS series_name,
                                s.kind AS season_kind, s.label AS season_label,
                                (SELECT count(*) FROM race_session rs WHERE rs.event_id = e.id)  AS session_count,
-                               (SELECT count(*) FROM entry en WHERE en.event_id = e.id)         AS entry_count
+                               (SELECT count(*) FROM entry en WHERE en.event_id = e.id)         AS entry_count,
+                               e.round_ordinal, e.is_round
                         FROM event e
                                  JOIN season s ON s.id = e.season_id
                                  JOIN series sr ON sr.id = s.series_id
@@ -51,7 +56,8 @@ public class BrowseController {
                         rs.getString("circuit_name"), rs.getObject("event_date", LocalDate.class),
                         rs.getInt("year"), rs.getLong("season_id"), rs.getString("series_name"),
                         rs.getString("season_kind"), rs.getString("season_label"),
-                        rs.getLong("session_count"), rs.getLong("entry_count")))
+                        rs.getLong("session_count"), rs.getLong("entry_count"),
+                        (Integer) rs.getObject("round_ordinal"), rs.getBoolean("is_round")))
                 .list();
     }
 
@@ -75,7 +81,8 @@ public class BrowseController {
                         SELECT e.id, e.name, e.circuit_name, e.event_date, s.year, s.id AS season_id, sr.name AS series_name,
                                s.kind AS season_kind, s.label AS season_label,
                                (SELECT count(*) FROM race_session rs WHERE rs.event_id = e.id)  AS session_count,
-                               (SELECT count(*) FROM entry en WHERE en.event_id = e.id)         AS entry_count
+                               (SELECT count(*) FROM entry en WHERE en.event_id = e.id)         AS entry_count,
+                               e.round_ordinal, e.is_round
                         FROM event e
                                  JOIN season s ON s.id = e.season_id
                                  JOIN series sr ON sr.id = s.series_id
@@ -86,7 +93,8 @@ public class BrowseController {
                         rs.getString("circuit_name"), rs.getObject("event_date", LocalDate.class),
                         rs.getInt("year"), rs.getLong("season_id"), rs.getString("series_name"),
                         rs.getString("season_kind"), rs.getString("season_label"),
-                        rs.getLong("session_count"), rs.getLong("entry_count")))
+                        rs.getLong("session_count"), rs.getLong("entry_count"),
+                        (Integer) rs.getObject("round_ordinal"), rs.getBoolean("is_round")))
                 .optional()
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such event"));
 

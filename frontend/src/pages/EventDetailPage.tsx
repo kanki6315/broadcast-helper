@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useIsAdmin } from '../lib/auth'
+import AlKamelImportModal from '../components/AlKamelImportModal'
 
 interface EventSummary {
   id: number
@@ -12,6 +13,9 @@ interface EventSummary {
   seriesName: string
   sessionCount: number
   entryCount: number
+  // The round number, null while the event is no round (the Roar, a test).
+  roundOrdinal: number | null
+  isRound: boolean
 }
 
 interface EventEntry {
@@ -181,12 +185,44 @@ export default function EventDetailPage() {
   const { eventId } = useParams()
   const [detail, setDetail] = useState<EventDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // The during-the-weekend refresh from the timing provider's site (admin only).
+  const canRefresh = useIsAdmin()
+  const [refreshOpen, setRefreshOpen] = useState(false)
+  const [roundBusy, setRoundBusy] = useState(false)
 
-  useEffect(() => {
+  // Whether the weekend counts as a round: the admin's override for the
+  // planner's verdict (or an upload's default), renumbering the season.
+  async function setRound(isRound: boolean) {
+    setRoundBusy(true)
+    try {
+      const res = await fetch(`/api/events/${eventId}/round`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isRound }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null)
+        setError(err?.message ?? `Backend returned ${res.status}`)
+        return
+      }
+      loadDetail()
+    } catch {
+      setError('Failed to reach backend')
+    } finally {
+      setRoundBusy(false)
+    }
+  }
+
+  function loadDetail() {
     void fetch(`/api/events/${eventId}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`Backend returned ${r.status}`))))
       .then(setDetail)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to reach backend'))
+  }
+
+  useEffect(() => {
+    loadDetail()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId])
 
   if (error) return <p className="error">{error}</p>
@@ -206,6 +242,43 @@ export default function EventDetailPage() {
           Sheet →
         </a>
       </h2>
+      <p>
+        {detail.event.isRound && detail.event.roundOrdinal != null
+          ? `Round ${detail.event.roundOrdinal}`
+          : 'Not a championship round'}
+        {canRefresh && (
+          <>
+            {' · '}
+            <label>
+              <input
+                type="checkbox"
+                checked={detail.event.isRound}
+                disabled={roundBusy}
+                onChange={(e) => void setRound(e.target.checked)}
+              />{' '}
+              counts as a round
+            </label>
+          </>
+        )}
+      </p>
+      {canRefresh && (
+        <p>
+          <button type="button" className="btn" onClick={() => setRefreshOpen(true)}>
+            Refresh from Al Kamel
+          </button>{' '}
+          <span className="muted">read this weekend’s folder on the timing site and import what’s new.</span>
+        </p>
+      )}
+      {refreshOpen && (
+        <AlKamelImportModal
+          initialMode="refresh"
+          initialSeriesId={detail.seriesId}
+          initialEventId={detail.event.id}
+          onClose={() => setRefreshOpen(false)}
+          onStaged={() => {}}
+          onCommitted={() => loadDetail()}
+        />
+      )}
       <SessionFormatsSection
         seriesId={detail.seriesId}
         sessions={detail.sessions}
