@@ -67,6 +67,7 @@ export function seasonClasses(hub: SeasonHub, styles: ClassStylesResponse | null
 const SUB_PAGES = [
   { to: '', label: 'Overview', end: true },
   { to: 'schedule', label: 'Schedule', end: false },
+  { to: 'calculator', label: 'Calculator', end: false },
   { to: 'standings', label: 'Standings', end: false },
   { to: 'stats', label: 'Stats', end: false },
   { to: 'results', label: 'Results', end: false },

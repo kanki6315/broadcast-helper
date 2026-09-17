@@ -130,6 +130,15 @@ struct DownloadPlanTests {
         #expect(!docs.contains("/api/championships/101/recap"), "an empty championship has no grid")
     }
 
+    @Test func downloadsIncludeSupportedCalculatorBaselinesOnly() throws {
+        let hub: SeasonHub = try Fixtures.decode(Fixtures.hub.replacingOccurrences(of: "\"rowCount\":0", with: "\"rowCount\":12"))
+        for documents in [DownloadPlan.recapDocuments(hub), DownloadPlan.seasonDocuments(hub)] {
+            let paths = documents.map(\.path)
+            #expect(paths.contains("/api/championships/101/calculator"))
+            #expect(!paths.contains("/api/championships/100/calculator"), "driver championships are not supported")
+        }
+    }
+
     @Test func flagsOnlyForSessionsThatHaveThem() throws {
         let results: EventResults = try Fixtures.decode(Fixtures.results)
         #expect(DownloadPlan.flagDocuments(results) == [.document("/api/sessions/71/flags")])

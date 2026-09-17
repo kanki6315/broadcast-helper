@@ -20,7 +20,7 @@ struct SheetView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var page: Page = .sheet
 
-    private enum Page: String { case sheet, recap, pitLane, scratchpad }
+    private enum Page: String { case sheet, recap, calculator, pitLane, scratchpad }
     @State private var padModel: PadModel?
     @State private var exporting = false
     @State private var exportURL: URL?
@@ -101,6 +101,9 @@ struct SheetView: View {
             Tab("Recap", systemImage: "chart.bar.xaxis", value: Page.recap) {
                 recapContent.environment(\.horizontalSizeClass, sizeClass)
             }
+            Tab("Calculator", systemImage: "plus.forwardslash.minus", value: Page.calculator) {
+                calculatorContent.environment(\.horizontalSizeClass, sizeClass)
+            }
             Tab("Pit lane", systemImage: "flag.checkered", value: Page.pitLane) {
                 pitLaneContent.environment(\.horizontalSizeClass, sizeClass)
             }
@@ -129,6 +132,17 @@ struct SheetView: View {
                 RecapSheet(seasonId: seasonId, currentEventId: eventId)
             } else {
                 ContentUnavailableView("No season recap", systemImage: "chart.bar.xaxis",
+                                       description: Text("This event is not linked to a season."))
+            }
+        } else { sheetLoadingState }
+    }
+
+    @ViewBuilder private var calculatorContent: some View {
+        if let value = sheet.value {
+            if let seasonId = value.seasonId {
+                CalculatorSheet(seasonId: seasonId, eventId: eventId)
+            } else {
+                ContentUnavailableView("No championship calculator", systemImage: "trophy",
                                        description: Text("This event is not linked to a season."))
             }
         } else { sheetLoadingState }

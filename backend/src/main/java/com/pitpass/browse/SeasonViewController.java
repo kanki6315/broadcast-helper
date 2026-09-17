@@ -105,6 +105,28 @@ public class SeasonViewController {
     public record Recap(ChampInfo championship, List<RecapRound> rounds, List<RecapRow> rows) {
     }
 
+    /** Calculator-only projection input. Never writes standings or changes recap mappings.
+     * Cups have their own calendar, so matching their Nth round to season round N
+     * is unsafe. Require a unique venue in both calendars; ambiguous events remain unmapped.
+     */
+    @GetMapping("/championships/{id}/calculator")
+    public Recap calculator(@PathVariable long id) {
+        Recap source = recap(id);
+        record EventVenue(long id, String venue) {}
+        List<EventVenue> events = db.sql("SELECT id, name, circuit_name FROM event WHERE season_id = :season")
+                .param("season", source.championship().seasonId())
+                .query((rs, i) -> new EventVenue(rs.getLong("id"),
+                        SheetController.venueAbbrev(rs.getString("name"), rs.getString("circuit_name"))))
+                .list();
+        List<RecapRound> rounds = source.rounds().stream().map(round -> {
+            List<EventVenue> matches = events.stream().filter(e -> e.venue().equals(round.venue())).toList();
+            boolean uniqueRound = source.rounds().stream().filter(r -> r.venue().equals(round.venue())).count() == 1;
+            Long eventId = matches.size() == 1 && uniqueRound ? matches.getFirst().id() : null;
+            return new RecapRound(round.round(), round.venue(), eventId, round.raceCount(), round.sessions(), List.of());
+        }).toList();
+        return new Recap(source.championship(), rounds, source.rows());
+    }
+
     @GetMapping("/championships/{id}/recap")
     public Recap recap(@PathVariable long id) {
         ChampInfo champ = db.sql("""
