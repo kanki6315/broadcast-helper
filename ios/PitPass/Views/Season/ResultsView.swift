@@ -37,12 +37,13 @@ struct ResultsView: View {
     @ViewBuilder private func event(_ results: EventResults) -> some View {
         let sessions = results.sessions
         let races = sessions.filter(\.isRace)
+        let qualis = sessions.filter(\.isQualifying)
         let active = sessions.first { $0.sessionId == selectedSession } ?? races.first ?? sessions.first
         if let active {
             let hasGrid = active.isRace && !active.grid.isEmpty
             HStack(spacing: PP.Space.s3) {
                 if sessions.count > 1 {
-                    Segmented(options: sessions.map { .init(id: $0.sessionId, label: sessionLabel($0, raceCount: races.count)) },
+                    Segmented(options: sessions.map { .init(id: $0.sessionId, label: sessionLabel($0, raceCount: races.count, qualiCount: qualis.count)) },
                               selection: Binding(get: { active.sessionId }, set: { selectedSession = $0 }))
                 }
                 Spacer()
@@ -60,7 +61,7 @@ struct ResultsView: View {
             if hasGrid {
                 Color.clear.frame(height: 0)
                     .sheet(isPresented: $showGrid) {
-                        StartingGridSheet(rows: active.grid, title: "\(results.eventName) · \(sessionLabel(active, raceCount: races.count))")
+                        StartingGridSheet(rows: active.grid, title: "\(results.eventName) · \(sessionLabel(active, raceCount: races.count, qualiCount: qualis.count))")
                     }
             }
         } else {
@@ -68,8 +69,18 @@ struct ResultsView: View {
         }
     }
 
-    private func sessionLabel(_ s: SessionResults, raceCount: Int) -> String {
-        if !s.isRace { return "Qualifying" }
+    /// "Qualifying" / "Race", or "Race 1" / "Race 2" where the weekend had two.
+    /// A weekend with split qualifying (2021: "Qualifying - GTD Position") labels
+    /// each session by its own part, "Q · GTD Position" — the web app's rule.
+    private func sessionLabel(_ s: SessionResults, raceCount: Int, qualiCount: Int) -> String {
+        if !s.isRace {
+            if qualiCount == 1 { return "Qualifying" }
+            let edges = CharacterSet.whitespaces.union(CharacterSet(charactersIn: "-–—_:|"))
+            let part = s.name
+                .replacingOccurrences(of: #"\bqualif\w*"#, with: "", options: [.regularExpression, .caseInsensitive])
+                .trimmingCharacters(in: edges)
+            return part.isEmpty ? "Qualifying" : "Q · \(part)"
+        }
         return raceCount == 1 ? "Race" : s.name
     }
 }

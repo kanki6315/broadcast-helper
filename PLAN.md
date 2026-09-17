@@ -874,7 +874,17 @@ display size.)
   sheet's Q column skip those rows. Results page tabs read "Q · GTD Position"
   when a weekend has several qualifying sessions, and points-only rows carry a
   PTS chip. Verified on the real 2021 Mid-Ohio files (4 sessions kept apart,
-  13 GTD Points rows flagged, 3 poles not 4). **Known gap, separate task:** the
+  13 GTD Points rows flagged, 3 poles not 4). **Backfill:** a split file committed
+  before this change landed on (event, QUALIFYING, 1). JSON-sourced sessions kept
+  their file's name, so re-importing every split file of the event finds the
+  survivor by name and the rest take fresh ordinals — nothing stale remains.
+  CSV-sourced sessions were named "Qualifying" (the reviewer's display name),
+  which no split file matches: after the event's split files are re-imported,
+  the old "Qualifying" session still holds the last file's results and
+  double-counts that class's pole and Q positions — delete its `result` rows,
+  then the `race_session`, once its replacement is in. Every 2021 WeatherTech
+  event in production is CSV-sourced. The iPad app labels split sessions the
+  same way as the web (`ResultsView.sessionLabel`). **Known gap, separate task:** the
   multi-driver CSV layout (`DRIVER1_…`/`DRIVER2_…`) imports no crews — the CSV
   importer only reads the single-driver `DRIVER_FIRSTNAME` layout.
 - **Still ahead:** design the automated prior-year-at-this-track feature,
