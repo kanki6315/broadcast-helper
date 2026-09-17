@@ -1,0 +1,205 @@
+{
+  "document": "GRID",
+  "event": "FORMULA 1 CRYPTO.COM MIAMI GRAND PRIX 2026",
+  "location": "Miami Gardens",
+  "year": 2026,
+  "session": "Race 1",
+  "race": 1,
+  "status": "Official",
+  "revised": false,
+  "laps": null,
+  "distance_km": null,
+  "notes": null,
+  "rows": [
+    {
+      "position": 1,
+      "number": "40",
+      "first_name": "Janne",
+      "surname": "STIAK",
+      "class": "PRO",
+      "penalty": false,
+      "team": "ACI Motorsports",
+      "time": "1:55.721"
+    },
+    {
+      "position": 2,
+      "number": "24",
+      "first_name": "Aaron",
+      "surname": "JEANSONNE",
+      "class": "PRO",
+      "penalty": false,
+      "team": "Kellymoss",
+      "time": "1:55.965"
+    },
+    {
+      "position": 3,
+      "number": "9",
+      "first_name": "Callum",
+      "surname": "HEDGE",
+      "class": "PRO",
+      "penalty": false,
+      "team": "JDX Racing",
+      "time": "1:55.979"
+    },
+    {
+      "position": 4,
+      "number": "77",
+      "first_name": "Tyler",
+      "surname": "MAXSON",
+      "class": "PRO",
+      "penalty": false,
+      "team": "Topp Racing",
+      "time": "1:56.218"
+    },
+    {
+      "position": 5,
+      "number": "78",
+      "first_name": "Cole",
+      "surname": "KLECK",
+      "class": "PRO",
+      "penalty": false,
+      "team": "Topp Racing",
+      "time": "1:56.403"
+    },
+    {
+      "position": 6,
+      "number": "71",
+      "first_name": "Paul",
+      "surname": "BOCUSE",
+      "class": "PRO",
+      "penalty": false,
+      "team": "Kellymoss",
+      "time": "1:56.623"
+    },
+    {
+      "position": 7,
+      "number": "96",
+      "first_name": "Jared",
+      "surname": "THOMAS",
+      "class": "PRO",
+      "penalty": false,
+      "team": "JTR Motorsports Engineering",
+      "time": "1:56.698"
+    },
+    {
+      "position": 8,
+      "number": "37",
+      "first_name": "Sabre",
+      "surname": "COOK",
+      "class": "PRO",
+      "penalty": false,
+      "team": "JDX Racing",
+      "time": "1:56.763"
+    },
+    {
+      "position": 9,
+      "number": "54",
+      "first_name": "Patrick",
+      "surname": "MULCAHY",
+      "class": "Pro-Am",
+      "penalty": false,
+      "team": "ACI Motorsports",
+      "time": "1:57.037"
+    },
+    {
+      "position": 10,
+      "number": "99",
+      "first_name": "Alan",
+      "surname": "METNI",
+      "class": "PRO",
+      "penalty": false,
+      "team": "Kellymoss",
+      "time": "1:57.232"
+    },
+    {
+      "position": 11,
+      "number": "3",
+      "first_name": "Nikita",
+      "surname": "LASTOCHKIN",
+      "class": "PRO",
+      "penalty": false,
+      "team": "CSM - Reis Nichols",
+      "time": "1:57.237"
+    },
+    {
+      "position": 12,
+      "number": "39",
+      "first_name": "John",
+      "surname": "JODOIN",
+      "class": "PRO",
+      "penalty": false,
+      "team": "ACI Motorsports",
+      "time": "1:57.473"
+    },
+    {
+      "position": 13,
+      "number": "45",
+      "first_name": "Scott",
+      "surname": "BLIND",
+      "class": "MAS",
+      "penalty": false,
+      "team": "Ruckus Racing",
+      "time": "1:57.841"
+    },
+    {
+      "position": 14,
+      "number": "88",
+      "first_name": "Marco",
+      "surname": "CIRONE",
+      "class": "MAS",
+      "penalty": false,
+      "team": "ACI Motorsports",
+      "time": "1:57.964"
+    },
+    {
+      "position": 15,
+      "number": "6",
+      "first_name": "Alex",
+      "surname": "PRATT",
+      "class": "PRO",
+      "penalty": false,
+      "team": "ACI Motorsports",
+      "time": "1:58.233"
+    },
+    {
+      "position": 16,
+      "number": "68",
+      "first_name": "Chris",
+      "surname": "BELLOMO",
+      "class": "MAS",
+      "penalty": false,
+      "team": "Kellymoss",
+      "time": "1:58.786"
+    },
+    {
+      "position": 17,
+      "number": "29",
+      "first_name": "Josh",
+      "surname": "CONLEY",
+      "class": "Pro-Am",
+      "penalty": false,
+      "team": "Kellymoss",
+      "time": "1:59.073"
+    },
+    {
+      "position": 18,
+      "number": "74",
+      "first_name": "Matt",
+      "surname": "SMITH",
+      "class": "MAS",
+      "penalty": false,
+      "team": "ACI Motorsports",
+      "time": "1:59.332"
+    },
+    {
+      "position": 19,
+      "number": "60",
+      "first_name": "Kevin",
+      "surname": "STADLANDER",
+      "class": "MAS",
+      "penalty": false,
+      "team": "JDX Racing",
+      "time": "2:01.488"
+    }
+  ]
+}

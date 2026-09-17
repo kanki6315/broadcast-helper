@@ -42,6 +42,7 @@ public class ImportService {
     private final String parserScript;
     private final String pointsParserScript;
     private final String gridPdfParserScript;
+    private final String f1PdfParserScript;
 
     public ImportService(JdbcClient db, ObjectMapper json, IRacingClient iracing,
                          com.pitpass.formats.RaceFormatService raceFormats,
@@ -51,7 +52,8 @@ public class ImportService {
                          @org.springframework.beans.factory.annotation.Value("${pit-pass.entry-list-parser.python:python3}") String parserPython,
                          @org.springframework.beans.factory.annotation.Value("${pit-pass.entry-list-parser.script:../parser/parse_entry_list.py}") String parserScript,
                          @org.springframework.beans.factory.annotation.Value("${pit-pass.points-parser.script:../parser/parse_points.py}") String pointsParserScript,
-                         @org.springframework.beans.factory.annotation.Value("${pit-pass.grid-pdf-parser.script:../parser/parse_grid_pdf.py}") String gridPdfParserScript) {
+                         @org.springframework.beans.factory.annotation.Value("${pit-pass.grid-pdf-parser.script:../parser/parse_grid_pdf.py}") String gridPdfParserScript,
+                         @org.springframework.beans.factory.annotation.Value("${pit-pass.f1-pdf-parser.script:../parser/parse_f1_pdf.py}") String f1PdfParserScript) {
         this.db = db;
         this.json = json;
         this.iracing = iracing;
@@ -63,6 +65,7 @@ public class ImportService {
         this.parserScript = parserScript;
         this.pointsParserScript = pointsParserScript;
         this.gridPdfParserScript = gridPdfParserScript;
+        this.f1PdfParserScript = f1PdfParserScript;
     }
 
     // ---------------------------------------------------------------- staging
@@ -85,6 +88,7 @@ public class ImportService {
             case IMSA_POINTS_PDF -> stageImsaPointsPdf(filename, content);
             case IMSA_GRID_PDF -> List.of(stageImsaGridPdf(filename, content));
             case IMSA_CSV -> List.of(stageImsaCsv(filename, content));
+            case F1_PDF -> List.of(stageF1Pdf(filename, content));
             case IRACING_JSON -> stageIRacingJson(content);
         };
         return persist(staged, resolved, filename);
@@ -641,6 +645,37 @@ public class ImportService {
         }
         return new GridImport(null, null, null, null,
                 root.path("race").asInt(1), null, null, null, null, rows);
+    }
+
+    /** Stages a Formula 1 support-race sheet via the Python sidecar, which
+     *  tells the race classification, qualifying classification and starting
+     *  grid apart by title. None carries a date, so each batch goes through the
+     *  reviewer-supplies-the-target flow with its session pre-filled. */
+    private Staged stageF1Pdf(String filename, byte[] pdf) {
+        if (!isPdf(pdf)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Not a PDF file (expected an F1 support-race results, qualifying or grid PDF)");
+        }
+        JsonNode root;
+        try {
+            root = json.readTree(runPdfParser(f1PdfParserScript, "F1 PDF", "f1-pdf", filename, pdf));
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "F1 PDF parser returned invalid JSON: " + e.getMessage());
+        }
+        String header = "%s %d — %s".formatted(
+                root.path("location").asText("F1 weekend"), root.path("year").asInt(),
+                root.path("session").asText());
+        String mark = root.path("revised").asBoolean(false) ? " (Revised)" : "";
+        if (F1PdfMapper.isGrid(root)) {
+            GridImport parsed = F1PdfMapper.mapGrid(root);
+            return new Staged("GRID", parsed,
+                    "%s starting grid%s, %d cars".formatted(header, mark, parsed.rows().size()));
+        }
+        RaceResultsImport parsed = F1PdfMapper.mapResults(root);
+        String status = root.path("status").asText("");
+        return new Staged("RACE_RESULTS", parsed, "%s %sclassification%s, %d entries".formatted(
+                header, status.isEmpty() ? "" : status.toLowerCase() + " ", mark, parsed.rows().size()));
     }
 
     /** The IMSA CSV family, told apart by header: the starting grid
@@ -1779,8 +1814,8 @@ public class ImportService {
                     .param("posOverall", row.positionOverall())
                     .param("posInClass", row.positionInClass())
                     .param("qualifyingTime", row.time())
-                    .param("startingDriverId", resolveGridDriver(row.startingDriverSeat(), roster, bySeat))
-                    .param("qualifyingDriverId", resolveGridDriver(row.qualifyingDriverSeat(), roster, bySeat))
+                    .param("startingDriverId", resolveGridDriver(row.startingDriverSeat(), roster, bySeat, entryId))
+                    .param("qualifyingDriverId", resolveGridDriver(row.qualifyingDriverSeat(), roster, bySeat, entryId))
                     .update();
         }
         removeOrphanedEntries(eventId, carRefs(imp), target);
@@ -1798,13 +1833,13 @@ public class ImportService {
      * — attribution is never guessed.
      */
     private Long resolveGridDriver(Integer seat, List<RaceResultsImport.DriverRow> roster,
-                                   Map<Integer, Long> bySeat) {
+                                   Map<Integer, Long> bySeat, long entryId) {
         if (seat == null) {
             return null;
         }
         for (RaceResultsImport.DriverRow d : roster) {
             if (d.seatOrder() == seat && d.firstName() != null && d.surname() != null) {
-                return findOrCreateDriver(d.firstName(), d.surname(), d.country(), d.hometown());
+                return resolveDriver(d, entryId);
             }
         }
         return bySeat.get(seat);
@@ -2445,9 +2480,13 @@ public class ImportService {
                 .query((rs, i) -> entryListRatings.put(rs.getLong("driver_id"), rs.getString("rating")))
                 .list();
 
+        // Resolve before the DELETE: an initialled name is matched partly
+        // against this entry's current lineup.
+        List<Long> driverIds = drivers.stream().map(d -> resolveDriver(d, entryId)).toList();
         db.sql("DELETE FROM driver_assignment WHERE entry_id = :entryId").param("entryId", entryId).update();
-        for (RaceResultsImport.DriverRow d : drivers) {
-            long driverId = findOrCreateDriver(d.firstName(), d.surname(), d.country(), d.hometown());
+        for (int i = 0; i < drivers.size(); i++) {
+            RaceResultsImport.DriverRow d = drivers.get(i);
+            long driverId = driverIds.get(i);
             String entryListRating = entryListRatings.get(driverId);
             db.sql("""
                             INSERT INTO driver_assignment (entry_id, driver_id, seat_order, rating, rating_source)
@@ -2460,6 +2499,74 @@ public class ImportService {
                     .param("source", entryListRating != null ? "ENTRY_LIST" : "RESULTS")
                     .update();
         }
+    }
+
+    private static final java.util.regex.Pattern INITIALS =
+            java.util.regex.Pattern.compile("^(?:\\p{Lu}{1,3}\\.\\s*)+$");
+
+    /**
+     * A driver for one seat of an entry. Some timing sheets shorten the given
+     * name to an initial ("N. LASTOCHKIN", "A. R. FERNANDES"); taken literally
+     * that would mint a second driver beside the full-named one, so an
+     * initialled name first looks for a known driver with that surname and
+     * initial — preferring one who drove this car number this season, then
+     * anyone in this season, then anyone at all — and only when exactly one
+     * fits. No unique match falls back to the literal name; re-committing once
+     * the full name is known (import that weekend's grid first) replaces it.
+     */
+    long resolveDriver(RaceResultsImport.DriverRow d, long entryId) {
+        if (d.firstName() != null && d.surname() != null
+                && INITIALS.matcher(d.firstName().trim()).matches()) {
+            Optional<Long> known = findByInitial(d.firstName().trim(), d.surname(), entryId);
+            if (known.isPresent()) {
+                return known.get();
+            }
+        }
+        return findOrCreateDriver(d.firstName(), d.surname(), d.country(), d.hometown());
+    }
+
+    private Optional<Long> findByInitial(String initials, String surname, long entryId) {
+        record Candidate(long id, boolean sameCar, boolean sameSeason) {
+        }
+        List<Candidate> candidates = db.sql("""
+                        WITH ctx AS (
+                            SELECT regexp_replace(trim(e.car_number), '^0+(?=\\d)', '') AS car, ev.season_id
+                            FROM entry e JOIN event ev ON ev.id = e.event_id
+                            WHERE e.id = :entryId
+                        ), seen AS (
+                            SELECT da.driver_id,
+                                   bool_or(regexp_replace(trim(e2.car_number), '^0+(?=\\d)', '') = ctx.car) AS same_car
+                            FROM driver_assignment da
+                            JOIN entry e2 ON e2.id = da.entry_id
+                            JOIN event ev2 ON ev2.id = e2.event_id
+                            JOIN ctx ON ctx.season_id = ev2.season_id
+                            WHERE da.driver_id IS NOT NULL
+                            GROUP BY da.driver_id
+                        )
+                        SELECT d.id, COALESCE(seen.same_car, false) AS same_car, seen.driver_id IS NOT NULL AS same_season
+                        FROM driver d
+                        LEFT JOIN seen ON seen.driver_id = d.id
+                        WHERE lower(d.surname) = lower(:surname)
+                          AND upper(left(d.first_name, 1)) = :initial
+                          AND d.first_name !~ '^([A-Z]{1,3}\\.\\s*)+$'
+                        """)
+                .param("entryId", entryId)
+                .param("surname", surname)
+                .param("initial", initials.substring(0, 1).toUpperCase(Locale.ROOT))
+                .query((rs, i) -> new Candidate(rs.getLong("id"), rs.getBoolean("same_car"),
+                        rs.getBoolean("same_season")))
+                .list();
+        for (java.util.function.Predicate<Candidate> tier : List.<java.util.function.Predicate<Candidate>>of(
+                Candidate::sameCar, Candidate::sameSeason, c -> true)) {
+            List<Candidate> fit = candidates.stream().filter(tier).toList();
+            if (fit.size() == 1) {
+                return Optional.of(fit.get(0).id());
+            }
+            if (fit.size() > 1) {
+                return Optional.empty();
+            }
+        }
+        return Optional.empty();
     }
 
     /** The one driver identity rule: find-or-create on case-insensitive
