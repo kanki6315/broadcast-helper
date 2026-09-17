@@ -9,13 +9,23 @@ family; each class has independent teams, positions, adjustments, totals and gap
 Wide layouts place multiple panels in two columns; smaller windows stack them.
 Hiding and re-enabling a class retains its scenario for this page visit.
 Then add only the teams to compare within each class.
-Assign positions in class with the row selectors: qualifying and race for
+Assign positions in class with the row controls: qualifying and race for
 WeatherTech, race only for Pilot Challenge. Choosing
 an occupied position swaps those two teams in that column; omitted positions
 contribute zero. The projected table sorts by total and shows rank and gap among
 selected teams only. Equal totals retain a shared rank; no official tie-break
 claim is made. A signed points adjustment covers penalties or exceptional awards.
 Guest eligibility is deliberately not modeled.
+
+Web position controls remain select menus. On iPad, touch a position to reveal
+a preview slider, then move the same finger left or right without lifting.
+Release to apply the changed position once; points, swaps and row sorting wait
+until release so the selected row stays still during the drag. Slide left to
+the blank position to clear it. Holding at either screen edge continues stepping
+within the allowed range. A cancelled gesture discards its preview, and a touch
+without a position change makes no assignment. Scroll outside the position
+controls to move the table. VoiceOver supports increment/decrement adjustment
+and a “Clear position” custom action.
 
 WeatherTech qualifying points are simulated separately, including after qualifying has
 happened: the latest official standings normally do not include them until after
@@ -58,8 +68,12 @@ Verification:
 - `cd frontend && npm run test:calculator:browser` (Playwright; set
   `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` for a local Chrome executable)
 - Backend: `./gradlew test --tests com.pitpass.browse.ChampionshipCalculatorTest --tests com.pitpass.browse.RecapCarNumberAliasTest`
-- iPad: `ChampionshipCalculatorTests` in the PitPass Xcode scheme.
+- iPad: `ChampionshipCalculatorTests` and `PositionScrubberTests` in the PitPass
+  Xcode scheme.
 
 Tests cover scoring boundaries, independent qualifying, penalties, sparse
 selection, swaps, ties, baseline guards, unchanged recap data and read-only
-browser requests. Native layout fixtures use synthetic teams and points.
+browser requests. Position-control tests cover preview before release, a single
+commit, clearing, bounds, cancellation and accessibility increments/decrements,
+with active-slider layout captures. Native layout fixtures use synthetic teams
+and points.

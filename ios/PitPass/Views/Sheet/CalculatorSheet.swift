@@ -191,7 +191,7 @@ struct CalculatorEditor: View {
                 Spacer()
                 Button("Reset scenario") { scenario = [:] }.disabled(scenario.isEmpty)
             }
-            Text("Rank and gap compare selected teams only. Blank positions add zero. Choosing an occupied position swaps the teams. Scroll the table for position controls.")
+            Text("Rank and gap compare selected teams only. Blank positions add zero. Touch a position and slide left or right; release to set it. Slide left to clear. Occupied positions swap. Scroll outside the position controls to move the table.")
                 .font(.caption).foregroundStyle(PP.textMuted)
             if rows.isEmpty { EmptyState(message: "Select the teams you want to compare, then assign positions in class.") }
             else { table }
@@ -230,24 +230,12 @@ struct CalculatorEditor: View {
         var result = [AnyView(Text(number(row.total)).bold().foregroundStyle(PP.accentInk)), AnyView(Text(number(row.gap))), AnyView(Text(number(row.row.totalPoints)))]
         for (i, phase) in phases.enumerated() {
             result.append(AnyView(VStack(spacing: 0) {
-                Menu {
-                    Picker(phase, selection: Binding(
-                        get: { scenario[row.id]?.positions[i] ?? 0 },
-                        set: { scenario = ChampionshipCalculator.assign(scenario, key: row.id, phase: i, position: $0) }
-                    )) {
-                        Text("—").tag(0)
-                        ForEach(1...max(40, recap.rows.count), id: \.self) { Text("P\($0)").tag($0) }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        let position = scenario[row.id]?.positions[i] ?? 0
-                        Text(position == 0 ? "—" : "P\(position)")
-                        Image(systemName: "chevron.down").font(.caption2)
-                    }
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
+                PositionScrubber(position: scenario[row.id]?.positions[i] ?? 0,
+                                 maximum: max(40, recap.rows.count),
+                                 label: "\(phase) position for \(ChampionshipCalculator.name(row.row))") { position in
+                    scenario = ChampionshipCalculator.assign(scenario, key: row.id, phase: i, position: position)
                 }
-                .accessibilityLabel("\(phase) position for \(ChampionshipCalculator.name(row.row))")
+                .frame(minWidth: 64, minHeight: 44)
                 Text("+\(number(row.awards[i]))").font(.caption).foregroundStyle(PP.textMuted)
             }))
         }
