@@ -56,7 +56,7 @@ pages is merged into one classification.
               "total_points": 330,                     // race + bonus
               "race_points": 320,
               "bonus_points": 10,                      // see below
-              "pole_points": 0,                        // always 0 from a PDF
+              "pole_points": 0,                        // a "Pole" column, where the sheet has one
               "fastest_lap_points": 0,                 // always 0 from a PDF
               "penalty_points": 0,                     // always 0 from a PDF
               "status": ""                             // "" | did_not_race | not_classified
@@ -71,6 +71,9 @@ pages is merged into one classification.
 
 ## Field notes / loader guidance
 
+- **pole_points** from a PDF is the sheet's "Pole" column where it prints one
+  (2021 Carrera Cup North America and Lamborghini Super Trofeo; "Pole**" where
+  a footnote applies), the bonus on the round to its right. Otherwise 0.
 - **bonus_points** is the sheet's "Extra" column: pole and fastest-lap points
   already added together. On a 2024 Mustang sheet a 20 is both bonuses and a 10
   is one of them — and the sheet never says which, so 31 of that season's 44
