@@ -48,7 +48,9 @@ final class StandingsLayoutTests: XCTestCase {
                     .background(PP.bg).environment(\.colorScheme, scheme)
                     .environment(\.dynamicTypeSize, textSize)
                 let host = UIHostingController(rootView: view)
-                let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+                let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+                let window = UIWindow(windowScene: scene)
+                window.frame = CGRect(origin: .zero, size: size)
                 window.rootViewController = host
                 window.isHidden = false
                 host.view.frame = window.bounds

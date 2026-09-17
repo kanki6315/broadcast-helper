@@ -11,7 +11,7 @@ struct SignInView: View {
             Spacer()
             HStack(spacing: PP.Space.s3) {
                 BrandMark(size: 56)
-                (Text("Pit ").foregroundColor(PP.ink) + Text("Pass").foregroundColor(PP.accentInk))
+                Text("\(Text("Pit ").foregroundColor(PP.ink))\(Text("Pass").foregroundColor(PP.accentInk))")
                     .font(PP.sans(PP.TextSize.xxl, weight: 650))
                     .tracking(PP.TextSize.xxl * -0.02)
             }
