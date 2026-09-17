@@ -17,7 +17,6 @@ struct SheetView: View {
     @State private var sheet: Resource<Sheet>
     @State private var teamSheet: (page: Int, title: String)?
     @State private var storylinesOpen = false
-    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var page: Page = .sheet
 
     private enum Page: String { case sheet, recap, calculator, pitLane, scratchpad, conversations }
@@ -103,32 +102,29 @@ struct SheetView: View {
     private var eventTabs: some View {
         TabView(selection: $page) {
             Tab("Sheet", systemImage: "tablecells", value: Page.sheet) {
-                sheetContent.environment(\.horizontalSizeClass, sizeClass)
+                sheetContent
             }
             Tab("Recap", systemImage: "chart.bar.xaxis", value: Page.recap) {
-                recapContent.environment(\.horizontalSizeClass, sizeClass)
-            }
-            Tab("Calculator", systemImage: "plus.forwardslash.minus", value: Page.calculator) {
-                calculatorContent.environment(\.horizontalSizeClass, sizeClass)
+                recapContent
             }
             Tab("Pit lane", systemImage: "flag.checkered", value: Page.pitLane) {
-                pitLaneContent.environment(\.horizontalSizeClass, sizeClass)
+                pitLaneContent
             }
             Tab("Scratchpad", systemImage: "pencil.and.scribble", value: Page.scratchpad) {
                 ScratchpadSheet(eventId: eventId, model: $padModel)
-                    .environment(\.horizontalSizeClass, sizeClass)
             }
             .badge(scratchpadAttentionBadge)
             Tab("Conversations", systemImage: "bubble.left.and.bubble.right", value: Page.conversations) {
                 if let value = sheet.value {
                     ConversationsView(book: book, audio: conversationAudio, sheet: value, selectedPerson: $conversationPerson)
-                        .environment(\.horizontalSizeClass, sizeClass)
                 } else { sheetLoadingState }
             }
+            Tab("Calculator", systemImage: "plus.forwardslash.minus", value: Page.calculator) {
+                calculatorContent
+            }
         }
-        // Keep native Liquid Glass tabs at the bottom on iPad as well as iPhone.
-        // Each tab restores the actual size class for its adaptive content.
-        .environment(\.horizontalSizeClass, .compact)
+        // Use the native top tab bar on iPad, adapting to bottom tabs in compact windows.
+        .tabViewStyle(.tabBarOnly)
         .tint(PP.accentInk)
         .background(PP.bg.ignoresSafeArea())
     }

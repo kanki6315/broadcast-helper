@@ -41,8 +41,10 @@ requests have been removed so more season rows are visible immediately.
 The Series library uses compact rows with expandable seasons. Selecting a
 season establishes the root workspace; All series switches back to the library
 without stacking another season in navigation history. Event broadcast workspaces
-remain pushed destinations with five tabs (Sheet, Recap, Pit lane, Scratchpad,
-Conversations) and a Back to series action.
+remain pushed destinations with six tabs (Sheet, Recap, Pit lane, Scratchpad,
+Conversations, Calculator) and a Back to series action. The event workspace uses
+the native top tab bar on iPad, adapting to bottom tabs in compact windows. It
+does not force compact sizing or enable a persistent sidebar.
 
 Navigation preferences are stored locally in UserDefaults under a versioned key
 scoped to the server URL and signed-in owner. They do not expire: the last season,
