@@ -226,6 +226,9 @@ export interface ResultRow {
   /** Lap the fastest lap was set on. */
   fastestLapNumber: number | null
   pitStops: number | null
+  /** Scored championship points here without setting the grid — 2021's split
+   *  "GTD Points" qualifying. Not a pole, not a grid position. */
+  pointsOnly: boolean
 }
 
 export interface GridRow {

@@ -180,12 +180,11 @@ extension JSONDecoder {
     /// The API writes ISO-8601 timestamps with fractional seconds and an offset.
     static let api: JSONDecoder = {
         let decoder = JSONDecoder()
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let plain = ISO8601DateFormatter()
+        let withFraction = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+        let plain = Date.ISO8601FormatStyle()
         decoder.dateDecodingStrategy = .custom { decoder in
             let text = try decoder.singleValueContainer().decode(String.self)
-            if let date = withFraction.date(from: text) ?? plain.date(from: text) { return date }
+            if let date = (try? withFraction.parse(text)) ?? (try? plain.parse(text)) { return date }
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
                                                     debugDescription: "Bad date: \(text)"))
         }

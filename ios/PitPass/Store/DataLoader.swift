@@ -127,7 +127,7 @@ struct DataLoader: Sendable {
             case let .unchanged(loaded), let .updated(loaded):
                 return loaded
             }
-        } catch let error as APIError {
+        } catch {
             switch error {
             case .transport, .http:
                 if let cached: Loaded<T> = await cached(path) { return cached }

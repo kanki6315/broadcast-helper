@@ -434,6 +434,7 @@ public class TeamController {
                                count(*) FILTER (WHERE r.position_in_class <= 5) AS top5s
                         FROM result r
                                  JOIN race_session rs ON rs.id = r.session_id AND rs.session_type = 'QUALIFYING'
+                                          AND NOT r.points_only
                                  JOIN event ev ON ev.id = rs.event_id
                                  JOIN season s ON s.id = ev.season_id
                                  JOIN entry en ON en.id = r.entry_id

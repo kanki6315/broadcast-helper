@@ -20,6 +20,11 @@ public enum ImportFormat {
     // some starting grids only this way.
     IMSA_GRID_PDF("IMSA", Medium.PDF, "IMSA — Starting grid PDF"),
     IMSA_CSV("IMSA", Medium.CSV, "IMSA — CSV (grid/results)"),
+    // Support races on a Formula 1 weekend (Carrera Cup NA at Miami, Montréal,
+    // Austin) publish F1-paddock-style sheets, PDF only. One sidecar reads the
+    // race classification, qualifying classification and starting grid; like
+    // the other PDF families it has to be chosen explicitly.
+    F1_PDF("F1", Medium.PDF, "F1 support race — PDF (results/qualifying/grid)"),
     // One subsession export holds a whole meeting — qualifying, every race, and
     // each race's grid — so it stages as several batches. The same payload comes
     // back from the Data API, so IRacingClient feeds this format's parser too.

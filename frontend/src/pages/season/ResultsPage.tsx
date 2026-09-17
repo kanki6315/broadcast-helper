@@ -526,7 +526,17 @@ function ResultsTable({ session }: { session: SessionResults }) {
           // Separated: car 5 in P43 and car 54 in P3 both concatenate to "543".
           <tr key={`${r.carNumber}-${r.posOverall ?? ''}`}>
             <td className="pos-cell">{r.posOverall ?? '—'}</td>
-            <td className="num-cell">{r.posInClass ?? '—'}</td>
+            <td className="num-cell">
+              {r.posInClass ?? '—'}
+              {r.pointsOnly && (
+                <span
+                  className="points-only"
+                  title="Points only: this session scored championship points for this class; its grid was set in another qualifying session"
+                >
+                  pts
+                </span>
+              )}
+            </td>
             {has.positionChange && (
               <td className="num-cell">{formatPositionChange(positionChange(r, gridByCar))}</td>
             )}
@@ -572,9 +582,15 @@ function ResultsTable({ session }: { session: SessionResults }) {
   )
 }
 
-/** "Qualifying" / "Race", or "Race 1" / "Race 2" where the weekend had two. */
-function sessionLabel(s: SessionResults, raceCount: number): string {
-  if (s.sessionType !== 'RACE') return 'Qualifying'
+/** "Qualifying" / "Race", or "Race 1" / "Race 2" where the weekend had two.
+ *  A weekend with split qualifying (2021: "Qualifying - GTD Position") labels
+ *  each by its own part: "Q · GTD Position". */
+function sessionLabel(s: SessionResults, raceCount: number, qualiCount: number): string {
+  if (s.sessionType !== 'RACE') {
+    if (qualiCount === 1) return 'Qualifying'
+    const part = s.name.replace(/\bqualif\w*/i, '').replace(/^[\s\-–—_:|]+|[\s\-–—_:|]+$/g, '')
+    return part ? `Q · ${part}` : 'Qualifying'
+  }
   return raceCount === 1 ? 'Race' : s.name
 }
 
@@ -610,6 +626,7 @@ export default function ResultsPage() {
 
   const sessions = results?.sessions ?? []
   const races = sessions.filter((s) => s.sessionType === 'RACE')
+  const qualis = sessions.filter((s) => s.sessionType === 'QUALIFYING')
 
   // Session ids are per-event, so a `session` param carried across a round
   // change simply doesn't match — fall through to the race, which is the
@@ -718,7 +735,7 @@ export default function ResultsPage() {
                           onKeyDown={onTabKey}
                           onClick={() => setParam('session', String(s.sessionId))}
                         >
-                          {sessionLabel(s, races.length)}
+                          {sessionLabel(s, races.length, qualis.length)}
                         </button>
                       )
                     })}
@@ -750,7 +767,7 @@ export default function ResultsPage() {
               {gridOpen && hasGrid && (
                 <StartingGridModal
                   rows={active.grid}
-                  title={`${results.eventName} · ${sessionLabel(active, races.length)}`}
+                  title={`${results.eventName} · ${sessionLabel(active, races.length, qualis.length)}`}
                   classColor={classColor}
                   classFilter={classFilter}
                   onClose={() => setGridOpen(false)}

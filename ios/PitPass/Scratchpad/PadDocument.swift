@@ -114,16 +114,16 @@ struct LocalPad: Codable, Sendable, Equatable {
 
 extension OfflineStore {
     func loadPad(eventId: Int, owner: String) async -> LocalPad? {
-        guard let data = await loadPadBody(LocalPad.key(eventId: eventId, owner: owner)) else { return nil }
+        guard let data = loadPadBody(LocalPad.key(eventId: eventId, owner: owner)) else { return nil }
         return try? JSONDecoder().decode(LocalPad.self, from: data)
     }
 
     func savePad(_ pad: LocalPad) async {
         guard let data = try? JSONEncoder().encode(pad) else { return }
-        await savePadBody(pad.key, body: data)
+        savePadBody(pad.key, body: data)
     }
 
     func allPads() async -> [LocalPad] {
-        await allPadBodies().compactMap { try? JSONDecoder().decode(LocalPad.self, from: $0) }
+        allPadBodies().compactMap { try? JSONDecoder().decode(LocalPad.self, from: $0) }
     }
 }

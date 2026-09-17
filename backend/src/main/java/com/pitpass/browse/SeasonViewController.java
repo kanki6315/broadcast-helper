@@ -105,6 +105,28 @@ public class SeasonViewController {
     public record Recap(ChampInfo championship, List<RecapRound> rounds, List<RecapRow> rows) {
     }
 
+    /** Calculator-only projection input. Never writes standings or changes recap mappings.
+     * Cups have their own calendar, so matching their Nth round to season round N
+     * is unsafe. Require a unique venue in both calendars; ambiguous events remain unmapped.
+     */
+    @GetMapping("/championships/{id}/calculator")
+    public Recap calculator(@PathVariable long id) {
+        Recap source = recap(id);
+        record EventVenue(long id, String venue) {}
+        List<EventVenue> events = db.sql("SELECT id, name, circuit_name FROM event WHERE season_id = :season")
+                .param("season", source.championship().seasonId())
+                .query((rs, i) -> new EventVenue(rs.getLong("id"),
+                        SheetController.venueAbbrev(rs.getString("name"), rs.getString("circuit_name"))))
+                .list();
+        List<RecapRound> rounds = source.rounds().stream().map(round -> {
+            List<EventVenue> matches = events.stream().filter(e -> e.venue().equals(round.venue())).toList();
+            boolean uniqueRound = source.rounds().stream().filter(r -> r.venue().equals(round.venue())).count() == 1;
+            Long eventId = matches.size() == 1 && uniqueRound ? matches.getFirst().id() : null;
+            return new RecapRound(round.round(), round.venue(), eventId, round.raceCount(), round.sessions(), List.of());
+        }).toList();
+        return new Recap(source.championship(), rounds, source.rows());
+    }
+
     @GetMapping("/championships/{id}/recap")
     public Recap recap(@PathVariable long id) {
         ChampInfo champ = db.sql("""
@@ -611,7 +633,9 @@ public class SeasonViewController {
                             String teamName, String drivers, String fastestLapDriver,
                             String qualifyingDriver, String vehicle,
                             String status, Integer laps, String elapsedTime, String gapFirst,
-                            String fastestLapTime, Integer fastestLapNumber, Integer pitStops) {
+                            String fastestLapTime, Integer fastestLapNumber, Integer pitStops,
+                            // Scored points here without setting the grid (2021 split qualifying).
+                            boolean pointsOnly) {
     }
 
     public record GridRow(Integer posOverall, Integer posInClass, String carNumber, String className,
@@ -673,7 +697,7 @@ public class SeasonViewController {
             List<ResultRow> results = db.sql("""
                             SELECT r.position_overall, r.position_in_class, en.car_number, en.class_name,
                                    en.team_name, en.vehicle, r.status, r.laps, r.elapsed_time, r.gap_first,
-                                   r.fastest_lap_time, r.fastest_lap_number, r.pit_stops,
+                                   r.fastest_lap_time, r.fastest_lap_number, r.pit_stops, r.points_only,
                                    (SELECT string_agg(COALESCE(d.first_name || ' ' || d.surname, 'TBD'),
                                                       ', ' ORDER BY da.seat_order)
                                     FROM driver_assignment da LEFT JOIN driver d ON d.id = da.driver_id
@@ -705,7 +729,8 @@ public class SeasonViewController {
                             rs.getString("elapsed_time"), rs.getString("gap_first"),
                             rs.getString("fastest_lap_time"),
                             rs.getObject("fastest_lap_number", Integer.class),
-                            rs.getObject("pit_stops", Integer.class)))
+                            rs.getObject("pit_stops", Integer.class),
+                            rs.getBoolean("points_only")))
                     .list();
 
             List<GridRow> grid = db.sql("""

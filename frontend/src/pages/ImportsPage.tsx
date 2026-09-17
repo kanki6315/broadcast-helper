@@ -58,6 +58,9 @@ interface ImportReview {
   // by its header, a grid PDF names which race it starts. Null without a hint.
   sessionTypeHint: string | null
   sessionOrdinalHint: number | null
+  // A split session's own name ("Qualifying - GTD Position", from the file
+  // name). It is numbered at commit, so the ordinal box doesn't apply.
+  sessionNameHint: string | null
   // GRID only: every slot is untimed — qualifying never ran, so the reviewer
   // should say what set the grid.
   gridTimesAllBlank: boolean
@@ -716,17 +719,28 @@ export default function ImportsPage() {
                                   </option>
                                 ))}
                               </select>
-                              <input
-                                className="target-narrow"
-                                type="number"
-                                min={1}
-                                title="Which race/session of the weekend (Race 2 → 2)"
-                                value={t.sessionOrdinal}
-                                disabled={busy}
-                                onChange={(e) => patch(b.id, { sessionOrdinal: e.target.value })}
-                              />
-                              {!validOrdinal(t.sessionOrdinal) && (
-                                <span className="target-hint">Which race of the weekend — 1, 2, …</span>
+                              {review.sessionNameHint ? (
+                                <span
+                                  className="target-hint"
+                                  title="A split session keeps its own name and is numbered automatically"
+                                >
+                                  {review.sessionNameHint}
+                                </span>
+                              ) : (
+                                <>
+                                  <input
+                                    className="target-narrow"
+                                    type="number"
+                                    min={1}
+                                    title="Which race/session of the weekend (Race 2 → 2)"
+                                    value={t.sessionOrdinal}
+                                    disabled={busy}
+                                    onChange={(e) => patch(b.id, { sessionOrdinal: e.target.value })}
+                                  />
+                                  {!validOrdinal(t.sessionOrdinal) && (
+                                    <span className="target-hint">Which race of the weekend — 1, 2, …</span>
+                                  )}
+                                </>
                               )}
                             </label>
                           )}

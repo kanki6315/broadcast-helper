@@ -254,8 +254,7 @@ struct PrintEntry: View {
                             let isStarter = e.isStartingDriver(d)
                             HStack(spacing: 4) {
                                 if let f = Flags.emoji(d.nationality) { Text(f).font(.system(size: 9 * scale)) }
-                                (Text(d.rating.map { "(\($0)) " } ?? (d.isTbd ? "(?) " : ""))
-                                    + Text(d.name).underline(isStarter))
+                                Text("\(d.rating.map { "(\($0)) " } ?? (d.isTbd ? "(?) " : ""))\(Text(d.name).underline(isStarter))")
                                     .font(PP.sans(9.5 * scale))
                                     .foregroundStyle(SheetPrint.Ink.text)
                             }

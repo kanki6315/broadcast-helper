@@ -11,18 +11,27 @@ final class WebSignIn: NSObject, ASWebAuthenticationPresentationContextProviding
     enum Error: Swift.Error, LocalizedError {
         case cancelled
         case noCode
+        case noPresentationContext
 
         var errorDescription: String? {
             switch self {
             case .cancelled: "Sign-in cancelled"
             case .noCode: "The sign-in finished without a code — try again"
+            case .noPresentationContext: "Open the app to sign in — no window is available"
             }
         }
     }
 
     private var session: ASWebAuthenticationSession?
+    private var anchor: ASPresentationAnchor?
 
     func run(server: URL, deviceName: String) async throws -> String {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        guard let scene = scenes.first(where: { $0.activationState == .foregroundActive }) ?? scenes.first else {
+            throw Error.noPresentationContext
+        }
+        anchor = scene.windows.first(where: \.isKeyWindow) ?? scene.windows.first ?? ASPresentationAnchor(windowScene: scene)
+        defer { anchor = nil }
         var components = URLComponents(url: server.appending(path: "api/auth/device/start"),
                                        resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "name", value: deviceName)]
@@ -53,7 +62,7 @@ final class WebSignIn: NSObject, ASWebAuthenticationPresentationContextProviding
     }
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        return scenes.flatMap(\.windows).first(where: \.isKeyWindow) ?? ASPresentationAnchor()
+        guard let anchor else { preconditionFailure("Sign-in requires a presentation window") }
+        return anchor
     }
 }

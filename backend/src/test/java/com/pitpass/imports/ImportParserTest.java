@@ -669,4 +669,91 @@ class ImportParserTest {
         assertEquals(1, positionedNoTime.positionInClass());
         assertNull(positionedNoTime.fastestLapTime());
     }
+
+    // ------------------------------------------------ multi-driver results CSVs
+
+    private byte[] imsa2021Fixture(String name) throws IOException {
+        try (InputStream in = getClass().getResourceAsStream("/fixtures/imsa-2021/" + name)) {
+            assertNotNull(in, "missing fixture " + name);
+            return in.readAllBytes();
+        }
+    }
+
+    @Test
+    void resultsCsvBuildsMultiDriverCrewsInSeatOrder() throws IOException {
+        // 2021 Mid-Ohio WeatherTech: DRIVER1_* .. DRIVER6_* blocks, two per car.
+        byte[] csv = imsa2021Fixture("03_Results_Race_Official.CSV");
+        assertTrue(ImportParser.looksLikeResultsCsv(csv));
+        RaceResultsImport imp = ImportParser.parseResultsCsv(csv);
+        assertEquals(25, imp.rows().size());
+        assertTrue(imp.rows().stream().allMatch(r -> r.drivers().size() == 2));
+
+        RaceResultsImport.Row winner = imp.rows().get(0);
+        assertEquals("10", winner.number());
+        assertEquals("DPi", winner.className());
+        RaceResultsImport.DriverRow taylor = winner.drivers().get(0);
+        assertEquals(1, taylor.seatOrder());
+        assertEquals("Ricky", taylor.firstName());
+        assertEquals("Taylor", taylor.surname());
+        assertEquals("Platinum", taylor.rating());
+        assertEquals("USA", taylor.country());
+        assertNull(taylor.hometown());
+        RaceResultsImport.DriverRow albuquerque = winner.drivers().get(1);
+        assertEquals(2, albuquerque.seatOrder());
+        assertEquals("Filipe", albuquerque.firstName());
+        assertEquals("Albuquerque", albuquerque.surname());
+        assertEquals("PRT", albuquerque.country());
+
+        // Leading-zero car with a multi-word surname and mixed ratings.
+        RaceResultsImport.Row car01 = imp.rows().stream()
+                .filter(r -> r.number().equals("01")).findFirst().orElseThrow();
+        assertEquals("van der Zande", car01.drivers().get(0).surname());
+        assertEquals("Gold", car01.drivers().get(0).rating());
+        assertEquals("Magnussen", car01.drivers().get(1).surname());
+        assertEquals(2, car01.drivers().get(1).seatOrder());
+
+        // The file names no fastest-lap driver: the lap imports, the seat
+        // stays null instead of defaulting to seat 1.
+        assertEquals("1:12.345", winner.fastestLapTime());
+        assertEquals(75, winner.fastestLapNumber());
+        assertNull(winner.fastestLapDriverSeat());
+    }
+
+    @Test
+    void qualifyingCsvBuildsMultiDriverCrews() throws IOException {
+        byte[] csv = imsa2021Fixture("03_Results_Qualifying - DPi Position - Points.CSV");
+        assertTrue(ImportParser.looksLikeQualifyingCsv(csv));
+        RaceResultsImport imp = ImportParser.parseQualifyingCsv(csv);
+        RaceResultsImport.Row pole = imp.rows().get(0);
+        assertEquals("55", pole.number());
+        assertEquals(List.of("Jarvis", "Tincknell"),
+                pole.drivers().stream().map(RaceResultsImport.DriverRow::surname).toList());
+        assertEquals(List.of(1, 2),
+                pole.drivers().stream().map(RaceResultsImport.DriverRow::seatOrder).toList());
+        assertNotNull(pole.fastestLapTime());
+        assertNull(pole.fastestLapDriverSeat());
+
+        RaceResultsImport gtd = ImportParser.parseQualifyingCsv(
+                imsa2021Fixture("03_Results_Qualifying - GTD Position.CSV"));
+        assertTrue(gtd.rows().stream().allMatch(r -> r.drivers().size() == 2));
+    }
+
+    @Test
+    void multiDriverCsvSkipsEmptyBlocksWithoutRenumbering() {
+        // Stray header spaces, an empty DRIVER1 block, a junior marker on
+        // DRIVER2, and a row cut short before DRIVER3's columns.
+        String csv = "POSITION; NUMBER ;STATUS;LAPS;TOTAL_TIME;FL_TIME;"
+                + "DRIVER1_FIRSTNAME;DRIVER1_SECONDNAME;DRIVER1_LICENSE;"
+                + "DRIVER2_FIRSTNAME; DRIVER2_SECONDNAME;DRIVER2_LICENSE;"
+                + "DRIVER3_FIRSTNAME;DRIVER3_SECONDNAME;DRIVER3_LICENSE;\r\n"
+                + "1;7;Classified;10;20:00.000;1:10.000;;;;Tom;Blomqvist(J);Gold\r\n";
+        RaceResultsImport imp = ImportParser.parseResultsCsv(csv.getBytes());
+        RaceResultsImport.Row row = imp.rows().get(0);
+        assertEquals("7", row.number());
+        assertEquals(1, row.drivers().size());
+        assertEquals(2, row.drivers().get(0).seatOrder());
+        assertEquals("Blomqvist", row.drivers().get(0).surname());
+        assertEquals("Gold", row.drivers().get(0).rating());
+        assertNull(row.fastestLapDriverSeat());
+    }
 }

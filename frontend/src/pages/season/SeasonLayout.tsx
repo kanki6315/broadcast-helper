@@ -67,6 +67,7 @@ export function seasonClasses(hub: SeasonHub, styles: ClassStylesResponse | null
 const SUB_PAGES = [
   { to: '', label: 'Overview', end: true },
   { to: 'schedule', label: 'Schedule', end: false },
+  { to: 'calculator', label: 'Calculator', end: false },
   { to: 'standings', label: 'Standings', end: false },
   { to: 'stats', label: 'Stats', end: false },
   { to: 'results', label: 'Results', end: false },
@@ -212,7 +213,7 @@ export default function SeasonLayout() {
               })}
             </div>
           </div>
-          {classes.length > 1 && (
+          {classes.length > 1 && !location.pathname.endsWith('/calculator') && (
             <div className="class-chips" role="group" aria-label="Class filter">
               <button
                 type="button"
@@ -284,7 +285,7 @@ export default function SeasonLayout() {
         * announced that, so a screen-reader user heard only the button's own
         * pressed state change (WCAG 4.1.3). */}
       <p className="sr-only" role="status" aria-live="polite">
-        {classFilter ? `Showing ${classFilter} only` : 'Showing all classes'}
+        {location.pathname.endsWith('/calculator') ? 'Calculator classes are selected below' : classFilter ? `Showing ${classFilter} only` : 'Showing all classes'}
       </p>
       <Outlet context={context} />
     </section>
