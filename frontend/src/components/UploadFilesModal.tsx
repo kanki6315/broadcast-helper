@@ -41,6 +41,7 @@ const FORMAT_OPTIONS: [string, string][] = [
   ['IMSA_CSV', 'IMSA — CSV (grid/results)'],
   ['IMSA_POINTS_PDF', 'IMSA — Championship points PDF'],
   ['IMSA_GRID_PDF', 'IMSA — Starting grid PDF'],
+  ['F1_PDF', 'F1 support race — PDF (results/qualifying/grid)'],
 ]
 
 const KIND_LABEL: Record<string, string> = {

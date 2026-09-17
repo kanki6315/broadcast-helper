@@ -203,7 +203,8 @@ which concretely realizes the `(series, file-kind)` plugin model above. `AUTO`
 stays the default and resolves to a concrete family; `import_batch.format`
 records which parser ran. Document-kind detection lives inside each family. One
 upload can stage **several** batches — a points PDF holds every championship of
-the series. A later family, `IRACING_JSON`, reads iRacing subsessions from an
+the series. `F1_PDF` reads Formula 1 support-race sheets (results,
+qualifying, grid). A later family, `IRACING_JSON`, reads iRacing subsessions from an
 exported file *or* the live Data API (same payload either way) and adds a
 fetch-driven import UI alongside upload. Full detail in Phase 3.
 
@@ -482,6 +483,21 @@ display size.)
   entry-list richness. **Next slices on this seam:** manual entry (paste-a-table
   → editable grid → staged as a normal batch, `format=MANUAL`) and per-provider
   PDF parsers (e.g. `CCA_PDF`, config-mapped sidecar scripts).
+- **Multi-driver results/qualifying CSV crews — ✅ DONE (2026-09-16).** The
+  results and qualifying CSVs (`parseResultsCsv` / `parseQualifyingCsv`) read
+  only the single-driver `DRIVER_*` block (Carrera Cup), so the 2017–2023
+  WeatherTech / Pilot Challenge CSVs — numbered `DRIVER1_*`..`DRIVER6_*` blocks
+  — committed entries and results with **no driver_assignment rows** (blank
+  Results Drivers column, races missing from driver stats). `csvDrivers` now
+  reads every `DRIVERn_*` block the header declares (seat = n, empty blocks
+  skipped without renumbering, `(J)` markers stripped, `LICENSE` → rating, same
+  as the single path). These files name no fastest-lap driver, so
+  `fastest_lap_driver_seat` is null on multi-driver rows instead of a guessed
+  seat 1 (single-driver files keep seat 1). Fixtures: 2021 Mid-Ohio WeatherTech
+  race + class qualifying CSVs (`fixtures/imsa-2021/`). **Backfill:** any
+  multi-driver CSV session already committed has no crews — re-import those
+  files (commit is idempotent: same session key, results + assignments
+  replaced).
 - **Championship points PDF (`IMSA_POINTS_PDF`) — ✅ DONE (2026-07-15).** The
   second sidecar (`parser/parse_points.py`), for series/seasons with no standings
   JSON — 2024 Mustang Challenge. Emits the standings JSON shape, so the existing
@@ -849,6 +865,74 @@ display size.)
   bits were extracted for reuse: `lib/useSeriesEvents` (the series/events fetch),
   `lib/importGroups` (filename→round grouping + kind labels), and
   `ImportStatusIcon`.
+- **F1 support-race PDFs (`F1_PDF`) — ✅ DONE (2026-09-16).** Carrera Cup NA's
+  Formula 1 weekends (Miami every year, Montréal 2024–25, Austin 2025) publish
+  F1-paddock-style sheets, and Al Kamel posts them as **PDF only** — the XML
+  beside some is the *Unofficial* race copy, so an XML importer would read the
+  wrong version. `parser/parse_f1_pdf.py` reads all three documents (race
+  classification, qualifying classification, staggered two-column starting
+  grid), told apart by title; `F1PdfMapper` maps them onto the shared results
+  and grid shapes. No date on any sheet → the reviewer-picks-the-event flow,
+  with the title's session type/race number as the picker hints. Geometry, not
+  text: values join the column whose header centre is nearest, and every word
+  joins the **car-number anchor** with the nearest vertical centre — long
+  names/teams are shrunk and wrapped around the row, which a fixed-tolerance
+  row cluster splits off. Rows sort by printed position (2024 Miami R1 prints
+  P25 after P29). Retirements follow the timing JSON (classified DNF = status
+  `Classified` + `not_finished`); the NOT CLASSIFIED block keeps its rows with
+  null positions; the `* PENALTIES` / `NOTES` pages become the session's
+  `report_message` (stewards' notes). Grids name each car's one driver, so they
+  carry starting/qualifying attribution (seat 1) — which the IMSA grid PDF
+  can't. **Initialled names** ("N. LASTOCHKIN", "A. R. FERNANDES") resolve in
+  `ImportService.resolveDriver` to a known driver with that surname + initial —
+  this car number this season, else this season, else anyone — only on a
+  unique match; otherwise the literal name is created. Commit a weekend's grids
+  first so their full names seed the lineups. Surnames print in capitals and
+  are cased for *new* drivers only (`nameCase`: McCann, O'Connell, De La
+  Torre); lookups ignore case. Classes print as P/PA/A (2023–24) or
+  PRO/PRO-AM/Pro-Am/MAS — case-insensitive matching covers PRO/PRO-AM, the rest
+  want one class alias each. Validated on all 34 sheets from the 7 affected
+  events: every Race 1 grid time equals that car's qualifying time (177/177).
+  Known source typo: 2026 Miami prints STADTLANDER in the race, STADLANDER
+  elsewhere.
+- **Split sessions: 2021 class-split qualifying (V51) — ✅ DONE (2026-09-16).**
+  2021 IMSA WeatherTech qualified each class group separately — "Qualifying -
+  GTD Position", "Qualifying - GTD Points GTLM", "Qualifying - LMP3 Position -
+  Points" — 12 events with 3–4 unnumbered qualifying sessions each (the Roar
+  split by class too, and PCCNA's 2026 Road America ran "Miami Make-Up - Race
+  2"). Keyed (event, type, ordinal) with the ordinal from a trailing number,
+  every one of them landed on QUALIFYING 1 and each commit wiped the last.
+  `SessionNames.splitLabel` finds a name's **split label** (text beyond its type
+  word and a *separate-word* trailing number — "LMP2" is no ordinal, and
+  `ImportParser.sessionOrdinal` now agrees); a labelled session is its own:
+  `resolveSessionSlot` reuses the ordinal of a same-named session (case and
+  separators ignored) or takes the next free one. Plain names keep the old
+  rule, so "Race"/"Race 1" drift still collapses; names without their type word
+  ("Heat 1", "Feature", "Hour 6") are untouched, and iRacing (which numbers its
+  own sessions) is exempt by format. CSVs carry no session metadata, so the
+  **Al Kamel file name** supplies the name (`sessionNameFromFilename`: "03_Results_
+  Qualifying - GTD Position.CSV") — it also pre-fills the ordinal ("Race 2" → 2)
+  and the review shows the split name (`sessionNameHint`) instead of the ordinal
+  box. Split also meant **purpose**: "GTD Position" set the GTD grid while "GTD
+  Points" only scored points (and set GTLM's grid in the same session).
+  `result.points_only` (V51) marks a class named "Points" but not "Position" in
+  its session's label; pole/quali stats (season, series, driver, team) and the
+  sheet's Q column skip those rows. Results page tabs read "Q · GTD Position"
+  when a weekend has several qualifying sessions, and points-only rows carry a
+  PTS chip. Verified on the real 2021 Mid-Ohio files (4 sessions kept apart,
+  13 GTD Points rows flagged, 3 poles not 4). **Backfill:** a split file committed
+  before this change landed on (event, QUALIFYING, 1). JSON-sourced sessions kept
+  their file's name, so re-importing every split file of the event finds the
+  survivor by name and the rest take fresh ordinals — nothing stale remains.
+  CSV-sourced sessions were named "Qualifying" (the reviewer's display name),
+  which no split file matches: after the event's split files are re-imported,
+  the old "Qualifying" session still holds the last file's results and
+  double-counts that class's pole and Q positions — delete its `result` rows,
+  then the `race_session`, once its replacement is in. Every 2021 WeatherTech
+  event in production is CSV-sourced. The iPad app labels split sessions the
+  same way as the web (`ResultsView.sessionLabel`). The multi-driver CSV
+  layout (`DRIVER1_…`/`DRIVER2_…`) that these files use now imports crews too —
+  see the multi-driver results/qualifying CSV entry above.
 - **Still ahead:** design the automated prior-year-at-this-track feature,
   including change context (manufacturer, lineup, team) alongside the raw result.
   The **grid rundown sheet** (grid-order sheet with storyline fields) is
@@ -985,9 +1069,8 @@ display size.)
   `Car`/`Cars`, never bare cross-references or turn/lap/article numbers), computed
   at read time — never stored, so the heuristic can change without a re-import —
   driving a car filter on the log. **Still dropped from the results JSON:** the
-  session-level `fastest_lap` block (overall pole + driver). **Not parsed:** a
-  qualifying-results CSV (`IMSA_CSV` recognizes only grid CSVs) — matters for the
-  older VP Racing CSV-only events.
+  session-level `fastest_lap` block (overall pole + driver). (The qualifying-results
+  CSV once listed here as unparsed is now handled by `IMSA_CSV`.)
 - **Recap round matching by ordinal — ✅ DONE (2026-07-17).** The recap matched
   each championship round to its season event by `venueAbbrev`, which is not
   unique within a season: Spa ("Circuit de Spa-Francorchamps") and Le Mans
