@@ -61,10 +61,10 @@ struct CalculatorClassWorkspace: View {
     var body: some View {
         VStack(alignment: .leading, spacing: PP.Space.s3) {
             if available.isEmpty {
-                EmptyState(message: "Import IMSA WeatherTech team standings to calculate a scenario.")
+                EmptyState(message: "Import IMSA WeatherTech or Michelin Pilot Challenge team standings to calculate a scenario.")
             } else {
                 Picker("Championship", selection: $cup) {
-                    if championships.contains(where: { !$0.isCup }) { Text("WeatherTech Championship").tag(false) }
+                    if championships.contains(where: { !$0.isCup }) { Text(ChampionshipCalculator.isPilotChallenge(championships.first?.seriesName ?? "") ? "Michelin Pilot Challenge" : "WeatherTech Championship").tag(false) }
                     if championships.contains(where: { $0.isCup }) { Text("Michelin Endurance Cup").tag(true) }
                 }.pickerStyle(.menu)
                 ViewThatFits(in: .horizontal) {
@@ -166,8 +166,9 @@ struct CalculatorEditor: View {
         self.eventId = eventId
         _scenario = scenario
     }
+    private var pilot: Bool { ChampionshipCalculator.isPilotChallenge(recap.championship.seriesName) }
     private var phases: [String] {
-        recap.championship.isCup ? (recap.rounds.first { $0.eventId == eventId }?.sessions.map(\.name) ?? []) : ["Qualifying", "Race"]
+        recap.championship.isCup ? (recap.rounds.first { $0.eventId == eventId }?.sessions.map(\.name) ?? []) : pilot ? ["Race"] : ["Qualifying", "Race"]
     }
     private var rows: [ChampionshipCalculator.Projection] {
         ChampionshipCalculator.project(recap, scenario: scenario, cup: recap.championship.isCup, phaseCount: phases.count)
@@ -176,7 +177,7 @@ struct CalculatorEditor: View {
     private func number(_ value: Double) -> String { value.formatted(.number.precision(.fractionLength(0...2))) }
     var body: some View {
         VStack(alignment: .leading, spacing: PP.Space.s3) {
-            Text(recap.championship.isCup ? "Baseline: latest imported totals. Checkpoints for this unscored event are simulated below." : "Baseline: latest imported totals. Qualifying for this unscored weekend is added below.")
+            Text(recap.championship.isCup ? "Baseline: latest imported totals. Checkpoints for this unscored event are simulated below." : pilot ? "Baseline: latest imported totals. Race points for this unscored event are added below." : "Baseline: latest imported totals. Qualifying for this unscored weekend is added below.")
                 .font(.subheadline).foregroundStyle(PP.textMuted)
             HStack {
                 Menu {
@@ -199,11 +200,11 @@ struct CalculatorEditor: View {
                     Text("Projected = imported + simulated points + adjustment. Use a negative adjustment for a points penalty. Guest eligibility and official tie-breaks are not applied; equal totals remain tied.")
                     Text(recap.championship.isCup
                          ? "Each imported checkpoint: P1 = 5, P2 = 4, P3 = 3, P4 onward = 2. Every checkpoint here is simulated."
-                         : "Qualifying: 35, 32, 30, 28, 26, then 25 down to 1; P30 onward = 1. Race points are ten times qualifying points. Enter qualifying positions manually, including after qualifying has happened.")
+                         : pilot ? "Race: 350, 320, 300, 280, 260, then 250 down to 10; P30 onward = 10. Qualifying does not award championship points." : "Qualifying: 35, 32, 30, 28, 26, then 25 down to 1; P30 onward = 1. Race points are ten times qualifying points. Enter qualifying positions manually, including after qualifying has happened.")
                     ForEach(rows) { row in
                         Text("\(ChampionshipCalculator.name(row.row)): \(number(row.row.totalPoints)) + \(row.awards.map(number).joined(separator: " + ")) + (\(number(scenario[row.id]?.adjustment ?? 0))) = \(number(row.total))")
                     }
-                    Link("2026 IMSA scoring regulations", destination: ChampionshipCalculator.sourceURL)
+                    Link("2026 IMSA scoring regulations", destination: pilot ? ChampionshipCalculator.pilotSourceURL : ChampionshipCalculator.sourceURL)
                 }.font(.caption).padding(.top, PP.Space.s2)
             }
             Text("Temporary scenario on this screen. Actual standings and recap tables are unchanged.")

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getJson, type Recap } from '../../lib/api'
-import { assignPosition, baselineIssue, project, SCORING_SOURCE, supportedChampionship, type Scenario } from '../../lib/championshipCalculator'
+import { assignPosition, baselineIssue, project, isPilotChallenge, PILOT_SCORING_SOURCE, SCORING_SOURCE, supportedChampionship, type Scenario } from '../../lib/championshipCalculator'
 import { useSeason } from './SeasonLayout'
 import './calculator.css'
 
@@ -24,11 +24,11 @@ function CalculatorClasses({ initialClass }: { initialClass: string | null }) {
   const [drafts, setDrafts] = useState<Record<number, Scenario>>({})
   return <section className="calculator">
     <h2>Championship calculator</h2>
-    <p className="calculator-note">Enable one to four classes. Each panel compares its own selected teams.</p>
-    {!championships.length ? <p className="empty-state">Import IMSA WeatherTech team standings to calculate a scenario.</p> : <>
+    <p className="calculator-note">Enable the classes you want to compare. Each panel compares its own selected teams.</p>
+    {!championships.length ? <p className="empty-state">Import IMSA WeatherTech or Michelin Pilot Challenge team standings to calculate a scenario.</p> : <>
       <div className="calculator-context">
         <label className="calculator-field">Championship<select aria-label="Championship" value={String(cup)} onChange={e => { setCup(e.target.value === 'true'); setDrafts({}) }}>
-          {families.map(isCup => <option key={String(isCup)} value={String(isCup)}>{isCup ? 'Michelin Endurance Cup' : 'WeatherTech Championship'}</option>)}
+          {families.map(isCup => <option key={String(isCup)} value={String(isCup)}>{isCup ? 'Michelin Endurance Cup' : isPilotChallenge(hub.seriesName) ? 'Michelin Pilot Challenge' : 'WeatherTech Championship'}</option>)}
         </select></label>
         <label className="calculator-field">Event<select aria-label="Event" value={eventId || hub.events[0]?.id || 0} onChange={e => { setEventId(Number(e.target.value)); setDrafts({}) }}>
           {hub.events.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
@@ -80,14 +80,15 @@ function ChampionshipScenario({ champId, cup, eventId, suggestEvent, scenario, s
   const issue = baselineIssue(recap, eventId)
   const last = [...recap.rounds].reverse().find(r => recap.rows.some(row => Object.hasOwn(row.pointsByRound, r.round)))
   return <>
-    <p className="calculator-note">Baseline: latest imported totals{last ? ` · through ${last.venue}` : ''}. {cup ? 'Checkpoints for an unscored event are simulated below.' : 'Qualifying for an unscored weekend is added below.'}</p>
+    <p className="calculator-note">Baseline: latest imported totals{last ? ` · through ${last.venue}` : ''}. {cup ? 'Checkpoints for an unscored event are simulated below.' : isPilotChallenge(recap.championship.seriesName) ? 'Race points for an unscored event are added below.' : 'Qualifying for an unscored weekend is added below.'}</p>
     {issue ? <p className="error-panel" role="status">{issue}</p> : <ScenarioEditor key={eventId} recap={recap} cup={cup} eventId={eventId} scenario={scenario} setScenario={setScenario} />}
   </>
 }
 function ScenarioEditor({ recap, cup, eventId, scenario, setScenario }: {
   recap: Recap; cup: boolean; eventId: number; scenario: Scenario; setScenario: React.Dispatch<React.SetStateAction<Scenario>>
 }) {
-  const phases = cup ? (recap.rounds.find(r => r.eventId === eventId)?.sessions.map(s => s.name) ?? []) : ['Qualifying', 'Race']
+  const pilot = isPilotChallenge(recap.championship.seriesName)
+  const phases = cup ? (recap.rounds.find(r => r.eventId === eventId)?.sessions.map(s => s.name) ?? []) : pilot ? ['Race'] : ['Qualifying', 'Race']
   const rows = project(recap, scenario, cup, phases.length)
   const remaining = recap.rows.filter(r => !scenario[r.competitorKey])
   const name = (r: Recap['rows'][number]) => `${r.carNumber ? '#' + r.carNumber + ' · ' : ''}${r.teamName ?? r.competitorName ?? r.competitorKey}`
@@ -116,10 +117,10 @@ function ScenarioEditor({ recap, cup, eventId, scenario, setScenario }: {
     </table></div>}
     <p className="calculator-note" role="status">{rows.length} teams selected. *Comparison rank and gap, not full championship position. Equal totals remain tied.</p>
     <details className="calculator-breakdown"><summary>Points calculation and assumptions</summary>
-      <p>Projected = imported total + {cup ? 'checkpoint points' : 'qualifying points + race points'} + adjustment. Enter a negative adjustment for a points penalty. Guest eligibility and official tie-breaks are not applied.</p>
-      <p>{cup ? 'Each checkpoint: P1 = 5, P2 = 4, P3 = 3, P4 onward = 2. Every checkpoint here is simulated.' : 'Qualifying: 35, 32, 30, 28, 26, then 25 down to 1; P30 onward = 1. Race points are ten times qualifying points. Enter qualifying positions manually, including after qualifying has happened.'}</p>
+      <p>Projected = imported total + {cup ? 'checkpoint points' : pilot ? 'race points' : 'qualifying points + race points'} + adjustment. Enter a negative adjustment for a points penalty. Guest eligibility and official tie-breaks are not applied.</p>
+      <p>{cup ? 'Each checkpoint: P1 = 5, P2 = 4, P3 = 3, P4 onward = 2. Every checkpoint here is simulated.' : pilot ? 'Race: 350, 320, 300, 280, 260, then 250 down to 10; P30 onward = 10. Qualifying does not award championship points.' : 'Qualifying: 35, 32, 30, 28, 26, then 25 down to 1; P30 onward = 1. Race points are ten times qualifying points. Enter qualifying positions manually, including after qualifying has happened.'}</p>
       {rows.map(r => <p key={r.competitorKey}>{name(r)}: {r.totalPoints} + {r.awards.join(' + ')} + ({scenario[r.competitorKey].adjustment}) = <strong>{r.total}</strong></p>)}
-      <a href={SCORING_SOURCE} target="_blank" rel="noreferrer">2026 IMSA scoring regulations</a>
+      <a href={pilot ? PILOT_SCORING_SOURCE : SCORING_SOURCE} target="_blank" rel="noreferrer">2026 IMSA scoring regulations</a>
     </details>
     <p className="calculator-note">Temporary scenario on this screen. Actual standings and recap tables are unchanged.</p>
   </>

@@ -27,6 +27,17 @@ final class ChampionshipCalculatorTests: XCTestCase {
         XCTAssertEqual(recap.rows.map(\.totalPoints), [1000, 980, 970])
         XCTAssertEqual(ChampionshipCalculator.project(recap, scenario: ["6": .init(positions: [1, 3, 4, 2])], cup: true, phaseCount: 4).first?.added, 14)
     }
+    func testPilotChallengeRaceOnly() {
+        let pilot = Recap(championship: RecapChampionship(id: 1, title: "GS Teams", className: "GS", kind: "TEAMS", family: "IMPC", isCup: false, isOverall: false, seasonId: 1, year: 2026, seriesName: "IMSA Michelin Pilot Challenge"), rounds: recap.rounds, rows: recap.rows)
+        let summary = ChampionshipSummary(id: 1, title: "GS Teams", groupTitle: "IMPC", className: "GS", kind: "TEAMS", kindLabel: nil, isCup: false, year: 2026, seasonId: 1, seriesName: "IMPC", rowCount: 3)
+        XCTAssertTrue(ChampionshipCalculator.supported(summary))
+        let rows = ChampionshipCalculator.project(pilot, scenario: ["6": .init(positions: [1], adjustment: -10), "7": .init(positions: [2])], cup: false, phaseCount: 1)
+        XCTAssertEqual(rows.map(\.total), [1340, 1300])
+        XCTAssertEqual(rows.map(\.added), [340, 320])
+        XCTAssertEqual(rows.map(\.gap), [0, 40])
+        XCTAssertEqual(ChampionshipCalculator.project(pilot, scenario: ["6": .init(positions: [0])], cup: false, phaseCount: 1).first?.added, 0)
+        XCTAssertEqual(pilot.rows.map(\.totalPoints), [1000, 980, 970])
+    }
     func testSwapsTiesAndBaselineGuard() {
         let changed = ChampionshipCalculator.assign(scenario, key: "6", phase: 1, position: 1)
         XCTAssertEqual(changed["7"]?.positions, [2, 5])
@@ -54,7 +65,9 @@ final class ChampionshipCalculatorTests: XCTestCase {
                 }.padding(24)
             }.background(PP.bg).environment(AppSession()).environment(\.colorScheme, width == 834 ? .light : .dark)
             let host = UIHostingController(rootView: view)
-            let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+            let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(origin: .zero, size: size)
             window.rootViewController = host
             window.isHidden = false
             host.view.frame = window.bounds
@@ -69,6 +82,44 @@ final class ChampionshipCalculatorTests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
             try image.pngData()?.write(to: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("calculator-classes-\(count)-\(width).png"))
+            window.isHidden = true
+        }
+    }
+    func testPilotClassLayouts() async throws {
+        let names = ["GS", "TCR"]
+        let championships = names.enumerated().map { i, name in
+            ChampionshipSummary(id: i + 1, title: "\(name) Teams", groupTitle: "IMPC", className: name,
+                                kind: "TEAMS", kindLabel: nil, isCup: false, year: 2026, seasonId: 1, seriesName: "IMSA Michelin Pilot Challenge", rowCount: 3)
+        }
+        let recaps = Dictionary(uniqueKeysWithValues: championships.map { ($0.id, Recap(championship: RecapChampionship(id: $0.id, title: $0.title, className: $0.className, kind: "TEAMS", family: "IMPC", isCup: false, isOverall: false, seasonId: 1, year: 2026, seriesName: $0.seriesName), rounds: recap.rounds, rows: recap.rows)) })
+        let drafts = Dictionary(uniqueKeysWithValues: championships.map { ($0.id, ["6": ChampionshipCalculator.Entry(positions: [1]), "7": ChampionshipCalculator.Entry(positions: [2])]) })
+        for (count, width) in [(2, 1194), (2, 834), (2, 507)] {
+            let size = CGSize(width: width, height: 1400)
+            let view = ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Championship calculator").ppTitle()
+                    CalculatorClassWorkspace(championships: championships, eventId: 22, initialRecaps: recaps,
+                                             initiallyShown: Set(names.prefix(count)), initialScenarios: drafts)
+                }.padding(24)
+            }.background(PP.bg).environment(AppSession()).environment(\.colorScheme, width == 834 ? .light : .dark)
+            let host = UIHostingController(rootView: view)
+            let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(origin: .zero, size: size)
+            window.rootViewController = host
+            window.isHidden = false
+            host.view.frame = window.bounds
+            host.view.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(300))
+            host.view.layoutIfNeeded()
+            let image = UIGraphicsImageRenderer(size: size).image { _ in
+                host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Calculator classes \(count) \(width)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            try image.pngData()?.write(to: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("pilot-classes-\(count)-\(width).png"))
             window.isHidden = true
         }
     }
