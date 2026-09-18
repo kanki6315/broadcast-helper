@@ -48,7 +48,12 @@ def extract(pdf_path: str) -> dict:
     cars: dict[str, dict] = {}
     with pdfplumber.open(pdf_path) as pdf:
         for page_no, page in enumerate(pdf.pages, start=1):
-            lines = [ln.strip() for ln in (page.extract_text() or "").splitlines()]
+            text = page.extract_text() or ""
+            # pdfplumber caches each page's parsed layout for the life of the
+            # pdf; on an 88-page sheet that reached ~680 MB and got the sidecar
+            # OOM-killed in production. Releasing per page holds it near 70 MB.
+            page.close()
+            lines = [ln.strip() for ln in text.splitlines()]
             lines = [ln for ln in lines if ln]
             if not lines:
                 continue
