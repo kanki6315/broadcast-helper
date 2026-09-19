@@ -33,7 +33,9 @@ struct SeriesDirectoryView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: PP.Space.s5) {
-            header
+            filter
+                .frame(maxWidth: 340)
+                .frame(maxWidth: .infinity, alignment: .trailing)
             if let error = seasons.error, seasons.value == nil {
                 ErrorPanel(message: error)
             } else if let filtered, let groups {
@@ -73,22 +75,6 @@ struct SeriesDirectoryView: View {
         }
         .task { await load() }
         .refreshable { await load() }
-    }
-
-    private var header: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: PP.Space.s5) {
-                Wordmark(markSize: 52, textSize: PP.TextSize.xxl)
-                    .fixedSize()
-                Spacer(minLength: PP.Space.s4)
-                filter.frame(width: 340)
-            }
-            VStack(alignment: .leading, spacing: PP.Space.s4) {
-                Wordmark(markSize: 52, textSize: PP.TextSize.xxl)
-                filter
-            }
-        }
-        .padding(.top, PP.Space.s4)
     }
 
     @ViewBuilder private var filter: some View {

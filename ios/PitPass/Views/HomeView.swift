@@ -44,6 +44,13 @@ struct HomeView: View {
                     .navigationTitle("")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Wordmark(markSize: 32, textSize: PP.TextSize.lg)
+                                .fixedSize()
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel("Pit Pass")
+                        }
+                        .sharedBackgroundVisibility(.hidden)
                         ToolbarItem(placement: .topBarTrailing) {
                             Button { showSettings = true } label: {
                                 Label("Settings", systemImage: "gearshape")
