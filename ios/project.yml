@@ -19,7 +19,7 @@ settings:
     DEVELOPMENT_TEAM: "TDBAHN96B3"
     # Version the user sees (CFBundleShortVersionString). Bump this line for a release;
     # the build number (CFBundleVersion) is stamped by release.sh, never edited here.
-    MARKETING_VERSION: 0.1.13
+    MARKETING_VERSION: 0.1.14
     CURRENT_PROJECT_VERSION: 1
 packages:
   # SVG rasterizer (zlib licence): manufacturer marks are uploaded as SVG and
@@ -54,6 +54,11 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
+        # Declare the SwiftUI scene lifecycle so iPadOS can manage the app window.
+        # One Pit Pass window can resize alongside other apps; additional Pit Pass
+        # windows need separate validation of shared session and document state.
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationPortraitUpsideDown

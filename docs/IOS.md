@@ -108,6 +108,14 @@ writer (UIGraphicsPDFRenderer + ImageRenderer).
 
 ## Build, run, test
 
+The generated Info.plist explicitly declares `UIApplicationSceneManifest` for
+the SwiftUI scene lifecycle. `UIApplicationSupportsMultipleScenes` is false:
+Pit Pass uses one window, which should resize alongside other apps in iPadOS
+Windowed Apps or Stage Manager. This is distinct from opening multiple Pit Pass
+windows. Keep the manifest in `ios/project.yml`, the source of generated plist
+properties. On a physical iPad, verify moving from full screen into a window,
+resizing beside Safari, and returning to full screen after installing a build.
+
 ```bash
 brew install xcodegen
 cd ios && xcodegen generate && open PitPass.xcodeproj
