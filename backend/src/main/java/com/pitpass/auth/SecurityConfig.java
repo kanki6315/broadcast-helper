@@ -76,6 +76,9 @@ public class SecurityConfig {
                         // Planning an Al Kamel import lists an external site;
                         // reads included, that is an admin's action.
                         .requestMatchers("/api/imports/alkamel/**").access(live.admin())
+                        // The raw live timing tree is the licensed Al Kamel feed
+                        // verbatim; members get what is derived from it, not this.
+                        .requestMatchers("/api/live/state").access(live.admin())
                         // A viewer's scratchpad is their own writable surface —
                         // the controller pins the row to the caller's email, so
                         // member() is sufficient here.

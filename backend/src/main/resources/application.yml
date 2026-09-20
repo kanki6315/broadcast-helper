@@ -86,6 +86,41 @@ pit-pass:
     # A results JSON is a few hundred kB and a points PDF a few MB; anything
     # bigger is not a file this importer reads.
     max-download-bytes: ${ALKAMEL_MAX_DOWNLOAD_BYTES:26214400}
+  # Al Kamel LIVE timing (AKS V2 protocol) — unrelated to the results site
+  # above. A raw TLS socket, not HTTP. Our account allows ONE concurrent login,
+  # so production is the only thing that ever dials out: local dev leaves the
+  # host blank and works from a recording (replay-file). Blank host = feature
+  # off, no background thread. See docs/LIVE_TIMING.md.
+  alkamel-v2:
+    host: ${ALKAMELV2_HOST:}
+    port: ${ALKAMELV2_PORT:11001}
+    username: ${ALKAMELV2_USERNAME:}
+    password: ${ALKAMELV2_PASSWORD:}
+    # The spec says to connect over SSL and "ignore certificate errors", so
+    # verification is off by default; turn it on if the server's certificate
+    # turns out to be valid. tls-enabled exists for the local replay server.
+    tls-enabled: ${ALKAMELV2_TLS_ENABLED:true}
+    tls-verify-certificate: ${ALKAMELV2_TLS_VERIFY_CERTIFICATE:false}
+    client-app-name: ${ALKAMELV2_CLIENT_APP_NAME:Pit Pass}
+    # Only what live points needs. timing.analysis (every lap of every car) is
+    # where a 24-hour race grows to ~100 MB — not joined until a feature needs it.
+    channels: ${ALKAMELV2_CHANNELS:timing.session.info,timing.session.entry,timing.session.classes,timing.session.status,timing.session.standings.byClass.active,timing.session.startingGrid}
+    # A line longer than this is treated as a protocol fault, not buffered.
+    max-line-bytes: ${ALKAMELV2_MAX_LINE_BYTES:33554432}
+    connect-timeout-seconds: ${ALKAMELV2_CONNECT_TIMEOUT_SECONDS:10}
+    recording:
+      enabled: ${ALKAMELV2_RECORDING_ENABLED:true}
+      # Blank = a pit-pass-aks folder under the system temp directory.
+      directory: ${ALKAMELV2_RECORDING_DIRECTORY:}
+      # A PRIVATE R2 bucket (same endpoint + keys as images.r2). Never the
+      # public images bucket: the feed is licensed. Blank = segments stay on
+      # local disk, oldest pruned past max-local-megabytes.
+      bucket: ${ALKAMELV2_RECORDING_BUCKET:}
+      segment-minutes: ${ALKAMELV2_RECORDING_SEGMENT_MINUTES:10}
+      max-local-megabytes: ${ALKAMELV2_RECORDING_MAX_LOCAL_MEGABYTES:512}
+    replay:
+      file: ${ALKAMELV2_REPLAY_FILE:}
+      speed: ${ALKAMELV2_REPLAY_SPEED:1.0}
   iracing:
     client-id: ${IRACING_CLIENT_ID:}
     client-secret: ${IRACING_CLIENT_SECRET:}

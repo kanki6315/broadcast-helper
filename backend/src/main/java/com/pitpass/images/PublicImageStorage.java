@@ -103,6 +103,19 @@ public class PublicImageStorage {
         }
     }
 
+    /**
+     * An object in a DIFFERENT, non-public bucket on the same R2 account —
+     * the live timing recordings, which are licensed data and must never be
+     * reachable through {@link #publicUrl}. Refuses the public bucket outright
+     * so a misconfigured env var cannot publish them.
+     */
+    public void uploadPrivate(String privateBucket, String key, java.nio.file.Path file, String contentType) {
+        if (privateBucket.equals(bucket))
+            throw new IllegalArgumentException("Refusing to store private data in the public bucket");
+        initialize();
+        client.putObject(b -> b.bucket(privateBucket).key(key).contentType(contentType), file);
+    }
+
     public URI publicUrl(String key) {
         if (!enabled) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Image storage is not configured");
         return URI.create(publicBase + "/" + key);

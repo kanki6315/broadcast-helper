@@ -190,6 +190,7 @@ which leaves that registration in place — redeploying a self-destroying
 | `AUTH_ENABLED` | `false` | Set `true` on the deployment to require Google login; who may sign in lives in the `app_user` table (Manage → Users) |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID` | — | Google OAuth client id (when auth on) |
 | `SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret (when auth on) |
+| `ALKAMELV2_HOST`, `ALKAMELV2_USERNAME`, `ALKAMELV2_PASSWORD`, … | — | Al Kamel live timing feed. Blank host = feature off. Full list and the one-login rules: [LIVE_TIMING.md](LIVE_TIMING.md) |
 
 ## Public images
 

@@ -241,4 +241,25 @@ class SecuredChainTest {
         // But signing a device out needs to BE a device.
         mvc.perform(delete("/api/auth/device")).andExpect(status().isUnauthorized());
     }
+
+    /** The iPad's live timing switch: everyone sees the status, only admins throw it. */
+    @Test
+    void liveTimingStatusIsForMembersAndTheSwitchAndRawFeedForAdmins() throws Exception {
+        mvc.perform(get("/api/live/status")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/live/status").header("Authorization", "Bearer " + deviceTokenFor(VIEWER)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("NOT_CONFIGURED"));
+
+        mvc.perform(post("/api/live/connect").with(signedInAs(VIEWER))
+                        .contentType("application/json").content("{\"eventId\":1}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/live/disconnect").with(signedInAs(VIEWER))).andExpect(status().isForbidden());
+        mvc.perform(get("/api/live/state").with(signedInAs(VIEWER))).andExpect(status().isForbidden());
+
+        // An admin gets past the chain; with no feed configured the controller says so.
+        mvc.perform(post("/api/live/connect").header("Authorization", "Bearer " + deviceTokenFor(ADMIN))
+                        .contentType("application/json").content("{\"eventId\":1}"))
+                .andExpect(status().isUnprocessableEntity());
+        mvc.perform(get("/api/live/state").with(signedInAs(ADMIN))).andExpect(status().isOk());
+    }
 }
