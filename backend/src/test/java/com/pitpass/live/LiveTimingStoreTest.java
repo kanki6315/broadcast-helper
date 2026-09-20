@@ -30,6 +30,18 @@ class LiveTimingStoreTest {
     @Autowired
     private LiveTimingController controller;
 
+    @Autowired
+    private org.springframework.jdbc.core.simple.JdbcClient db;
+
+    /** As V54 seeds it, whatever local use left behind; rolled back with the test. */
+    @org.junit.jupiter.api.BeforeEach
+    void pristineRow() {
+        db.sql("""
+                UPDATE live_timing SET desired_connected = FALSE, event_id = NULL, requested_by = NULL,
+                       requested_at = NULL, holder = NULL, lease_expires_at = NULL
+                """).update();
+    }
+
     @Test
     void theRowStartsOffAndUnheld() {
         var row = store.read();

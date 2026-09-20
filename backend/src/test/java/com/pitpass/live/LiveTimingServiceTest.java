@@ -109,7 +109,8 @@ class LiveTimingServiceTest {
 
         await(() -> server.logins() == 2 && service.status().state() == State.LIVE);
         assertEquals(1, service.status().drops());
-        assertNotNull(service.state("timing.session.info"), "the new login's snapshot rebuilt the tree");
+        // LIVE is declared at login; the JOIN snapshots land a moment later.
+        await(() -> service.state("timing.session.info") != null);
     }
 
     @Test

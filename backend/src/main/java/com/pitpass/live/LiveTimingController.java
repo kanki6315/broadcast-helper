@@ -31,15 +31,29 @@ public class LiveTimingController {
 
     private final LiveTimingService service;
     private final LiveTimingStore store;
+    private final LiveClassificationService classification;
 
-    public LiveTimingController(LiveTimingService service, LiveTimingStore store) {
+    public LiveTimingController(LiveTimingService service, LiveTimingStore store,
+                                LiveClassificationService classification) {
         this.service = service;
         this.store = store;
+        this.classification = classification;
     }
 
     @GetMapping("/status")
     public LiveStatus status() {
         return service.status();
+    }
+
+    /**
+     * The running order per class, matched to the bound event's entries — what
+     * the championship calculators score. Members may read it: it is derived,
+     * and it is what the feature exists to show them. Built for polling; the
+     * body only changes when the order does, so the API's ETag answers 304.
+     */
+    @GetMapping("/classification")
+    public LiveClassificationService.Response classification() {
+        return classification.current();
     }
 
     /** Asks for the connection and binds it to the event it will be scored against. */

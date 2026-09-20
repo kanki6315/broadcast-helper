@@ -39,6 +39,7 @@ replica would see `STANDBY` and no data.
 | Endpoint | Who | |
 |---|---|---|
 | `GET /api/live/status` | member | State, bound event, what the feed says is running, message counters, last error. Poll it. |
+| `GET /api/live/classification` | member | The running order per class, matched to the bound event's entries — see below. Poll it. |
 | `POST /api/live/connect` `{ "eventId": n }` | admin | Ask for the connection and bind it to the Pit Pass event it is scored against. |
 | `POST /api/live/disconnect` | admin | Close the socket and free the login. |
 | `GET /api/live/state?path=timing.session.info` | admin | The merged feed at a dotted path (blank = everything). The licensed feed verbatim, hence admin-only. |
@@ -51,6 +52,53 @@ data is kept), `STANDBY` (another process holds the lease). `OFF` and
 The feed's own session (`status.session`) is shown next to the bound event so
 a mismatch — connected during the wrong series' session — is visible. The feed
 is never trusted to pick the event.
+
+## Classification
+
+`GET /api/live/classification` is what the championship calculators score. No
+points are computed on the server — the scales live in the web and iPad
+calculators — it supplies the positions a person would otherwise type in.
+
+```json
+{ "state": "LIVE", "eventId": 8, "eventName": "Rolex 24 at Daytona",
+  "session": { "name": "Race", "type": "RACE", "flag": "GREEN", "running": true, "finished": false, … },
+  "classification": {
+    "classes": [ { "className": "GTP", "feedClass": "GTP", "cars": [
+        { "position": 1, "carNumber": "93", "competitorKey": "93", "entryId": 412,
+          "teamName": "…", "vehicle": "…", "manufacturer": "…", "guest": false,
+          "status": "CLASSIFIED", "laps": 50, "gapToLeaderMs": null, "gapToLeaderLaps": null } ] } ],
+    "matched": 56, "total": 57,
+    "unmatched": [ … ], "missing": [ … ], "classMismatches": [ … ] } }
+```
+
+- **Matching is by car number within the bound event**, exactly as written
+  first: a grid really does hold #04 and #4, #23 and #023, as different cars.
+  Only a number with no exact match falls back to ignoring leading zeros, and
+  only when that points at a single entry; otherwise it is left unmatched.
+- **`className` is ours, `feedClass` is Al Kamel's.** A feed class is named
+  after the class most of its matched cars are entered in ("GTDPRO" vs
+  "GTD PRO" needs no configuration); with no car matched, the series'
+  class alias is used.
+- **`competitorKey`** is the TEAMS standings key: the entry's number through
+  the season's `car_number_alias`, leading zeros dropped. Compare it to a
+  standings key normalized the same way, within the class.
+- **Nothing is dropped.** `unmatched` = in the feed but not the event (a late
+  entry — it keeps its place in the order, so cars behind it are not promoted);
+  `missing` = entered but not in the feed; `classMismatches` = running in a
+  feed class other than the one entered. `matched` of `total` near zero means
+  the feed is showing another series' session: check `session` against the
+  bound event. In that case `missing` is left empty rather than listing the
+  whole entry list.
+- **Built for polling.** The body carries no timestamps or counters, so it
+  changes only when the order (or a gap) does and `If-None-Match` earns a 304.
+  Staleness is `state`: `BACKING_OFF` means last-known order, `OFF`/`STANDBY`
+  mean none. `LIVE` is declared at login, a moment before the first snapshot
+  lands, so an empty `classes` right after connecting is normal.
+- A session's `type` (`RACE`, `QUALIFYING_*`, `FREE_PRACTICE`) says which
+  calculator column the positions belong to; that choice is the client's.
+
+Not modelled here (flag as provisional in the UI): points eligibility of guest
+cars (`guest` is passed through), drive-time minimums, post-race penalties.
 
 ## Configuration
 
