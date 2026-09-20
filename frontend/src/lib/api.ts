@@ -166,6 +166,77 @@ export interface Recap {
   rows: RecapRow[]
 }
 
+/* -- live timing (docs/LIVE_TIMING.md) ---------------------------------- */
+
+/** What the feed itself says is on track. */
+export interface LiveSession {
+  championship: string | null
+  event: string | null
+  name: string | null
+  type: string | null
+  flag: string | null
+  running: boolean
+  finished: boolean
+}
+
+/** `GET /api/live/status` — only the fields the web reads. Connecting and
+ * disconnecting are done from the iPad app; the web only follows. */
+export interface LiveStatus {
+  /** NOT_CONFIGURED, OFF, STANDBY, CONNECTING, LIVE, BACKING_OFF. */
+  state: string
+  configured: boolean
+  replaying: boolean
+  desiredConnected: boolean
+  /** The event the feed is being scored against. */
+  eventId: number | null
+  eventName: string | null
+  lastError: string | null
+  session: LiveSession | null
+}
+
+/** The car a row is scoring with; `position` is already by the championship's
+ * rule — in class for teams and drivers, among makes for manufacturers. */
+export interface LiveRunning {
+  position: number
+  carNumber: string
+  teamName: string | null
+  status: string | null
+  laps: number | null
+  gapToLeaderMs: number | null
+  gapToLeaderLaps: number | null
+}
+
+export interface LiveRow {
+  competitorKey: string
+  live: LiveRunning | null
+  /** The weekend's IMPORTED qualifying position: official standings omit
+   * qualifying points until after the race. */
+  qualifyingPosition: number | null
+}
+
+/** Scoring right now without a standings row. Baseline zero. */
+export interface LiveNewcomer {
+  name: string
+  carNumber: string
+  position: number
+}
+
+/** `GET /api/live/championships/{id}`. Positions only — the scales live in
+ * championshipCalculator.ts and are applied as to positions set by hand. */
+export interface LiveChampionship {
+  state: string
+  eventId: number | null
+  session: LiveSession | null
+  championshipId: number
+  kind: string
+  className: string
+  /** RACE or QUALIFYING: the column live positions fill. Null = nothing scores. */
+  livePhase: string | null
+  qualifyingImported: boolean
+  rows: LiveRow[]
+  newcomers: LiveNewcomer[]
+}
+
 /* -- lineups ------------------------------------------------------------ */
 
 export interface LineupRound {

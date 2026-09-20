@@ -1,4 +1,4 @@
-import type { ChampionshipSummary, Recap } from './api'
+import type { ChampionshipSummary, LiveChampionship, LiveRunning, Recap, RecapRow } from './api'
 
 // IMSA 2026 IWSC sporting regulations §12.20, §40 and Attachment 6.
 // Deliberately pure: scenario values never enter the standings/recap store.
@@ -45,4 +45,61 @@ export function baselineIssue(recap: Recap, eventId: number): string | null {
   const covered = recap.rounds.some(round => round.round >= target.round && recap.rows.some(row =>
     Object.hasOwn(row.pointsByRound, round.round) || round.sessions.some(s => row.sessionPoints[s.sessionIndex]?.contested)))
   return covered ? 'The imported standings already include this event or a later round. Choose an unscored event to avoid counting points twice.' : null
+}
+
+/* -- live mode ----------------------------------------------------------------
+ * The scenario is not typed in: it is where everyone is running. Same scales,
+ * same project() — a live position is scored exactly as one set by hand.
+ * Unlike a hand-built scenario every standings row takes part, and all three
+ * kinds are covered: the server has already turned the running order into each
+ * kind's scoring position. Mirrors ios/PitPass/Season/LiveProjection.swift. */
+
+export const LIVE_KINDS = ['TEAMS', 'DRIVERS', 'MANUFACTURERS']
+/** No cups: the Endurance Cup scores at checkpoints, which live mode does not model yet. */
+export const supportedLiveChampionship = (c: ChampionshipSummary) =>
+  (isImsa(c.seriesName) || isPilotChallenge(c.seriesName)) && LIVE_KINDS.includes(c.kind?.toUpperCase() ?? '') &&
+  !c.isCup && c.rowCount > 0 && !!c.className
+/** A weekend's scoring columns: qualifying pays in WeatherTech, not in Pilot Challenge. */
+export const livePhases = (seriesName: string) => isPilotChallenge(seriesName) ? ['Race'] : ['Qualifying', 'Race']
+
+/** During a race: live race position plus the imported qualifying position.
+ * During qualifying: the live qualifying position. Otherwise nothing scores. */
+export function liveScenario(live: LiveChampionship, seriesName: string): Scenario {
+  const columns = livePhases(seriesName)
+  return Object.fromEntries(live.rows.map(row => [row.competitorKey, { adjustment: 0, positions: columns.map(column =>
+    column === 'Race' && live.livePhase === 'RACE' ? row.live?.position ?? 0
+      : column === 'Qualifying' && live.livePhase === 'RACE' ? row.qualifyingPosition ?? 0
+        : column === 'Qualifying' && live.livePhase === 'QUALIFYING' ? row.live?.position ?? 0 : 0) }]))
+}
+
+export function liveLines(recap: Recap, live: LiveChampionship) {
+  const series = recap.championship.seriesName ?? ''
+  const scenario = liveScenario(live, series)
+  const byKey = new Map(live.rows.map(r => [r.competitorKey, r]))
+  // Movement compares like with like: both ranks count the rows strictly ahead
+  // on points. The source's own `position` numbers tied co-drivers 1, 1, 2, 2
+  // where project() ranks them 1, 1, 3, 3 — every crew behind a tie would
+  // read as having lost places.
+  return project(recap, scenario, false, livePhases(series).length).map(row => ({
+    ...row,
+    running: byKey.get(row.competitorKey)?.live ?? null,
+    positions: scenario[row.competitorKey]?.positions ?? [],
+    movement: 1 + recap.rows.filter(r => r.totalPoints > row.totalPoints).length - row.rank,
+  }))
+}
+
+/** A drivers recap row carries the car and team it last raced with, which is not who it is. */
+export const liveName = (row: RecapRow, kind: string) => kind === 'DRIVERS' || kind === 'MANUFACTURERS'
+  ? row.competitorName || row.competitorKey
+  : `${row.carNumber ? '#' + row.carNumber + ' · ' : ''}${row.teamName ?? row.competitorName ?? row.competitorKey}`
+
+/** "Leader", "+1.830", "+1:02.4", "+2 laps". */
+export function liveGap(running: LiveRunning): string {
+  if ((running.gapToLeaderLaps ?? 0) > 0) return `+${running.gapToLeaderLaps} ${running.gapToLeaderLaps === 1 ? 'lap' : 'laps'}`
+  const ms = running.gapToLeaderMs ?? 0
+  if (ms <= 0) return running.position === 1 ? 'Leader' : ''
+  const seconds = ms / 1000
+  if (seconds < 60) return `+${seconds.toFixed(3)}`
+  const minutes = Math.floor(seconds / 60)
+  return `+${minutes}:${(seconds - minutes * 60).toFixed(1).padStart(4, '0')}`
 }

@@ -27,16 +27,24 @@ without a position change makes no assignment. Scroll outside the position
 controls to move the table. VoiceOver supports increment/decrement adjustment
 and a “Clear position” custom action.
 
-## Live mode (iPad)
+## Live mode
 
 When the server has the Al Kamel live timing feed (docs/LIVE_TIMING.md), the
-calculator shows a live timing bar and a Scenario / Live switch. Offline, or on
-a server without the feed, neither appears and the calculator is unchanged.
+calculator shows where the shared connection stands and a Scenario / Live
+switch. Offline, or on a server without the feed, neither appears and the
+calculator is unchanged. Scenario stays the default.
 
-The bar says where the one shared connection stands. Admins connect it *for
-this event* — that binds what the feed is scored against — and disconnect it;
-disconnecting asks first, because it stops live points for every user. If the
-feed is bound to another event the bar says which, and an admin can re-bind.
+**Managing the connection is iPad-only for now.** On the iPad, admins connect
+the feed *for this event* — that binds what it is scored against — and
+disconnect it; disconnecting asks first, because it stops live points for
+every user. If the feed is bound to another event the bar says which, and an
+admin can re-bind. The web shows the same status as a read-only line and
+follows whatever the iPad set: it has no connect or disconnect control.
+
+The iPad calculator belongs to an event, so Live needs the feed bound to that
+event. The web calculator belongs to a season: Live has no event picker and
+projects the event the feed is bound to, provided it is one of this season's;
+otherwise it says which event is being scored.
 
 Live mode is read-only: nothing is typed in. For Teams, Drivers and
 Manufacturers, each class shows **every** standings row (not a chosen few),
@@ -50,11 +58,13 @@ read as having moved. The top 12 show by default. Rows scoring without a
 standings row are listed beneath with a baseline of zero.
 
 The scales and `project` are the ones below — a live position is scored
-exactly as one set by hand. Not applied, and said on screen: guest
-eligibility, drive-time minimums, penalties still to come, official
-tie-breaks. The Endurance Cup is not projected live. The same guard as
-Scenario blocks an event the imported standings already include. Live
-documents are never stored offline. The web calculator has no live mode yet.
+exactly as one set by hand, and the web and iPad implementations mirror each
+other (`championshipCalculator.ts`, `LiveProjection.swift`). Not applied, and
+said on screen: guest eligibility, drive-time minimums, penalties still to
+come, official tie-breaks. The Endurance Cup is not projected live. The same
+guard as Scenario blocks an event the imported standings already include.
+Live documents are polled (status every 5 s, each class every 3 s, paused
+while a browser tab is hidden) and never stored offline.
 
 WeatherTech qualifying points are simulated separately, including after qualifying has
 happened: the latest official standings normally do not include them until after
@@ -94,7 +104,8 @@ this initial model.
 Verification:
 
 - `cd frontend && npm run test:calculator`
-- `cd frontend && npm run test:calculator:browser` (Playwright; set
+- `cd frontend && npm run test:calculator:browser` and
+  `npm run test:calculator:live` (Playwright; set
   `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` for a local Chrome executable)
 - Backend: `./gradlew test --tests com.pitpass.browse.ChampionshipCalculatorTest --tests com.pitpass.browse.RecapCarNumberAliasTest`
 - iPad: `ChampionshipCalculatorTests`, `LiveProjectionTests` and

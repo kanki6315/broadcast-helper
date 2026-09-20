@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { getJson, type Recap } from '../../lib/api'
+import { getJson, type LiveStatus, type Recap } from '../../lib/api'
 import { assignPosition, baselineIssue, project, isPilotChallenge, PILOT_SCORING_SOURCE, SCORING_SOURCE, supportedChampionship, type Scenario } from '../../lib/championshipCalculator'
+import { useLivePoll } from '../../lib/useLivePoll'
+import { LiveCalculator, LiveStatusLine } from './LiveCalculator'
 import { useSeason } from './SeasonLayout'
 import './calculator.css'
 
@@ -22,8 +24,14 @@ function CalculatorClasses({ initialClass }: { initialClass: string | null }) {
   const shown = visible.length ? visible : available.slice(0, 1)
   const [eventId, setEventId] = useState(0)
   const [drafts, setDrafts] = useState<Record<number, Scenario>>({})
-  return <section className="calculator">
-    <h2>Championship calculator</h2>
+  // Live timing is optional: on a server without the feed, or when the status
+  // cannot be read, none of this renders and the page is the scenario calculator.
+  const status = useLivePoll<LiveStatus>('/api/live/status', 5000).value
+  const [live, setLive] = useState(false)
+  const offersLive = status?.configured === true
+  // A value, not a nested component: a component defined in here would remount
+  // on every render and drop focus in the position controls.
+  const scenario = <>
     <p className="calculator-note">Enable the classes you want to compare. Each panel compares its own selected teams.</p>
     {!championships.length ? <p className="empty-state">Import IMSA WeatherTech or Michelin Pilot Challenge team standings to calculate a scenario.</p> : <>
       <div className="calculator-context">
@@ -53,6 +61,20 @@ function CalculatorClasses({ initialClass }: { initialClass: string | null }) {
         </section>)}
       </div>
     </>}
+  </>
+  return <section className="calculator">
+    <h2>Championship calculator</h2>
+    {offersLive && <>
+      <LiveStatusLine status={status} />
+      <div className="seg calculator-mode" role="group" aria-label="Calculator mode">
+        <button type="button" className={`seg-btn${live ? '' : ' active'}`} aria-pressed={!live} onClick={() => setLive(false)}>Scenario</button>
+        <button type="button" className={`seg-btn${live ? ' active' : ''}`} aria-pressed={live} onClick={() => setLive(true)}>Live</button>
+      </div>
+    </>}
+    {offersLive && live ? <>
+      <p className="calculator-note">As it stands. Every row of the standings, projected from where the field is running.</p>
+      <LiveCalculator status={status} />
+    </> : scenario}
   </section>
 }
 function ChampionshipScenario({ champId, cup, eventId, suggestEvent, scenario, setScenario }: {

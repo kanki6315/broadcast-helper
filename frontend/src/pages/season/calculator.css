@@ -33,3 +33,23 @@
 .calculator-panel { display: grid; gap: 12px; min-width: 0; align-content: start; border-top: 1px solid var(--border-strong); padding-top: 16px; }
 .calculator-panel h3 { margin: 0; color: var(--ink); }
 @media (min-width: 1300px) { .calculator-panels.multiple { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* -- live mode ---------------------------------------------------------------- */
+.calculator-mode { justify-self: start; }
+.calculator-live-status { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 10px 12px;
+  background: var(--surface); border-radius: 6px; font-size: .8125rem; }
+.calculator-live-status strong { color: var(--ink); }
+.calculator-live-status span { color: var(--text-muted); }
+.calculator-live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); align-self: center; flex: none; }
+.is-live .calculator-live-dot { background: var(--success); }
+.is-backing_off .calculator-live-dot { background: var(--error); }
+.is-connecting .calculator-live-dot, .is-standby .calculator-live-dot { background: var(--accent); }
+/* Rank, ±, name: the name is the third column here, not the second. */
+.calculator-live-table th:nth-child(1), .calculator-live-table td:nth-child(1) { text-align: left; }
+.calculator-live-table th:nth-child(2), .calculator-live-table td:nth-child(2) { text-align: center; }
+.calculator-live-table thead th:nth-child(3), .calculator-live-table thead th:last-child,
+.calculator-live-table .calculator-live-running { text-align: left; }
+.calculator-live-table .is-up { color: var(--success); font-weight: 600; }
+.calculator-live-table .is-down { color: var(--error); font-weight: 600; }
+.calculator-live-table abbr { text-decoration: none; cursor: help; }
+.calculator-live-more { justify-self: start; min-height: 32px; }
