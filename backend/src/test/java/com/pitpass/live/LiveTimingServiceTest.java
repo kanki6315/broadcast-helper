@@ -39,6 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LiveTimingServiceTest {
 
     private static final String PASSWORD = "s3cret-feed-password";
+    private static final int LOGIN_TIMEOUT_SECONDS = 1;
 
     private static final List<Recorded> FEED = List.of(
             new Recorded(1_000, "JSON:1::{\"timing\":{\"session\":{\"info\":{\"champName\":\"IMSA WeatherTech SportsCar Championship\","
@@ -206,7 +207,7 @@ class LiveTimingServiceTest {
         AlKamelV2Properties props = new AlKamelV2Properties("127.0.0.1", server.port(), "feed-user", PASSWORD,
                 false, false, "Pit Pass test",
                 List.of("timing.session.info", "timing.session.status", "timing.session.standings.byClass.active"),
-                1 << 20, 2,
+                1 << 20, 2, LOGIN_TIMEOUT_SECONDS,
                 new AlKamelV2Properties.Recording(true, recordings.toString(), "", 10, 64),
                 new AlKamelV2Properties.Replay("", 1.0));
         LiveTimingService service = new LiveTimingService(props, store, new ObjectMapper(), null,

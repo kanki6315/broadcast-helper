@@ -22,6 +22,7 @@ public record AlKamelV2Properties(
         List<String> channels,
         int maxLineBytes,
         int connectTimeoutSeconds,
+        int loginTimeoutSeconds,
         Recording recording,
         Replay replay) {
 

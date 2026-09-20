@@ -108,6 +108,8 @@ pit-pass:
     # A line longer than this is treated as a protocol fault, not buffered.
     max-line-bytes: ${ALKAMELV2_MAX_LINE_BYTES:33554432}
     connect-timeout-seconds: ${ALKAMELV2_CONNECT_TIMEOUT_SECONDS:10}
+    # How long the TLS handshake, and then the LOGIN reply, may each take.
+    login-timeout-seconds: ${ALKAMELV2_LOGIN_TIMEOUT_SECONDS:15}
     recording:
       enabled: ${ALKAMELV2_RECORDING_ENABLED:true}
       # Blank = a pit-pass-aks folder under the system temp directory.
