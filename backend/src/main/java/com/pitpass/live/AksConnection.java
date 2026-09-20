@@ -19,6 +19,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.security.GeneralSecurityException;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
@@ -59,7 +60,6 @@ final class AksConnection implements Closeable {
     private static final Logger log = LoggerFactory.getLogger(AksConnection.class);
     private static final String PROTOCOL = "AKS V2 Protocol";
     private static final String PROTOCOL_VERSION = "1.0.36";
-    private static final int LOGIN_TIMEOUT_MS = 15_000;
 
     private final AlKamelV2Properties props;
     private final String host;
@@ -98,7 +98,7 @@ final class AksConnection implements Closeable {
             InputStream in = new BufferedInputStream(s.getInputStream(), 64 * 1024);
             OutputStream out = s.getOutputStream();
 
-            s.setSoTimeout(LOGIN_TIMEOUT_MS);
+            s.setSoTimeout(loginTimeoutMs());
             ServerInfo server = login(in, out);
             listener.loggedIn(server);
 
@@ -137,11 +137,22 @@ final class AksConnection implements Closeable {
         }
     }
 
+    // Every stage names itself when it fails: "Read timed out" alone cannot say
+    // whether the port was unreachable, not speaking TLS, or deaf to LOGIN.
     private Socket open() throws IOException {
+        String where = host + ":" + port;
+        long started = System.nanoTime();
         Socket plain = new Socket();
-        plain.connect(new InetSocketAddress(host, port), props.connectTimeoutSeconds() * 1000);
+        try {
+            plain.connect(new InetSocketAddress(host, port), props.connectTimeoutSeconds() * 1000);
+        } catch (IOException e) {
+            plain.close();
+            throw new IOException("Could not reach " + where + " (" + reason(e) + ")", e);
+        }
         plain.setKeepAlive(true);
         plain.setTcpNoDelay(true);
+        log.info("Live timing: TCP connected to {} ({}) in {} ms", where,
+                plain.getInetAddress().getHostAddress(), (System.nanoTime() - started) / 1_000_000);
         if (!tls) {
             return plain;
         }
@@ -154,13 +165,27 @@ final class AksConnection implements Closeable {
                 params.setEndpointIdentificationAlgorithm("HTTPS");
                 secure.setSSLParameters(params);
             }
-            secure.setSoTimeout(LOGIN_TIMEOUT_MS);
+            secure.setSoTimeout(loginTimeoutMs());
             secure.startHandshake();
+            log.info("Live timing: TLS handshake done ({}, {})", secure.getSession().getProtocol(),
+                    secure.getSession().getCipherSuite());
             return secure;
+        } catch (SocketTimeoutException e) {
+            plain.close();
+            throw new IOException("TLS handshake with " + where + " got no answer in " + props.loginTimeoutSeconds()
+                    + "s: the port accepted the connection but is not answering TLS", e);
         } catch (GeneralSecurityException | IOException e) {
             plain.close();
-            throw e instanceof IOException io ? io : new IOException("TLS setup failed", e);
+            throw new IOException("TLS handshake with " + where + " failed (" + reason(e) + ")", e);
         }
+    }
+
+    private int loginTimeoutMs() {
+        return Math.max(1, props.loginTimeoutSeconds()) * 1000;
+    }
+
+    private static String reason(Exception e) {
+        return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
     }
 
     /**
@@ -196,25 +221,53 @@ final class AksConnection implements Closeable {
                 .put("app_ver", "1.0.0")
                 .put("protocol", PROTOCOL)
                 .put("protocol_ver", PROTOCOL_VERSION);
-        long id = send(out, "LOGIN", "", mapper.writeValueAsString(credentials));
+        send(out, "LOGIN", "", mapper.writeValueAsString(credentials));
+        log.info("Live timing: LOGIN sent as '{}', waiting for the reply", props.username());
 
-        byte[] line;
-        while ((line = readLine(in)) != null) {
-            listener.received(System.currentTimeMillis(), line);
-            AksFrame frame = AksFrame.parse(line, line.length);
-            if (frame.command().equals("ERROR")) {
-                throw new LoginRejected("Login refused: " + describeError(frame));
+        int lines = 0;
+        String last = null;
+        try {
+            byte[] line;
+            while ((line = readLine(in)) != null) {
+                lines++;
+                last = preview(line, line.length);
+                listener.received(System.currentTimeMillis(), line);
+                AksFrame frame = AksFrame.parse(line, line.length);
+                if (frame.command().equals("ERROR")) {
+                    throw new LoginRejected("Login refused: " + describeError(frame));
+                }
+                // Any LOGIN frame at this point is the reply: nothing else was
+                // asked, so how the server echoes the message id is not tested.
+                if (frame.command().equals("LOGIN")) {
+                    JsonNode info = frame.hasData() ? mapper.readTree(frame.data()) : mapper.createObjectNode();
+                    return new ServerInfo(
+                            info.path("name").asText(""),
+                            info.path("ver").asText(""),
+                            seconds(info.path("pingRate"), 20),
+                            seconds(info.path("timeout"), 40));
+                }
+                log.info("Live timing: before the LOGIN reply the server sent: {}", last);
             }
-            if (frame.command().equals("LOGIN") && frame.isReplyTo(id)) {
-                JsonNode info = frame.hasData() ? mapper.readTree(frame.data()) : mapper.createObjectNode();
-                return new ServerInfo(
-                        info.path("name").asText(""),
-                        info.path("ver").asText(""),
-                        seconds(info.path("pingRate"), 20),
-                        seconds(info.path("timeout"), 40));
-            }
+        } catch (SocketTimeoutException e) {
+            // What did arrive is the whole clue — a banner, a reply in a framing
+            // we do not read, or nothing at all. Inbound only: never our password.
+            String partial = lineBuffer.size() > 0 ? preview(lineBuffer.toByteArray(), lineBuffer.size()) : null;
+            throw new IOException("Connected" + (tls ? " over TLS" : "") + " and sent LOGIN, but no reply in "
+                    + props.loginTimeoutSeconds() + "s. Received " + lines + " line(s)"
+                    + (last != null ? ", last: " + last : "")
+                    + (partial != null ? "; unterminated bytes: " + partial : "") , e);
         }
-        throw new IOException("Server closed the connection during login");
+        throw new IOException("Server closed the connection " + (lines == 0 ? "without answering LOGIN" : "during login, after: " + last));
+    }
+
+    /** Up to 160 bytes of what the server sent, control characters made visible. */
+    private static String preview(byte[] bytes, int length) {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < Math.min(length, 160); i++) {
+            int b = bytes[i] & 0xff;
+            out.append(b >= 0x20 && b < 0x7f ? String.valueOf((char) b) : String.format("\\x%02x", b));
+        }
+        return length > 160 ? out + "…" : out.toString();
     }
 
     private void handle(byte[] line) throws IOException {

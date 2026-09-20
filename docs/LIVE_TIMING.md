@@ -167,6 +167,7 @@ All `ALKAMELV2_*`. Set the first three on Railway; the rest have working default
 | `ALKAMELV2_CHANNELS` | info, entry, classes, status, standings.byClass.active, startingGrid (all under `timing.session.`) | Comma-separated. Deliberately excludes `timing.analysis` — every lap of every car, the part that reaches ~100 MB over 24 hours. |
 | `ALKAMELV2_MAX_LINE_BYTES` | `33554432` | A longer line is a protocol fault, not buffered. |
 | `ALKAMELV2_CONNECT_TIMEOUT_SECONDS` | `10` | |
+| `ALKAMELV2_LOGIN_TIMEOUT_SECONDS` | `15` | How long the TLS handshake, and then the LOGIN reply, may each take. |
 | `ALKAMELV2_RECORDING_ENABLED` | `true` | |
 | `ALKAMELV2_RECORDING_BUCKET` | — | A **private** R2 bucket on the same account/keys as images. Never the public images bucket (the code refuses it). Blank = segments stay on local disk, which on Railway does not survive a redeploy. |
 | `ALKAMELV2_RECORDING_DIRECTORY` | system temp `/pit-pass-aks` | Where segments are written before upload. |
@@ -194,6 +195,23 @@ refusal rather than a login error.
 The container runs with `-Xmx256m` (Dockerfile). The default channels need a
 few MB. Joining `timing.analysis` for a future timing page does **not** fit in
 that heap over a long race; revisit the cap when that work starts.
+
+## When it will not connect
+
+The app shows `lastError` and the server logs the same text; each stage names
+itself, and a successful attempt logs three INFO lines on the way (`TCP
+connected…`, `TLS handshake done (protocol, cipher)`, `LOGIN sent…`).
+
+| `lastError` begins | Meaning | Try |
+|---|---|---|
+| `Could not reach host:port` | DNS, firewall, wrong host/port, or the address is allow-listed and Railway's is not. | Check `ALKAMELV2_HOST`/`PORT`; ask Al Kamel whether client IPs are allow-listed (Railway static outbound IP). |
+| `TLS handshake … got no answer` | The port took the TCP connection and then ignored the TLS hello: it is not a TLS port, or a TLS stack too old to answer a modern hello. | `openssl s_client -connect HOST:PORT </dev/null` from a laptop (sends no credentials, does not use the login). If that hangs too, confirm the port with Al Kamel. |
+| `TLS handshake … failed (…)` | TLS answered and refused — protocol or cipher mismatch. The reason is in the brackets. | The JVM disables TLS 1.0/1.1; a server that old needs them re-enabled for this socket. |
+| `Connected over TLS and sent LOGIN, but no reply` | The transport is fine; the server is not answering LOGIN as sent. The message lists what did arrive, including bytes with no line ending. | Compare those bytes with the spec's framing; check the account is enabled for this server. |
+| `Login refused: …` | The server's own reason (bad credentials, user limit reached). Retried no sooner than every 60 s. | If it says the user limit is reached, something else holds the one login. |
+
+`openssl s_client` first, always: it separates "network/TLS" from "protocol"
+without touching the account.
 
 ## Recordings
 
