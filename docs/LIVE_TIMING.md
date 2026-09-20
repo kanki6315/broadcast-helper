@@ -104,8 +104,8 @@ cars (`guest` is passed through), drive-time minimums, post-race penalties.
 ## Championship positions
 
 `GET /api/live/championships/{id}` answers, for one class championship, where
-each standings row is scoring right now. It is what the iPad calculator's Live
-mode polls (one request per class shown). Still no points on the server: a
+each standings row is scoring right now. It is what the calculators' Live mode
+polls, on the iPad and the web (one request per class shown). Still no points on the server: a
 position here is scored by the client exactly as one set by hand.
 
 ```json
