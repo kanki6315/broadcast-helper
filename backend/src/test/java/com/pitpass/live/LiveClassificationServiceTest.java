@@ -99,6 +99,83 @@ class LiveClassificationServiceTest {
         assertEquals(List.of("500"), result.unmatched().stream().map(u -> u.carNumber()).toList());
     }
 
+    /**
+     * A drivers championship end to end through the real schema: the crew from
+     * driver_assignment, the weekend's qualifying from result, the standings
+     * rows from standings_row — and the guards around them.
+     */
+    @Test
+    void resolvesADriversChampionshipAgainstTheRunningOrder() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        long seriesId = db.sql("INSERT INTO series (name) VALUES (:n) RETURNING id")
+                .param("n", "Live champ series " + suffix).query(Long.class).single();
+        long seasonId = db.sql("INSERT INTO season (series_id, year) VALUES (:s, 2099) RETURNING id")
+                .param("s", seriesId).query(Long.class).single();
+        long otherSeason = db.sql("INSERT INTO season (series_id, year) VALUES (:s, 2098) RETURNING id")
+                .param("s", seriesId).query(Long.class).single();
+        long bound = event(seasonId, "Bound " + suffix);
+        entry(bound, "85", "GTP", "JDC-Miller MotorSports");
+        entry(bound, "7", "GTP", "Porsche Penske Motorsport");
+        long car7 = db.sql("SELECT id FROM entry WHERE event_id = :e AND car_number = '7'").param("e", bound)
+                .query(Long.class).single();
+        long car85 = db.sql("SELECT id FROM entry WHERE event_id = :e AND car_number = '85'").param("e", bound)
+                .query(Long.class).single();
+        for (String[] seat : new String[][] {{"Felipe", "Nasr " + suffix, "7"}, {"Tijmen", "Helm " + suffix, "85"}}) {
+            long driver = db.sql("INSERT INTO driver (first_name, surname) VALUES (:f, :s) RETURNING id")
+                    .param("f", seat[0]).param("s", seat[1]).query(Long.class).single();
+            db.sql("INSERT INTO driver_assignment (entry_id, driver_id, seat_order) VALUES (:e, :d, 1)")
+                    .param("e", seat[2].equals("7") ? car7 : car85).param("d", driver).update();
+        }
+        long qualifying = db.sql("""
+                INSERT INTO race_session (event_id, session_type, name, ordinal, format_source)
+                VALUES (:e, 'QUALIFYING', 'Qualifying', 1, (SELECT format_source FROM race_session LIMIT 1)) RETURNING id
+                """).param("e", bound).query(Long.class).single();
+        db.sql("INSERT INTO result (session_id, entry_id, position_overall, position_in_class) VALUES (:s, :a, 1, 1), (:s, :b, 2, 2)")
+                .param("s", qualifying).param("a", car7).param("b", car85).update();
+
+        long champ = championship(seasonId, "DRIVERS", "GTP", suffix);
+        db.sql("""
+                INSERT INTO standings_row (championship_id, position, competitor_key, competitor_name, total_points)
+                VALUES (:c, 1, :nasr, NULL, 2000), (:c, 2, :helm, NULL, 1900), (:c, 3, 'Sat Out', NULL, 1800)
+                """).param("c", champ).param("nasr", "Felipe Nasr " + suffix).param("helm", "Tijmen Helm " + suffix).update();
+
+        store.request(true, bound, "admin@example.test");
+        var service = new LiveClassificationService(db, liveWith(FEED));
+        var response = service.championship(champ);
+
+        assertEquals("DRIVERS", response.kind());
+        assertTrue(response.qualifyingImported());
+        var helm = response.rows().get(1);
+        assertEquals(1, helm.live().position(), "#85 leads the feed");
+        assertEquals("85", helm.live().carNumber());
+        assertEquals(2, helm.qualifyingPosition());
+        assertEquals(2, response.rows().get(0).live().position(), "the feed's 007 is Nasr's #7");
+        assertEquals(1, response.rows().get(0).qualifyingPosition());
+        assertEquals(null, response.rows().get(2).live());
+
+        // A championship of another season is not scored against this event…
+        long elsewhere = championship(otherSeason, "DRIVERS", "GTP", "x" + suffix);
+        assertEquals(409, org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> service.championship(elsewhere)).getStatusCode().value());
+        // …and one that does not exist is a 404.
+        assertEquals(404, org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> service.championship(-1)).getStatusCode().value());
+    }
+
+    private long championship(long seasonId, String kind, String className, String suffix) {
+        long group = db.sql("""
+                INSERT INTO championship_group (season_id, family, kind, label, ordinal)
+                VALUES (:s, 'Season', :k, :k, 1) RETURNING id
+                """).param("s", seasonId).param("k", kind).query(Long.class).single();
+        return db.sql("""
+                INSERT INTO championship (season_id, name, title, class_name, group_id)
+                VALUES (:s, :n, :n, :cls, :g) RETURNING id
+                """).param("s", seasonId).param("n", className + " " + kind + " " + suffix)
+                .param("cls", className).param("g", group).query(Long.class).single();
+    }
+
     @Test
     void withNoEventBoundThereIsNothingToScore() throws Exception {
         // The local row may carry a binding from real use; rolled back with the test.

@@ -160,6 +160,8 @@ class LiveTimingServiceTest {
         await(() -> service.status().state() == State.LIVE);
 
         service.request(false, null, "t");
+        assertEquals(State.OFF, service.status().state(),
+                "off to whoever asked, even in the instant before the socket closes");
 
         await(() -> service.status().state() == State.OFF && store.read().holder() == null);
         assertNull(service.status().lastError(), "a disconnect we asked for is not an error");

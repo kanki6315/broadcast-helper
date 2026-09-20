@@ -40,6 +40,7 @@ replica would see `STANDBY` and no data.
 |---|---|---|
 | `GET /api/live/status` | member | State, bound event, what the feed says is running, message counters, last error. Poll it. |
 | `GET /api/live/classification` | member | The running order per class, matched to the bound event's entries — see below. Poll it. |
+| `GET /api/live/championships/{id}` | member | One class championship's rows against the running order — see *Championship positions*. Poll it. |
 | `POST /api/live/connect` `{ "eventId": n }` | admin | Ask for the connection and bind it to the Pit Pass event it is scored against. |
 | `POST /api/live/disconnect` | admin | Close the socket and free the login. |
 | `GET /api/live/state?path=timing.session.info` | admin | The merged feed at a dotted path (blank = everything). The licensed feed verbatim, hence admin-only. |
@@ -99,6 +100,56 @@ calculators — it supplies the positions a person would otherwise type in.
 
 Not modelled here (flag as provisional in the UI): points eligibility of guest
 cars (`guest` is passed through), drive-time minimums, post-race penalties.
+
+## Championship positions
+
+`GET /api/live/championships/{id}` answers, for one class championship, where
+each standings row is scoring right now. It is what the iPad calculator's Live
+mode polls (one request per class shown). Still no points on the server: a
+position here is scored by the client exactly as one set by hand.
+
+```json
+{ "state": "LIVE", "eventId": 8, "championshipId": 322, "kind": "MANUFACTURERS", "className": "GTP",
+  "livePhase": "RACE", "qualifyingImported": true,
+  "rows": [ { "competitorKey": "Porsche",
+              "live": { "position": 1, "carNumber": "7", "teamName": "…", "status": "CLASSIFIED",
+                        "laps": 72, "gapToLeaderMs": null, "gapToLeaderLaps": null },
+              "qualifyingPosition": 3 } ],
+  "newcomers": [ { "name": "…", "carNumber": "93", "position": 5 } ] }
+```
+
+`live.position` is already by the rule of the championship's kind:
+
+- **TEAMS** — the car's position in class. Rows match by car number through
+  the season's `car_number_alias`, leading zeros ignored on both sides, with
+  the recap's team-name fallback for championships keyed by name.
+- **DRIVERS** — the position in class of the car the driver is entered in
+  (`driver_assignment` of the bound event); every member of a crew takes the
+  car's position. Names match the standings key or name, case-insensitively.
+- **MANUFACTURERS** — only the best-placed car of each make counts, and the
+  makes are ranked among themselves: a Porsche 1-2 ahead of a Cadillac makes
+  Cadillac second. Only makes with a standings row take part — an unregistered
+  make neither scores nor pushes anyone down.
+
+`livePhase` says which column the live positions fill: `RACE`, `QUALIFYING`,
+or null for a session that pays nothing (practice). `qualifyingPosition` is the
+bound event's **imported** qualifying result, ranked by the same rules:
+official standings leave a weekend's qualifying points out until after the
+race, so a live race projection adds them itself — and says so when the
+qualifying result has not been imported (`qualifyingImported: false`).
+
+`newcomers` are scoring now without a standings row (a late entry, an
+endurance-only driver): named, with a baseline of zero. Overall championships
+answer 422 (positions are per class); a championship of another season than
+the bound event answers 409.
+
+Assumed, not yet checked against the regulations: that manufacturers score
+qualifying points on the same collapse-and-rerank rule as race points, and
+that every driver of a car takes the car's qualifying points.
+
+Known gap: IMSA qualifies class groups in separate sessions. When the timing
+system loads the next session the previous group's live order is gone, and its
+qualifying column is empty until that result is imported.
 
 ## Configuration
 

@@ -5,6 +5,10 @@ struct CalculatorSheet: View {
     @Environment(AppSession.self) private var session
     let eventId: Int
     @State private var hub: Resource<SeasonHub>
+    /// Polled while the calculator is open; absent (offline, or a server with
+    /// no feed) the calculator is exactly what it was before live timing.
+    @State private var liveStatus = LiveFeed<LiveStatus>()
+    @State private var showsLive = false
 
     init(seasonId: Int, eventId: Int) {
         self.eventId = eventId
@@ -14,10 +18,21 @@ struct CalculatorSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: PP.Space.s3) {
                 Text("Championship calculator").ppTitle()
-                Text("If the race finished like this. Compare selected teams using the latest imported points.")
+                LiveTimingBar(eventId: eventId, status: liveStatus)
+                if liveStatus.value?.configured == true {
+                    Picker("Mode", selection: $showsLive) {
+                        Text("Scenario").tag(false)
+                        Text("Live").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 280)
+                }
+                Text(showsLive ? "As it stands. Every row of the standings, projected from where the field is running."
+                     : "If the race finished like this. Compare selected teams using the latest imported points.")
                     .font(.subheadline).foregroundStyle(PP.textMuted)
                 if let value = hub.value {
-                    CalculatorClassWorkspace(championships: value.championships.filter(ChampionshipCalculator.supported), eventId: eventId)
+                    if showsLive { liveContent(value) }
+                    else { CalculatorClassWorkspace(championships: value.championships.filter(ChampionshipCalculator.supported), eventId: eventId) }
                 } else if let error = hub.error {
                     ErrorPanel(message: error)
                     Button("Retry") { Task { await hub.load(session.loader) } }
@@ -27,6 +42,22 @@ struct CalculatorSheet: View {
         }
         .background(PP.bg)
         .task { await hub.load(session.loader, connectivity: session.connectivity, freshness: session.freshness) }
+        .task { await liveStatus.run(session.client, path: "/api/live/status", every: .seconds(5)) }
+    }
+
+    /// Live needs an order, and one that is being scored against this event.
+    @ViewBuilder private func liveContent(_ hub: SeasonHub) -> some View {
+        if let status = liveStatus.value, status.eventId == eventId, status.desiredConnected {
+            if status.hasOrder {
+                LiveChampionshipWorkspace(championships: hub.championships.filter(ChampionshipCalculator.supportedLive), eventId: eventId)
+            } else {
+                ProgressView("Connecting to live timing…")
+            }
+        } else if liveStatus.value?.desiredConnected == true {
+            EmptyState(message: "Live timing is scoring \(liveStatus.value?.eventName ?? "another event"). Open that event's calculator to follow it.")
+        } else {
+            EmptyState(message: "Live timing is off. Once it is connected for this event, the standings are projected here as the field runs.")
+        }
     }
 }
 

@@ -6,6 +6,7 @@ import com.pitpass.live.LiveTimingService.LiveStatus;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -54,6 +55,16 @@ public class LiveTimingController {
     @GetMapping("/classification")
     public LiveClassificationService.Response classification() {
         return classification.current();
+    }
+
+    /**
+     * One class championship's rows against the running order: each row's live
+     * scoring position by the championship's kind (teams, drivers,
+     * manufacturers), and its imported qualifying position for the weekend.
+     */
+    @GetMapping("/championships/{id}")
+    public LiveClassificationService.ChampionshipResponse championship(@PathVariable long id) {
+        return classification.championship(id);
     }
 
     /** Asks for the connection and binds it to the event it will be scored against. */

@@ -145,6 +145,11 @@ public class LiveTimingService implements SmartLifecycle {
         if (props.configured() && !heldHere && row.desiredConnected() && shown == State.OFF) {
             shown = row.holder() == null ? State.CONNECTING : State.STANDBY;
         }
+        // The same the other way: a disconnect just asked for is OFF to the
+        // caller, even in the instant before the supervisor closes the socket.
+        if (props.configured() && !row.desiredConnected()) {
+            shown = State.OFF;
+        }
         return new LiveStatus(shown, props.configured(), props.replaying(),
                 row.desiredConnected(), row.eventId(),
                 row.eventId() == null ? null : store.eventName(row.eventId()).orElse(null),
