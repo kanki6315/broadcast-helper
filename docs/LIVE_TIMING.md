@@ -76,6 +76,26 @@ All `ALKAMELV2_*`. Set the first three on Railway; the rest have working default
 | `ALKAMELV2_REPLAY_FILE` | — | Local dev: replay this recording instead of connecting. |
 | `ALKAMELV2_REPLAY_SPEED` | `1.0` | `10` = ten times faster; `0` = no pauses. |
 
+## Railway settings
+
+Beyond the `ALKAMELV2_*` variables, on the backend service:
+
+| Setting | Value | Why |
+|---|---|---|
+| `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `30` | **Railway's default is 0: SIGKILL straight after SIGTERM.** With 0 a redeploy never runs the clean shutdown — the lease is left to lapse (a ~30 s gap in the feed) and the recording segment in progress is lost with the container's disk. With 30 the old process closes the socket, releases the lease so the new one dials within seconds, and uploads the last segment. |
+| `RAILWAY_DEPLOYMENT_OVERLAP_SECONDS` | leave at `0` | The lease already makes the overlap safe; a longer overlap only delays the handover. |
+| Replicas | `1` | Live data is in the memory of the process holding the lease. |
+| `R2_IMAGES_ENABLED` | `true` (already, in production) | Recordings upload through the same R2 client; with it off they stay on local disk. |
+
+Nothing else: outbound TCP to port 11001 needs no Railway configuration. If
+Al Kamel turns out to allow-list client addresses, the service would need
+Railway's static outbound IP — `lastError` would show a connect timeout or
+refusal rather than a login error.
+
+The container runs with `-Xmx256m` (Dockerfile). The default channels need a
+few MB. Joining `timing.analysis` for a future timing page does **not** fit in
+that heap over a long race; revisit the cap when that work starts.
+
 ## Recordings
 
 Al Kamel offers no test or replay server, so every session production connects

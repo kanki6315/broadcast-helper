@@ -202,7 +202,7 @@ public class LiveTimingService implements SmartLifecycle {
         wake.release();
         if (supervisor != null) {
             try {
-                supervisor.join(Duration.ofSeconds(10));
+                supervisor.join(Duration.ofSeconds(25)); // inside Spring's 30s shutdown phase
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
@@ -240,7 +240,10 @@ public class LiveTimingService implements SmartLifecycle {
                 break;
             }
         }
-        stopConnection();
+        // Order matters for a redeploy: the socket closes first (the login is
+        // free), the lease goes next (the new process may dial at once), and
+        // only then do we wait on the last recording segment's upload.
+        closeConnection();
         if (leaseHeld) {
             try {
                 store.release(instanceId);
@@ -249,6 +252,7 @@ public class LiveTimingService implements SmartLifecycle {
             }
             leaseHeld = false;
         }
+        awaitConnection(Duration.ofSeconds(20));
     }
 
     private void tick() {
@@ -344,9 +348,8 @@ public class LiveTimingService implements SmartLifecycle {
                 lastError = e.getMessage() == null ? e.toString() : e.getMessage();
             }
         } finally {
-            if (recorder != null) {
-                recorder.close();
-            }
+            // Bookkeeping before the recorder: closing it uploads the last
+            // segment, and by then a successor connection may own these fields.
             Instant liveSince = connectedSince;
             connectedSince = null;
             if (!stopping) {
@@ -366,21 +369,34 @@ public class LiveTimingService implements SmartLifecycle {
                 state = State.BACKING_OFF;
                 log.warn("Live timing connection ended ({}); next attempt in {}s", lastError, wait.toSeconds());
             }
+            if (recorder != null) {
+                recorder.close();
+            }
         }
     }
 
     // Supervisor thread only.
     private void stopConnection() {
+        closeConnection();
+        awaitConnection(Duration.ofSeconds(5));
+    }
+
+    private void closeConnection() {
+        if (connectionThread != null) {
+            stopping = true;
+            if (connection != null) {
+                connection.close(); // synchronous: the login is free when this returns
+            }
+        }
+    }
+
+    private void awaitConnection(Duration patience) {
         Thread t = connectionThread;
         if (t == null) {
             return;
         }
-        stopping = true;
-        if (connection != null) {
-            connection.close();
-        }
         try {
-            t.join(Duration.ofSeconds(5));
+            t.join(patience);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

@@ -49,6 +49,7 @@ final class LiveRecorder implements Closeable {
     private Instant openedAt;
     private int sequence;
     private boolean failed;
+    private long lastFlushMs;
 
     LiveRecorder(Path directory, Duration segmentLength, Sink sink) {
         this.directory = directory;
@@ -62,7 +63,7 @@ final class LiveRecorder implements Closeable {
         }
         try {
             if (out != null && Duration.between(openedAt, Instant.now()).compareTo(segmentLength) >= 0) {
-                finish();
+                finish(false);
             }
             if (out == null) {
                 open();
@@ -71,16 +72,26 @@ final class LiveRecorder implements Closeable {
             out.write('\t');
             out.write(line);
             out.write('\n');
+            // The stream is opened sync-flush; flushing every few seconds is what
+            // actually bounds the loss when the process is killed outright.
+            if (epochMs - lastFlushMs >= 5_000) {
+                out.flush();
+                lastFlushMs = epochMs;
+            }
         } catch (IOException e) {
             failed = true;
             log.warn("Live timing recording stopped for this connection: {}", e.toString());
         }
     }
 
+    /**
+     * Stores the last segment on the calling thread: at shutdown a background
+     * upload would die with the JVM, and on Railway the local disk dies too.
+     */
     @Override
     public synchronized void close() {
         try {
-            finish();
+            finish(true);
         } catch (IOException e) {
             log.warn("Could not finish live timing segment: {}", e.toString());
         }
@@ -90,12 +101,12 @@ final class LiveRecorder implements Closeable {
         Files.createDirectories(directory);
         sequence++;
         current = directory.resolve("%s-%04d.aks.gz".formatted(connectionStamp, sequence));
-        // syncFlush so a killed process leaves a segment readable up to the last flush.
+        // syncFlush so a killed process leaves a segment readable up to the last flush (see write).
         out = new GZIPOutputStream(Files.newOutputStream(current), 64 * 1024, true);
         openedAt = Instant.now();
     }
 
-    private void finish() throws IOException {
+    private void finish(boolean inline) throws IOException {
         if (out == null) {
             return;
         }
@@ -105,13 +116,18 @@ final class LiveRecorder implements Closeable {
         out = null;
         current = null;
         closing.close();
-        // Off the reader thread: an upload takes seconds the socket shouldn't wait for.
-        Thread.ofVirtual().name("aks-recording-sink").start(() -> {
+        Runnable store = () -> {
             try {
                 sink.finished(finished, key);
             } catch (RuntimeException e) {
                 log.warn("Live timing segment {} was not stored: {}", finished.getFileName(), e.toString());
             }
-        });
+        };
+        if (inline) {
+            store.run();
+        } else {
+            // Mid-connection, off the reader thread: an upload takes seconds the socket shouldn't wait for.
+            Thread.ofVirtual().name("aks-recording-sink").start(store);
+        }
     }
 }
