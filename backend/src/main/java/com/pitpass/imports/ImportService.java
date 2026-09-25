@@ -222,9 +222,20 @@ public class ImportService {
      *  source folder wins, else the venue-and-weekend match. */
     private Long guessEvent(Optional<Long> seriesId, Integer year, String circuit, LocalDate date,
                             String sourceEvent) {
-        return seriesId.flatMap(sid -> year == null ? Optional.<Long>empty() : findSeasonId(sid, year))
-                .flatMap(sn -> findEventBySource(sn, sourceEvent).or(() -> findMatchingEvent(sn, circuit, date)))
-                .orElse(null);
+        if (seriesId.isEmpty() || year == null) {
+            return null;
+        }
+        // The calendar year's season first, then its neighbours: a season that
+        // runs across New Year keeps its January rounds under the year it
+        // started in (or its November rounds under the year it ends in).
+        for (int y : new int[] {year, year - 1, year + 1}) {
+            Optional<Long> found = findSeasonId(seriesId.get(), y)
+                    .flatMap(sn -> findEventBySource(sn, sourceEvent).or(() -> findMatchingEvent(sn, circuit, date)));
+            if (found.isPresent()) {
+                return found.get();
+            }
+        }
+        return null;
     }
 
     /**
@@ -1646,8 +1657,16 @@ public class ImportService {
      * event-kind batch supplies the circuit/date, and the reviewer-chosen name
      * de-collides two same-track rounds before they hit UNIQUE(season_id, name).
      * Standings batches carry a null eventKey and commit on their own.
+     *
+     * seasonYear names the season a created event joins. A season that runs
+     * across New Year (an iRacing season from November to March) is one season,
+     * so the reviewer picks its year once for every new event; null falls back
+     * to the calendar year of the event's date.
      */
-    public record ProposedEvent(String key, Long eventId, String name, String eventDate) {
+    public record ProposedEvent(String key, Long eventId, String name, String eventDate, Integer seasonYear) {
+        public ProposedEvent(String key, Long eventId, String name, String eventDate) {
+            this(key, eventId, name, eventDate, null);
+        }
     }
 
     public record GroupBatch(long batchId, String eventKey, ImportTarget target) {
@@ -1819,7 +1838,8 @@ public class ImportService {
                     "This import has no date, so it can't create the event \"" + pe.name() + "\"");
         }
         long seriesId = resolveSeriesId(first.target());
-        long seasonId = findOrCreateSeason(seriesId, meta.date().getYear());
+        int year = pe.seasonYear() != null ? pe.seasonYear() : meta.date().getYear();
+        long seasonId = findOrCreateSeason(seriesId, year);
         boolean nameTaken = db.sql("SELECT 1 FROM event WHERE season_id = :s AND name = :n")
                 .param("s", seasonId).param("n", pe.name().trim())
                 .query(Integer.class).optional().isPresent();
@@ -1989,8 +2009,10 @@ public class ImportService {
         String sessionName;
         if (imp.sessionStart() != null) {
             // Timing-provider JSON: the file names its own season/event/session.
-            long seriesId = resolveSeriesId(target);
-            seasonId = findOrCreateSeason(seriesId, imp.sessionStart().getYear());
+            // An attached event pins the season: in one that runs across New
+            // Year, a January session belongs to the season it started in.
+            seasonId = target.eventId() != null ? seasonIdOfEvent(target.eventId())
+                    : findOrCreateSeason(resolveSeriesId(target), imp.sessionStart().getYear());
             eventId = target.eventId() != null ? target.eventId()
                     : createEvent(seasonId, chosenEventName(target, imp.eventName()), imp.circuitName(),
                     imp.circuitLengthM(), imp.circuitCountry(), imp.sessionStart().toLocalDate());
@@ -2096,8 +2118,8 @@ public class ImportService {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "Flags file has no session date; cannot determine the season");
         }
-        long seriesId = resolveSeriesId(target);
-        long seasonId = findOrCreateSeason(seriesId, imp.sessionStart().getYear());
+        long seasonId = target.eventId() != null ? seasonIdOfEvent(target.eventId())
+                : findOrCreateSeason(resolveSeriesId(target), imp.sessionStart().getYear());
         long eventId = target.eventId() != null ? target.eventId()
                 : createEvent(seasonId, chosenEventName(target, imp.eventName()), imp.circuitName(),
                 imp.circuitLengthM(), imp.circuitCountry(), imp.sessionStart().toLocalDate());
@@ -2142,8 +2164,10 @@ public class ImportService {
         String sessionName;
         if (imp.sessionStart() != null) {
             // Timing-provider JSON: the file names its own season/event/session.
-            long seriesId = resolveSeriesId(target);
-            seasonId = findOrCreateSeason(seriesId, imp.sessionStart().getYear());
+            // An attached event pins the season: in one that runs across New
+            // Year, a January session belongs to the season it started in.
+            seasonId = target.eventId() != null ? seasonIdOfEvent(target.eventId())
+                    : findOrCreateSeason(resolveSeriesId(target), imp.sessionStart().getYear());
             eventId = target.eventId() != null ? target.eventId()
                     : createEvent(seasonId, chosenEventName(target, imp.eventName()), imp.circuitName(),
                     imp.circuitLengthM(), imp.circuitCountry(), imp.sessionStart().toLocalDate());
@@ -2401,8 +2425,8 @@ public class ImportService {
                     "Entry list has no event dates; cannot determine the season");
         }
 
-        long seriesId = resolveSeriesId(target);
-        long seasonId = findOrCreateSeason(seriesId, imp.event().startDate().getYear());
+        long seasonId = target.eventId() != null ? seasonIdOfEvent(target.eventId())
+                : findOrCreateSeason(resolveSeriesId(target), imp.event().startDate().getYear());
 
         LocalDate eventDate = imp.event().endDate() != null ? imp.event().endDate() : imp.event().startDate();
         long eventId = target.eventId() != null ? target.eventId()
