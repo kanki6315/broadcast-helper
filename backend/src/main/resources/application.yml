@@ -86,6 +86,11 @@ pit-pass:
     # A results JSON is a few hundred kB and a points PDF a few MB; anything
     # bigger is not a file this importer reads.
     max-download-bytes: ${ALKAMEL_MAX_DOWNLOAD_BYTES:26214400}
+  # IMSA Esports' own competition site: its public JSON API publishes the
+  # official (post-penalty) classification and championship standings the
+  # correction import applies over iRacing results. No credentials.
+  artifact:
+    base-url: ${ARTIFACT_BASE_URL:https://artifactracing.com}
   # Al Kamel LIVE timing (AKS V2 protocol) — unrelated to the results site
   # above. A raw TLS socket, not HTTP. Our account allows ONE concurrent login,
   # so production is the only thing that ever dials out: local dev leaves the

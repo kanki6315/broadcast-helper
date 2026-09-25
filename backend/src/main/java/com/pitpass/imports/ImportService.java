@@ -2310,8 +2310,26 @@ public class ImportService {
 
     private void commitStandings(StandingsImport imp, ImportTarget target) {
         long seriesId = resolveSeriesId(target);
-        long seasonId = findOrCreateSeason(seriesId, resolveSeasonYear(imp, target));
+        writeStandings(imp, seriesId, findOrCreateSeason(seriesId, resolveSeasonYear(imp, target)), target);
+    }
 
+    /**
+     * Standings for a season the caller already knows — a source that is
+     * pointed at a season (the IMSA Esports correction) rather than one whose
+     * payload names a year, which could only find the season's MAIN row.
+     * The target supplies class / kind / cup / family exactly as a reviewed
+     * standings commit would; its series and year are ignored.
+     */
+    public void commitStandingsToSeason(StandingsImport imp, long seasonId, ImportTarget target) {
+        long seriesId = db.sql("SELECT series_id FROM season WHERE id = :id")
+                .param("id", seasonId)
+                .query(Long.class)
+                .optional()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such season"));
+        writeStandings(imp, seriesId, seasonId, target);
+    }
+
+    private void writeStandings(StandingsImport imp, long seriesId, long seasonId, ImportTarget target) {
         // Class / kind / cup are confirmed by the reviewer (pre-filled from the
         // title). Standings often spell classes differently from the entry list
         // (the Endurance Cup's "GT Daytona PRO" vs "GTDPRO"); resolve to the
@@ -2591,6 +2609,14 @@ public class ImportService {
             recaseIfShouty(row.id(), row.first(), row.surname(), first, surname);
             return row.id();
         }
+        Optional<Long> aliased = driverByAlias(fullName);
+        if (aliased.isPresent()) {
+            db.sql("UPDATE driver SET country = COALESCE(:country, country) WHERE id = :id")
+                    .param("country", country)
+                    .param("id", aliased.get())
+                    .update();
+            return aliased.get();
+        }
         return db.sql("""
                         INSERT INTO driver (first_name, surname, country)
                         VALUES (:first, :surname, :country)
@@ -2773,10 +2799,14 @@ public class ImportService {
         renumberSeasonRounds(seasonIdOfEvent(eventId));
     }
 
-    void renumberSeasonRounds(long seasonId) {
+    public void renumberSeasonRounds(long seasonId) {
+        // Same-day rounds (IMSA Esports runs GTP at one track and GTD at
+        // another on one evening) order by the source's own round number when
+        // one was recorded (event.source_round, V56), else by creation.
         db.sql("""
                         WITH ranked AS (
-                            SELECT e.id, row_number() OVER (ORDER BY e.event_date NULLS LAST, e.id) AS rn
+                            SELECT e.id, row_number() OVER (
+                                ORDER BY e.event_date NULLS LAST, e.source_round NULLS LAST, e.id) AS rn
                             FROM event e
                             WHERE e.season_id = :seasonId AND e.is_round
                         )
@@ -3147,6 +3177,20 @@ public class ImportService {
             recaseIfShouty(found.id(), found.first(), found.surname(), firstName, surname);
             return found.id();
         }
+        Optional<Long> aliased = driverByAlias(
+                (firstName == null ? "" : firstName.trim()) + " " + (surname == null ? "" : surname.trim()));
+        if (aliased.isPresent()) {
+            db.sql("""
+                            UPDATE driver SET country = COALESCE(:country, country),
+                                              hometown = COALESCE(:hometown, hometown)
+                            WHERE id = :id
+                            """)
+                    .param("country", country)
+                    .param("hometown", hometown)
+                    .param("id", aliased.get())
+                    .update();
+            return aliased.get();
+        }
         DriverRow row = db.sql("""
                         INSERT INTO driver (first_name, surname, country, hometown)
                         VALUES (:first, :surname, :country, :hometown)
@@ -3163,6 +3207,19 @@ public class ImportService {
                 .single();
         recaseIfShouty(row.id(), row.first(), row.surname(), firstName, surname);
         return row.id();
+    }
+
+    /** A spelling retired by a driver merge (driver_alias, V55) resolves to the
+     *  driver that absorbed it — consulted only once no driver has the name. */
+    private Optional<Long> driverByAlias(String fullName) {
+        return db.sql("""
+                        SELECT driver_id FROM driver_alias
+                        WHERE lower(regexp_replace(trim(alias), '\\s+', ' ', 'g'))
+                            = lower(regexp_replace(trim(:name), '\\s+', ' ', 'g'))
+                        """)
+                .param("name", fullName)
+                .query(Long.class)
+                .optional();
     }
 
     /** Results files spell ratings out ("Platinum"); store the single letter everywhere. */

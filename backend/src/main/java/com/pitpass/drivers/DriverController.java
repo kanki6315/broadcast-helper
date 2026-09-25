@@ -91,6 +91,8 @@ public class DriverController {
                         FROM driver d
                                  LEFT JOIN ctx c ON c.driver_id = d.id
                         WHERE lower(d.first_name || ' ' || d.surname) LIKE :contains
+                           OR EXISTS (SELECT 1 FROM driver_alias a
+                                      WHERE a.driver_id = d.id AND lower(a.alias) LIKE :contains)
                            OR lower(coalesce(c.team_name, '')) LIKE :contains
                            OR lower(coalesce(c.car_number, '')) = :exact
                         ORDER BY CASE
@@ -179,30 +181,40 @@ public class DriverController {
                 .optional()
                 .orElse(new Seat(null, null, null, null, null, null));
 
+        // Standings keep the spelling they were published under, so a merged
+        // driver's retired names (driver_alias) still find their rows.
+        List<String> names = new ArrayList<>();
+        names.add(DriverAdminController.normalize(bio.name()));
+        db.sql("SELECT alias FROM driver_alias WHERE driver_id = :id")
+                .param("id", id)
+                .query(String.class)
+                .list()
+                .forEach(alias -> names.add(DriverAdminController.normalize(alias)));
+
         // DRIVERS championships whose standings carry this driver, newest season
         // first. The matrix comes from the same recap computation the grids use,
         // filtered to this driver's row — the modal can never disagree with the
         // recap page about a start/finish.
         List<Long> champIds = db.sql("""
-                        SELECT c.id
+                        SELECT DISTINCT c.id, s.year
                         FROM standings_row srw
                                  JOIN championship c ON c.id = srw.championship_id
                                  JOIN championship_group g ON g.id = c.group_id
                                  JOIN season s ON s.id = c.season_id
                         WHERE g.kind = 'DRIVERS'
-                          AND (lower(trim(srw.competitor_name)) = lower(:name)
-                               OR lower(trim(srw.competitor_key)) = lower(:name))
+                          AND (lower(regexp_replace(trim(srw.competitor_name), '\\s+', ' ', 'g')) IN (:names)
+                               OR lower(regexp_replace(trim(srw.competitor_key), '\\s+', ' ', 'g')) IN (:names))
                         ORDER BY s.year DESC, c.id
                         """)
-                .param("name", bio.name())
-                .query(Long.class)
+                .param("names", names)
+                .query((rs, i) -> rs.getLong("id"))
                 .list();
 
         List<ChampMatrix> championships = new ArrayList<>();
         for (long champId : champIds) {
             Recap recap = seasonView.recap(champId);
             recap.rows().stream()
-                    .filter(r -> matchesName(r, bio.name()))
+                    .filter(r -> matchesName(r, names))
                     .findFirst()
                     .ifPresent(row -> championships.add(new ChampMatrix(recap.championship().id(),
                             recap.championship().title(), recap.championship().className(),
@@ -218,10 +230,9 @@ public class DriverController {
                 seat.year(), seat.seriesName(), championships);
     }
 
-    private static boolean matchesName(RecapRow row, String name) {
-        String needle = name.trim().toLowerCase(Locale.ROOT);
-        return needle.equals(Objects.toString(row.competitorName(), "").trim().toLowerCase(Locale.ROOT))
-                || needle.equals(Objects.toString(row.competitorKey(), "").trim().toLowerCase(Locale.ROOT));
+    private static boolean matchesName(RecapRow row, List<String> names) {
+        return names.contains(DriverAdminController.normalize(Objects.toString(row.competitorName(), "")))
+                || names.contains(DriverAdminController.normalize(Objects.toString(row.competitorKey(), "")));
     }
 
     /* ------------------------------------------------------------------ */

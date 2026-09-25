@@ -1,0 +1,551 @@
+/* IMSA Esports correction modal — token layer (index.css), sibling of the Al
+ * Kamel modal (.ak). Native <dialog> opened from the Imports page. A review,
+ * not a picker: rounds fold open where something needs deciding, and a
+ * pinned footer carries the one action. */
+
+.ie {
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: var(--shadow-modal);
+  width: min(880px, calc(100vw - 32px));
+  max-height: min(90vh, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ie::backdrop {
+  background: var(--scrim);
+}
+
+.ie[open] {
+  animation: ie-in var(--t-med) var(--ease-out);
+}
+
+.ie[open]::backdrop {
+  animation: ie-fade var(--t-med) var(--ease-out);
+}
+
+@keyframes ie-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+
+@keyframes ie-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ie[open],
+  .ie[open]::backdrop {
+    animation: none;
+  }
+}
+
+/* ---- chrome ---- */
+
+.ie-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.ie-title {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ie-sub {
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.ie-close {
+  border: none;
+  background: none;
+  font-size: var(--text-base);
+  line-height: 1;
+  padding: 4px 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.ie-close:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--surface-hover);
+}
+
+.ie-body {
+  overflow-y: auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ie-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.ie-status {
+  margin-right: auto;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.ie-status.ok {
+  color: var(--success);
+}
+
+.ie-error {
+  margin: 0;
+}
+
+/* ---- setup ---- */
+
+.ie-setup {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.ie-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+}
+
+.ie-field-grow {
+  flex: 1 1 220px;
+}
+
+.ie-field-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.ie-select,
+.ie-input {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 6px 8px;
+  min-height: 34px;
+}
+
+.ie-select:focus-visible,
+.ie-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ie-select-sm {
+  min-height: 28px;
+  padding: 3px 6px;
+  font-size: var(--text-xs);
+  max-width: 280px;
+}
+
+.ie-input {
+  width: 140px;
+  min-height: 28px;
+  padding: 3px 8px;
+}
+
+.ie-check {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  min-height: 34px;
+  align-self: flex-end;
+}
+
+.ie-list .ie-check {
+  min-height: 0;
+}
+
+.ie-check input {
+  accent-color: var(--accent);
+  translate: 0 2px;
+}
+
+.ie-note,
+.ie-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.ie-warnings {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-6);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  font-size: var(--text-sm);
+}
+
+/* ---- rounds ---- */
+
+.ie-round {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.ie-round-head {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  list-style: none;
+  border-radius: var(--radius-md);
+}
+
+.ie-round-head::-webkit-details-marker {
+  display: none;
+}
+
+.ie-round-head:hover {
+  background: var(--surface-hover);
+}
+
+.ie-round[open] > .ie-round-head {
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.ie-round-no {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ie-round-track {
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ie-round-event {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ie-round-tally {
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.ie-round-body {
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ie-block-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.ie-sub-head,
+.ie-section-head {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ie-block {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--error);
+}
+
+.ie-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--text-sm);
+}
+
+.ie-pick {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.ie-pick-car {
+  min-width: 0;
+  flex: 1 1 300px;
+}
+
+.ie-why {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--accent-ink);
+}
+
+.ie-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ie-muted {
+  color: var(--text-muted);
+}
+
+.ie-quiet {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.ie-bad {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.ie-strong {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ie-from {
+  color: var(--text-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.ie-arrow {
+  color: var(--text-muted);
+}
+
+/* ---- the change list ---- */
+
+.ie-changes {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+/* The change list takes whatever the fixed columns leave, and wraps. */
+.ie-change-list {
+  width: 100%;
+}
+
+.ie-changes th {
+  text-align: left;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+
+.ie-changes td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: baseline;
+}
+
+.ie-changes .num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ie-team {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ie-was {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.ie-delta {
+  margin-left: 6px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.ie-delta.up {
+  color: var(--success);
+}
+
+.ie-delta.down {
+  color: var(--error);
+}
+
+.ie-change-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.ie-change {
+  overflow-wrap: anywhere;
+}
+
+.ie-change-field {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ---- season-wide sections ---- */
+
+.ie-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ie-count {
+  font-weight: 400;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+
+.ie-class-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.ie-class-site {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  min-width: 48px;
+}
+
+.ie-discrepancies {
+  margin: 4px 0 0;
+  padding-left: var(--space-5);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.ie-applied {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ie-applied-head {
+  margin: 0;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+@media (max-width: 640px) {
+  .ie-round-head {
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+  }
+
+  .ie-round-event {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+
+  /* A phone can't hold six columns: each car stacks into position, number,
+   * team and class place on one line, its changes wrapping underneath. */
+  .ie-changes thead {
+    display: none;
+  }
+
+  .ie-changes,
+  .ie-changes tbody {
+    display: block;
+  }
+
+  .ie-changes tr {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    column-gap: var(--space-2);
+    row-gap: 2px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .ie-changes td {
+    padding: 0;
+    border: none;
+  }
+
+  .ie-changes td:nth-child(2) {
+    display: none;
+  }
+
+  .ie-team {
+    max-width: none;
+  }
+
+  .ie-changes td.ie-change-list {
+    grid-column: 1 / -1;
+  }
+
+  .ie-foot {
+    flex-wrap: wrap;
+  }
+
+  .ie-status {
+    flex-basis: 100%;
+  }
+}
