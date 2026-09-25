@@ -2567,6 +2567,14 @@ public class ImportService {
             recaseIfShouty(row.id(), row.first(), row.surname(), first, surname);
             return row.id();
         }
+        Optional<Long> aliased = driverByAlias(fullName);
+        if (aliased.isPresent()) {
+            db.sql("UPDATE driver SET country = COALESCE(:country, country) WHERE id = :id")
+                    .param("country", country)
+                    .param("id", aliased.get())
+                    .update();
+            return aliased.get();
+        }
         return db.sql("""
                         INSERT INTO driver (first_name, surname, country)
                         VALUES (:first, :surname, :country)
@@ -3123,6 +3131,20 @@ public class ImportService {
             recaseIfShouty(found.id(), found.first(), found.surname(), firstName, surname);
             return found.id();
         }
+        Optional<Long> aliased = driverByAlias(
+                (firstName == null ? "" : firstName.trim()) + " " + (surname == null ? "" : surname.trim()));
+        if (aliased.isPresent()) {
+            db.sql("""
+                            UPDATE driver SET country = COALESCE(:country, country),
+                                              hometown = COALESCE(:hometown, hometown)
+                            WHERE id = :id
+                            """)
+                    .param("country", country)
+                    .param("hometown", hometown)
+                    .param("id", aliased.get())
+                    .update();
+            return aliased.get();
+        }
         DriverRow row = db.sql("""
                         INSERT INTO driver (first_name, surname, country, hometown)
                         VALUES (:first, :surname, :country, :hometown)
@@ -3139,6 +3161,19 @@ public class ImportService {
                 .single();
         recaseIfShouty(row.id(), row.first(), row.surname(), firstName, surname);
         return row.id();
+    }
+
+    /** A spelling retired by a driver merge (driver_alias, V55) resolves to the
+     *  driver that absorbed it — consulted only once no driver has the name. */
+    private Optional<Long> driverByAlias(String fullName) {
+        return db.sql("""
+                        SELECT driver_id FROM driver_alias
+                        WHERE lower(regexp_replace(trim(alias), '\\s+', ' ', 'g'))
+                            = lower(regexp_replace(trim(:name), '\\s+', ' ', 'g'))
+                        """)
+                .param("name", fullName)
+                .query(Long.class)
+                .optional();
     }
 
     /** Results files spell ratings out ("Platinum"); store the single letter everywhere. */
