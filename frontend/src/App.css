@@ -1297,6 +1297,122 @@ h2 small {
   flex: 1;
 }
 
+/* Manage → Teams: the catalogue scrolls in its own pane (paged in as it
+ * nears the end) while the editor stays beside it, so picking a team deep in
+ * the list never sends the editor off-screen. */
+.teams-manage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.teams-list-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.teams-list-scroll {
+  max-height: calc(100dvh - 220px);
+  min-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.teams-list-scroll table {
+  margin: 0;
+}
+
+.teams-list-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+}
+
+.teams-list-scroll tr.active td {
+  background: var(--accent-tint);
+}
+
+.teams-list-foot {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.teams-editor {
+  position: sticky;
+  top: var(--space-4);
+  min-width: 0;
+  max-height: calc(100dvh - var(--space-6));
+  overflow-y: auto;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.teams-editor h3 {
+  margin-top: 0;
+  margin-bottom: var(--space-1);
+}
+
+/* The team picker lives inside a .users-form row: it takes the input's slot,
+ * and its own row supplies the border the form would otherwise draw. */
+.users-form .sep-field {
+  flex: 1;
+}
+
+.users-form .sep-combo-input {
+  padding: 1px 0;
+  border: none;
+  background: none;
+}
+
+/* The picker's results open inline, so the submit button keeps to the
+ * input's row instead of stretching down alongside the list. */
+.team-pick-form {
+  align-items: flex-start;
+}
+
+.sep-opt.team-pick-opt {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Name first; the counts wrap beneath it when the editor pane is narrow. */
+.team-pick-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-2);
+  min-width: 0;
+}
+
+.team-pick-main .sep-opt-name {
+  flex: 1 1 14ch;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.team-pick-main .sep-opt-hint {
+  flex: none;
+  text-align: left;
+}
+
+.team-pick-aliases {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
 .series-years-table {
   width: 100%;
 }
@@ -1442,6 +1558,15 @@ h2 small {
   .series-alias-form,
   .users-form {
     flex-direction: column;
+  }
+
+  .teams-manage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .teams-editor {
+    position: static;
+    max-height: none;
   }
 }
 

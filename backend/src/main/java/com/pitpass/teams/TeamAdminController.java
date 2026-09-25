@@ -64,9 +64,30 @@ public class TeamAdminController {
     public record UpdateRequest(String name, Long predecessorId, Boolean clearPredecessor) {
     }
 
+    static final int DEFAULT_PAGE_SIZE = 100;
+    static final int MAX_PAGE_SIZE = 500;
+
+    /** One page of the catalogue, alphabetical; the caller pages with offset
+     *  until a short page comes back. */
     @GetMapping("/manage")
-    public List<ManagedTeam> manage(@RequestParam(required = false) String q) {
+    public List<ManagedTeam> manage(@RequestParam(required = false) String q,
+                                    @RequestParam(required = false) Integer limit,
+                                    @RequestParam(required = false) Integer offset) {
         String needle = q == null ? "" : q.trim().toLowerCase();
+        int pageSize = limit == null ? DEFAULT_PAGE_SIZE : Math.clamp(limit, 1, MAX_PAGE_SIZE);
+        int skip = offset == null ? 0 : Math.max(0, offset);
+        return managed(needle, null, pageSize, skip);
+    }
+
+    /** A single team, so the editor can refresh the one it's showing whatever
+     *  the list is currently searching for. */
+    @GetMapping("/manage/{id}")
+    public ManagedTeam managedTeam(@PathVariable long id) {
+        return managed("", id, 1, 0).stream().findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No team " + id));
+    }
+
+    private List<ManagedTeam> managed(String needle, Long id, int limit, int offset) {
         record TeamRow(long id, String name, Long predecessorId, String predecessorName,
                        int entryCount, Integer lastYear) {
         }
@@ -80,15 +101,19 @@ public class TeamAdminController {
                                 WHERE en.team_id = t.id) AS last_year
                         FROM team t
                                  LEFT JOIN team p ON p.id = t.predecessor_id
-                        WHERE :needle = ''
+                        WHERE (CAST(:id AS bigint) IS NULL OR t.id = CAST(:id AS bigint))
+                          AND (:needle = ''
                            OR lower(t.name) LIKE :contains
                            OR EXISTS (SELECT 1 FROM team_alias ta
-                                      WHERE ta.team_id = t.id AND lower(ta.alias) LIKE :contains)
-                        ORDER BY lower(t.name)
-                        LIMIT 50
+                                      WHERE ta.team_id = t.id AND lower(ta.alias) LIKE :contains))
+                        ORDER BY lower(t.name), t.id
+                        LIMIT :limit OFFSET :offset
                         """)
+                .param("id", id)
                 .param("needle", needle)
                 .param("contains", "%" + needle + "%")
+                .param("limit", limit)
+                .param("offset", offset)
                 .query((rs, i) -> new TeamRow(rs.getLong("id"), rs.getString("name"),
                         rs.getObject("predecessor_id", Long.class), rs.getString("predecessor_name"),
                         rs.getInt("entry_count"), rs.getObject("last_year", Integer.class)))
