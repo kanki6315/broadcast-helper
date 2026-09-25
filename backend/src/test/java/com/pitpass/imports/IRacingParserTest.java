@@ -409,6 +409,78 @@ class IRacingParserTest {
                 && r.drivers().isEmpty()));
     }
 
+    /**
+     * A two-car team meeting, shaped like the IMSA Esports payloads: the
+     * qualifying sim-session lists only the driver who set the car's time, the
+     * race lists everyone who joined the car — including a teammate who never
+     * drove.
+     */
+    private JsonNode teamMeeting() throws IOException {
+        return mapper.readTree("""
+                {"track": {"track_name": "Daytona", "config_name": "Road Course"},
+                 "start_time": "2025-12-07T19:00:00Z",
+                 "session_results": [
+                  {"simsession_type": 4, "simsession_name": "QUALIFY", "results": [
+                    {"team_id": -10, "display_name": "Car Ten", "livery": {"car_number": "10"},
+                     "finish_position": 0, "finish_position_in_class": 0, "best_lap_time": 922300,
+                     "laps_complete": 4, "car_class_short_name": "GTP",
+                     "driver_results": [
+                       {"cust_id": 1, "display_name": "Ann Quali", "laps_complete": 4, "best_lap_time": 922300}]},
+                    {"team_id": -11, "display_name": "Car Eleven", "livery": {"car_number": "11"},
+                     "finish_position": 1, "finish_position_in_class": 1, "best_lap_time": -1,
+                     "laps_complete": 0, "car_class_short_name": "GTP",
+                     "driver_results": [
+                       {"cust_id": 4, "display_name": "Dan Nolap", "laps_complete": 0, "best_lap_time": -1}]}]},
+                  {"simsession_type": 6, "simsession_name": "RACE", "results": [
+                    {"team_id": -10, "display_name": "Car Ten", "livery": {"car_number": "10"},
+                     "finish_position": 0, "finish_position_in_class": 0, "starting_position": 0,
+                     "starting_position_in_class": 0, "best_lap_time": 930000, "laps_complete": 50,
+                     "car_class_short_name": "GTP",
+                     "driver_results": [
+                       {"cust_id": 1, "display_name": "Ann Quali", "laps_complete": 0, "best_lap_time": -1},
+                       {"cust_id": 2, "display_name": "Bob Racer", "laps_complete": 50, "best_lap_time": 930000},
+                       {"cust_id": 3, "display_name": "Cal Bench", "laps_complete": 0, "best_lap_time": -1}]},
+                    {"team_id": -11, "display_name": "Car Eleven", "livery": {"car_number": "11"},
+                     "finish_position": 1, "finish_position_in_class": 1, "starting_position": 1,
+                     "starting_position_in_class": 1, "best_lap_time": 940000, "laps_complete": 49,
+                     "car_class_short_name": "GTP",
+                     "driver_results": [
+                       {"cust_id": 5, "display_name": "Eve Driver", "laps_complete": 49, "best_lap_time": 940000}]}]}]}
+                """);
+    }
+
+    private static List<String> crew(List<RaceResultsImport.DriverRow> drivers) {
+        return drivers.stream().map(d -> d.firstName() + " " + d.surname()).toList();
+    }
+
+    @Test
+    void creditsATeamCrewOnlyWithDriversWhoTurnedALap() throws IOException {
+        List<RaceResultsImport> sessions = IRacingParser.parseSessions(teamMeeting());
+        RaceResultsImport qualifying = sessions.get(0);
+        RaceResultsImport race = sessions.get(1);
+
+        // Cal joined the car but never drove, so he is no part of the entry.
+        // Ann turned no race laps but qualified the car, so she keeps her seat.
+        // Both sessions carry the same lineup, so neither commit order can
+        // shrink the crew to one session's view of it.
+        assertEquals(List.of("Bob Racer", "Ann Quali"), crew(race.rows().get(0).drivers()));
+        assertEquals(List.of("Bob Racer", "Ann Quali"), crew(qualifying.rows().get(0).drivers()));
+        assertEquals(List.of("Eve Driver"), crew(race.rows().get(1).drivers()));
+    }
+
+    @Test
+    void namesTheTeamDriverWhoSetTheQualifyingTime() throws IOException {
+        GridImport grid = IRacingParser.parseGrids(teamMeeting()).get(0);
+
+        GridImport.Row ten = grid.rows().get(0);
+        assertEquals(List.of("Bob Racer", "Ann Quali"), crew(ten.drivers()));
+        assertEquals(2, ten.qualifyingDriverSeat()); // Ann's lap is the car's time
+        assertNull(ten.startingDriverSeat());
+
+        // Eleven set no qualifying time, so no one is credited with it.
+        assertNull(grid.rows().get(1).qualifyingDriverSeat());
+    }
+
     // ------------------------------------------------- official-series seasons
     // Fixtures are trimmed real payloads from the 2020 Porsche TAG Heuer Esports
     // Supercup (series 409, season 2812) — the season whose first Le Mans race
