@@ -2286,8 +2286,26 @@ public class ImportService {
 
     private void commitStandings(StandingsImport imp, ImportTarget target) {
         long seriesId = resolveSeriesId(target);
-        long seasonId = findOrCreateSeason(seriesId, resolveSeasonYear(imp, target));
+        writeStandings(imp, seriesId, findOrCreateSeason(seriesId, resolveSeasonYear(imp, target)), target);
+    }
 
+    /**
+     * Standings for a season the caller already knows — a source that is
+     * pointed at a season (the IMSA Esports correction) rather than one whose
+     * payload names a year, which could only find the season's MAIN row.
+     * The target supplies class / kind / cup / family exactly as a reviewed
+     * standings commit would; its series and year are ignored.
+     */
+    public void commitStandingsToSeason(StandingsImport imp, long seasonId, ImportTarget target) {
+        long seriesId = db.sql("SELECT series_id FROM season WHERE id = :id")
+                .param("id", seasonId)
+                .query(Long.class)
+                .optional()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such season"));
+        writeStandings(imp, seriesId, seasonId, target);
+    }
+
+    private void writeStandings(StandingsImport imp, long seriesId, long seasonId, ImportTarget target) {
         // Class / kind / cup are confirmed by the reviewer (pre-filled from the
         // title). Standings often spell classes differently from the entry list
         // (the Endurance Cup's "GT Daytona PRO" vs "GTDPRO"); resolve to the
@@ -2757,10 +2775,14 @@ public class ImportService {
         renumberSeasonRounds(seasonIdOfEvent(eventId));
     }
 
-    void renumberSeasonRounds(long seasonId) {
+    public void renumberSeasonRounds(long seasonId) {
+        // Same-day rounds (IMSA Esports runs GTP at one track and GTD at
+        // another on one evening) order by the source's own round number when
+        // one was recorded (event.source_round, V56), else by creation.
         db.sql("""
                         WITH ranked AS (
-                            SELECT e.id, row_number() OVER (ORDER BY e.event_date NULLS LAST, e.id) AS rn
+                            SELECT e.id, row_number() OVER (
+                                ORDER BY e.event_date NULLS LAST, e.source_round NULLS LAST, e.id) AS rn
                             FROM event e
                             WHERE e.season_id = :seasonId AND e.is_round
                         )

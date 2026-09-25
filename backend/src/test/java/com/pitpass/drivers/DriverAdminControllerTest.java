@@ -150,6 +150,35 @@ class DriverAdminControllerTest {
     }
 
     @Test
+    void consolidatingToANameAnotherDriverHasMergesIntoThatDriver() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        long keeper = driver("Jaden", "Munoz " + suffix, null, null);
+        long variant = driver("Jaden", "Munoz2 " + suffix, null, null);
+
+        assertEquals(keeper, controller.consolidate(variant, "jaden  munoz " + suffix));
+
+        assertEquals(0, count("SELECT count(*) FROM driver WHERE id = " + variant));
+        assertEquals(List.of("Jaden Munoz2 " + suffix), db.sql("SELECT alias FROM driver_alias WHERE driver_id = :d")
+                .param("d", keeper).query(String.class).list());
+    }
+
+    @Test
+    void consolidatingBackToARetiredSpellingRenamesAndSwapsTheAlias() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        long d = driver("Alexander", "Spetz " + suffix, null, null);
+        controller.consolidate(d, "Alxander Spetz " + suffix);
+        assertEquals(List.of("Alexander Spetz " + suffix), db.sql("SELECT alias FROM driver_alias WHERE driver_id = :d")
+                .param("d", d).query(String.class).list());
+
+        assertEquals(d, controller.consolidate(d, "Alexander Spetz " + suffix));
+
+        assertEquals("Alexander Spetz " + suffix, db.sql("SELECT first_name || ' ' || surname FROM driver WHERE id = :d")
+                .param("d", d).query(String.class).single());
+        assertEquals(List.of("Alxander Spetz " + suffix), db.sql("SELECT alias FROM driver_alias WHERE driver_id = :d")
+                .param("d", d).query(String.class).list());
+    }
+
+    @Test
     void mergeIntoItselfIsRejected() {
         long d = driver("Self", "Merge " + UUID.randomUUID(), null, null);
         ResponseStatusException e = assertThrows(ResponseStatusException.class,

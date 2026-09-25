@@ -157,6 +157,63 @@ public class DriverAdminController {
         return new MergeResult(seatsMoved, seatsDropped, aliasesMoved);
     }
 
+    /**
+     * Make {@code driverId} answer to {@code preferredName}, the spelling a
+     * more authoritative source uses. When another driver already carries that
+     * name (or it is another driver's alias) the two are the same person and
+     * {@code driverId} merges into that one; otherwise the driver is renamed,
+     * its old spelling kept as an alias so the source that used it still
+     * resolves here. Returns the surviving driver's id.
+     */
+    @Transactional
+    public long consolidate(long driverId, String preferredName) {
+        String current = requireDriver(driverId);
+        String wanted = preferredName == null ? "" : preferredName.trim().replaceAll("\\s+", " ");
+        if (wanted.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Driver name cannot be blank");
+        }
+        if (normalize(current).equals(normalize(wanted))) {
+            return driverId;
+        }
+        Long owner = db.sql("""
+                        SELECT id FROM driver
+                        WHERE lower(regexp_replace(trim(first_name || ' ' || surname), '\\s+', ' ', 'g')) = :name
+                          AND id <> :id
+                        UNION ALL
+                        SELECT driver_id FROM driver_alias
+                        WHERE lower(regexp_replace(trim(alias), '\\s+', ' ', 'g')) = :name
+                          AND driver_id <> :id
+                        LIMIT 1
+                        """)
+                .param("name", normalize(wanted))
+                .param("id", driverId)
+                .query(Long.class)
+                .optional()
+                .orElse(null);
+        if (owner != null) {
+            merge(owner, new MergeRequest(driverId));
+            return owner;
+        }
+        // Taking back a spelling this driver once had: it stops being an alias.
+        db.sql("""
+                        DELETE FROM driver_alias
+                        WHERE driver_id = :id AND lower(regexp_replace(trim(alias), '\\s+', ' ', 'g')) = :name
+                        """)
+                .param("id", driverId).param("name", normalize(wanted))
+                .update();
+        // Surname is the last word, as the iRacing parser splits display names.
+        int cut = wanted.lastIndexOf(' ');
+        db.sql("UPDATE driver SET first_name = :first, surname = :surname WHERE id = :id")
+                .param("first", cut > 0 ? wanted.substring(0, cut) : wanted)
+                .param("surname", cut > 0 ? wanted.substring(cut + 1) : "")
+                .param("id", driverId)
+                .update();
+        db.sql("INSERT INTO driver_alias (driver_id, alias) VALUES (:id, :alias)")
+                .param("id", driverId).param("alias", current)
+                .update();
+        return driverId;
+    }
+
     /** Same normalisation as the driver_alias_key index and the importer's whole-name match. */
     static String normalize(String name) {
         return name.trim().replaceAll("\\s+", " ").toLowerCase(java.util.Locale.ROOT);
