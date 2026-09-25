@@ -6,8 +6,10 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Parses an iRacing subsession result ("event_result") into normalized import
@@ -27,6 +29,9 @@ import java.util.Locale;
  *   are told apart by lap count, not by the interval itself
  * - practice and warmup sim-sessions are dropped: they score no points and
  *   carry nothing the broadcast uses
+ * - a team entry's driver_results lists everyone who joined that sim-session,
+ *   including teammates who never drove; qualifying lists only the driver who
+ *   set the car's time
  */
 public final class IRacingParser {
 
@@ -70,6 +75,7 @@ public final class IRacingParser {
      */
     public static List<RaceResultsImport> parseSessions(JsonNode root) {
         JsonNode data = resultData(root);
+        Map<String, List<JsonNode>> crews = teamCrews(data);
         List<RaceResultsImport> out = new ArrayList<>();
         int raceOrdinal = 0;
         for (JsonNode sim : data.path("session_results")) {
@@ -100,7 +106,7 @@ public final class IRacingParser {
                     circuitName(data),
                     null, // the result payload carries no track length or country;
                     null, // /data/track/get has both, but that is the API path's job
-                    resultRows(data, sim)
+                    resultRows(data, sim, crews)
             ));
         }
         return out;
@@ -114,6 +120,18 @@ public final class IRacingParser {
      */
     public static List<GridImport> parseGrids(JsonNode root) {
         JsonNode data = resultData(root);
+        Map<String, List<JsonNode>> crews = teamCrews(data);
+        Map<String, JsonNode> qualifying = new LinkedHashMap<>();
+        for (JsonNode sim : data.path("session_results")) {
+            int type = sim.path("simsession_type").asInt();
+            if (type == TYPE_LONE_QUALIFYING || type == TYPE_OPEN_QUALIFYING) {
+                for (JsonNode r : sim.path("results")) {
+                    if (isTeamEntry(r)) {
+                        qualifying.put(teamKey(r), r);
+                    }
+                }
+            }
+        }
         List<GridImport> out = new ArrayList<>();
         int raceOrdinal = 0;
         for (JsonNode sim : data.path("session_results")) {
@@ -132,6 +150,16 @@ public final class IRacingParser {
 
             List<GridImport.Row> rows = new ArrayList<>();
             for (JsonNode r : starters) {
+                // A team entry names its qualifier: the one crew member whose
+                // qualifying lap is the car's time. A solo entry's qualifier is
+                // resolved at read time (sole crew member), so it stays unset.
+                List<RaceResultsImport.DriverRow> roster = List.of();
+                Integer qualifyingSeat = null;
+                if (isTeamEntry(r)) {
+                    List<JsonNode> crew = crews.getOrDefault(teamKey(r), List.of());
+                    roster = crewRows(data, crew);
+                    qualifyingSeat = qualifyingSeat(qualifying.get(teamKey(r)), crew);
+                }
                 rows.add(new GridImport.Row(
                         r.path("starting_position").asInt() + 1,
                         r.path("starting_position_in_class").asInt() + 1,
@@ -142,11 +170,9 @@ public final class IRacingParser {
                         text(r, "car_name"),
                         null,
                         null, // the grid slot carries no time; qualifying holds it
-                        // iRacing names no per-seat attribution; a solo entry's
-                        // qualifier/starter is resolved at read time (sole crew member).
-                        null,
-                        null,
-                        List.of()
+                        null, // iRacing never says who took the start
+                        qualifyingSeat,
+                        roster
                 ));
             }
             out.add(new GridImport(
@@ -493,7 +519,8 @@ public final class IRacingParser {
         return new StandingsImport(name, name, null, year, sessions, rows);
     }
 
-    private static List<RaceResultsImport.Row> resultRows(JsonNode data, JsonNode sim) {
+    private static List<RaceResultsImport.Row> resultRows(JsonNode data, JsonNode sim,
+                                                          Map<String, List<JsonNode>> crews) {
         List<JsonNode> finishers = new ArrayList<>();
         for (JsonNode r : sim.path("results")) {
             finishers.add(r);
@@ -538,7 +565,7 @@ public final class IRacingParser {
                     null, // no trap speed; kph needs a track length the payload lacks
                     1,    // which seat set the fastest lap isn't in the payload
                     null, // pit stops are in /data/results/event_log, not here
-                    driverRows(data, r)
+                    driverRows(data, r, crews)
             ));
         }
         return rows;
@@ -548,23 +575,99 @@ public final class IRacingParser {
      * The crew of one result entry. A team entry names the team in its own
      * display_name and carries the real drivers — each with its own cust_id — in
      * driver_results; a solo entry has no driver_results and is its own driver
-     * (it carries a cust_id directly). A team shell with no recorded crew yields
-     * no drivers rather than mistaking the team name for one.
+     * (it carries a cust_id directly). A team's crew is the same in every
+     * session of the meeting (see teamCrews), so the qualifying and race files
+     * agree on the lineup whichever is committed last. A team shell with no
+     * driver who turned a lap yields no drivers rather than mistaking the team
+     * name for one.
      */
-    private static List<RaceResultsImport.DriverRow> driverRows(JsonNode data, JsonNode entry) {
-        JsonNode crew = entry.path("driver_results");
-        if (crew.isArray() && crew.size() > 0) {
-            List<RaceResultsImport.DriverRow> out = new ArrayList<>();
-            int seat = 1;
-            for (JsonNode d : crew) {
-                out.add(driverRow(data, d, seat++));
-            }
-            return out;
+    private static List<RaceResultsImport.DriverRow> driverRows(JsonNode data, JsonNode entry,
+                                                                Map<String, List<JsonNode>> crews) {
+        if (isTeamEntry(entry)) {
+            return crewRows(data, crews.getOrDefault(teamKey(entry), List.of()));
         }
         if (entry.has("cust_id")) {
             return List.of(driverRow(data, entry, 1));
         }
         return List.of();
+    }
+
+    private static List<RaceResultsImport.DriverRow> crewRows(JsonNode data, List<JsonNode> crew) {
+        List<RaceResultsImport.DriverRow> out = new ArrayList<>();
+        int seat = 1;
+        for (JsonNode d : crew) {
+            out.add(driverRow(data, d, seat++));
+        }
+        return out;
+    }
+
+    /**
+     * Each team entry's crew for the whole meeting: every driver who turned a
+     * lap in qualifying or a race. driver_results also lists teammates who
+     * joined the session but never drove; they took no part, so they get no
+     * start. Race order comes first, so seats follow the race lineup.
+     */
+    private static Map<String, List<JsonNode>> teamCrews(JsonNode data) {
+        List<JsonNode> sims = new ArrayList<>();
+        for (JsonNode sim : data.path("session_results")) {
+            if (sim.path("simsession_type").asInt() == TYPE_RACE) {
+                sims.add(sim);
+            }
+        }
+        for (JsonNode sim : data.path("session_results")) {
+            int type = sim.path("simsession_type").asInt();
+            if (type == TYPE_LONE_QUALIFYING || type == TYPE_OPEN_QUALIFYING) {
+                sims.add(sim);
+            }
+        }
+        Map<String, List<JsonNode>> crews = new LinkedHashMap<>();
+        for (JsonNode sim : sims) {
+            for (JsonNode r : sim.path("results")) {
+                if (!isTeamEntry(r)) {
+                    continue;
+                }
+                List<JsonNode> crew = crews.computeIfAbsent(teamKey(r), k -> new ArrayList<>());
+                for (JsonNode d : r.path("driver_results")) {
+                    boolean known = crew.stream()
+                            .anyMatch(c -> c.path("cust_id").asLong() == d.path("cust_id").asLong());
+                    if (d.path("laps_complete").asInt() > 0 && !known) {
+                        crew.add(d);
+                    }
+                }
+            }
+        }
+        return crews;
+    }
+
+    /** The 1-based seat, in crew, of the driver who set the car's qualifying
+     *  time; null when the car set no time or the payload names no one. */
+    private static Integer qualifyingSeat(JsonNode qualifyingRow, List<JsonNode> crew) {
+        if (qualifyingRow == null) {
+            return null;
+        }
+        long best = qualifyingRow.path("best_lap_time").asLong(-1);
+        if (best <= 0) {
+            return null;
+        }
+        for (JsonNode d : qualifyingRow.path("driver_results")) {
+            if (d.path("best_lap_time").asLong(-1) == best) {
+                for (int i = 0; i < crew.size(); i++) {
+                    if (crew.get(i).path("cust_id").asLong() == d.path("cust_id").asLong()) {
+                        return i + 1;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean isTeamEntry(JsonNode entry) {
+        JsonNode crew = entry.path("driver_results");
+        return crew.isArray() && crew.size() > 0;
+    }
+
+    private static String teamKey(JsonNode entry) {
+        return entry.path("team_id").asText();
     }
 
     private static RaceResultsImport.DriverRow driverRow(JsonNode data, JsonNode driver, int seat) {
