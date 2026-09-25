@@ -20,6 +20,13 @@ Re-run it whenever the site changes (appeals, late penalties). A re-run with
 nothing new to apply is a no-op. **Re-importing a round from iRacing undoes
 that round's correction**, so run the correction again afterwards.
 
+## In the app
+
+Manage → Imports → **IMSA Esports official results**. The review:
+- picks a site season and the Pit Pass season (guessed from the year);
+- opens the rounds with something to decide, and every decision re-plans;
+- enables Apply only once the server says nothing blocks.
+
 ## API
 
 All admin-only, including the GET, because every call reads the external site.
@@ -41,6 +48,7 @@ decisions:
 | `dropEntryIds` | Entries the site doesn't classify, to delete from their event. |
 | `classMapping` | Site class → Pit Pass class. |
 | `importStandings` | `false` to correct results only. |
+| `keepTeamIds` | Team merges to skip, by the old team's id (`teamFolds[].fromTeamId`). |
 
 ## Matching
 
@@ -83,7 +91,7 @@ if it holds a number a corrected car is taking. It must be dropped, like the
 - **Teams:** an iRacing-name team ("Porsche Coanda $91") left with no entries
   anywhere is folded into the registered team with the existing team merge.
   Its spelling becomes an alias, so the next iRacing import resolves to the
-  right team.
+  right team. Each merge is a checkbox in the review, on by default.
 - **Standings:**
   - One TEAMS championship per class, keyed by car number.
   - Each round is stored as two sessions, qualifying points and race points,

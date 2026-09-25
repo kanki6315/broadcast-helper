@@ -182,7 +182,7 @@ class ArtifactCorrectionServiceTest {
         CorrectionRequest confirmed = new CorrectionRequest(LEAGUE, seasonId, null,
                 Map.of(car90.siteResultId(), car90.entryId()),
                 List.of(new ArtifactCorrectionService.Consolidation(simon, "Tamas Simon")),
-                List.of(dt2), Map.of("GTD", "GTD"), false);
+                List.of(dt2), Map.of("GTD", "GTD"), false, null);
         Plan ready = service.plan(confirmed);
         assertEquals("CONFIRMED", car(ready, "90").match());
         assertTrue(ready.ready(), String.join(" ", ready.blocking()));
@@ -202,7 +202,7 @@ class ArtifactCorrectionServiceTest {
     void aConsolidationTheReviewDidNotOfferIsRefused() {
         long anyone = driverOn("91", "Charlie Collins");
         Plan plan = service.plan(new CorrectionRequest(LEAGUE, seasonId, null, null,
-                List.of(new ArtifactCorrectionService.Consolidation(anyone, "Somebody Else")), null, null, null));
+                List.of(new ArtifactCorrectionService.Consolidation(anyone, "Somebody Else")), null, null, null, null));
         assertTrue(plan.blocking().stream().anyMatch(b -> b.contains("not a near-miss spelling")));
     }
 
@@ -226,6 +226,35 @@ class ArtifactCorrectionServiceTest {
     }
 
     @Test
+    void anUntickedTeamMergeLeavesTheIRacingTeamAlone() {
+        // Two iRacing-name teams used by nothing but this round's cars (the
+        // shared local database may already know the real spellings).
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        long kept = teams.resolveOrCreate("Porsche Coanda $91 " + suffix);
+        long merged = teams.resolveOrCreate("Team Redline 34 " + suffix);
+        db.sql("UPDATE entry SET team_name = :n, team_id = :t WHERE event_id = :e AND car_number = '91'")
+                .param("n", "Porsche Coanda $91 " + suffix).param("t", kept).param("e", eventId).update();
+        db.sql("UPDATE entry SET team_name = :n, team_id = :t WHERE event_id = :e AND car_number = '34'")
+                .param("n", "Team Redline 34 " + suffix).param("t", merged).param("e", eventId).update();
+
+        Plan plan = service.plan(request(null, null, null, null));
+        var fold = plan.teamFolds().stream().filter(f -> f.fromTeamId() == kept).findFirst().orElseThrow();
+        assertTrue(fold.folding());
+        assertEquals("Porsche Coanda Esports Racing Team", fold.toName());
+        assertTrue(plan.teamFolds().stream().anyMatch(f -> f.fromTeamId() == merged));
+        long dt2 = plan.rounds().get(0).unpairedEntries().get(0).entryId();
+
+        var result = service.apply(new CorrectionRequest(LEAGUE, seasonId, null, null, null, List.of(dt2),
+                Map.of("GTD", "GTD"), false, List.of(fold.fromTeamId())));
+
+        assertEquals(plan.teamFolds().size() - 1, result.teamsFolded());
+        assertEquals(1, count("SELECT count(*) FROM team WHERE id = " + kept));
+        assertEquals(0, count("SELECT count(*) FROM team WHERE id = " + merged));
+        // The merged spelling now resolves to the registered team.
+        assertEquals(teams.resolveOrCreate("Team Redline"), teams.resolveOrCreate("Team Redline 34 " + suffix));
+    }
+
+    @Test
     void applyRefusesWhileAnythingBlocks() {
         ResponseStatusException e = assertThrows(ResponseStatusException.class,
                 () -> service.apply(request(null, null, null, null)));
@@ -238,7 +267,7 @@ class ArtifactCorrectionServiceTest {
     void anUnknownLeagueIs404() {
         ResponseStatusException e = assertThrows(ResponseStatusException.class,
                 () -> service.plan(new CorrectionRequest("00000000-0000-0000-0000-000000000000", seasonId,
-                        null, null, null, null, null, null)));
+                        null, null, null, null, null, null, null)));
         assertEquals(HttpStatus.NOT_FOUND, e.getStatusCode());
     }
 
@@ -290,7 +319,7 @@ class ArtifactCorrectionServiceTest {
     private CorrectionRequest request(Map<String, Long> pairings, List<Long> drops,
                                       List<ArtifactCorrectionService.Consolidation> consolidations,
                                       Map<String, String> classes) {
-        return new CorrectionRequest(LEAGUE, seasonId, null, pairings, consolidations, drops, classes, null);
+        return new CorrectionRequest(LEAGUE, seasonId, null, pairings, consolidations, drops, classes, null, null);
     }
 
     private static CarPlan car(Plan plan, String number) {

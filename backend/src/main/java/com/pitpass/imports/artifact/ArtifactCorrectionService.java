@@ -102,11 +102,16 @@ public class ArtifactCorrectionService {
      * @param dropEntryIds    entries the site doesn't classify, to delete from their event
      * @param classMapping    site class → Pit Pass class, where the paired entries don't settle it
      * @param importStandings false to correct results only
+     * @param keepTeamIds     old iRacing-name teams (TeamFold.fromTeamId) to leave unmerged
      */
     public record CorrectionRequest(String leagueId, long seasonId, Map<String, Long> eventOverrides,
                                     Map<String, Long> pairings, List<Consolidation> consolidations,
                                     List<Long> dropEntryIds, Map<String, String> classMapping,
-                                    Boolean importStandings) {
+                                    Boolean importStandings, List<Long> keepTeamIds) {
+        Set<Long> keptTeams() {
+            return keepTeamIds == null ? Set.of() : new HashSet<>(keepTeamIds);
+        }
+
         Map<String, Long> overrides() {
             return eventOverrides == null ? Map.of() : eventOverrides;
         }
@@ -181,9 +186,10 @@ public class ArtifactCorrectionService {
      * A team the iRacing import created under a car's iRacing name ("Porsche
      * Coanda $91") that the correction leaves with no entries anywhere. It
      * folds into the site's registered team, its spelling kept as an alias,
-     * so the next iRacing import resolves straight to the right team.
+     * so the next iRacing import resolves straight to the right team. On
+     * unless the reviewer unticks it (folding false).
      */
-    public record TeamFold(long fromTeamId, String fromName, String toName) {
+    public record TeamFold(long fromTeamId, String fromName, String toName, boolean folding) {
     }
 
     public record ApplyResult(int roundsCorrected, int resultsWritten, int entriesRenumbered,
@@ -485,14 +491,14 @@ public class ArtifactCorrectionService {
         }
 
         warnings.addAll(roundOrderWarnings(season.id(), roundPlans));
-        List<TeamFold> folds = teamFolds(work);
+        List<TeamFold> folds = teamFolds(work, req.keptTeams());
         Plan plan = new Plan(data.league().id(), data.league().name(), season.id(), season.label(),
                 roundPlans, classPlans, standingsPlans, folds, warnings, blocking, blocking.isEmpty());
         return new Planned(plan, work, classMap, standings, consolidationCandidates, folds);
     }
 
     /** Old teams every one of whose entries the correction renames to one site name. */
-    private List<TeamFold> teamFolds(List<RoundWork> rounds) {
+    private List<TeamFold> teamFolds(List<RoundWork> rounds, Set<Long> kept) {
         Map<Long, Set<String>> targets = new LinkedHashMap<>();
         Map<Long, String> oldNames = new HashMap<>();
         Map<Long, Set<Long>> renamedEntries = new HashMap<>();
@@ -518,7 +524,8 @@ public class ArtifactCorrectionService {
                     .param("renamed", renamedEntries.get(t.getKey()))
                     .query(Long.class).single();
             if (others == 0) {
-                folds.add(new TeamFold(t.getKey(), oldNames.get(t.getKey()), t.getValue().iterator().next()));
+                folds.add(new TeamFold(t.getKey(), oldNames.get(t.getKey()), t.getValue().iterator().next(),
+                        !kept.contains(t.getKey())));
             }
         }
         return folds;
@@ -530,7 +537,7 @@ public class ArtifactCorrectionService {
 
     /** Re-plans with the decisions and, when nothing blocks, writes it all. */
     public ApplyResult apply(CorrectionRequest req) {
-        SiteData data = fetch(req.leagueId());
+        SiteData data = site.fresh(() -> fetch(req.leagueId()));
         return tx.execute(status -> {
             Planned planned = plan(req, data);
             if (!planned.plan().ready()) {
@@ -591,6 +598,9 @@ public class ArtifactCorrectionService {
             }
             int folded = 0;
             for (TeamFold fold : planned.teamFolds()) {
+                if (!fold.folding()) {
+                    continue;
+                }
                 Long into = teams.resolveOrCreate(fold.toName());
                 if (into != null && into != fold.fromTeamId()) {
                     teamAdmin.merge(into, new TeamAdminController.MergeRequest(fold.fromTeamId()));

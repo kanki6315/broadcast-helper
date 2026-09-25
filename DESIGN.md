@@ -504,6 +504,15 @@ untouched; every draggable row carries a keyboard-and-touch **"Move to…"
 `<select>`** as the equivalent control (WCAG 2.5.7). Selection is amber
 (`--accent-tint`), never a class colour. A round-ordinal preview lists the
 season's events with `Rd n` chips, new ones in ink and existing ones muted.
+**`ImsaEsportsImportModal` (`.ie`)** is a review rather than a picker: the
+IMSA Esports correction lays artifactracing.com's classification over imported
+iRacing rounds. Each round is a `<details>` that opens itself only where
+something needs deciding. Decisions sit in `--surface` groups above a compact
+change table: struck-through old values, signed class-place deltas in
+`--success`/`--error` that always carry their sign. A pinned footer holds the
+status line and the one amber action. Every decision re-plans on the server,
+which alone decides when Apply unlocks. Below 640px each table row stacks into
+an identity line with its changes underneath.
 
 ### Import review rows (`.import-target`)
 Each staged batch's confirm strip on the Imports page. Series and Event are

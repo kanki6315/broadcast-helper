@@ -39,6 +39,16 @@ public class ArtifactClient {
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules();
     private final String baseUrl;
 
+    /** The review re-plans on every decision; a minute's cache keeps that from
+     *  re-reading a whole season from the site each time. Apply reads fresh. */
+    private static final Duration CACHE_TTL = Duration.ofSeconds(60);
+
+    private record Cached(JsonNode body, Instant at) {
+    }
+
+    private final java.util.Map<String, Cached> cache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final ThreadLocal<Boolean> fresh = ThreadLocal.withInitial(() -> false);
+
     public ArtifactClient(@Value("${pit-pass.artifact.base-url}") String baseUrl) {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }
@@ -91,19 +101,40 @@ public class ArtifactClient {
 
     /** Every season, past ones included — without the flag the site lists only the active one. */
     public List<League> leagues() {
-        return Arrays.asList(read(get("/api/leagues?includeInactive=true"), League[].class));
+        return Arrays.asList(read(cached("/api/leagues?includeInactive=true"), League[].class));
     }
 
     public List<Event> events(String leagueId) {
-        return Arrays.asList(read(get("/api/leagues/" + id(leagueId) + "/events"), Event[].class));
+        return Arrays.asList(read(cached("/api/leagues/" + id(leagueId) + "/events"), Event[].class));
     }
 
     public List<Result> results(String eventId) {
-        return Arrays.asList(read(get("/api/events/" + id(eventId) + "/results"), Result[].class));
+        return Arrays.asList(read(cached("/api/events/" + id(eventId) + "/results"), Result[].class));
     }
 
     public List<Standing> standings(String leagueId) {
-        return Arrays.asList(read(get("/api/leagues/" + id(leagueId) + "/standings"), Standing[].class));
+        return Arrays.asList(read(cached("/api/leagues/" + id(leagueId) + "/standings"), Standing[].class));
+    }
+
+    /** Runs {@code work} with every read going to the site, refreshing the cache. */
+    public <T> T fresh(java.util.function.Supplier<T> work) {
+        boolean was = fresh.get();
+        fresh.set(true);
+        try {
+            return work.get();
+        } finally {
+            fresh.set(was);
+        }
+    }
+
+    private JsonNode cached(String path) {
+        Cached hit = cache.get(path);
+        if (!fresh.get() && hit != null && hit.at().plus(CACHE_TTL).isAfter(Instant.now())) {
+            return hit.body();
+        }
+        JsonNode body = get(path);
+        cache.put(path, new Cached(body, Instant.now()));
+        return body;
     }
 
     /** One GET, parsed. Overridden by tests to serve fixtures. */
