@@ -127,6 +127,53 @@ class SourceContextImportTest {
         assertFalse(laterReview.needsSession());
     }
 
+    /** A season that runs across New Year is one season: the reviewer's
+     *  season year places both new events, a later file from the January round
+     *  finds its event there, and committing it creates no calendar-year season. */
+    @Test
+    void aSeasonAcrossNewYearCommitsIntoOneSeason() throws IOException {
+        String seriesName = "Winter series " + UUID.randomUUID();
+        long seriesId = db.sql("INSERT INTO series (name) VALUES (:n) RETURNING id")
+                .param("n", seriesName).query(Long.class).single();
+        BatchSummary december = stageAt("20_2020/09_December", 2020, LocalDateTime.of(2020, 12, 12, 12, 0),
+                seriesName, "Road Atlanta", QUALI_FILE);
+        BatchSummary january = stageAt("20_2020/10_January", 2021, LocalDateTime.of(2021, 1, 9, 12, 0),
+                seriesName, "Sebring", QUALI_FILE);
+
+        ImportTarget target = new ImportTarget(seriesId, null, null, null, null, null, null, null, null,
+                null, null, null, null, true, null, null, null);
+        GroupCommitResult result = service.commitGroup(new GroupCommitRequest(
+                List.of(new ProposedEvent("e1", null, "Road Atlanta", "2020-12-12", 2020),
+                        new ProposedEvent("e2", null, "Sebring", "2021-01-09", 2020)),
+                List.of(new GroupBatch(december.id(), "e1", target), new GroupBatch(january.id(), "e2", target))));
+        assertEquals(2, result.committed(), result.results().toString());
+
+        List<String> rounds = db.sql("""
+                        SELECT s.year || ' Rd ' || e.round_ordinal || ' ' || e.name FROM event e
+                        JOIN season s ON s.id = e.season_id WHERE s.series_id = :series
+                        ORDER BY e.round_ordinal
+                        """).param("series", seriesId).query(String.class).list();
+        assertEquals(List.of("2020 Rd 1 Road Atlanta", "2020 Rd 2 Sebring"), rounds);
+
+        BatchSummary later = stageAt("20_2020/10_January", 2021, LocalDateTime.of(2021, 1, 9, 12, 45),
+                seriesName, "Sebring", "03_Results_Qualifying - GTD Points.CSV");
+        ImportReview review = service.reviewTarget(later.id(), null, null, null);
+        assertNotNull(review.guess().eventId(), "found in the 2020 season, not missed for want of a 2021 one");
+        service.commit(later.id(), new ImportTarget(seriesId, null, review.guess().eventId(), null, null, null,
+                null, null, null, null, null, null, null, true, null, null, null));
+        int seasons = db.sql("SELECT count(*) FROM season WHERE series_id = :series")
+                .param("series", seriesId).query(Integer.class).single();
+        assertEquals(1, seasons, "attaching a January session made no 2021 season");
+    }
+
+    private BatchSummary stageAt(String folder, int year, LocalDateTime start, String seriesName,
+                                 String eventName, String file) throws IOException {
+        String session = file.replaceFirst("^03_Results_", "").replaceFirst("\\.CSV$", "");
+        SourceContext ctx = new SourceContext("https://example.test/Results/" + folder + "/" + file,
+                start.toString(), folder, year, seriesName, eventName, start, session);
+        return service.stage(folder + "/" + file, fixture(file), ImportFormat.IMSA_CSV, ctx).get(0);
+    }
+
     @Test
     void uploadsRecordNoSource() throws IOException {
         BatchSummary batch = service.stage(QUALI_FILE, fixture(QUALI_FILE), ImportFormat.IMSA_CSV).get(0);

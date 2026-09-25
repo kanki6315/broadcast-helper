@@ -148,6 +148,10 @@ export default function ConfirmImportStep({
   const [batchState, setBatchState] = useState<Record<number, BatchState>>({})
   const [dragKey, setDragKey] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
+  // The season new events join when they straddle New Year: one season's year,
+  // or 'calendar' to split them by their dates. Null until the reviewer picks —
+  // defaultSeasonChoice stands in until then.
+  const [seasonChoice, setSeasonChoice] = useState<number | 'calendar' | null>(null)
 
   const { allSeries, allEvents } = useSeriesEvents(setError)
 
@@ -353,7 +357,42 @@ export default function ConfirmImportStep({
     )
   }
 
-  // --- round-ordinal preview ----------------------------------------------
+  // --- season year + round-ordinal preview --------------------------------
+
+  // Every new event takes a round number at commit — an entry list before the
+  // weekend is a round to come — except one the planner marked pre-season (the
+  // Roar, a test day), which stays out of the preview too.
+  const createGroups = useMemo(() => {
+    const preseason = (g: EventGroupDraft) => g.itemKeys.every((k) =>
+      (itemByKey.get(k)?.batches ?? []).every((b) => b.preseason))
+    return groups.filter((g) => g.eventId == null && g.itemKeys.length > 0 && !preseason(g))
+  }, [groups, itemByKey])
+
+  const yearOf = (d: string | null) => (d ? new Date(d).getFullYear() : null)
+  // The calendar years the new events fall in (undated groups can't be placed).
+  const spannedYears = useMemo(
+    () => [...new Set(groups.filter((g) => g.eventId == null && g.itemKeys.length > 0)
+      .map((g) => yearOf(g.date)).filter((y): y is number => y != null))].sort(),
+    [groups],
+  )
+  // A season running across New Year (an iRacing season from November to
+  // March) is one season, not two. When the new events straddle years, the
+  // default is one season: the year a staged standings table names, else the
+  // year the first new round falls in. Events spread over more than a year
+  // are most likely several seasons (a multi-year fetch), so they split.
+  const defaultSeasonChoice = useMemo((): number | 'calendar' => {
+    if (spannedYears.length < 2) return 'calendar'
+    const standingsYear = standings.map((b) => b.guess?.seasonYear).find((y) => y != null && spannedYears.includes(y))
+    if (standingsYear != null) return standingsYear
+    const times = groups.filter((g) => g.eventId == null && g.itemKeys.length > 0 && g.date)
+      .map((g) => new Date(g.date!).getTime()).sort((a, b) => a - b)
+    const spanDays = (times[times.length - 1] - times[0]) / 86_400_000
+    return spanDays < 365 ? spannedYears[0] : 'calendar'
+  }, [spannedYears, standings, groups])
+  const effectiveSeason = spannedYears.length < 2 ? 'calendar' : seasonChoice ?? defaultSeasonChoice
+  // The season year a create-group commits into; null lets the server use its date's year.
+  const seasonYearFor = (g: EventGroupDraft): number | null =>
+    g.eventId == null && effectiveSeason !== 'calendar' ? effectiveSeason : null
 
   // Merge existing season events with the create-groups and sort by date, so the
   // user sees the round numbers the commit-time renumber will produce.
@@ -361,26 +400,19 @@ export default function ConfirmImportStep({
     if (seriesId == null || allEvents === null) return null
     const sName = allSeries?.find((s) => s.id === seriesId)?.name
     if (!sName) return null
-    // Every new event takes a round number at commit — an entry list before
-    // the weekend is a round to come — except one the planner marked
-    // pre-season (the Roar, a test day), which stays out of the preview too.
-    const preseason = (g: EventGroupDraft) => g.itemKeys.every((k) =>
-      (itemByKey.get(k)?.batches ?? []).every((b) => b.preseason))
-    const createGroups = groups.filter((g) => g.eventId == null && g.itemKeys.length > 0 && !preseason(g))
     if (createGroups.length === 0) return null
-    // Bucket by year (undated groups can't be previewed).
-    const yearOf = (d: string | null) => (d ? new Date(d).getFullYear() : null)
-    const years = new Set(createGroups.map((g) => yearOf(g.date)).filter((y): y is number => y != null))
+    const seasonOf = (g: EventGroupDraft) => (effectiveSeason === 'calendar' ? yearOf(g.date) : effectiveSeason)
+    const years = new Set(createGroups.map(seasonOf).filter((y): y is number => y != null))
     const rows: { year: number; entries: { name: string; date: string | null; isNew: boolean }[] }[] = []
     for (const year of [...years].sort()) {
       // Qualifier-season events stay out: create-groups land in the year's
       // MAIN season, so only its rounds renumber alongside the new ones.
+      // Existing events count under their season's year, not their date's.
       const existing = allEvents
-        .filter((e) => e.seriesName === sName && e.seasonKind !== 'QUALIFIER'
-          && (e.eventDate ? new Date(e.eventDate).getFullYear() : e.year) === year)
+        .filter((e) => e.seriesName === sName && e.seasonKind !== 'QUALIFIER' && e.year === year)
         .map((e) => ({ name: e.name, date: e.eventDate, isNew: false }))
       const created = createGroups
-        .filter((g) => yearOf(g.date) === year)
+        .filter((g) => seasonOf(g) === year)
         .map((g) => ({ name: g.name, date: g.date, isNew: true }))
       const merged = [...existing, ...created].sort((a, b) => {
         if (a.date === b.date) return a.isNew === b.isNew ? 0 : a.isNew ? 1 : -1
@@ -391,7 +423,7 @@ export default function ConfirmImportStep({
       rows.push({ year, entries: merged })
     }
     return rows
-  }, [groups, seriesId, allEvents, allSeries, itemByKey])
+  }, [createGroups, effectiveSeason, seriesId, allEvents, allSeries])
 
   // --- commit --------------------------------------------------------------
 
@@ -421,7 +453,9 @@ export default function ConfirmImportStep({
       Object.entries(batchState).filter(([, s]) => s.status === 'error').map(([id]) => Number(id)),
     )
 
-    const eventPayload = wantGroups.map((g) => ({ key: g.key, eventId: g.eventId, name: g.name, eventDate: g.date }))
+    const eventPayload = wantGroups.map((g) => ({
+      key: g.key, eventId: g.eventId, name: g.name, eventDate: g.date, seasonYear: seasonYearFor(g),
+    }))
     const batchPayload: { batchId: number; eventKey: string | null; target: unknown }[] = []
     const eventTarget = (g: EventGroupDraft) => ({
       seriesId: groupSeries(g),
@@ -692,6 +726,27 @@ export default function ConfirmImportStep({
             </section>
           ))}
       </div>
+
+      {spannedYears.length > 1 && (
+        <div className="cis-season">
+          <label className="cis-season-label" htmlFor="cis-season-year">
+            The new events run from {spannedYears[0]} into {spannedYears[spannedYears.length - 1]}. Import them into
+          </label>
+          <select
+            id="cis-season-year"
+            className="cis-season-select"
+            value={String(effectiveSeason)}
+            onChange={(e) => setSeasonChoice(e.target.value === 'calendar' ? 'calendar' : Number(e.target.value))}
+          >
+            {spannedYears.map((y) => (
+              <option key={y} value={y}>
+                the {y} season
+              </option>
+            ))}
+            <option value="calendar">a season per calendar year</option>
+          </select>
+        </div>
+      )}
 
       {preview && (
         <div className="cis-preview">

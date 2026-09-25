@@ -232,6 +232,22 @@
   max-width: 10rem;
 }
 
+/* ---- season year (new events straddling New Year) ---- */
+
+.cis-season {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.cis-season-select {
+  font-size: var(--text-sm);
+  max-width: 100%;
+}
+
 /* ---- round-ordinal preview ---- */
 
 .cis-preview {
