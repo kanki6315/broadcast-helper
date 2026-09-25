@@ -126,6 +126,21 @@ class TeamAdminControllerTest {
                 .query((rs, i) -> new PredRow(rs.getObject("predecessor_id", Long.class)))
                 .single().predecessorId());
 
-        assertTrue(controller.manage("vds racing " + suffix).stream().anyMatch(t -> t.id() == team));
+        assertTrue(controller.manage("vds racing " + suffix, null, null).stream().anyMatch(t -> t.id() == team));
+    }
+
+    @Test
+    void manageListPagesPastTheFirstPage() {
+        String suffix = UUID.randomUUID().toString();
+        long a = resolver.resolveOrCreate("Paging A " + suffix);
+        long b = resolver.resolveOrCreate("Paging B " + suffix);
+        long c = resolver.resolveOrCreate("Paging C " + suffix);
+
+        var first = controller.manage(suffix, 2, 0);
+        var second = controller.manage(suffix, 2, 2);
+
+        assertEquals(java.util.List.of(a, b), first.stream().map(TeamAdminController.ManagedTeam::id).toList());
+        assertEquals(java.util.List.of(c), second.stream().map(TeamAdminController.ManagedTeam::id).toList());
+        assertEquals("Paging C " + suffix, controller.managedTeam(c).name());
     }
 }
