@@ -1,6 +1,6 @@
 # Live timing page, drive time and IMSA energy: plan
 
-Status: **plan approved 2026-09-29. Slices 0, 1 and 2 are done. Slice 3 (web page) is next.**
+Status: **plan approved 2026-09-29. Slices 0–3 are done. Slice 4 (IMSA telemetry adapter) is next.**
 Branch: `claude/custom-live-timing-page-882b20`.
 This document is the handoff: everything a fresh session needs is here or in
 `docs/LIVE_TIMING.md` (the existing feed pipeline).
@@ -243,7 +243,30 @@ Original plan:
   - `/api/live/sessions?eventId=`
 - Enable or confirm `server.compression` for JSON.
 
-### Slice 3: web page
+### Slice 3: web page — DONE 2026-09-29
+
+Built as planned; DESIGN.md *Live Timing Page* describes it as it is.
+Where the build settled something:
+- The tower response carries each class's `class_style` colour and
+  `feedClockMs`, the newest time the feed reported. The stint clock counts on
+  the feed's clock, so replays and finished sessions stop counting.
+- Laps in the car panel are listed newest first. Chronological order would
+  put the lap that matters 600 rows down. Revisit after real booth use.
+- `useLivePoll` now polls once even in a hidden tab, polls again on returning
+  to the tab, and takes a refresh key (the rules editor refetches drive time
+  after a save without clearing the screen).
+- `npm run test:timing:live` runs against a stubbed API. The worktree's
+  shared `node_modules` has no Playwright installed, so it was run with
+  Playwright 1.63 from a scratch install and the system Chrome
+  (`PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`).
+- Checked in the browser over a synthetic replay of event 224's 44-car
+  entry list: dark and light modes, 1024 px (fits) and 375 px (drops
+  interval and last lap; the rest scrolls sideways like any wide grid).
+
+Still open for real bytes: the pit mark comes from an open PIT stint.
+The standings may carry a better in-pit flag.
+
+Original plan:
 - Chrome-less route `/timing/:eventId` beside `/sheet/:eventId` in
   `frontend/src/App.tsx`, linked from `EventDetailPage.tsx`.
 - Tower: a `.grid-table` with class bands, tabular mono numbers, dark

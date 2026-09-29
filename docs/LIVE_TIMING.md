@@ -297,7 +297,8 @@ settles these.
 
 ## Timing page API
 
-Everything the timing page (slice 3) and the iPad read. All member GETs,
+Everything the web timing page (`#/timing/:eventId`, linked from the event
+page as "Timing →") and, later, the iPad read. All member GETs,
 all gzipped over 1 kB (`server.compression`), and the ETag filter answers
 `If-None-Match` with 304 when nothing changed. The tower carries no timestamps
 for that reason; a stint's running time is sent as `stintStartMs` for the
@@ -310,7 +311,9 @@ client to count up from.
   `bestLap`/`bestLapMs` (from memory; re-read from `live_lap` when a best
   was invalidated), `inPit` (the open stint is a PIT stint), `stintStartMs`,
   `stintLaps`, and `energyPct` (always null until the IMSA telemetry
-  adapter). `sessionDbId` names the feed session. Needs
+  adapter). Each class carries its series' `class_style` `color`, and the
+  tower carries `feedClockMs` (the newest time the feed reported) for the
+  page's stint clock. `sessionDbId` names the feed session. Needs
   `ALKAMELV2_ANALYSIS_ENABLED` for the lap and stint fields; without it they
   are null and the rest still works.
 - **`/api/live/cars/{car}?session=`** — laps (with `sectorMs` /
