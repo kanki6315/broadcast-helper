@@ -32,11 +32,18 @@ import java.util.stream.Collectors;
 @Component
 public class LiveTimingPageService {
 
+    /**
+     * feedClockMs is the newest time the feed itself has reported (the last
+     * lap's end): what a stint's running time counts up to when the session is
+     * a replay or over. It moves only when a lap completes, as the lap fields
+     * do, so it costs the ETag nothing.
+     */
     public record Tower(State state, Long eventId, String eventName, LiveTimingService.Session session,
-                        Long sessionDbId, List<TowerClass> classes, int matched, int total) {
+                        Long sessionDbId, Long feedClockMs, List<TowerClass> classes, int matched, int total) {
     }
 
-    public record TowerClass(String className, String feedClass, List<TowerCar> cars) {
+    /** color is the series' class_style colour (#rrggbb), or null when the class has none. */
+    public record TowerClass(String className, String feedClass, String color, List<TowerCar> cars) {
     }
 
     /** energyPct stays null until the IMSA telemetry adapter (slice 4). */
@@ -98,6 +105,7 @@ public class LiveTimingPageService {
         Map<String, int[]> bestFromDb = session == null ? Map.of() : staleBests(session, summaries);
         Map<String, DriverRow> resolved = session == null ? Map.of() : resolvedDrivers(session);
         JsonNode feedEntries = live.state("timing.session.entry");
+        Map<String, String> colors = order.eventId() == null ? Map.of() : classColors(order.eventId());
 
         List<TowerClass> classes = new ArrayList<>();
         for (var cls : order.classification().classes()) {
@@ -125,10 +133,26 @@ public class LiveTimingPageService {
                         s != null && "PIT".equalsIgnoreCase(s.stintType()),
                         s == null ? null : s.stintStartMs(), s == null ? null : s.lapsInStint(), null));
             }
-            classes.add(new TowerClass(cls.className(), cls.feedClass(), cars));
+            classes.add(new TowerClass(cls.className(), cls.feedClass(),
+                    colors.get(cls.className().trim().toLowerCase()), cars));
         }
-        return new Tower(order.state(), order.eventId(), order.eventName(), order.session(), session, classes,
+        return new Tower(order.state(), order.eventId(), order.eventName(), order.session(), session,
+                session == null ? null : latestFeedTime(session), classes,
                 order.classification().matched(), order.classification().total());
+    }
+
+    /** The event's series' class colours, keyed by lower-cased class code. */
+    private Map<String, String> classColors(long eventId) {
+        Map<String, String> out = new HashMap<>();
+        db.sql("""
+                SELECT cs.class_code, cs.color FROM class_style cs
+                JOIN season se ON se.series_id = cs.series_id JOIN event ev ON ev.season_id = se.id
+                WHERE ev.id = :e
+                """)
+                .param("e", eventId)
+                .query((rs, i) -> out.put(rs.getString("class_code").trim().toLowerCase(), rs.getString("color")))
+                .list();
+        return out;
     }
 
     /** The best lap of each car whose in-memory best was invalidated after the fact. */
@@ -256,17 +280,22 @@ public class LiveTimingPageService {
      * itself reported, so an old session's open stints do not grow forever.
      */
     long clock(long session) {
-        long latest = db.sql("""
-                SELECT COALESCE(GREATEST(
-                    (SELECT max(start_time_ms + COALESCE(lap_time_ms, 0)) FROM live_lap WHERE session_db_id = :s),
-                    (SELECT max(GREATEST(start_time_ms, COALESCE(finish_time_ms, 0))) FROM live_stint WHERE session_db_id = :s)), 0)
-                """)
-                .param("s", session).query(Long.class).single();
+        long latest = latestFeedTime(session);
         long wall = System.currentTimeMillis();
         Long current = live.analysisSessionDbId();
         LiveTimingService.Session feed = live.status().session();
         boolean running = current != null && current == session && (feed == null || !feed.finished());
         return running && wall - latest < LIVE_WINDOW_MS && wall >= latest ? wall : latest;
+    }
+
+    /** The newest time the feed reported for a session: the last lap's end or stint's start/finish. 0 = none. */
+    private long latestFeedTime(long session) {
+        return db.sql("""
+                SELECT COALESCE(GREATEST(
+                    (SELECT max(start_time_ms + COALESCE(lap_time_ms, 0)) FROM live_lap WHERE session_db_id = :s),
+                    (SELECT max(GREATEST(start_time_ms, COALESCE(finish_time_ms, 0))) FROM live_stint WHERE session_db_id = :s)), 0)
+                """)
+                .param("s", session).query(Long.class).single();
     }
 
     /** The asked-for session, else the one being fed, else the bound event's latest. */

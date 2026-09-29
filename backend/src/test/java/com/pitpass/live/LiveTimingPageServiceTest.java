@@ -132,6 +132,7 @@ class LiveTimingPageServiceTest {
     void theTowerJoinsTheRunningOrderToDriversLapsAndStints() throws Exception {
         var tower = page(true).tower();
         assertEquals(session, tower.sessionDbId());
+        assertEquals(T0 + 2 * H, tower.feedClockMs(), "the newest feed time: the second stint's start, after lap 3's end");
         var cars = tower.classes().getFirst().cars();
         var first = cars.get(0);
         assertEquals("04", first.carNumber());
