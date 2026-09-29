@@ -11,18 +11,14 @@ import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
-import java.io.BufferedInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.security.GeneralSecurityException;
 import java.security.cert.X509Certificate;
-import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -40,8 +36,12 @@ final class AksConnection implements Closeable {
     interface Listener {
         void loggedIn(ServerInfo server);
 
-        /** Every inbound line, exactly as received — this is what gets recorded. */
-        void received(long epochMs, byte[] line);
+        /**
+         * Every inbound line, exactly as received — this is what gets recorded.
+         * The bytes arrive in order through the tee, possibly in many pieces:
+         * a streamed frame is never held whole.
+         */
+        AksLineReader.Tee line(long epochMs);
 
         /** A non-fatal ERROR from the server (a refused JOIN, say). */
         void warned(String message);
@@ -71,13 +71,25 @@ final class AksConnection implements Closeable {
     private final AtomicLong nextId = new AtomicLong(1);
     private final Map<Long, String> pending = new ConcurrentHashMap<>();
     private final Object writeLock = new Object();
-    private final ByteArrayOutputStream lineBuffer = new ByteArrayOutputStream(16 * 1024);
+    private final AksLineReader.StreamHandler jsonStream;
+    private AksLineReader reader;
 
     private volatile Socket socket;
     private volatile boolean closed;
 
     AksConnection(AlKamelV2Properties props, String host, int port, boolean tls,
                   AksStateTree tree, ObjectMapper mapper, Listener listener) {
+        this(props, host, port, tls, tree, mapper, listener, null);
+    }
+
+    /**
+     * jsonStream, when given, takes every JSON frame after login as a stream
+     * (see {@link AksLineReader}) instead of it being parsed into the tree
+     * here; it then owns merging the session channels.
+     */
+    AksConnection(AlKamelV2Properties props, String host, int port, boolean tls,
+                  AksStateTree tree, ObjectMapper mapper, Listener listener,
+                  AksLineReader.StreamHandler jsonStream) {
         this.props = props;
         this.host = host;
         this.port = port;
@@ -85,6 +97,7 @@ final class AksConnection implements Closeable {
         this.tree = tree;
         this.mapper = mapper;
         this.listener = listener;
+        this.jsonStream = jsonStream;
     }
 
     void run() throws IOException {
@@ -95,24 +108,36 @@ final class AksConnection implements Closeable {
             if (closed) {
                 throw new IOException("Closed while connecting");
             }
-            InputStream in = new BufferedInputStream(s.getInputStream(), 64 * 1024);
+            reader = new AksLineReader(s.getInputStream(), props.maxLineBytes(), props.maxStreamedBytes(),
+                    listener::line);
             OutputStream out = s.getOutputStream();
 
             s.setSoTimeout(loginTimeoutMs());
-            ServerInfo server = login(in, out);
+            ServerInfo server = login(out);
             listener.loggedIn(server);
 
             // We ping every pingRate and each ping is ACKed, so a silence
             // longer than the server's own timeout means the link is dead.
             s.setSoTimeout(server.timeoutSeconds() * 1000);
-            for (String channel : props.channels()) {
+            reader.streamJsonTo(jsonStream);
+            for (String channel : props.joinedChannels()) {
                 long id = send(out, "JOIN", channel.trim(), "");
                 pending.put(id, "JOIN " + channel.trim());
             }
             pinger = Thread.ofVirtual().name("aks-ping").start(() -> pingLoop(out, server.pingRateSeconds()));
 
-            byte[] line;
-            while ((line = readLine(in)) != null) {
+            while (true) {
+                byte[] line;
+                try {
+                    line = reader.next();
+                } catch (AksLineReader.UnreadableFrame e) {
+                    // Read to its end and recorded; one bad frame is not worth the login.
+                    listener.warned(e.getMessage());
+                    continue;
+                }
+                if (line == null) {
+                    break;
+                }
                 handle(line);
             }
             throw new IOException("Server closed the connection");
@@ -213,7 +238,7 @@ final class AksConnection implements Closeable {
         return context;
     }
 
-    private ServerInfo login(InputStream in, OutputStream out) throws IOException {
+    private ServerInfo login(OutputStream out) throws IOException {
         ObjectNode credentials = mapper.createObjectNode()
                 .put("user", props.username())
                 .put("password", props.password())
@@ -228,10 +253,9 @@ final class AksConnection implements Closeable {
         String last = null;
         try {
             byte[] line;
-            while ((line = readLine(in)) != null) {
+            while ((line = nextBuffered()) != null) {
                 lines++;
                 last = preview(line, line.length);
-                listener.received(System.currentTimeMillis(), line);
                 AksFrame frame = AksFrame.parse(line, line.length);
                 if (frame.command().equals("ERROR")) {
                     throw new LoginRejected("Login refused: " + describeError(frame));
@@ -251,7 +275,8 @@ final class AksConnection implements Closeable {
         } catch (SocketTimeoutException e) {
             // What did arrive is the whole clue — a banner, a reply in a framing
             // we do not read, or nothing at all. Inbound only: never our password.
-            String partial = lineBuffer.size() > 0 ? preview(lineBuffer.toByteArray(), lineBuffer.size()) : null;
+            byte[] unterminated = reader.unterminated();
+            String partial = unterminated.length > 0 ? preview(unterminated, unterminated.length) : null;
             throw new IOException("Connected" + (tls ? " over TLS" : "") + " and sent LOGIN, but no reply in "
                     + props.loginTimeoutSeconds() + "s. Received " + lines + " line(s)"
                     + (last != null ? ", last: " + last : "")
@@ -271,7 +296,6 @@ final class AksConnection implements Closeable {
     }
 
     private void handle(byte[] line) throws IOException {
-        listener.received(System.currentTimeMillis(), line);
         AksFrame frame = AksFrame.parse(line, line.length);
         switch (frame.command()) {
             case "JSON" -> {
@@ -313,31 +337,12 @@ final class AksConnection implements Closeable {
         return id;
     }
 
-    /**
-     * One line without its CRLF, or null at end of stream. Blank lines are
-     * skipped. Bounded so a runaway line is a fault, not an OOM.
-     */
-    private byte[] readLine(InputStream in) throws IOException {
-        while (true) {
-            lineBuffer.reset();
-            int b;
-            while ((b = in.read()) != -1 && b != '\n') {
-                if (lineBuffer.size() >= props.maxLineBytes()) {
-                    throw new IOException("Line exceeds " + props.maxLineBytes() + " bytes");
-                }
-                lineBuffer.write(b);
-            }
-            byte[] bytes = lineBuffer.toByteArray();
-            int length = bytes.length;
-            if (length > 0 && bytes[length - 1] == '\r') {
-                length--;
-            }
-            if (length > 0) {
-                return length == bytes.length ? bytes : Arrays.copyOf(bytes, length);
-            }
-            if (b == -1) {
-                return null;
-            }
+    /** Before login nothing is streamed, so every line comes back buffered. */
+    private byte[] nextBuffered() throws IOException {
+        try {
+            return reader.next();
+        } catch (AksLineReader.UnreadableFrame e) {
+            throw new IOException(e.getMessage(), e); // unreachable: no stream handler yet
         }
     }
 

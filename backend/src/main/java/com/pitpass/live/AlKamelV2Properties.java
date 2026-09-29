@@ -24,7 +24,11 @@ public record AlKamelV2Properties(
         int connectTimeoutSeconds,
         int loginTimeoutSeconds,
         Recording recording,
-        Replay replay) {
+        Replay replay,
+        Analysis analysis) {
+
+    /** The lap and stint channels the timing page is built from. */
+    public static final List<String> ANALYSIS_CHANNELS = List.of("timing.analysis.laps", "timing.analysis.stints");
 
     /** Raw inbound lines kept for replay — the only test data this feed will ever have. */
     public record Recording(boolean enabled, String directory, String bucket,
@@ -33,6 +37,34 @@ public record AlKamelV2Properties(
 
     /** Local dev: serve a recording from an in-process fake server instead of dialling out. */
     public record Replay(String file, double speed) {
+    }
+
+    /**
+     * timing.analysis: every lap and stint of every car, streamed into Postgres
+     * rather than the state tree. Off until a practice session has been
+     * recorded with it. maxLineBytes is a sanity cap on one streamed line,
+     * which is counted and never held (a 24-hour snapshot is 45–78 MB).
+     */
+    public record Analysis(boolean enabled, long maxLineBytes) {
+    }
+
+    public boolean analysisEnabled() {
+        return analysis != null && analysis.enabled();
+    }
+
+    /** The configured channels, plus the analysis channels when those are on. */
+    public List<String> joinedChannels() {
+        List<String> joined = new java.util.ArrayList<>();
+        channels.forEach(c -> joined.add(c.trim()));
+        if (analysisEnabled()) {
+            ANALYSIS_CHANNELS.stream().filter(c -> !joined.contains(c)).forEach(joined::add);
+        }
+        return joined;
+    }
+
+    /** Streamed JSON lines are bounded by this instead of maxLineBytes. */
+    public long maxStreamedBytes() {
+        return analysis != null && analysis.maxLineBytes() > 0 ? analysis.maxLineBytes() : 512L * 1024 * 1024;
     }
 
     public boolean replaying() {

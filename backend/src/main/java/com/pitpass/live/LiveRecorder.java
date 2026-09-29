@@ -58,6 +58,32 @@ final class LiveRecorder implements Closeable {
     }
 
     synchronized void write(long epochMs, byte[] line) {
+        begin(epochMs);
+        append(line, 0, line.length);
+        end(epochMs);
+    }
+
+    /**
+     * A line written as it streams in, so a 70 MB snapshot line is never held
+     * whole. Only the reader thread writes, one line at a time; a segment
+     * rolls over only between lines.
+     */
+    AksLineReader.Tee line(long epochMs) {
+        begin(epochMs);
+        return new AksLineReader.Tee() {
+            @Override
+            public void write(byte[] bytes, int offset, int length) {
+                append(bytes, offset, length);
+            }
+
+            @Override
+            public void end() {
+                LiveRecorder.this.end(epochMs);
+            }
+        };
+    }
+
+    private synchronized void begin(long epochMs) {
         if (failed) {
             return;
         }
@@ -70,7 +96,27 @@ final class LiveRecorder implements Closeable {
             }
             out.write(Long.toString(epochMs).getBytes(StandardCharsets.US_ASCII));
             out.write('\t');
-            out.write(line);
+        } catch (IOException e) {
+            fail(e);
+        }
+    }
+
+    private synchronized void append(byte[] bytes, int offset, int length) {
+        if (failed || out == null) {
+            return;
+        }
+        try {
+            out.write(bytes, offset, length);
+        } catch (IOException e) {
+            fail(e);
+        }
+    }
+
+    private synchronized void end(long epochMs) {
+        if (failed || out == null) {
+            return;
+        }
+        try {
             out.write('\n');
             // The stream is opened sync-flush; flushing every few seconds is what
             // actually bounds the loss when the process is killed outright.
@@ -79,9 +125,13 @@ final class LiveRecorder implements Closeable {
                 lastFlushMs = epochMs;
             }
         } catch (IOException e) {
-            failed = true;
-            log.warn("Live timing recording stopped for this connection: {}", e.toString());
+            fail(e);
         }
+    }
+
+    private void fail(IOException e) {
+        failed = true;
+        log.warn("Live timing recording stopped for this connection: {}", e.toString());
     }
 
     /**

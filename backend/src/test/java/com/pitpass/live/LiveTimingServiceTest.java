@@ -209,7 +209,8 @@ class LiveTimingServiceTest {
                 List.of("timing.session.info", "timing.session.status", "timing.session.standings.byClass.active"),
                 1 << 20, 2, LOGIN_TIMEOUT_SECONDS,
                 new AlKamelV2Properties.Recording(true, recordings.toString(), "", 10, 64),
-                new AlKamelV2Properties.Replay("", 1.0));
+                new AlKamelV2Properties.Replay("", 1.0),
+                new AlKamelV2Properties.Analysis(false, 0));
         LiveTimingService service = new LiveTimingService(props, store, new ObjectMapper(), null,
                 (segment, key) -> segments.add(segment), FAST);
         service.start();

@@ -158,7 +158,7 @@ public class LiveTimingService implements SmartLifecycle {
                 connectedSince, lastMessageAt, messages.get(), bytes.get(),
                 attempts, drops, lastError, lastWarning,
                 state == State.BACKING_OFF ? nextAttemptAt : null,
-                server, session(), props.configured() ? props.channels() : List.of());
+                server, session(), props.configured() ? props.joinedChannels() : List.of());
     }
 
     /** A copy of the merged feed at a dotted path, or null. The raw material for every live feature. */
@@ -322,13 +322,27 @@ public class LiveTimingService implements SmartLifecycle {
             }
 
             @Override
-            public void received(long epochMs, byte[] line) {
+            public AksLineReader.Tee line(long epochMs) {
                 messages.incrementAndGet();
-                bytes.addAndGet(line.length + 2L);
                 lastMessageAt = Instant.ofEpochMilli(epochMs);
-                if (recorder != null) {
-                    recorder.write(epochMs, line);
-                }
+                AksLineReader.Tee recording = recorder != null ? recorder.line(epochMs) : null;
+                return new AksLineReader.Tee() {
+                    @Override
+                    public void write(byte[] line, int offset, int length) {
+                        bytes.addAndGet(length);
+                        if (recording != null) {
+                            recording.write(line, offset, length);
+                        }
+                    }
+
+                    @Override
+                    public void end() {
+                        bytes.addAndGet(2); // the CRLF
+                        if (recording != null) {
+                            recording.end();
+                        }
+                    }
+                };
             }
 
             @Override
