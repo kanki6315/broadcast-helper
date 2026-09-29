@@ -40,7 +40,7 @@ import java.util.stream.Stream;
  * ALKAMELV2_HOST, no replay file) it starts no thread at all.
  */
 @Component
-@EnableConfigurationProperties(AlKamelV2Properties.class)
+@EnableConfigurationProperties({AlKamelV2Properties.class, ImsaTelemetryProperties.class})
 public class LiveTimingService implements SmartLifecycle {
 
     public enum State { NOT_CONFIGURED, OFF, STANDBY, CONNECTING, LIVE, BACKING_OFF }
@@ -70,7 +70,7 @@ public class LiveTimingService implements SmartLifecycle {
                              Instant connectedSince, Instant lastMessageAt, long messages, long bytes,
                              int attempts, int drops, String lastError, String lastWarning,
                              Instant nextAttemptAt, Server server, Session session, List<String> channels,
-                             Analysis analysis) {
+                             Analysis analysis, TelemetryRunner.Status telemetry) {
     }
 
     /**
@@ -92,6 +92,8 @@ public class LiveTimingService implements SmartLifecycle {
     private final Pacing pacing;
     private final AnalysisWriter analysisWriter;
     private final LiveCarSummaries summaries = new LiveCarSummaries();
+    private final ImsaTelemetryProperties telemetryProps;
+    private final TelemetryRunner telemetry;
     private final String instanceId = instanceName();
     private final AksStateTree tree = new AksStateTree();
     private final Semaphore wake = new Semaphore(0);
@@ -123,20 +125,21 @@ public class LiveTimingService implements SmartLifecycle {
     @Autowired
     public LiveTimingService(AlKamelV2Properties props, LiveTimingStore store, ObjectMapper mapper,
                              PublicImageStorage storage, AnalysisWriter analysisWriter,
-                             LiveDriverResolver driverResolver) {
-        this(props, store, mapper, storage, null, Pacing.PRODUCTION, analysisWriter, driverResolver);
+                             LiveDriverResolver driverResolver, ImsaTelemetryProperties telemetryProps) {
+        this(props, store, mapper, storage, null, Pacing.PRODUCTION, analysisWriter, driverResolver, telemetryProps);
     }
 
     /** Tests pass their own sink and pacing; a null sink means the real one. */
     LiveTimingService(AlKamelV2Properties props, LiveTimingStore store, ObjectMapper mapper,
                       PublicImageStorage storage, LiveRecorder.Sink sink, Pacing pacing) {
-        this(props, store, mapper, storage, sink, pacing, null, null);
+        this(props, store, mapper, storage, sink, pacing, null, null, null);
     }
 
     /** A null writer leaves timing.analysis off whatever the configuration says. */
     LiveTimingService(AlKamelV2Properties props, LiveTimingStore store, ObjectMapper mapper,
                       PublicImageStorage storage, LiveRecorder.Sink sink, Pacing pacing,
-                      AnalysisWriter analysisWriter, AnalysisWriter.DriverResolver driverResolver) {
+                      AnalysisWriter analysisWriter, AnalysisWriter.DriverResolver driverResolver,
+                      ImsaTelemetryProperties telemetryProps) {
         this.props = props;
         this.store = store;
         this.mapper = mapper;
@@ -147,6 +150,20 @@ public class LiveTimingService implements SmartLifecycle {
         if (this.analysisWriter != null) {
             this.analysisWriter.drivers(driverResolver, () -> tree.copyOf("timing.session.entry"), () -> boundEventId);
         }
+        this.telemetryProps = telemetryProps;
+        this.telemetry = telemetryProps == null || !telemetryProps.configured() ? null : new TelemetryRunner(
+                telemetryProps, mapper,
+                () -> telemetryProps.replaying()
+                        ? new ReplayTelemetrySource(Path.of(telemetryProps.replayFile()), telemetryProps.replaySpeed(), mapper)
+                        : new AppSyncTelemetrySource(telemetryProps, mapper),
+                () -> telemetryProps.recordingEnabled() && !telemetryProps.replaying() && props.recording() != null
+                        ? new LiveRecorder(recordingDirectory().resolve("imsa-telemetry"),
+                                Duration.ofMinutes(Math.max(1, props.recording().segmentMinutes())), this.sink, "imsa-telemetry/")
+                        : null,
+                summaries::sessionDbId, this.analysisWriter,
+                List.of(Duration.ofSeconds(5), Duration.ofSeconds(15), Duration.ofSeconds(30),
+                        Duration.ofSeconds(60), Duration.ofMinutes(5)),
+                Duration.ofMinutes(1));
         this.state = props.configured() ? State.OFF : State.NOT_CONFIGURED;
     }
 
@@ -184,7 +201,20 @@ public class LiveTimingService implements SmartLifecycle {
                 connectedSince, lastMessageAt, messages.get(), bytes.get(),
                 attempts, drops, lastError, lastWarning,
                 state == State.BACKING_OFF ? nextAttemptAt : null,
-                server, session(), props.configured() ? props.joinedChannels() : List.of(), analysis());
+                server, session(), props.configured() ? props.joinedChannels() : List.of(), analysis(),
+                telemetry == null ? null : telemetry.status());
+    }
+
+    /**
+     * IMSA telemetry energy for an Al Kamel car number, or null when telemetry
+     * is off or has never seen the car. stintOpenLap scopes the per-lap average.
+     */
+    public LiveTelemetry.CarEnergy energy(String carNumber, Integer stintOpenLap) {
+        if (telemetry == null) {
+            return null;
+        }
+        return telemetry.telemetry().energy(carNumber, stintOpenLap, System.currentTimeMillis(),
+                Math.max(1, telemetryProps.staleSeconds()) * 1000L);
     }
 
     private Analysis analysis() {
@@ -297,6 +327,7 @@ public class LiveTimingService implements SmartLifecycle {
         // free), the lease goes next (the new process may dial at once), and
         // only then do we wait on the last recording segment's upload.
         closeConnection();
+        ensureTelemetry(false);
         if (leaseHeld) {
             try {
                 store.release(instanceId);
@@ -317,6 +348,7 @@ public class LiveTimingService implements SmartLifecycle {
                 store.release(instanceId);
                 leaseHeld = false;
             }
+            ensureTelemetry(false);
             // Off means off: a stale running order must not outlive the connection.
             // (While BACKING_OFF the last-known tree is kept on purpose.)
             tree.clear();
@@ -329,6 +361,7 @@ public class LiveTimingService implements SmartLifecycle {
             return;
         }
         if (!store.acquireOrRenew(instanceId, pacing.lease())) {
+            ensureTelemetry(false);
             stopConnection();
             tree.clear();
             summaries.reset(null);
@@ -338,6 +371,7 @@ public class LiveTimingService implements SmartLifecycle {
         }
         leaseHeld = true;
         leaseGoodUntil = Instant.now().plus(pacing.lease());
+        ensureTelemetry(true);
         if (connectionThread != null && connectionThread.isAlive()) {
             return;
         }
@@ -446,6 +480,18 @@ public class LiveTimingService implements SmartLifecycle {
             if (recorder != null) {
                 recorder.close();
             }
+        }
+    }
+
+    /** Telemetry never takes the supervisor down with it: it fails soft by design. */
+    private void ensureTelemetry(boolean run) {
+        if (telemetry == null) {
+            return;
+        }
+        try {
+            telemetry.ensure(run);
+        } catch (RuntimeException e) {
+            log.warn("IMSA telemetry: {}", e.toString());
         }
     }
 

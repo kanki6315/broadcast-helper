@@ -107,7 +107,7 @@ class AnalysisIngestTest {
                 null, (segment, key) -> segments.add(segment),
                 new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
                         Duration.ofSeconds(5), Duration.ofSeconds(10)),
-                writer, resolver);
+                writer, resolver, null);
         service.start();
         cleanup.add(service::stop);
 
@@ -186,7 +186,7 @@ class AnalysisIngestTest {
                 null, (segment, key) -> { },
                 new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
                         Duration.ofSeconds(5), Duration.ofSeconds(10)),
-                writer, null);
+                writer, null, null);
         service.start();
         cleanup.add(service::stop);
 
@@ -198,6 +198,17 @@ class AnalysisIngestTest {
         Thread.sleep(150);
 
         assertEquals(4, count("live_lap WHERE session_db_id = :s"), "the same rows, not twice as many");
+        assertEquals(0, writer.stats().failed());
+    }
+
+    @Test
+    void energyLapsUpsert() throws Exception {
+        AnalysisWriter writer = new AnalysisWriter(jdbc, mapper, 100, 500, Duration.ofMillis(20));
+        cleanup.add(writer::stop);
+        writer.offer(new AnalysisRows.SessionSeen(new AnalysisRows.SessionInfo(session, null, null, "Race", "RACE", null, null)));
+        writer.offer(new AnalysisRows.EnergyLap(session, "04", 7, 81.5, false));
+        writer.offer(new AnalysisRows.EnergyLap(session, "04", 7, 80.5, true)); // the same lap again: the later reading wins
+        await(() -> count("live_energy_lap WHERE session_db_id = :s AND energy_pct < 81") == 1);
         assertEquals(0, writer.stats().failed());
     }
 

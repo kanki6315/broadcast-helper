@@ -123,6 +123,11 @@ class LiveTimingPageServiceTest {
             public Long analysisSessionDbId() {
                 return summaries.sessionDbId();
             }
+
+            @Override
+            public LiveTelemetry.CarEnergy energy(String carNumber, Integer stintOpenLap) {
+                return "04".equals(carNumber) ? new LiveTelemetry.CarEnergy(42.0, 3.5, 12.0) : null;
+            }
         };
         LiveEntryMatcher matcher = new LiveEntryMatcher(db);
         return new LiveTimingPageService(db, live, new LiveClassificationService(db, live, matcher));
@@ -143,7 +148,9 @@ class LiveTimingPageServiceTest {
         assertEquals(3, first.lastLap());
         assertEquals(2, first.bestLap(), "lap 3 was invalidated after the fact, so the best comes from live_lap");
         assertEquals(99_998, first.bestLapMs());
-        assertNull(first.energyPct());
+        assertEquals(42.0, first.energyPct(), "IMSA telemetry, matched to the Al Kamel car");
+        assertEquals(12.0, first.energyLapsLeft());
+        assertNull(cars.get(1).energyPct(), "no telemetry for #4");
 
         var second = cars.get(1);
         assertEquals(4_200L, second.intervalMs(), "the feed's gapPreviousTime");
@@ -187,6 +194,22 @@ class LiveTimingPageServiceTest {
         assertEquals(160_000, bea.driveMs(), "a finished replay's clock stops at its last feed time, not the wall clock");
         assertEquals(DriveTime.Status.OK, bea.status());
         assertEquals(4 * H - 160_000, bea.remainingMs());
+    }
+
+    @Test
+    void aCarsLapsCarryEnergyUsedAndItsStintsTheAverage() throws Exception {
+        // Telemetry numbered the car "4"… no: exactly "04". Laps 1-3 at the line: 97, 93.5, 90.
+        db.sql("""
+                INSERT INTO live_energy_lap (session_db_id, car_number, lap_number, energy_pct)
+                VALUES (:s, '04', 1, 97), (:s, '04', 2, 93.5), (:s, '04', 3, 90), (:s, '4', 2, 10)
+                """).param("s", session).update();
+        var car = page(false).car("04", session);
+        assertEquals(97f, car.laps().get(0).energyPct());
+        assertNull(car.laps().get(0).energyUsedPct(), "lap 1 has no reading before it");
+        assertEquals(3.5f, car.laps().get(1).energyUsedPct());
+        assertEquals(3.5f, car.laps().get(2).energyUsedPct());
+        assertEquals(3.5f, car.stints().get(0).avgEnergyPerLapPct(), "laps 2 of stint 1-2");
+        assertEquals(3.5f, car.stints().get(1).avgEnergyPerLapPct(), "the open stint runs to the newest lap");
     }
 
     @Test

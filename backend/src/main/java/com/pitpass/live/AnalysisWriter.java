@@ -3,6 +3,7 @@ package com.pitpass.live;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.pitpass.live.AnalysisRows.EnergyLap;
 import com.pitpass.live.AnalysisRows.EntriesChanged;
 import com.pitpass.live.AnalysisRows.LapDeleted;
 import com.pitpass.live.AnalysisRows.LapPatch;
@@ -209,6 +210,21 @@ public class AnalysisWriter implements AnalysisRouter.Sink {
                             LapDeleted d = (LapDeleted) op;
                             return (SqlParameterSource) new MapSqlParameterSource("s", d.sessionDbId())
                                     .addValue("car", d.car()).addValue("lap", d.lap());
+                        }).toList());
+            } else if (kind == EnergyLap.class) {
+                batch("""
+                        INSERT INTO live_energy_lap (session_db_id, car_number, lap_number, energy_pct, pit_lane)
+                        VALUES (:s, :car, :lap, :energy, :pit)
+                        ON CONFLICT (session_db_id, car_number, lap_number) DO UPDATE SET
+                            energy_pct = EXCLUDED.energy_pct, pit_lane = EXCLUDED.pit_lane,
+                            recorded_at = clock_timestamp()
+                        """,
+                        run.stream().map(op -> {
+                            EnergyLap e = (EnergyLap) op;
+                            return (SqlParameterSource) new MapSqlParameterSource("s", e.sessionDbId())
+                                    .addValue("car", e.car()).addValue("lap", e.lap())
+                                    .addValue("energy", (float) e.energyPct(), Types.REAL)
+                                    .addValue("pit", e.pitLane(), Types.BOOLEAN);
                         }).toList());
             } else if (kind == StintDeleted.class) {
                 batch("DELETE FROM live_stint WHERE session_db_id = :s AND car_number = :car AND start_time_ms = :start",

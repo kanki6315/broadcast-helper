@@ -42,6 +42,7 @@ final class LiveRecorder implements Closeable {
     private final Path directory;
     private final Duration segmentLength;
     private final Sink sink;
+    private final String keyPrefix;
     private final String connectionStamp = STAMP.format(Instant.now());
 
     private OutputStream out;
@@ -52,9 +53,15 @@ final class LiveRecorder implements Closeable {
     private long lastFlushMs;
 
     LiveRecorder(Path directory, Duration segmentLength, Sink sink) {
+        this(directory, segmentLength, sink, "aks-v2/");
+    }
+
+    /** keyPrefix: where segments land in the bucket ("aks-v2/", "imsa-telemetry/"). */
+    LiveRecorder(Path directory, Duration segmentLength, Sink sink, String keyPrefix) {
         this.directory = directory;
         this.segmentLength = segmentLength;
         this.sink = sink;
+        this.keyPrefix = keyPrefix;
     }
 
     synchronized void write(long epochMs, byte[] line) {
@@ -162,7 +169,7 @@ final class LiveRecorder implements Closeable {
         }
         OutputStream closing = out;
         Path finished = current;
-        String key = "aks-v2/" + DAY.format(openedAt) + "/" + finished.getFileName();
+        String key = keyPrefix + DAY.format(openedAt) + "/" + finished.getFileName();
         out = null;
         current = null;
         closing.close();

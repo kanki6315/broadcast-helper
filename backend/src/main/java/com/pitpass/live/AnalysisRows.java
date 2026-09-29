@@ -21,7 +21,11 @@ final class AnalysisRows {
     }
 
     /** Anything the writer is asked to do, in arrival order. */
-    sealed interface Op permits LapPatch, StintPatch, LapDeleted, StintDeleted, SessionSeen, EntriesChanged {
+    sealed interface Op permits LapPatch, StintPatch, LapDeleted, StintDeleted, SessionSeen, EntriesChanged, EnergyLap {
+    }
+
+    /** IMSA telemetry: energy at the line after {@code lap} (see TelemetryRunner). */
+    record EnergyLap(long sessionDbId, String car, int lap, double energyPct, Boolean pitLane) implements Op {
     }
 
     record SessionSeen(SessionInfo session) implements Op {
