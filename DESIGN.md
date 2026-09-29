@@ -425,7 +425,11 @@ connecting the feed stays on the iPad, so there is no connect control here.
   "fastest", and the cell's title and screen-reader text say it. A personal
   best on the last lap is weight only. A car in the pit carries an amber-tint
   `Pit` mark; a retired car stays in its place in muted ink with its status
-  in words. Interval and last lap drop below 640px. The stint clock counts on
+  in words. Interval and last lap drop below 640px. An **Energy** column
+  (IMSA telemetry) appears only once some car has a reading: the percentage
+  and a muted "~9 L" projection of laps left at the stint's average use.
+  With it the tower runs 6px cell padding and 12ch team names below 1200px,
+  so it still fits 1024px. The stint clock counts on
   the feed's own clock (`feedClockMs`), so a replay or a finished session
   stops instead of counting against today.
 - **Car panel** (`LiveCarModal`, `.lc`): a native `<dialog>` like the

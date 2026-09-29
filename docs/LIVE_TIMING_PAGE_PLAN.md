@@ -1,6 +1,6 @@
 # Live timing page, drive time and IMSA energy: plan
 
-Status: **plan approved 2026-09-29. Slices 0–3 are done. Slice 4 (IMSA telemetry adapter) is next.**
+Status: **plan approved 2026-09-29. Slices 0–4 are done. Slice 5 (iPad) is next.**
 Branch: `claude/custom-live-timing-page-882b20`.
 This document is the handoff: everything a fresh session needs is here or in
 `docs/LIVE_TIMING.md` (the existing feed pipeline).
@@ -277,7 +277,34 @@ Original plan:
 - Playwright test `frontend/tests/liveTiming.browser.cjs`, run as
   `npm run test:timing:live`.
 
-### Slice 4: IMSA telemetry adapter (backend)
+### Slice 4: IMSA telemetry adapter (backend) — DONE 2026-09-29
+
+Built as planned; `docs/LIVE_TIMING.md` *IMSA telemetry (energy)* describes
+it as it is. Where the build settled something:
+- The endpoint and the API key both come from the bundle: the endpoint id
+  could change as easily as the key.
+- The protocol is a pure `AppSyncSession`; `AppSyncTelemetrySource` is only
+  the JDK websocket plus a silence watchdog. A replay source plays recordings
+  through the same session code.
+- Lap sample = the first reading after `lapNumber` increments, stored against
+  the lap just completed. A jump of several laps samples only the last one.
+- Energy rows go through the analysis writer and need the Al Kamel session
+  from analysis. With `ALKAMELV2_ANALYSIS_ENABLED` off, energy shows but is
+  not stored.
+- The page shows energy in the tower (with laps left), per lap and per
+  stint. The tower still fits 1024 px with the extra column.
+- Checked end to end with both replays running together (synthetic
+  telemetry for event 224's GTP cars). **Nothing has connected to IMSA's
+  endpoint.**
+
+Unverified until a live weekend: the handshake and subprotocol header
+against the real endpoint, the payload wrapping, the lap-number offset
+against Al Kamel, which classes carry energy, and message rate and size.
+First run: set `IMSA_TELEMETRY_ENABLED=true` for a practice session
+alongside `ALKAMELV2_ANALYSIS_ENABLED`, then read `/api/live/status` →
+`telemetry` and the recording under `imsa-telemetry/`.
+
+Original plan:
 - A `java.net.http.WebSocket` client using subprotocols
   `aws-appsync-event-ws` + `header-<base64url({host,x-api-key})>`. It
   subscribes to both channels and handles keep-alive.

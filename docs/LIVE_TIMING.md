@@ -184,6 +184,20 @@ All `ALKAMELV2_*`. Set the first three on Railway; the rest have working default
 | `ALKAMELV2_ANALYSIS_ENABLED` | `false` | Also join `timing.analysis.laps` and `.stints` and stream them into Postgres — see *timing.analysis*. Off until a practice session has run clean with it. |
 | `ALKAMELV2_ANALYSIS_MAX_LINE_BYTES` | `536870912` | Sanity cap on one **streamed** line (counted, never buffered). `ALKAMELV2_MAX_LINE_BYTES` then guards only buffered lines. |
 
+### IMSA telemetry settings
+
+`IMSA_TELEMETRY_*`, separate from the Al Kamel variables because it is a
+separate, unofficial source. See *IMSA telemetry (energy)*.
+
+| Variable | Default | |
+|---|---|---|
+| `IMSA_TELEMETRY_ENABLED` | `false` | Connect to IMSA's telemetry websocket whenever the Al Kamel feed is connected. |
+| `IMSA_TELEMETRY_APP_URL` | `https://d3aqeo5txo0gzi.cloudfront.net/` | The telemetry app that imsa.com/telemetry frames. The endpoint and API key are read from its bundle at every connect. |
+| `IMSA_TELEMETRY_CHANNELS` | `/telemetry/message,/telemetry/session` | AppSync Events channels. |
+| `IMSA_TELEMETRY_STALE_SECONDS` | `15` | A reading older than this shows no energy. |
+| `IMSA_TELEMETRY_RECORDING_ENABLED` | `true` | Raw frames go to `ALKAMELV2_RECORDING_BUCKET` under `imsa-telemetry/`. |
+| `IMSA_TELEMETRY_REPLAY_FILE` / `_SPEED` | — / `1.0` | Local dev: replay a telemetry recording instead of connecting. Runs while the (replayed) Al Kamel feed is connected. |
+
 ## Railway settings
 
 Beyond the `ALKAMELV2_*` variables, on the backend service:
@@ -345,6 +359,50 @@ where to change it once real bytes show otherwise.
 fed and the feed's newest time is within 10 minutes of it. Otherwise it is
 the newest time the feed reported (the last lap's end or stint's start), so
 a replay or a finished session does not keep counting.
+
+## IMSA telemetry (energy)
+
+Energy remaining per car comes from IMSA, not Al Kamel: imsa.com/telemetry
+frames an app that listens to an **AWS AppSync Events** websocket. It is
+unofficial and undocumented, so it is off by default
+(`IMSA_TELEMETRY_ENABLED`) and **fails soft**: nothing it does can touch the
+Al Kamel connection, and a broken or vanished endpoint costs a log line and a
+retry (5 s → 5 min ladder).
+
+- **When it runs:** only in the process holding the Al Kamel lease, and only
+  while the feed is asked for. The supervisor starts and stops it every tick.
+- **Endpoint and key:** read from the app's JavaScript bundle at every
+  connect (`AppSyncEndpoint`), never configured. AppSync keys expire, so a
+  copied key would silently stop working. The key is never logged whole.
+- **Protocol:** `AppSyncSession`, a pure state machine: `connection_init` →
+  `connection_ack` (its `connectionTimeoutMs` bounds the silence the watchdog
+  allows) → one `subscribe` per channel → `data`, with `ka` keep-alives. The
+  websocket offers the subprotocols `aws-appsync-event-ws` and
+  `header-<base64url {host, x-api-key}>`.
+- **Payload:** every plausible wrapping is decoded (base64 JSON, a `data`
+  field, plain JSON), because none has been seen live. A car is
+  `scoring.number` (exact, #04 ≠ #4), `energy_remaining`, `scoring.lapNumber`
+  and `pit_lane`.
+- **Kept:** only the latest reading per car, plus each car's last 30 lap
+  samples. **Stored:** one row per car per lap in `live_energy_lap` (V59).
+  The first reading after `lapNumber` goes up is the energy at the line for
+  the lap just completed. Missed crossings are not invented. Rows are keyed
+  to the Al Kamel session being fed, so with analysis off energy is shown but
+  not stored.
+- **Shown:** the tower's `energyPct` (null when older than
+  `IMSA_TELEMETRY_STALE_SECONDS`) and `energyLapsLeft` (energy over the
+  stint's average use per lap; refills are left out). The car panel shows
+  energy and energy used per lap, and each stint's average.
+  `/api/live/status` has a `telemetry` block: state, source, last error,
+  message and car counts, laps stored.
+- **Recorded:** raw websocket frames, gzip segments under `imsa-telemetry/`
+  in the private recording bucket. `IMSA_TELEMETRY_REPLAY_FILE` plays one
+  back through the same protocol code.
+
+**Unverified until a live weekend:** the endpoint and handshake themselves,
+the payload wrapping, whether IMSA's `lapNumber` matches Al Kamel's or runs
+one off, which classes carry energy, and the real message rate and size.
+Nothing has connected to IMSA's endpoint yet.
 
 ## When it will not connect
 
