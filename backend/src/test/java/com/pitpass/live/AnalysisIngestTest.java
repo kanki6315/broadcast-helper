@@ -46,6 +46,7 @@ class AnalysisIngestTest {
     @Autowired NamedParameterJdbcTemplate jdbc;
     @Autowired JdbcClient db;
     @Autowired ObjectMapper mapper;
+    @Autowired LiveDriverResolver resolver;
 
     @TempDir
     Path recordings;
@@ -106,7 +107,7 @@ class AnalysisIngestTest {
                 null, (segment, key) -> segments.add(segment),
                 new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
                         Duration.ofSeconds(5), Duration.ofSeconds(10)),
-                writer);
+                writer, resolver);
         service.start();
         cleanup.add(service::stop);
 
@@ -153,6 +154,11 @@ class AnalysisIngestTest {
                 SELECT driver_accum_session_track_ms FROM live_stint WHERE session_db_id = :s AND car_number = '04'
                 """).param("s", session).query(Long.class).single());
 
+        assertEquals("Driver|Silver|S", db.sql("""
+                SELECT last_name || '|' || license || '|' || rating FROM live_driver
+                WHERE session_db_id = :s AND car_number = '04' AND driver_order = 1 AND driver_id IS NULL
+                """).param("s", session).query(String.class).single(), "no event bound: listed, unmatched");
+
         var car = service.carSummaries().stream().filter(c -> c.car().equals("04")).findFirst().orElseThrow();
         assertEquals(3, car.lastLap());
         assertEquals(97_400, car.lastLapMs());
@@ -180,7 +186,7 @@ class AnalysisIngestTest {
                 null, (segment, key) -> { },
                 new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
                         Duration.ofSeconds(5), Duration.ofSeconds(10)),
-                writer);
+                writer, null);
         service.start();
         cleanup.add(service::stop);
 

@@ -122,20 +122,21 @@ public class LiveTimingService implements SmartLifecycle {
 
     @Autowired
     public LiveTimingService(AlKamelV2Properties props, LiveTimingStore store, ObjectMapper mapper,
-                             PublicImageStorage storage, AnalysisWriter analysisWriter) {
-        this(props, store, mapper, storage, null, Pacing.PRODUCTION, analysisWriter);
+                             PublicImageStorage storage, AnalysisWriter analysisWriter,
+                             LiveDriverResolver driverResolver) {
+        this(props, store, mapper, storage, null, Pacing.PRODUCTION, analysisWriter, driverResolver);
     }
 
     /** Tests pass their own sink and pacing; a null sink means the real one. */
     LiveTimingService(AlKamelV2Properties props, LiveTimingStore store, ObjectMapper mapper,
                       PublicImageStorage storage, LiveRecorder.Sink sink, Pacing pacing) {
-        this(props, store, mapper, storage, sink, pacing, null);
+        this(props, store, mapper, storage, sink, pacing, null, null);
     }
 
     /** A null writer leaves timing.analysis off whatever the configuration says. */
     LiveTimingService(AlKamelV2Properties props, LiveTimingStore store, ObjectMapper mapper,
                       PublicImageStorage storage, LiveRecorder.Sink sink, Pacing pacing,
-                      AnalysisWriter analysisWriter) {
+                      AnalysisWriter analysisWriter, AnalysisWriter.DriverResolver driverResolver) {
         this.props = props;
         this.store = store;
         this.mapper = mapper;
@@ -143,6 +144,9 @@ public class LiveTimingService implements SmartLifecycle {
         this.sink = sink != null ? sink : this::storeSegment;
         this.pacing = pacing;
         this.analysisWriter = props.analysisEnabled() ? analysisWriter : null;
+        if (this.analysisWriter != null) {
+            this.analysisWriter.drivers(driverResolver, () -> tree.copyOf("timing.session.entry"), () -> boundEventId);
+        }
         this.state = props.configured() ? State.OFF : State.NOT_CONFIGURED;
     }
 

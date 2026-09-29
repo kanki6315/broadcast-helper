@@ -154,7 +154,7 @@ public final class LiveClassification {
     }
 
     /** The event's entries by car number: exact, then unambiguous-without-leading-zeros. */
-    private static final class Numbers {
+    static final class Numbers {
         private final Map<String, Entry> exact = new HashMap<>();
         private final Map<String, List<Entry>> normalized = new HashMap<>();
 
