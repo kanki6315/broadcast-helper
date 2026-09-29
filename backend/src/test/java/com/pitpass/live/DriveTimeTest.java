@@ -95,6 +95,14 @@ class DriveTimeTest {
     }
 
     @Test
+    void aRatingRuleTakesItsMissingBoundFromTheClassRule() {
+        List<Rule> rules = List.of(new Rule("GTD", null, null, 4 * H, "everyone"), new Rule("GTD", "B", 2 * H, null, null));
+        assertEquals(new Rule("GTD", "B", 2 * H, 4 * H, "everyone"), DriveTime.rule(rules, "GTD", "Bronze"));
+        assertEquals(rules.get(0), DriveTime.rule(rules, "GTD", "S"));
+        assertNull(DriveTime.rule(rules, "GTP", "B"));
+    }
+
+    @Test
     void classNamesMatchIgnoringCaseAndSpaces() {
         Rule r = new Rule("GTD PRO", null, null, H, null);
         assertEquals(r, DriveTime.rule(List.of(r), "gtdpro", "Silver"));

@@ -123,23 +123,34 @@ public final class DriveTime {
         return base;
     }
 
-    /** A rating's own rule wins over the class-wide one. Class names match ignoring case and spaces. */
+    /**
+     * The rule for a driver: the rating's own rule, with any bound it leaves
+     * blank taken from the class-wide rule — a Bronze minimum still sits
+     * under everyone's maximum. Class names match ignoring case and spaces.
+     */
     static Rule rule(List<Rule> rules, String className, String rating) {
         if (className == null) {
             return null;
         }
         String cls = className.replaceAll("\\s+", "").toLowerCase();
         Rule general = null;
+        Rule own = null;
         for (Rule r : rules) {
             if (!r.className().replaceAll("\\s+", "").toLowerCase().equals(cls)) {
                 continue;
             }
             if (r.rating() == null) {
                 general = r;
-            } else if (rating != null && r.rating().equalsIgnoreCase(rating.trim().substring(0, 1))) {
-                return r;
+            } else if (rating != null && !rating.isBlank() && r.rating().equalsIgnoreCase(rating.trim().substring(0, 1))) {
+                own = r;
             }
         }
-        return general;
+        if (own == null || general == null) {
+            return own != null ? own : general;
+        }
+        return new Rule(own.className(), own.rating(),
+                own.minMs() != null ? own.minMs() : general.minMs(),
+                own.maxMs() != null ? own.maxMs() : general.maxMs(),
+                own.note() != null ? own.note() : general.note());
     }
 }

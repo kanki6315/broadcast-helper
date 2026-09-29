@@ -46,7 +46,8 @@ public final class LiveClassification {
      */
     public record Car(int position, String carNumber, String competitorKey, Long entryId,
                       String teamName, String vehicle, String manufacturer, boolean guest,
-                      String status, Integer laps, Long gapToLeaderMs, Integer gapToLeaderLaps) {
+                      String status, Integer laps, Long gapToLeaderMs, Integer gapToLeaderLaps,
+                      Long intervalMs, Integer intervalLaps) {
     }
 
     /** className is ours (what championships are keyed by); feedClass is Al Kamel's. */
@@ -134,7 +135,10 @@ public final class LiveClassification {
                         text(row, "status"),
                         row.has("lapNumber") ? row.path("lapNumber").asInt() : null,
                         gap(row, "gapFirstTime") == 0 ? null : gap(row, "gapFirstTime"),
-                        row.path("gapFirstLaps").asInt(0) == 0 ? null : Math.abs(row.path("gapFirstLaps").asInt())));
+                        row.path("gapFirstLaps").asInt(0) == 0 ? null : Math.abs(row.path("gapFirstLaps").asInt()),
+                        // The feed carries the interval already (gapPrevious*): nothing to compute.
+                        gap(row, "gapPreviousTime") == 0 ? null : gap(row, "gapPreviousTime"),
+                        row.path("gapPreviousLaps").asInt(0) == 0 ? null : Math.abs(row.path("gapPreviousLaps").asInt())));
             }
             classes.add(new ClassOrder(className, feedClass, cars));
         }
