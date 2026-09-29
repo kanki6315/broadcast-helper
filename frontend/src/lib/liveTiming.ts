@@ -40,7 +40,10 @@ export interface TowerCar {
   inPit: boolean
   stintStartMs: number | null
   stintLaps: number | null
+  /** IMSA telemetry, % remaining; null when off, unseen or stale. */
   energyPct: number | null
+  /** energyPct over this stint's average use per lap; null until two laps are sampled. */
+  energyLapsLeft: number | null
 }
 
 export interface TowerClass {
@@ -78,6 +81,9 @@ export interface LapRow {
   topSpeed: number | null
   pitInMs: number | null
   pitOutMs: number | null
+  /** IMSA telemetry at the line after this lap, and the drop from the lap before (null over a refill). */
+  energyPct: number | null
+  energyUsedPct: number | null
 }
 
 export interface StintRow {
@@ -92,6 +98,7 @@ export interface StintRow {
   driverAccumSessionMs: number | null
   driverAccumTrackMs: number | null
   driverAccumMs: number | null
+  avgEnergyPerLapPct: number | null
 }
 
 export interface CarDriver {
@@ -218,6 +225,11 @@ export function parseRuleTime(text: string): number | null | undefined {
   m = /^(\d+):([0-5]\d)(?::([0-5]\d))?$/.exec(t)
   if (m) return Number(m[1]) * 3_600_000 + Number(m[2]) * 60_000 + Number(m[3] ?? 0) * 1000
   return undefined
+}
+
+/** An energy percentage to one decimal ("62.4%"), or nothing. */
+export function pct(value: number | null | undefined, digits = 1): string {
+  return value == null ? '' : `${value.toFixed(digits)}%`
 }
 
 /** GREEN → "Green", FULL_YELLOW → "Full yellow". */

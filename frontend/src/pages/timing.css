@@ -121,7 +121,7 @@
  * room so names never crowd. */
 .tower th,
 .tower td {
-  padding: 3px 8px;
+  padding: 3px 6px;
 }
 
 .tower thead th {
@@ -230,8 +230,10 @@
   background: color-mix(in oklab, var(--res-top5), var(--ink) 6%);
 }
 
-.tower-stint {
-  display: flex;
+/* Two figures in one cell (laps and time; energy and laps left). The flex
+ * sits on an inner span: a flex td would leave table layout. */
+.tower-pair {
+  display: inline-flex;
   justify-content: flex-end;
   gap: var(--space-2);
 }
@@ -243,6 +245,11 @@
 
 .tower-state {
   min-width: 4ch;
+}
+
+.tower-energy .muted {
+  min-width: 5ch;
+  text-align: right;
 }
 
 .tower-pit-mark {
@@ -516,7 +523,7 @@
 /* Team names are the longest cells: shortened first, dropped last. */
 @media (max-width: 1200px) {
   .tower-team {
-    max-width: 16ch;
+    max-width: 12ch;
   }
 
   .timing {

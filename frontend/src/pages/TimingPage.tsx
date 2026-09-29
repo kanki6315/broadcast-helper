@@ -387,12 +387,25 @@ function TowerRow({
             {isClassBest && <span className="sr-only"> (fastest in class)</span>}
           </td>
           <td className="num tower-stint">
-            {car.stintLaps != null && !car.inPit && <span>{car.stintLaps} L</span>}
-            {stintTime && <span className="muted">{stintTime}</span>}
+            <span className="tower-pair">
+              {car.stintLaps != null && !car.inPit && <span>{car.stintLaps} L</span>}
+              {stintTime && <span className="muted">{stintTime}</span>}
+            </span>
           </td>
         </>
       )}
-      {hasEnergy && <td className="num">{car.energyPct != null ? `${Math.round(car.energyPct)}%` : ''}</td>}
+      {hasEnergy && (
+        <td className="num tower-energy">
+          <span className="tower-pair">
+            {car.energyPct != null && <span>{Math.round(car.energyPct)}%</span>}
+            {car.energyLapsLeft != null && (
+              <span className="muted" title="Laps left at this stint's average use per lap">
+                ~{Math.floor(car.energyLapsLeft)} L
+              </span>
+            )}
+          </span>
+        </td>
+      )}
       <td className="tower-state">
         {!running ? (
           <span className="tower-status">{car.status?.toLowerCase().replace(/_/g, ' ')}</span>

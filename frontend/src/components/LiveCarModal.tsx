@@ -4,6 +4,7 @@ import {
   driverName,
   duration,
   lapTime,
+  pct,
   ratingName,
   type CarDetail,
   type LapRow,
@@ -144,6 +145,7 @@ function LapTable({ laps, driverLabel }: { laps: LapRow[]; driverLabel: (order: 
     if (l.valid !== false && l.lapTimeMs != null && l.lapTimeMs > 0 && (best == null || l.lapTimeMs < best)) best = l.lapTimeMs
   }
   const newestFirst = [...laps].reverse()
+  const hasEnergy = laps.some((l) => l.energyPct != null)
   return (
     <table className="grid-table lc-table">
       <thead>
@@ -158,6 +160,16 @@ function LapTable({ laps, driverLabel }: { laps: LapRow[]; driverLabel: (order: 
           ))}
           <th className="num">Pos</th>
           <th className="num">Top speed</th>
+          {hasEnergy && (
+            <>
+              <th className="num" title="Energy remaining at the line after the lap (IMSA telemetry)">
+                Energy
+              </th>
+              <th className="num" title="Energy used on the lap">
+                Used
+              </th>
+            </>
+          )}
           <th>Notes</th>
         </tr>
       </thead>
@@ -189,6 +201,12 @@ function LapTable({ laps, driverLabel }: { laps: LapRow[]; driverLabel: (order: 
               })}
               <td className="num">{l.position ?? ''}</td>
               <td className="num">{l.topSpeed != null ? l.topSpeed.toFixed(1) : ''}</td>
+              {hasEnergy && (
+                <>
+                  <td className="num">{pct(l.energyPct)}</td>
+                  <td className="num">{pct(l.energyUsedPct)}</td>
+                </>
+              )}
               <td className="lc-notes">{notes.join(' · ')}</td>
             </tr>
           )
@@ -201,6 +219,7 @@ function LapTable({ laps, driverLabel }: { laps: LapRow[]; driverLabel: (order: 
 function StintTable({ car, driverLabel }: { car: CarDetail; driverLabel: (order: number | null) => string }) {
   if (car.stints.length === 0) return <div className="empty-state">No stints recorded yet.</div>
   const newestFirst = [...car.stints].reverse()
+  const hasEnergy = car.stints.some((s) => s.avgEnergyPerLapPct != null)
   const clock = (ms: number) =>
     new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
   return (
@@ -215,6 +234,11 @@ function StintTable({ car, driverLabel }: { car: CarDetail; driverLabel: (order:
           <th className="num" title="The driver's track time in the session after this stint (pit lane excluded)">
             Driver track time
           </th>
+          {hasEnergy && (
+            <th className="num" title="Average energy used per lap in the stint (IMSA telemetry)">
+              Energy / lap
+            </th>
+          )}
         </tr>
       </thead>
       <tbody>
@@ -239,6 +263,7 @@ function StintTable({ car, driverLabel }: { car: CarDetail; driverLabel: (order:
               <td className="num">{clock(s.startTimeMs)}</td>
               <td className="num">{open ? '' : duration(s.finishTimeMs! - s.startTimeMs)}</td>
               <td className="num">{duration(s.driverAccumSessionTrackMs)}</td>
+              {hasEnergy && <td className="num">{pct(s.avgEnergyPerLapPct, 2)}</td>}
             </tr>
           )
         })}
