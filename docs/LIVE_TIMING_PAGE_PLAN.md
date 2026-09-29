@@ -1,6 +1,6 @@
 # Live timing page, drive time and IMSA energy: plan
 
-Status: **plan approved 2026-09-29. Slices 0 and 1 are done. Slice 2 is next.**
+Status: **plan approved 2026-09-29. Slices 0, 1 and 2 are done. Slice 3 (web page) is next.**
 Branch: `claude/custom-live-timing-page-882b20`.
 This document is the handoff: everything a fresh session needs is here or in
 `docs/LIVE_TIMING.md` (the existing feed pipeline).
@@ -198,7 +198,33 @@ Original plan:
   `-Xmx256m` and record the result in `docs/LIVE_TIMING.md`. Go to 384 MB
   only with the measurement as justification.
 
-### Slice 2: drive time and the timing API (backend)
+### Slice 2: drive time and the timing API (backend) — DONE 2026-09-29
+
+Built as planned; `docs/LIVE_TIMING.md` *Timing page API* and *Drive time*
+describe it as it is. Where the build settled something:
+- A rating's rule takes any bound it leaves blank from the class-wide rule,
+  so a Bronze minimum still sits under everyone's maximum.
+- `DriveTime.driveMs` is the one method that holds the open-stint
+  assumption: an open TRACK stint with no accumulator adds its elapsed time,
+  and one carrying an accumulator is taken as live.
+- "Now" is the wall clock only while the session is being fed and its newest
+  feed time is within 10 minutes. Otherwise it is that newest feed time, so
+  replays and finished sessions stop counting.
+- The tower sends `stintStartMs` rather than an elapsed time, so the body
+  stays ETag-stable. The client counts up. In a replay the client's clock is
+  not the feed's; slice 3 should decide whether to show elapsed time there.
+- `server.compression` was already on for JSON. Checked on a spare-port
+  backend over a synthetic replay: gzip, 304 on `If-None-Match`, 2/2 cars and
+  4/4 drivers matched to event 224.
+- `/api/live/timing` has a current-driver fallback: the feed's
+  `entry.currentDriver`, else the open stint's driver.
+
+Still unverified on real bytes: the accumulator question above; whether
+`entry.currentDriver` is present and uses the driver order; whether PIT
+stints are how the feed marks a car in the pit lane (the standings may carry
+a better flag).
+
+Original plan:
 - **V58 `drive_time_rule`:** (event_id, class_name, rating nullable,
   min_ms, max_ms, note). `GET/PUT /api/events/{id}/drive-time-rules`, where
   PUT is admin-only.

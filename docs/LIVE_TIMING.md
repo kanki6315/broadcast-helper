@@ -44,6 +44,11 @@ replica would see `STANDBY` and no data.
 | `GET /api/live/championships/{id}` | member | One class championship's rows against the running order — see *Championship positions*. Poll it. |
 | `POST /api/live/connect` `{ "eventId": n }` | admin | Ask for the connection and bind it to the Pit Pass event it is scored against. |
 | `POST /api/live/disconnect` | admin | Close the socket and free the login. |
+| `GET /api/live/timing` | member | The timing page's tower — see *Timing page API*. Poll it. |
+| `GET /api/live/cars/{car}?session=` | member | One car's laps, stints and drivers. |
+| `GET /api/live/drive-time?session=` | member | Drive time per driver against the event's rules. |
+| `GET /api/live/sessions?eventId=` | member | The sessions recorded for an event, newest first. |
+| `GET` / `PUT /api/events/{id}/drive-time-rules` | member / admin | The event's drive-time rules; PUT replaces the whole set. |
 | `GET /api/live/state?path=timing.session.info` | admin | The merged feed at a dotted path (blank = everything). The licensed feed verbatim, hence admin-only. |
 
 States: `NOT_CONFIGURED` (no host), `OFF`, `CONNECTING`, `LIVE`, `BACKING_OFF`
@@ -289,6 +294,54 @@ No recording holds analysis data yet; every fixture is synthetic, built from
 the spec (1.0.36, pp. 52–58) against a server that runs 1.0.33. See the plan
 (`docs/LIVE_TIMING_PAGE_PLAN.md`, *Rollout*) for the practice session that
 settles these.
+
+## Timing page API
+
+Everything the timing page (slice 3) and the iPad read. All member GETs,
+all gzipped over 1 kB (`server.compression`), and the ETag filter answers
+`If-None-Match` with 304 when nothing changed. The tower carries no timestamps
+for that reason; a stint's running time is sent as `stintStartMs` for the
+client to count up from.
+
+- **`/api/live/timing`** — the classification (above) per class, each car
+  with: `intervalMs`/`intervalLaps` (the feed's `gapPreviousTime`/`Laps`,
+  nothing computed), the current driver (feed `entry.currentDriver`; our name
+  and rating from `live_driver`, else the feed's), `lastLap`/`lastLapMs`,
+  `bestLap`/`bestLapMs` (from memory; re-read from `live_lap` when a best
+  was invalidated), `inPit` (the open stint is a PIT stint), `stintStartMs`,
+  `stintLaps`, and `energyPct` (always null until the IMSA telemetry
+  adapter). `sessionDbId` names the feed session. Needs
+  `ALKAMELV2_ANALYSIS_ENABLED` for the lap and stint fields; without it they
+  are null and the rest still works.
+- **`/api/live/cars/{car}?session=`** — laps (with `sectorMs` /
+  `sectorFlags`, 1-based by sector), stints (with the four accumulators) and
+  drivers. `session` defaults to the session being fed, else the bound
+  event's latest. The car number is exact: `/cars/04` is not `/cars/4`.
+- **`/api/live/drive-time?session=`** — per driver: `driveMs`, `inCar`,
+  the applicable `minMs`/`maxMs`, and `status` `OK` / `UNDER_MIN` (with
+  `owedMs`) / `OVER_MAX` (with `overMs`) / `NO_RULE`, plus `remainingMs`.
+- **`/api/live/sessions?eventId=`** — `sessionDbId`, name, type, date, lap and
+  car counts, and whether it is the one being fed.
+
+### Drive time
+
+Rules are typed in per event (`drive_time_rule`, V58): per class, an
+optional minimum and maximum, either for every rating (`rating` blank) or for
+one (B/S/G/P). A driver gets their rating's rule, with any bound it leaves
+blank taken from the class-wide rule. Our rating comes from
+`driver_assignment`; an unmatched driver uses the feed license's letter.
+
+A driver's time is the latest `driverAccumSessionTrackTime` on their stints:
+track time only, pit lane excluded, as the IMSA rule counts. **Unverified**:
+how that accumulator behaves on an open stint. `DriveTime.driveMs` assumes an
+open TRACK stint with no accumulator of its own adds its elapsed time, and
+that one carrying an accumulator is being updated live. That single method is
+where to change it once real bytes show otherwise.
+
+"Now", for an open stint, is the wall clock only while the session is being
+fed and the feed's newest time is within 10 minutes of it. Otherwise it is
+the newest time the feed reported (the last lap's end or stint's start), so
+a replay or a finished session does not keep counting.
 
 ## When it will not connect
 
