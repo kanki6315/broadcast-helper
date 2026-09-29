@@ -241,6 +241,9 @@ export default function EventDetailPage() {
         <a href={`#/sheet/${detail.event.id}`} target="_blank" rel="noreferrer">
           Sheet →
         </a>
+        <a href={`#/timing/${detail.event.id}`} target="_blank" rel="noreferrer">
+          Timing →
+        </a>
       </h2>
       <p>
         {detail.event.isRound && detail.event.roundOrdinal != null
