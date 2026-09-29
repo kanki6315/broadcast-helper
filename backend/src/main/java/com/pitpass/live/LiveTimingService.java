@@ -69,7 +69,17 @@ public class LiveTimingService implements SmartLifecycle {
                              String holder, boolean heldHere,
                              Instant connectedSince, Instant lastMessageAt, long messages, long bytes,
                              int attempts, int drops, String lastError, String lastWarning,
-                             Instant nextAttemptAt, Server server, Session session, List<String> channels) {
+                             Instant nextAttemptAt, Server server, Session session, List<String> channels,
+                             Analysis analysis) {
+    }
+
+    /**
+     * timing.analysis ingest, when enabled. laps/stints count patches read on
+     * this connection; dropped were turned away by a full queue;
+     * withoutSession arrived before timing.session.info named the session.
+     */
+    public record Analysis(boolean enabled, long laps, long stints, long dropped, long withoutSession,
+                           int queued, long written, long failed) {
     }
 
     private static final Logger log = LoggerFactory.getLogger(LiveTimingService.class);
@@ -80,6 +90,8 @@ public class LiveTimingService implements SmartLifecycle {
     private final PublicImageStorage storage;
     private final LiveRecorder.Sink sink;
     private final Pacing pacing;
+    private final AnalysisWriter analysisWriter;
+    private final LiveCarSummaries summaries = new LiveCarSummaries();
     private final String instanceId = instanceName();
     private final AksStateTree tree = new AksStateTree();
     private final Semaphore wake = new Semaphore(0);
@@ -100,6 +112,8 @@ public class LiveTimingService implements SmartLifecycle {
     private volatile int drops;
     private volatile int backoffStep;
     private volatile boolean stopping;
+    private volatile Long boundEventId;
+    private volatile AnalysisRouter router;
 
     private Thread supervisor;
     private Thread connectionThread;
@@ -108,19 +122,27 @@ public class LiveTimingService implements SmartLifecycle {
 
     @Autowired
     public LiveTimingService(AlKamelV2Properties props, LiveTimingStore store, ObjectMapper mapper,
-                             PublicImageStorage storage) {
-        this(props, store, mapper, storage, null, Pacing.PRODUCTION);
+                             PublicImageStorage storage, AnalysisWriter analysisWriter) {
+        this(props, store, mapper, storage, null, Pacing.PRODUCTION, analysisWriter);
     }
 
     /** Tests pass their own sink and pacing; a null sink means the real one. */
     LiveTimingService(AlKamelV2Properties props, LiveTimingStore store, ObjectMapper mapper,
                       PublicImageStorage storage, LiveRecorder.Sink sink, Pacing pacing) {
+        this(props, store, mapper, storage, sink, pacing, null);
+    }
+
+    /** A null writer leaves timing.analysis off whatever the configuration says. */
+    LiveTimingService(AlKamelV2Properties props, LiveTimingStore store, ObjectMapper mapper,
+                      PublicImageStorage storage, LiveRecorder.Sink sink, Pacing pacing,
+                      AnalysisWriter analysisWriter) {
         this.props = props;
         this.store = store;
         this.mapper = mapper;
         this.storage = storage;
         this.sink = sink != null ? sink : this::storeSegment;
         this.pacing = pacing;
+        this.analysisWriter = props.analysisEnabled() ? analysisWriter : null;
         this.state = props.configured() ? State.OFF : State.NOT_CONFIGURED;
     }
 
@@ -158,7 +180,29 @@ public class LiveTimingService implements SmartLifecycle {
                 connectedSince, lastMessageAt, messages.get(), bytes.get(),
                 attempts, drops, lastError, lastWarning,
                 state == State.BACKING_OFF ? nextAttemptAt : null,
-                server, session(), props.configured() ? props.joinedChannels() : List.of());
+                server, session(), props.configured() ? props.joinedChannels() : List.of(), analysis());
+    }
+
+    private Analysis analysis() {
+        if (analysisWriter == null) {
+            return new Analysis(false, 0, 0, 0, 0, 0, 0, 0);
+        }
+        AnalysisRouter r = router;
+        AnalysisWriter.Stats w = analysisWriter.stats();
+        return r == null
+                ? new Analysis(true, 0, 0, 0, 0, w.queued(), w.written(), w.failed())
+                : new Analysis(true, r.laps(), r.stints(), r.dropped(), r.withoutSession(),
+                        w.queued(), w.written(), w.failed());
+    }
+
+    /** Per-car last lap, best lap and open stint of the current session. Empty unless analysis is on. */
+    public List<LiveCarSummaries.CarSummary> carSummaries() {
+        return summaries.snapshot();
+    }
+
+    /** The feed session the summaries belong to, or null. */
+    public Long analysisSessionDbId() {
+        return summaries.sessionDbId();
     }
 
     /** A copy of the merged feed at a dotted path, or null. The raw material for every live feature. */
@@ -262,6 +306,7 @@ public class LiveTimingService implements SmartLifecycle {
 
     private void tick() {
         LiveTimingStore.Row row = store.read();
+        boundEventId = row.eventId();
         if (!row.desiredConnected()) {
             stopConnection();
             if (leaseHeld) {
@@ -271,6 +316,7 @@ public class LiveTimingService implements SmartLifecycle {
             // Off means off: a stale running order must not outlive the connection.
             // (While BACKING_OFF the last-known tree is kept on purpose.)
             tree.clear();
+            summaries.reset(null);
             state = State.OFF;
             backoffStep = 0;
             attempts = 0;
@@ -281,6 +327,7 @@ public class LiveTimingService implements SmartLifecycle {
         if (!store.acquireOrRenew(instanceId, pacing.lease())) {
             stopConnection();
             tree.clear();
+            summaries.reset(null);
             leaseHeld = false;
             state = State.STANDBY;
             return;
@@ -311,6 +358,10 @@ public class LiveTimingService implements SmartLifecycle {
         String host = replayServer != null ? "127.0.0.1" : props.host();
         int port = replayServer != null ? replayServer.port() : props.port();
         boolean tls = replayServer == null && props.tlsEnabled();
+        summaries.reset(null);
+        AnalysisRouter analysis = analysisWriter == null ? null
+                : new AnalysisRouter(mapper, tree, analysisWriter, summaries, () -> boundEventId);
+        router = analysis;
         AksConnection conn = new AksConnection(props, host, port, tls, tree, mapper, new AksConnection.Listener() {
             @Override
             public void loggedIn(AksConnection.ServerInfo info) {
@@ -350,7 +401,7 @@ public class LiveTimingService implements SmartLifecycle {
                 lastWarning = message;
                 log.warn("Live timing: {}", message);
             }
-        });
+        }, analysis);
         connection = conn;
         connectionThread = Thread.ofVirtual().name("aks-connection").start(() -> runConnection(conn, recorder));
     }
