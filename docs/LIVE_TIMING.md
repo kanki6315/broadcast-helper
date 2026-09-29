@@ -4,7 +4,8 @@ The backend can hold a connection to Al Kamel's live timing feed and keep the
 current state of the session in memory. This is the pipeline only: live
 championship points, and later a live timing page, are built on top of it.
 
-Code: `backend/src/main/java/com/pitpass/live/`. Schema: `V54__live_timing.sql`.
+Code: `backend/src/main/java/com/pitpass/live/`. Schema: `V54__live_timing.sql`,
+`V57__live_analysis.sql`.
 Protocol reference: *Timing AKS V2 Protocol (JSON)* 1.0.36.
 
 ## The one rule: a single login
@@ -164,7 +165,7 @@ All `ALKAMELV2_*`. Set the first three on Railway; the rest have working default
 | `ALKAMELV2_TLS_ENABLED` | `true` | The feed is TLS. Off only for the local replay server. |
 | `ALKAMELV2_TLS_VERIFY_CERTIFICATE` | `false` | The spec says to ignore certificate errors. The trust-all context is scoped to this one socket. Set `true` if the server's certificate proves valid. |
 | `ALKAMELV2_CLIENT_APP_NAME` | `Pit Pass` | Sent in LOGIN. |
-| `ALKAMELV2_CHANNELS` | info, entry, classes, status, standings.byClass.active, startingGrid (all under `timing.session.`) | Comma-separated. Deliberately excludes `timing.analysis` — every lap of every car, the part that reaches ~100 MB over 24 hours. |
+| `ALKAMELV2_CHANNELS` | info, entry, classes, status, standings.byClass.active, startingGrid (all under `timing.session.`) | Comma-separated. Excludes `timing.analysis`, which `ALKAMELV2_ANALYSIS_ENABLED` adds and streams separately. |
 | `ALKAMELV2_MAX_LINE_BYTES` | `33554432` | A longer line is a protocol fault, not buffered. |
 | `ALKAMELV2_CONNECT_TIMEOUT_SECONDS` | `10` | |
 | `ALKAMELV2_LOGIN_TIMEOUT_SECONDS` | `15` | How long the TLS handshake, and then the LOGIN reply, may each take. |
@@ -175,6 +176,8 @@ All `ALKAMELV2_*`. Set the first three on Railway; the rest have working default
 | `ALKAMELV2_RECORDING_MAX_LOCAL_MEGABYTES` | `512` | Oldest local segments pruned past this. |
 | `ALKAMELV2_REPLAY_FILE` | — | Local dev: replay this recording instead of connecting. |
 | `ALKAMELV2_REPLAY_SPEED` | `1.0` | `10` = ten times faster; `0` = no pauses. |
+| `ALKAMELV2_ANALYSIS_ENABLED` | `false` | Also join `timing.analysis.laps` and `.stints` and stream them into Postgres — see *timing.analysis*. Off until a practice session has run clean with it. |
+| `ALKAMELV2_ANALYSIS_MAX_LINE_BYTES` | `536870912` | Sanity cap on one **streamed** line (counted, never buffered). `ALKAMELV2_MAX_LINE_BYTES` then guards only buffered lines. |
 
 ## Railway settings
 
@@ -193,8 +196,99 @@ Railway's static outbound IP — `lastError` would show a connect timeout or
 refusal rather than a login error.
 
 The container runs with `-Xmx256m` (Dockerfile). The default channels need a
-few MB. Joining `timing.analysis` for a future timing page does **not** fit in
-that heap over a long race; revisit the cap when that work starts.
+few MB. `timing.analysis` is streamed rather than held, so it fits in the same
+heap — measured under *timing.analysis*.
+
+## timing.analysis
+
+Laps and stints for the timing page and drive time. **Off by default**
+(`ALKAMELV2_ANALYSIS_ENABLED`). When on, `timing.analysis.laps` and
+`timing.analysis.stints` are joined too, and every JSON frame takes the
+streaming path below instead of being parsed whole.
+
+Why streaming: a reconnect snapshot of a 24-hour race's laps is one line of
+45–78 MB (over `max-line-bytes`, so the old reader would refuse it and
+reconnect forever), and as a Jackson tree it would take 300–510 MB.
+
+**The path.** `AksLineReader` reads a frame's `CMD:id:channel:` header, and
+for a JSON frame hands the rest of the line to `AnalysisRouter` as a stream
+that ends at `\n` (the CR before it dropped). Every byte is teed to the
+recorder as it passes, so **recordings stay byte-identical** — the replay
+server cannot tell the difference. `AnalysisRouter` walks the JSON with
+Jackson's `JsonParser`:
+
+- `timing.analysis.laps.<car>.laps.<lap>` → one small patch per lap.
+  `loopSectors` and `sections` (most of a lap's bytes) are skipped unread;
+  `sectors.<n>` keeps time and flag.
+- `timing.analysis.stints.<car>.stints.<startTime>` → one patch per stint,
+  with the four driver accumulators.
+- Other analysis sub-channels (`pitIn`, `pitOut`…) are skipped: laps and
+  stints carry what we keep.
+- Everything under `timing.session` is read as a tree and merged into
+  `AksStateTree` as before. **Analysis never enters the tree.**
+
+Patches are partial: a field the diff names is written (a JSON `null` writes
+NULL), a field it does not name keeps its stored value, and a diff that names
+one sector patches just that slot of the arrays (`live_patch_int/_text` in
+V57). A `null` lap or stint deletes the row. A `null` car or channel deletes
+**nothing** — the history is permanent, and a new session has its own key.
+
+`AnalysisWriter` drains a bounded queue (100,000 patches) on one virtual
+thread and upserts in JDBC batches every second or 500 rows. The socket
+thread never waits on the database: a full queue drops the patch and counts
+it (`analysis.dropped` in status); the next reconnect's snapshot rewrites it,
+since every write is an idempotent upsert.
+
+**Keys.** Rows are keyed by Al Kamel's `timing.session.info.sessionDbId`
+(`live_session`), not by our event: the bound event is recorded on the
+session, but the feed never picks it. Car numbers are stored exactly as the
+feed writes them (#04 ≠ #4). Laps or stints that arrive before any
+`info.sessionDbId` has been seen are skipped and counted
+(`analysis.withoutSession`); the JOIN order puts `info` first.
+
+**Drivers.** Whenever `timing.session.entry` changes, `LiveDriverResolver`
+writes `live_driver` for the session: driver order N of each car
+(`drivers."1"`, `"2"`…, what laps and stints call `driver`), matched to the
+bound event's entry by number (exact first, then leading zeros only if
+unambiguous) and to the crew by surname (full name when a crew shares a
+surname; case and accents ignored). `rating` is ours from
+`driver_assignment`, or the first letter of the feed's `license` when
+unmatched. Unmatched drivers are written with `driver_id` null — never
+dropped.
+
+**In memory** is only `LiveCarSummaries`: per car, last lap, best lap, open
+stint and laps in it — reset on a new session or connection. A lap
+invalidated after the fact may have been the best; that car's `bestStale`
+says to read the best lap from `live_lap` instead.
+
+`/api/live/status` carries an `analysis` block: `enabled`, `laps` and
+`stints` (patches read on this connection), `dropped`, `withoutSession`,
+`queued`, `written`, `failed`.
+
+### Heap, measured
+
+`DaytonaSnapshotTest` generates a Rolex-24-size snapshot as it is read — 60
+cars × 650 laps = 39,000 laps, 20 loop sectors each, **one 88 MB line** — and
+streams it through the real reader, router and recorder in a forked JVM with
+production's flags (`-Xmx256m -XX:+UseSerialGC`), into an **undrained** queue
+of the writer's capacity (the worst case: the database has stalled).
+
+| | 2026-09-29 |
+|---|---|
+| Retained after GC, whole snapshot queued | ~28 MB (≈ 760 B per queued lap patch) |
+| Old-gen peak | ~31 MB |
+| Time to stream the line | 0.7 s |
+| Dropped | 0 |
+
+So the 256 MB cap stays; there is no case for 384 MB. With the database
+keeping up (500-row batches) the queue holds far less than this.
+
+### Not yet verified against real bytes
+
+No recording holds analysis data yet; every fixture is synthetic, built from
+the spec (1.0.36, pp. 52–58) against a server that runs 1.0.33. See the plan
+(`docs/LIVE_TIMING_PAGE_PLAN.md`, *Rollout*) for the practice session that
+settles these.
 
 ## When it will not connect
 

@@ -1,6 +1,6 @@
 # Live timing page, drive time and IMSA energy: plan
 
-Status: **plan approved 2026-09-29. Slice 0 is done (findings below). Slice 1 is next.**
+Status: **plan approved 2026-09-29. Slices 0 and 1 are done. Slice 2 is next.**
 Branch: `claude/custom-live-timing-page-882b20`.
 This document is the handoff: everything a fresh session needs is here or in
 `docs/LIVE_TIMING.md` (the existing feed pipeline).
@@ -121,7 +121,40 @@ the recordings to date only hold the narrow `timing.session.*` channels.
 
 ## Slices
 
-### Slice 1: streaming analysis ingest (backend, the hard part)
+### Slice 1: streaming analysis ingest (backend, the hard part) — DONE 2026-09-29
+
+Built as planned; `docs/LIVE_TIMING.md` *timing.analysis* describes it as it
+is. Where the build settled something the plan left open:
+- `AksLineReader` owns line framing for both paths. Streamed JSON only when
+  analysis is on, so production with the flag off runs the old buffered path.
+  An unparseable streamed frame is read to its end, recorded, and reported as
+  a warning; it no longer drops the login.
+- `live_session` is keyed by `sessionDbId` itself. Its `event_id` is the event
+  bound when the session was last seen.
+- `live_driver` also stores `entry_id` and `rating` (ours, or the feed
+  license's first letter when unmatched).
+- The writer's queue holds 100,000 patches. A full queue drops and counts;
+  the next reconnect snapshot rewrites the rows.
+- `LiveCarSummaries.bestStale` flags a best lap invalidated after the fact.
+  Slice 2 should read that car's best lap from `live_lap`.
+- Heap measured: a 39,000-lap, 88 MB single-line snapshot retains ~28 MB with
+  the whole snapshot queued. **The 256 MB cap stays.**
+
+Still unverified until a practice session is recorded with the flag on:
+- JOIN snapshot framing. Rooted at `{"timing":…}` like pushes, or at the
+  channel? Both are handled.
+- Field types. For example, whether `trackLimits` is a count or a flag,
+  whether `pitIn.time` is epoch or duration, and whether `topSpeed` is km/h.
+  The parsers are tolerant, but the column meanings are guesses.
+- When the stint accumulators update (live or at stint close), and which one
+  matches the IMSA rule. This decides slice 2's `DriveTime`.
+- Whether `lapNum` keys are 1-based, and whether a lap in progress appears
+  before it has a time.
+- Real snapshot size and diff rate, and heap and batch timing on Railway.
+- Whether `info` really arrives before analysis on a fresh JOIN. If not,
+  `analysis.withoutSession` counts the loss.
+
+Original plan:
 - **`live/AksConnection.java`:** `readLine` buffers whole lines, and
   `handle` calls `mapper.readTree` and `tree.merge`.
   - For `JSON` frames, read the `CMD:id:channel:` prefix, then hand a
