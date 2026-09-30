@@ -19,7 +19,7 @@ struct SheetView: View {
     @State private var storylinesOpen = false
     @State private var page: Page = .sheet
 
-    private enum Page: String { case sheet, recap, calculator, pitLane, scratchpad, conversations }
+    private enum Page: String { case sheet, recap, calculator, timing, pitLane, scratchpad, conversations }
     @State private var book: ConversationBook
     @State private var conversationAudio = ConversationAudio()
     @State private var conversationPerson: ConversationPerson?
@@ -121,6 +121,9 @@ struct SheetView: View {
             }
             Tab("Calculator", systemImage: "plus.forwardslash.minus", value: Page.calculator) {
                 calculatorContent
+            }
+            Tab("Timing", systemImage: "stopwatch", value: Page.timing) {
+                TimingSheet(eventId: eventId)
             }
         }
         // Use the native top tab bar on iPad, adapting to bottom tabs in compact windows.

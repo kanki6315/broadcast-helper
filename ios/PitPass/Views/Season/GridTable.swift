@@ -58,6 +58,10 @@ struct GridRowItem: Identifiable {
     let cells: [AnyView]
     /// Stacked lines in the tallest cell — the row's height budget.
     let lines: Int
+    /// Makes the whole row (both halves) a button — the timing tower opens a car.
+    var onTap: (() -> Void)? = nil
+    /// What VoiceOver reads for a tappable row.
+    var tapLabel: String? = nil
 }
 
 struct GridSection: Identifiable {
@@ -166,10 +170,24 @@ struct GridTable: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .overlay(alignment: .bottom) { Rectangle().fill(PP.border).frame(height: 1) }
+                    .tappable(row.onTap, label: ident ? row.tapLabel : nil)
                 }
             }
         }
         .frame(minWidth: columns.reduce(0) { $0 + $1.width }, alignment: .leading)
+    }
+}
+
+private extension View {
+    /// A row that opens something: the whole row is the hit area. Only the
+    /// identity half carries the accessible name, so VoiceOver reads it once.
+    @ViewBuilder func tappable(_ action: (() -> Void)?, label: String?) -> some View {
+        if let action {
+            let base = contentShape(Rectangle()).onTapGesture(perform: action).accessibilityAddTraits(.isButton)
+            if let label { base.accessibilityElement(children: .ignore).accessibilityLabel(label) } else { base.accessibilityHidden(true) }
+        } else {
+            self
+        }
     }
 }
 
@@ -205,5 +223,8 @@ enum GridCell {
         AnyView(Text("—").font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.textMuted).frame(maxWidth: .infinity))
     }
 
-    static func empty() -> AnyView { AnyView(EmptyView()) }
+    /// A blank cell that still holds its column. Not EmptyView: SwiftUI drops
+    /// an EmptyView together with its frame, so every cell after a blank one
+    /// slid a column left (a crew's second row, a result with no class).
+    static func empty() -> AnyView { AnyView(Color.clear.frame(height: 1)) }
 }
