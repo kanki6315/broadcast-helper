@@ -6,6 +6,17 @@
 
 export type LiveState = 'NOT_CONFIGURED' | 'OFF' | 'STANDBY' | 'CONNECTING' | 'LIVE' | 'BACKING_OFF'
 
+/** `GET /api/live/status`, as far as the connect control needs it. */
+export interface LiveStatus {
+  state: LiveState
+  configured: boolean
+  desiredConnected: boolean
+  /** The event the feed is being scored against. */
+  eventId: number | null
+  eventName: string | null
+  lastError: string | null
+}
+
 export interface FeedSession {
   championship: string | null
   event: string | null

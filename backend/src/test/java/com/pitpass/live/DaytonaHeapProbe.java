@@ -26,7 +26,7 @@ public final class DaytonaHeapProbe {
         tree.merge((com.fasterxml.jackson.databind.node.ObjectNode) new ObjectMapper().readTree(
                 AnalysisFixtures.info(AnalysisFixtures.SESSION, "Race")));
         LiveCarSummaries summaries = new LiveCarSummaries();
-        AnalysisRouter router = new AnalysisRouter(new ObjectMapper(), tree, queue::offer, summaries, () -> null);
+        AnalysisRouter router = new AnalysisRouter(new ObjectMapper(), tree, queue::offer, summaries);
         // the router learns the session from a session frame, as on the wire
         router.frame("", "", new java.io.ByteArrayInputStream(
                 AnalysisFixtures.info(AnalysisFixtures.SESSION, "Race").getBytes()));

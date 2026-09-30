@@ -410,8 +410,13 @@ wordmark logos sit on a small white chip in dark mode only.
 ### Live Timing Page (`frontend/src/pages/TimingPage.tsx`, `timing.css`)
 The timing tower itself (`/timing/:eventId`), chrome-less like the sheet
 because it lives on a second screen in the booth. Two views on a `.seg`
-tablist (URL `?view=drive`): **Tower** and **Drive time**. It only reads:
-connecting the feed stays on the iPad, so there is no connect control here.
+tablist (URL `?view=drive`): **Tower** and **Drive time**. Viewers only
+read. Admins also get the shared switch at the end of the top bar, with the
+iPad's wording and states: **Connect for this event**, **Score this event**
+when the feed is following another event, and **Disconnect**. Disconnecting
+stops timing for every user, so it asks first, **inline** (the question plus
+"Keep connected" and a `.btn-danger` "Disconnect for everyone") rather than
+in a modal.
 
 - **Tower**: one `.grid-table` with a class band per class (the series'
   `class_style` colour, computed ink, name always printed). It runs tighter

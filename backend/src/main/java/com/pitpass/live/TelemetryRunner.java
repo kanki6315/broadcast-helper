@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -28,8 +29,14 @@ final class TelemetryRunner {
 
     public enum State { OFF, CONNECTING, LIVE, BACKING_OFF }
 
+    /**
+     * idleReason says why it is OFF while the feed is connected (the bound
+     * event's series sends no energy). classRejected counts lap samples not
+     * stored because IMSA's class for the car disagreed with the Al Kamel feed's.
+     */
     public record Status(boolean configured, boolean replaying, State state, String source, String lastError,
-                         Instant lastMessageAt, long messages, int cars, long lapsStored, Instant nextAttemptAt) {
+                         String idleReason, Instant lastMessageAt, long messages, int cars, long lapsStored,
+                         long classRejected, Instant nextAttemptAt) {
     }
 
     /** Builds a fresh source per attempt. */
@@ -50,16 +57,19 @@ final class TelemetryRunner {
     private final RecorderFactory recorders;
     private final Supplier<Long> sessionDbId;
     private final AnalysisRouter.Sink sink;
+    private final Function<String, String> feedClassOf;
     private final List<Duration> backoff;
     private final Duration stableAfter;
     private final LiveTelemetry telemetry = new LiveTelemetry();
     private final AtomicLong messages = new AtomicLong();
     private final AtomicLong lapsStored = new AtomicLong();
+    private final AtomicLong classRejected = new AtomicLong();
 
     private volatile boolean running;
     private volatile State state = State.OFF;
     private volatile String source;
     private volatile String lastError;
+    private volatile String idleReason;
     private volatile Instant lastMessageAt;
     private volatile Instant nextAttemptAt;
     private volatile TelemetrySource current;
@@ -68,13 +78,14 @@ final class TelemetryRunner {
 
     TelemetryRunner(ImsaTelemetryProperties props, ObjectMapper mapper, SourceFactory sources,
                     RecorderFactory recorders, Supplier<Long> sessionDbId, AnalysisRouter.Sink sink,
-                    List<Duration> backoff, Duration stableAfter) {
+                    Function<String, String> feedClassOf, List<Duration> backoff, Duration stableAfter) {
         this.props = props;
         this.decoder = new TelemetryDecoder(mapper);
         this.sources = sources;
         this.recorders = recorders;
         this.sessionDbId = sessionDbId;
         this.sink = sink;
+        this.feedClassOf = feedClassOf;
         this.backoff = backoff;
         this.stableAfter = stableAfter;
     }
@@ -84,12 +95,19 @@ final class TelemetryRunner {
     }
 
     Status status() {
-        return new Status(props.configured(), props.replaying(), state, source, lastError, lastMessageAt,
-                messages.get(), telemetry.cars(), lapsStored.get(), state == State.BACKING_OFF ? nextAttemptAt : null);
+        return new Status(props.configured(), props.replaying(), state, source, lastError,
+                running ? null : idleReason, lastMessageAt, messages.get(), telemetry.cars(), lapsStored.get(),
+                classRejected.get(), state == State.BACKING_OFF ? nextAttemptAt : null);
     }
 
     /** Called on every supervisor tick: start or stop to match. Idempotent. */
     synchronized void ensure(boolean shouldRun) {
+        ensure(shouldRun, null);
+    }
+
+    /** whyNot is shown in the status while it stays off (a series that sends no energy). */
+    synchronized void ensure(boolean shouldRun, String whyNot) {
+        idleReason = shouldRun ? null : whyNot;
         if (shouldRun && props.configured() && !running) {
             running = true;
             lastError = null;
@@ -192,6 +210,12 @@ final class TelemetryRunner {
                     return;
                 }
                 for (LiveTelemetry.LapSample lap : laps) {
+                    // Another series' car sharing the number must not file energy under this session.
+                    String feedClass = feedClassOf == null ? null : feedClassOf.apply(lap.car());
+                    if (!LiveTelemetry.classAgrees(lap.className(), feedClass)) {
+                        classRejected.incrementAndGet();
+                        continue;
+                    }
                     if (sink.offer(new AnalysisRows.EnergyLap(session, lap.car(), lap.lap(), lap.energyPct(), lap.pitLane()))) {
                         lapsStored.incrementAndGet();
                     }

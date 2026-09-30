@@ -42,7 +42,7 @@ replica would see `STANDBY` and no data.
 | `GET /api/live/status` | member | State, bound event, what the feed says is running, message counters, last error. Poll it. |
 | `GET /api/live/classification` | member | The running order per class, matched to the bound event's entries — see below. Poll it. |
 | `GET /api/live/championships/{id}` | member | One class championship's rows against the running order — see *Championship positions*. Poll it. |
-| `POST /api/live/connect` `{ "eventId": n }` | admin | Ask for the connection and bind it to the Pit Pass event it is scored against. |
+| `POST /api/live/connect` `{ "eventId": n }` | admin | Ask for the connection and bind it to the Pit Pass event it is scored against. The iPad's live timing bar and, for admins, the web Timing page's top bar both call it. |
 | `POST /api/live/disconnect` | admin | Close the socket and free the login. |
 | `GET /api/live/timing` | member | The timing page's tower — see *Timing page API*. Poll it. |
 | `GET /api/live/cars/{car}?session=` | member | One car's laps, stints and drivers. |
@@ -192,6 +192,7 @@ separate, unofficial source. See *IMSA telemetry (energy)*.
 | Variable | Default | |
 |---|---|---|
 | `IMSA_TELEMETRY_ENABLED` | `false` | Connect to IMSA's telemetry websocket whenever the Al Kamel feed is connected. |
+| `IMSA_TELEMETRY_SERIES` | `IMSA WeatherTech SportsCar Championship,IWSC` | The series that send energy, by name or abbreviation. The connection runs only while the bound event belongs to one. |
 | `IMSA_TELEMETRY_APP_URL` | `https://d3aqeo5txo0gzi.cloudfront.net/` | The telemetry app that imsa.com/telemetry frames. The endpoint and API key are read from its bundle at every connect. |
 | `IMSA_TELEMETRY_CHANNELS` | `/telemetry/message,/telemetry/session` | AppSync Events channels. |
 | `IMSA_TELEMETRY_STALE_SECONDS` | `15` | A reading older than this shows no energy. |
@@ -259,9 +260,28 @@ it (`analysis.dropped` in status); the next reconnect's snapshot rewrites it,
 since every write is an idempotent upsert.
 
 **Keys.** Rows are keyed by Al Kamel's `timing.session.info.sessionDbId`
-(`live_session`), not by our event: the bound event is recorded on the
-session, but the feed never picks it. Car numbers are stored exactly as the
-feed writes them (#04 ≠ #4). Laps or stints that arrive before any
+(`live_session`), not by our event. Car numbers are stored exactly as the
+feed writes them (#04 ≠ #4).
+
+**Which event a session belongs to.** Every session the feed shows is
+recorded, whichever series it is. A session is **filed** under an event
+(`live_session.event_id`) only when that event's entry list matches the cars
+on track, by car number **and** class (`LiveEventMatch`, at least half the
+field). Numbers alone would not do: a weekend's series share them (#7 in
+WeatherTech and in Pilot Challenge), but never their classes. The binding
+only says which event to try:
+- Binding Pilot Challenge while WeatherTech is on track files and moves
+  nothing.
+- A session that loads before you rebind stays unfiled, then is filed the
+  moment the rebind matches it (checked every supervisor tick).
+- A binding that doesn't match is re-checked every 10 s as the running order
+  fills in.
+
+Drivers are matched against the **filed** event's crews, so they follow the
+filing, not the binding. An unfiled session appears on no event's Timing page
+until it is filed. (V57's comment still describes the old "bound when first
+seen" rule; a merged migration's text can't change without breaking Flyway's
+checksum.) Laps or stints that arrive before any
 `info.sessionDbId` has been seen are skipped and counted
 (`analysis.withoutSession`); the JOIN order puts `info` first.
 
@@ -399,8 +419,16 @@ unofficial and undocumented, so it is off by default
 Al Kamel connection, and a broken or vanished endpoint costs a log line and a
 retry (5 s → 5 min ladder).
 
-- **When it runs:** only in the process holding the Al Kamel lease, and only
-  while the feed is asked for. The supervisor starts and stops it every tick.
+- **When it runs:** only in the process holding the Al Kamel lease, only
+  while the feed is asked for, and **only while the bound event belongs to a
+  series that sends energy** (`IMSA_TELEMETRY_SERIES`, by default
+  WeatherTech: name or `IWSC`). Bound to any other series it stays OFF, with
+  the reason in the status's `telemetry.idleReason`. The supervisor starts
+  and stops it every tick, so a rebind switches it within seconds.
+- **Class guard:** a reading counts only when IMSA's class for the car agrees
+  with the car's class in the Al Kamel feed ("GTD PRO" = "GTDPRO"). So another
+  series' car sharing the number never shows or stores its energy. Refused
+  lap samples are counted in `telemetry.classRejected`.
 - **Endpoint and key:** read from the app's JavaScript bundle at every
   connect (`AppSyncEndpoint`), never configured. AppSync keys expire, so a
   copied key would silently stop working. The key is never logged whole.

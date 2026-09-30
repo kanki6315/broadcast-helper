@@ -273,7 +273,8 @@ Original plan:
   first. Polls every 2 s with `useLivePoll`.
 - Car panel: laps and stints, polling every 10 s while open.
 - Drive time tab, with an admin rules editor.
-- No connection controls on the web.
+- No connection controls on the web. *(Changed 2026-09-30 at Arjuna's
+  request: admins get the connect/disconnect switch on the Timing page too.)*
 - Playwright test `frontend/tests/liveTiming.browser.cjs`, run as
   `npm run test:timing:live`.
 

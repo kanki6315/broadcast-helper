@@ -46,7 +46,8 @@ export default function LiveCarModal({
     10_000,
   )
   const classBest = useMemo(() => {
-    const cls = sectors?.classes.find((c) => c.bests.cars.some((x) => x.carNumber === carNumber))
+    // Optional chaining all the way: a failed or odd answer must not take the panel down with it.
+    const cls = sectors?.classes?.find((c) => c.bests?.cars?.some((x) => x.carNumber === carNumber))
     return cls?.bests.classBestSectorMs ?? []
   }, [sectors, carNumber])
 

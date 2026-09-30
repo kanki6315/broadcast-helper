@@ -19,11 +19,23 @@ import java.util.List;
 public record ImsaTelemetryProperties(
         boolean enabled,
         String appUrl,
+        List<String> series,
         List<String> channels,
         int staleSeconds,
         boolean recordingEnabled,
         String replayFile,
         double replaySpeed) {
+
+    /**
+     * Only these series carry IMSA energy telemetry (WeatherTech's GTP): the
+     * connection runs only while the bound event belongs to one, matched on
+     * series name or abbreviation, ignoring case.
+     */
+    public boolean coversSeries(String name, String abbreviation) {
+        return (series == null ? List.<String>of() : series).stream().map(String::trim).filter(s -> !s.isEmpty())
+                .anyMatch(s -> s.equalsIgnoreCase(name == null ? "" : name.trim())
+                        || s.equalsIgnoreCase(abbreviation == null ? "" : abbreviation.trim()));
+    }
 
     public boolean replaying() {
         return replayFile != null && !replayFile.isBlank();

@@ -49,6 +49,29 @@
   background: var(--error);
 }
 
+/* The admin's switch, at the end of the top bar. */
+.timing-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.timing-control-ask {
+  max-width: 46ch;
+  color: var(--ink);
+  font-size: var(--text-xs);
+}
+
+.timing-control-problem {
+  flex-basis: 100%;
+  text-align: right;
+  color: var(--error);
+  font-size: var(--text-xs);
+}
+
 .timing-stale {
   color: var(--error);
   font-size: var(--text-xs);

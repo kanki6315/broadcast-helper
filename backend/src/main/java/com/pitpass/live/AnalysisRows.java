@@ -15,9 +15,13 @@ final class AnalysisRows {
     private AnalysisRows() {
     }
 
-    /** timing.session.info, as far as the session key and its label go. */
+    /**
+     * timing.session.info, as far as the session key and its label go. Which
+     * Pit Pass event it belongs to is decided separately, by entry-list match
+     * ({@link LiveEventMatch}), never by whatever happened to be bound.
+     */
     record SessionInfo(long sessionDbId, String mongoId, Long feedEventDbId, String name, String type,
-                       Long dateMs, Long eventId) {
+                       Long dateMs) {
     }
 
     /** Anything the writer is asked to do, in arrival order. */

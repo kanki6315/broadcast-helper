@@ -17,6 +17,7 @@ import {
   ratingName,
   ruleTime,
   type DriveTimeResponse,
+  type LiveStatus,
   type DriveTimeResult,
   type DriveTimeRule,
   type SessionSummary,
@@ -33,9 +34,10 @@ import { GapsView, PitsView, SectorsView } from './TimingAnalysis'
  * driver against the event's rules. Chrome-less like the sheet — it is kept
  * open on a second screen in the booth.
  *
- * Reads only: connecting and disconnecting the feed stay on the iPad. The
- * tower polls every 2 s (a 304 when nothing moved), drive time every 10 s,
- * the analysis views every 15 s while their session is live.
+ * Reads, apart from two admin-only controls: the shared connect/disconnect
+ * switch (as on the iPad) and the drive-time rules. The tower polls every 2 s
+ * (a 304 when nothing moved), drive time every 10 s, the analysis views every
+ * 15 s while their session is live.
  */
 type View = 'tower' | 'gaps' | 'sectors' | 'pits' | 'drive'
 
@@ -50,7 +52,9 @@ const VIEWS: { id: View; label: string }[] = [
 export default function TimingPage({ eventId }: { eventId: number }) {
   const [params, setParams] = useSearchParams()
   const view: View = VIEWS.find((v) => v.id === params.get('view'))?.id ?? 'tower'
-  const { value: tower, error: towerError } = useLivePoll<Tower>('/api/live/timing', 2000)
+  // Bumped after an admin connects or disconnects, so the tower follows at once.
+  const [feedChanged, setFeedChanged] = useState(0)
+  const { value: tower, error: towerError } = useLivePoll<Tower>('/api/live/timing', 2000, feedChanged)
   const { value: sessions } = useLivePoll<SessionSummary[]>(`/api/live/sessions?eventId=${eventId}`, 30_000)
   // The event's own name, for when the feed is following another one.
   // undefined = still asking; null = could not find out.
@@ -89,6 +93,7 @@ export default function TimingPage({ eventId }: { eventId: number }) {
         <ViewTabs view={view} onChange={setView} />
         {tower && <FeedStatus tower={tower} followingThis={followingThis} />}
         {towerError && tower && <span className="timing-stale">Not updating: {towerError}</span>}
+        <LiveConnectControl eventId={eventId} onChanged={() => setFeedChanged((n) => n + 1)} />
       </div>
 
       <header className="timing-head">
@@ -156,6 +161,90 @@ function FeedStatus({ tower, followingThis }: { tower: Tower; followingThis: boo
   )
 }
 
+/**
+ * The shared switch, for admins only: connect the one Al Kamel login and bind
+ * it to this event, rebind it here, or disconnect it — for everyone, so that
+ * asks first. Same wording and states as the iPad's LiveTimingBar; viewers
+ * see only the status beside it.
+ */
+function LiveConnectControl({ eventId, onChanged }: { eventId: number; onChanged: () => void }) {
+  const isAdmin = useIsAdmin()
+  const [refresh, setRefresh] = useState(0)
+  const { value: status } = useLivePoll<LiveStatus>(isAdmin ? '/api/live/status' : null, 5000, refresh)
+  const [busy, setBusy] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+
+  if (!isAdmin || !status?.configured) return null
+
+  const send = async (path: string, body?: unknown) => {
+    setBusy(true)
+    setProblem(null)
+    try {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      })
+      if (!res.ok) {
+        const msg = await res.json().then((b) => b?.message).catch(() => null)
+        setProblem(msg ?? `The server answered ${res.status}.`)
+        return
+      }
+      setConfirming(false)
+      setRefresh((n) => n + 1)
+      onChanged()
+    } catch (e) {
+      setProblem(`Could not reach the server: ${(e as Error).message}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+  const connect = () => send('/api/live/connect', { eventId })
+  const disconnect = () => send('/api/live/disconnect')
+
+  return (
+    <div className="timing-control" aria-label="Live timing connection">
+      {confirming ? (
+        <>
+          <span className="timing-control-ask" role="alert">
+            Disconnect for everyone? The server holds one connection for every Pit Pass user; live timing and points
+            stop for all of them.
+          </span>
+          <button
+            className="btn"
+            autoFocus
+            disabled={busy}
+            onClick={() => setConfirming(false)}
+            onKeyDown={(e) => e.key === 'Escape' && setConfirming(false)}
+          >
+            Keep connected
+          </button>
+          <button className="btn btn-danger" disabled={busy} onClick={disconnect}>
+            {busy ? 'Disconnecting…' : 'Disconnect for everyone'}
+          </button>
+        </>
+      ) : !status.desiredConnected ? (
+        <button className="btn btn-primary" disabled={busy} onClick={connect}>
+          {busy ? 'Connecting…' : 'Connect for this event'}
+        </button>
+      ) : (
+        <>
+          {status.eventId !== eventId && (
+            <button className="btn" disabled={busy} onClick={connect} title={`Now scoring ${status.eventName ?? 'another event'}`}>
+              {busy ? 'Switching…' : 'Score this event'}
+            </button>
+          )}
+          <button className="btn" disabled={busy} onClick={() => setConfirming(true)}>
+            Disconnect
+          </button>
+        </>
+      )}
+      {problem && <span className="timing-control-problem">{problem}</span>}
+    </div>
+  )
+}
+
 function SessionLine({ session }: { session: NonNullable<Tower['session']> }) {
   const flag = flagLabel(session.flag)
   return (
@@ -213,7 +302,7 @@ function TowerView({
   if (tower.state === 'OFF' || tower.state === 'STANDBY') {
     return (
       <div className="empty-state">
-        Live timing is off. Once it is connected from the iPad, the tower fills in here — no need to reload.
+        Live timing is off. Once an admin connects it, the tower fills in here — no need to reload.
         <br />
         Recorded sessions stay under <a href={`#/timing/${eventId}?view=gaps`}>Gaps</a>,{' '}
         <a href={`#/timing/${eventId}?view=sectors`}>Sectors</a>, <a href={`#/timing/${eventId}?view=pits`}>Pits</a> and{' '}

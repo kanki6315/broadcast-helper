@@ -84,6 +84,34 @@ public class LiveTimingStore {
                 .update();
     }
 
+    /** An event's series, by name and abbreviation — what decides whether IMSA telemetry applies. */
+    public record Series(String name, String abbreviation) {
+    }
+
+    public Optional<Series> seriesOf(long eventId) {
+        return db.sql("""
+                SELECT s.name, s.abbreviation FROM event e
+                JOIN season se ON se.id = e.season_id JOIN series s ON s.id = se.series_id
+                WHERE e.id = :id
+                """)
+                .param("id", eventId)
+                .query((rs, i) -> new Series(rs.getString("name"), rs.getString("abbreviation")))
+                .optional();
+    }
+
+    /**
+     * Files a recorded session under an event. True when the session's row
+     * exists (the analysis writer may not have written it yet — try again).
+     */
+    public boolean fileSession(long sessionDbId, long eventId) {
+        return db.sql("""
+                UPDATE live_session SET event_id = :e, updated_at = clock_timestamp()
+                WHERE session_db_id = :s
+                """)
+                .param("s", sessionDbId).param("e", eventId)
+                .update() == 1;
+    }
+
     public Optional<String> eventName(long eventId) {
         return db.sql("SELECT name FROM event WHERE id = :id").param("id", eventId)
                 .query(String.class).optional();

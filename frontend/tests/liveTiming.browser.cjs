@@ -32,11 +32,19 @@ const assert = require('node:assert/strict');
    driveResult('31',1,'Jack Aitken','P',3*3_600_000,'OK'),
    driveResult('31',2,'Pipo Derani','P',4*3_600_000+300_000,'OVER_MAX',{inCar:true,overMs:300_000,remainingMs:-300_000}),
    driveResult('7',1,'Bronze Driver','B',1_800_000,'UNDER_MIN',{minMs:3_600_000,owedMs:1_800_000})]});
-  const puts = [], errors = [];
+  const puts = [], posts = [], errors = [];
+  let isAdmin = true;
+  let status = {state:'LIVE',configured:true,desiredConnected:true,eventId:22,eventName:'Petit Le Mans',lastError:null};
   let carRequests = 0;
   page.on('pageerror', e => errors.push(String(e)));
   await page.route('**/api/**', async route => {
    const request = route.request(), url = new URL(request.url()), path = url.pathname;
+   if (request.method() === 'POST' && path.startsWith('/api/live/')) {
+    posts.push({path, body: request.postData() ? JSON.parse(request.postData()) : null});
+    status = path.endsWith('/disconnect') ? {...status, desiredConnected:false, state:'OFF'}
+     : {...status, desiredConnected:true, state:'LIVE', eventId:JSON.parse(request.postData()).eventId};
+    return route.fulfill({json:status});
+   }
    if (request.method() === 'PUT' && path === '/api/events/22/drive-time-rules') {
     const body = JSON.parse(request.postData());
     puts.push(body);
@@ -45,11 +53,13 @@ const assert = require('node:assert/strict');
     return route.fulfill({json:rules});
    }
    if (path === '/api/live/cars/31') carRequests++;
-   const body = path === '/api/me' ? {email:null,isAdmin:true,authEnabled:false}
+   const body = path === '/api/me' ? {email:null,isAdmin,authEnabled:true}
+    : path === '/api/live/status' ? status
     : path === '/api/live/timing' ? tower
     : path === '/api/live/sessions' ? [{sessionDbId:3150,eventId:22,name:'Race',type:'RACE',dateMs:now,laps:3000,cars:5,current:true},{sessionDbId:3149,eventId:22,name:'Qualifying',type:'QUALIFYING',dateMs:now-86_400_000,laps:200,cars:5,current:false}]
     : path === '/api/live/cars/31' ? carDetail
     : path === '/api/live/drive-time' ? drive()
+    : path === '/api/live/sectors' ? {sessionDbId:3150,classes:[]}
     : /^\/api\/events\/\d+$/.test(path) ? {event:{id:Number(path.split('/')[3]),name:path.endsWith('/22') ? 'Petit Le Mans' : 'Road America'}}
     : [];
    return route.fulfill({json:body});
@@ -76,7 +86,22 @@ const assert = require('node:assert/strict');
   assert.equal(await towerTable.locator('thead th', {hasText:'Energy'}).count(), 1);
   assert.match(await towerTable.locator('.tower-row').nth(0).locator('.tower-energy').innerText(), /62%\s+~9 L/);
   assert.equal((await towerTable.locator('.tower-row').nth(1).locator('.tower-energy').innerText()).trim(), '');
-  assert.equal(await page.getByRole('button',{name:/connect/i}).count(), 0, 'no connection controls on the web');
+  // The admin's switch: bound here, so only Disconnect — and it asks first.
+  const control = page.getByLabel('Live timing connection');
+  await control.getByRole('button',{name:'Disconnect'}).waitFor();
+  assert.equal(await control.getByRole('button',{name:'Score this event'}).count(), 0);
+  await control.getByRole('button',{name:'Disconnect'}).click();
+  assert.match(await control.innerText(), /Disconnect for everyone\?/);
+  await control.getByRole('button',{name:'Keep connected'}).click();
+  assert.equal(posts.length, 0, 'backing out sends nothing');
+  await control.getByRole('button',{name:'Disconnect'}).click();
+  await control.getByRole('button',{name:'Disconnect for everyone'}).click();
+  await control.getByRole('button',{name:'Connect for this event'}).waitFor();
+  assert.deepEqual(posts.map(p => p.path), ['/api/live/disconnect']);
+  await control.getByRole('button',{name:'Connect for this event'}).click();
+  await control.getByRole('button',{name:'Disconnect'}).waitFor();
+  assert.deepEqual(posts.at(-1), {path:'/api/live/connect', body:{eventId:22}});
+  posts.length = 0;
   assert.equal(await page.evaluate(() => document.body.scrollWidth > document.documentElement.clientWidth), false);
 
   // A car's laps (newest first) and stints, polled only while open.
@@ -140,6 +165,20 @@ const assert = require('node:assert/strict');
   tower = {...tower, state:'OFF', eventId:22, eventName:'Petit Le Mans'};
   await page.getByText('Live timing is off.').waitFor({timeout:5000});
   assert.match(await page.locator('.timing-status').innerText(), /Off/);
+
+  // Following another event: the admin can bring it here.
+  status = {...status, desiredConnected:true, state:'LIVE', eventId:99, eventName:'Road America'};
+  await page.reload();
+  await page.getByLabel('Live timing connection').getByRole('button',{name:'Score this event'}).click();
+  await page.getByLabel('Live timing connection').getByRole('button',{name:'Score this event'}).waitFor({state:'detached'});
+  assert.deepEqual(posts.at(-1), {path:'/api/live/connect', body:{eventId:22}});
+
+  // A viewer sees the status, never the switch.
+  isAdmin = false;
+  await page.reload();
+  await page.locator('.timing-status').waitFor();
+  assert.equal(await page.getByLabel('Live timing connection').count(), 0);
+  assert.equal(await page.getByRole('button',{name:/connect/i}).count(), 0);
 
   assert.deepEqual(errors, []);
   console.log('live timing page: ok');

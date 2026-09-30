@@ -24,7 +24,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Supplier;
 
 /**
  * Routes each streamed JSON frame, token by token, so {@code timing.analysis}
@@ -60,7 +59,6 @@ final class AnalysisRouter implements AksLineReader.StreamHandler {
     private final AksStateTree tree;
     private final Sink sink;
     private final LiveCarSummaries summaries;
-    private final Supplier<Long> boundEventId;
     private final AtomicLong laps = new AtomicLong();
     private final AtomicLong stints = new AtomicLong();
     private final AtomicLong dropped = new AtomicLong();
@@ -68,13 +66,11 @@ final class AnalysisRouter implements AksLineReader.StreamHandler {
 
     private SessionInfo session;
 
-    AnalysisRouter(ObjectMapper mapper, AksStateTree tree, Sink sink, LiveCarSummaries summaries,
-                   Supplier<Long> boundEventId) {
+    AnalysisRouter(ObjectMapper mapper, AksStateTree tree, Sink sink, LiveCarSummaries summaries) {
         this.mapper = mapper;
         this.tree = tree;
         this.sink = sink;
         this.summaries = summaries;
-        this.boundEventId = boundEventId;
     }
 
     long laps() {
@@ -231,8 +227,7 @@ final class AnalysisRouter implements AksLineReader.StreamHandler {
                     text(info, "sessionMongoId"),
                     info.hasNonNull("eventDbId") ? info.path("eventDbId").asLong() : null,
                     text(info, "name"), text(info, "type"),
-                    info.hasNonNull("date") ? info.path("date").asLong() : null,
-                    boundEventId.get());
+                    info.hasNonNull("date") ? info.path("date").asLong() : null);
             if (!Objects.equals(now, session)) {
                 if (now == null || session == null || now.sessionDbId() != session.sessionDbId()) {
                     summaries.reset(now == null ? null : now.sessionDbId());
