@@ -121,6 +121,46 @@ enum TimingFormat {
         return last == classBest ? .classBest : .personalBest
     }
 
+    /// Places gained in class since the start: positive = up; nil without a start position.
+    static func placesGained(_ car: TowerCar) -> Int? {
+        car.startPosition.map { $0 - car.position }
+    }
+
+    struct FieldCounts: Equatable {
+        let onTrack: Int
+        let inPit: Int
+        /// nil without participant details: only they say a car has stopped on track.
+        let stopped: Int?
+        let retired: Int
+
+        var line: String {
+            ["\(onTrack) on track", "\(inPit) in pit", stopped.map { "\($0) stopped" }, "\(retired) retired"]
+                .compactMap { $0 }.joined(separator: " · ")
+        }
+    }
+
+    /// The field at a glance, as the web's fieldCounts.
+    static func fieldCounts(_ tower: Tower) -> FieldCounts {
+        let cars = tower.classes.flatMap(\.cars)
+        let stopped: (TowerCar) -> Bool = { $0.trackStatus == "STOPPED" }
+        return FieldCounts(
+            onTrack: cars.filter { $0.running && !$0.inPit && !stopped($0) }.count,
+            inPit: cars.filter { $0.running && $0.inPit }.count,
+            stopped: cars.contains { $0.trackStatus != nil } ? cars.filter { $0.running && !$0.inPit && stopped($0) }.count : nil,
+            retired: cars.filter { $0.status == "RETIRED" }.count)
+    }
+
+    /// Cars whose class or place changed between two towers (the first tower seen has nothing to compare with).
+    static func moved(from before: Tower?, to after: Tower) -> Set<String> {
+        guard let before else { return [] }
+        func places(_ t: Tower) -> [String: String] {
+            Dictionary(t.classes.flatMap { c in c.cars.map { ($0.carNumber, "\(c.className)|\($0.position)") } },
+                       uniquingKeysWith: { a, _ in a })
+        }
+        let was = places(before)
+        return Set(places(after).compactMap { car, place in was[car].map { $0 == place ? nil : car } ?? nil })
+    }
+
     /// The class's fastest best lap, to mark in the tower.
     static func classBest(_ cars: [TowerCar]) -> Int? {
         cars.compactMap(\.bestLapMs).filter { $0 > 0 }.min()

@@ -123,6 +123,42 @@ final class TimingFormatTests: XCTestCase {
         XCTAssertNil(TimingFormat.lastLapMark(slower, classBest: 97_100))
     }
 
+    // MARK: Places gained, field counts, moves
+
+    private func towerOf(_ cars: [(String, [String: Any])]) throws -> Tower {
+        let rows: [[String: Any]] = cars.map { name, extra in
+            ["position": extra["position"] ?? 1, "carNumber": name, "inPit": extra["inPit"] ?? false]
+                .merging(extra) { _, new in new }
+        }
+        let body: [String: Any] = ["state": "LIVE", "classes": [["className": "GTD", "feedClass": "GTD", "cars": rows]],
+                                   "matched": rows.count, "total": rows.count]
+        return try JSONDecoder().decode(Tower.self, from: JSONSerialization.data(withJSONObject: body))
+    }
+
+    func testPlacesGainedAndTheFieldAtAGlance() throws {
+        let t = try towerOf([
+            ("7", ["position": 1, "startPosition": 3, "trackStatus": "TRACK"]),
+            ("31", ["position": 2, "startPosition": 1, "inPit": true, "trackStatus": "BOX"]),
+            ("04", ["position": 3, "trackStatus": "STOPPED"]),
+            ("23", ["position": 4, "status": "RETIRED"]),
+        ])
+        XCTAssertEqual(TimingFormat.placesGained(t.classes[0].cars[0]), 2)
+        XCTAssertEqual(TimingFormat.placesGained(t.classes[0].cars[1]), -1)
+        XCTAssertNil(TimingFormat.placesGained(t.classes[0].cars[2]))
+        XCTAssertEqual(TimingFormat.fieldCounts(t).line, "1 on track · 1 in pit · 1 stopped · 1 retired")
+        let noDetails = try towerOf([("7", [:])])
+        XCTAssertEqual(TimingFormat.fieldCounts(noDetails).line, "1 on track · 0 in pit · 0 retired",
+                       "stopped only with participant details")
+    }
+
+    func testOnlyAChangeOfPlaceCountsAsAMove() throws {
+        let before = try towerOf([("4", ["position": 1]), ("04", ["position": 2]), ("23", ["position": 3])])
+        let after = try towerOf([("04", ["position": 1]), ("4", ["position": 2]), ("23", ["position": 3])])
+        XCTAssertEqual(TimingFormat.moved(from: before, to: after), ["4", "04"])
+        XCTAssertEqual(TimingFormat.moved(from: nil, to: after), [], "the first tower seen never flashes")
+        XCTAssertEqual(TimingFormat.moved(from: after, to: after), [])
+    }
+
     // MARK: Analysis (gaps, sectors, pits)
 
     func testTheGapReadoutSaysLeaderGapOrLapsDown() {

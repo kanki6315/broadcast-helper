@@ -445,7 +445,12 @@ in a modal.
   changes place flashes an amber wash that fades over 3s (a steady wash for
   4s under reduced motion); the first tower seen never flashes. Under the
   clock, the field at a glance: "24 on track · 21 in pit · 0 stopped · 0
-  retired" (stopped only with participant details). A car in the pit carries an amber-tint
+  retired" (stopped only with participant details). A **Columns**
+  disclosure above the tower lets each viewer hide Sectors, Pits or Energy
+  and turn on **Top** (best speed trap, class-fastest on the violet tint),
+  which is off by default so the tower still fits 1024px; only columns the
+  feed has data for are offered, and the choice is remembered in that
+  browser only. A car in the pit carries an amber-tint
   `Pit` mark; a retired car stays in its place in muted ink with its status
   in words. Interval and last lap drop below 640px. An **Energy** column
   (IMSA telemetry) appears only once some car has a reading: the percentage

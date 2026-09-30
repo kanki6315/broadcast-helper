@@ -333,6 +333,7 @@ function TowerView({
   const live = tower?.state === 'LIVE'
   const wall = useTick(live && followingThis)
   const moves = useMoves(tower)
+  const [shown, setShown] = useColumnChoice()
 
   if (!tower) {
     return error ? (
@@ -382,11 +383,21 @@ function TowerView({
   const hasLaps = tower.classes.some((c) => c.cars.some((car) => car.lastLapMs != null || car.stintStartMs != null))
   const hasPits = tower.classes.some((c) => c.cars.some((car) => car.pitStops != null))
   const hasStarts = tower.classes.some((c) => c.cars.some((car) => car.startPosition != null))
-  const sectorCount = Math.max(0, ...tower.classes.flatMap((c) => c.cars.map((car) => car.sectors?.length ?? 0)))
-  const columns = 8 + (hasLaps ? 3 : 0) + sectorCount + (hasPits ? 1 : 0) + (hasEnergy ? 1 : 0)
+  const hasTopSpeed = tower.classes.some((c) => c.cars.some((car) => car.topSpeed != null))
+  const feedSectors = Math.max(0, ...tower.classes.flatMap((c) => c.cars.map((car) => car.sectors?.length ?? 0)))
+  const available: Record<OptionalColumn, boolean> = {
+    sectors: feedSectors > 0,
+    topSpeed: hasTopSpeed,
+    pits: hasPits,
+    energy: hasEnergy,
+  }
+  const show = (c: OptionalColumn) => available[c] && shown[c]
+  const sectorCount = show('sectors') ? feedSectors : 0
+  const columns = 8 + (hasLaps ? 3 : 0) + sectorCount + (show('topSpeed') ? 1 : 0) + (show('pits') ? 1 : 0) + (show('energy') ? 1 : 0)
 
   return (
     <>
+      <ColumnChoice available={available} shown={shown} onChange={setShown} />
       <table className={`grid-table tower${sectorCount > 0 ? ' tower--sectors' : ''}`} aria-label="Running order by class">
         <thead>
           <tr>
@@ -420,17 +431,22 @@ function TowerView({
                     S{i + 1}
                   </th>
                 ))}
+                {show('topSpeed') && (
+                  <th className="num tower-speed" scope="col" title={`Best speed trap of the session${tower.speedUnit ? ` (${tower.speedUnit})` : ''}`}>
+                    Top
+                  </th>
+                )}
                 <th className="num" scope="col" title="Laps and time in the current stint">
                   Stint
                 </th>
               </>
             )}
-            {hasPits && (
+            {show('pits') && (
               <th className="num" scope="col" title="Pit stops, and the last stop's pit-lane time">
                 Pits
               </th>
             )}
-            {hasEnergy && (
+            {show('energy') && (
               <th className="num" scope="col" title="Energy remaining (IMSA telemetry)">
                 Energy
               </th>
@@ -442,6 +458,7 @@ function TowerView({
         </thead>
         {tower.classes.map((cls) => {
           const best = classBest(cls.cars)
+          const fastest = Math.max(0, ...cls.cars.map((c) => c.topSpeed ?? 0)) || null
           const style = { '--class-color': cls.color ?? undefined } as CSSProperties
           return (
             <tbody key={cls.className} style={style}>
@@ -464,8 +481,9 @@ function TowerView({
                   hasLaps={hasLaps}
                   sectorCount={sectorCount}
                   classSectors={cls.bestSectors}
-                  hasPits={hasPits}
-                  hasEnergy={hasEnergy}
+                  topSpeed={show('topSpeed') ? { fastest, unit: tower.speedUnit } : null}
+                  hasPits={show('pits')}
+                  hasEnergy={show('energy')}
                   now={now}
                   onOpen={() => setOpen({ car, cls })}
                 />
@@ -489,6 +507,69 @@ function TowerView({
         />
       )}
     </>
+  )
+}
+
+/** Columns a viewer may hide or show; the rest are the tower itself. */
+type OptionalColumn = 'sectors' | 'topSpeed' | 'pits' | 'energy'
+
+const OPTIONAL_COLUMNS: { id: OptionalColumn; label: string }[] = [
+  { id: 'sectors', label: 'Sectors' },
+  { id: 'topSpeed', label: 'Top speed' },
+  { id: 'pits', label: 'Pits' },
+  { id: 'energy', label: 'Energy' },
+]
+
+/** Top speed is opt-in: with every other column on it would push the tower past 1024px. */
+const DEFAULT_SHOWN: Record<OptionalColumn, boolean> = { sectors: true, topSpeed: false, pits: true, energy: true }
+const COLUMNS_KEY = 'pitpass.timing.columns'
+
+/** Which optional columns this viewer wants, remembered in this browser only (a convenience, never shared). */
+function useColumnChoice(): [Record<OptionalColumn, boolean>, (next: Record<OptionalColumn, boolean>) => void] {
+  const [shown, setShown] = useState<Record<OptionalColumn, boolean>>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(COLUMNS_KEY) ?? 'null')
+      return saved && typeof saved === 'object' ? { ...DEFAULT_SHOWN, ...saved } : DEFAULT_SHOWN
+    } catch {
+      return DEFAULT_SHOWN
+    }
+  })
+  const save = (next: Record<OptionalColumn, boolean>) => {
+    setShown(next)
+    try {
+      localStorage.setItem(COLUMNS_KEY, JSON.stringify(next))
+    } catch {
+      // Private window or blocked storage: the choice lasts until reload.
+    }
+  }
+  return [shown, save]
+}
+
+/** A small disclosure above the tower listing only the optional columns the feed has data for. */
+function ColumnChoice({
+  available,
+  shown,
+  onChange,
+}: {
+  available: Record<OptionalColumn, boolean>
+  shown: Record<OptionalColumn, boolean>
+  onChange: (next: Record<OptionalColumn, boolean>) => void
+}) {
+  const offered = OPTIONAL_COLUMNS.filter((c) => available[c.id])
+  if (offered.length === 0) return null
+  return (
+    <details className="tower-columns">
+      <summary>Columns</summary>
+      <fieldset>
+        <legend className="sr-only">Optional columns</legend>
+        {offered.map((c) => (
+          <label key={c.id}>
+            <input type="checkbox" checked={shown[c.id]} onChange={(e) => onChange({ ...shown, [c.id]: e.target.checked })} />
+            {c.label}
+          </label>
+        ))}
+      </fieldset>
+    </details>
   )
 }
 
@@ -534,6 +615,7 @@ function TowerRow({
   hasLaps,
   sectorCount,
   classSectors,
+  topSpeed,
   hasPits,
   hasEnergy,
   now,
@@ -546,6 +628,8 @@ function TowerRow({
   hasLaps: boolean
   sectorCount: number
   classSectors: TowerClass['bestSectors']
+  /** Shown when set: the class's fastest trap, to mark, and the unit. */
+  topSpeed: { fastest: number | null; unit: string | null } | null
   hasPits: boolean
   hasEnergy: boolean
   now: number | null
@@ -612,6 +696,15 @@ function TowerRow({
           {Array.from({ length: sectorCount }, (_, i) => (
             <SectorCell key={i} sector={car.sectors?.[i] ?? null} carBest={car.bestSectorMs?.[i]} classBest={classSectors[i]?.ms} />
           ))}
+          {topSpeed && (
+            <td
+              className={`num tower-speed${car.topSpeed != null && car.topSpeed === topSpeed.fastest ? ' tower-class-best' : ''}`}
+              title={car.topSpeed != null && car.topSpeed === topSpeed.fastest ? 'Fastest in class' : undefined}
+            >
+              {car.topSpeed != null ? car.topSpeed.toFixed(1) : ''}
+              {car.topSpeed != null && topSpeed.unit && <span className="sr-only"> {topSpeed.unit}</span>}
+            </td>
+          )}
           <td className="num tower-stint">
             <span className="tower-pair">
               {car.stintLaps != null && !car.inPit && <span>{car.stintLaps} L</span>}

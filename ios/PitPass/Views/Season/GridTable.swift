@@ -62,6 +62,8 @@ struct GridRowItem: Identifiable {
     var onTap: (() -> Void)? = nil
     /// What VoiceOver reads for a tappable row.
     var tapLabel: String? = nil
+    /// A tint behind the whole row (both halves): the timing tower's flash on a change of place.
+    var wash: Color? = nil
 }
 
 struct GridSection: Identifiable {
@@ -169,6 +171,7 @@ struct GridTable: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(row.wash ?? .clear)
                     .overlay(alignment: .bottom) { Rectangle().fill(PP.border).frame(height: 1) }
                     .tappable(row.onTap, label: ident ? row.tapLabel : nil)
                 }
