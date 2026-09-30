@@ -50,6 +50,12 @@ public class LiveTimingPageService {
      * energyPct is IMSA telemetry's energy remaining (null when off, unseen or
      * older than the stale limit); energyLapsLeft projects it over this
      * stint's average use per lap (null until the stint has two lap samples).
+     * laps is laps completed: the last lap from analysis, else the standings'
+     * lapNumber in a race only — in practice and qualifying that is the number
+     * of the car's best lap (Road Atlanta practice, 2026-09-30).
+     * pitStops counts Al Kamel's PIT stints, as the Pits view does (null with
+     * no session recorded); lastPitMs is the pit-lane time of the newest
+     * finished one.
      */
     public record TowerCar(int position, String carNumber, Long entryId, String teamName, String vehicle,
                            String manufacturer, String status, Integer laps,
@@ -57,7 +63,7 @@ public class LiveTimingPageService {
                            Integer driverOrder, String driverName, String driverShortName, String driverRating,
                            Integer lastLap, Integer lastLapMs, Integer bestLap, Integer bestLapMs,
                            boolean inPit, Long stintStartMs, Integer stintLaps, Double energyPct,
-                           Double energyLapsLeft) {
+                           Double energyLapsLeft, Integer pitStops, Long lastPitMs) {
     }
 
     public record SessionSummary(long sessionDbId, Long eventId, String name, String type, Long dateMs,
@@ -117,6 +123,10 @@ public class LiveTimingPageService {
         Map<String, DriverRow> resolved = session == null ? Map.of() : resolvedDrivers(session);
         JsonNode feedEntries = live.state("timing.session.entry");
         Map<String, String> colors = order.eventId() == null ? Map.of() : classColors(order.eventId());
+        boolean race = order.session() != null && "RACE".equalsIgnoreCase(order.session().type());
+        Map<String, LiveAnalysis.PitCar> pits = session == null ? Map.of()
+                : LiveAnalysis.pitStops(stints(session), Map.of()).stream()
+                        .collect(Collectors.toMap(LiveAnalysis.PitCar::carNumber, Function.identity()));
 
         List<TowerClass> classes = new ArrayList<>();
         for (var cls : order.classification().classes()) {
@@ -135,8 +145,13 @@ public class LiveTimingPageService {
                 String rating = driver != null ? driver.rating() : feedDriver == null ? null : initial(text(feedDriver, "license"));
                 int[] best = bestFromDb.get(car.carNumber());
                 LiveTelemetry.CarEnergy energy = live.energy(car.carNumber(), cls.feedClass(), s == null ? null : s.stintOpenLap());
+                LiveAnalysis.PitCar pit = pits.get(car.carNumber());
+                Long lastPitMs = pit == null ? null : pit.stops().stream().map(LiveAnalysis.PitStop::durationMs)
+                        .filter(java.util.Objects::nonNull).reduce((a, b) -> b).orElse(null);
                 cars.add(new TowerCar(car.position(), car.carNumber(), car.entryId(), car.teamName(), car.vehicle(),
-                        car.manufacturer(), car.status(), car.laps(),
+                        car.manufacturer(), car.status(),
+                        s != null && s.lastLap() != null ? Integer.valueOf(Math.max(s.lastLap(), race && car.laps() != null ? car.laps() : 0))
+                                : race ? car.laps() : null,
                         car.gapToLeaderMs(), car.gapToLeaderLaps(), car.intervalMs(), car.intervalLaps(),
                         order2, name, shortName, rating,
                         s == null ? null : s.lastLap(), s == null ? null : s.lastLapMs(),
@@ -144,7 +159,8 @@ public class LiveTimingPageService {
                         best != null ? Integer.valueOf(best[1]) : s == null ? null : s.bestLapMs(),
                         s != null && "PIT".equalsIgnoreCase(s.stintType()),
                         s == null ? null : s.stintStartMs(), s == null ? null : s.lapsInStint(),
-                        energy == null ? null : energy.energyPct(), energy == null ? null : energy.lapsLeft()));
+                        energy == null ? null : energy.energyPct(), energy == null ? null : energy.lapsLeft(),
+                        session == null ? null : pit == null ? 0 : pit.stops().size(), lastPitMs));
             }
             classes.add(new TowerClass(cls.className(), cls.feedClass(),
                     colors.get(cls.className().trim().toLowerCase()), cars));
@@ -152,6 +168,21 @@ public class LiveTimingPageService {
         return new Tower(order.state(), order.eventId(), order.eventName(), order.session(), session,
                 session == null ? null : latestFeedTime(session), classes,
                 order.classification().matched(), order.classification().total());
+    }
+
+    /** Every stint of a session, for pit stops. */
+    List<LiveAnalysis.Stint> stints(long session) {
+        return db.sql("""
+                SELECT car_number, start_time_ms, type, pit_type, driver_order, open_lap_number, close_lap_number,
+                       finish_time_ms
+                FROM live_stint WHERE session_db_id = :s
+                """)
+                .param("s", session)
+                .query((rs, i) -> new LiveAnalysis.Stint(rs.getString("car_number"), rs.getLong("start_time_ms"),
+                        rs.getString("type"), rs.getString("pit_type"), integer(rs, "driver_order"),
+                        integer(rs, "open_lap_number"), integer(rs, "close_lap_number"),
+                        rs.getObject("finish_time_ms", Long.class)))
+                .list();
     }
 
     /** The event's series' class colours, keyed by lower-cased class code. */

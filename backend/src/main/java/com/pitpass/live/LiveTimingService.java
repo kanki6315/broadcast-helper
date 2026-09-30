@@ -60,7 +60,19 @@ public class LiveTimingService implements SmartLifecycle {
 
     /** What the feed says is running — shown so the admin can see it matches the bound event. */
     public record Session(String championship, String event, String name, String type,
-                          String flag, boolean running, boolean finished) {
+                          String flag, boolean running, boolean finished, Clock clock) {
+    }
+
+    /**
+     * The session clock as timing.session.status states it; clients count it
+     * down, so nothing here ticks. finalType is BY_TIME, BY_LAPS,
+     * BY_LAPS_WITH_MAX_TIME, BY_TIME_PLUS_LAPS or MANUAL. startMs is null
+     * until the session starts. stopMs is the last stop (red flag), set only
+     * while the clock is stopped; stoppedMs the time stopped so far.
+     * utcOffsetHours is the track's offset from UTC, for its time of day.
+     */
+    public record Clock(String finalType, Long startMs, Long finalMs, Integer finalLaps, Integer currentLap,
+                        Long stopMs, long stoppedMs, Double utcOffsetHours) {
     }
 
     public record LiveStatus(State state, boolean configured, boolean replaying,
@@ -279,7 +291,41 @@ public class LiveTimingService implements SmartLifecycle {
                 info.path("champName").asText(null), info.path("eventName").asText(null),
                 info.path("name").asText(null), info.path("type").asText(null),
                 s.path("currentFlag").asText(null),
-                s.path("isSessionRunning").asBoolean(false), s.path("isFinished").asBoolean(false));
+                s.path("isSessionRunning").asBoolean(false), s.path("isFinished").asBoolean(false),
+                clock(info, s));
+    }
+
+    /**
+     * The clock fields of timing.session.status. The spec gives startTime and
+     * stopTime in seconds and sessionStartTime in ms; the server is older than
+     * the spec, so any epoch value is read as ms or seconds by its size.
+     */
+    static Clock clock(JsonNode info, JsonNode status) {
+        Long start = epochMs(status.path("sessionStartTime"));
+        boolean running = status.path("isSessionRunning").asBoolean(false);
+        Long stop = running ? null : epochMs(status.path("stopTime"));
+        long stopped = status.hasNonNull("stoppedMilliSeconds") ? status.path("stoppedMilliSeconds").asLong()
+                : status.path("stoppedSeconds").asLong(0) * 1000;
+        Long finalSeconds = positive(status.path("finalTime"));
+        Long finalLaps = positive(status.path("finalLaps"));
+        Long currentLap = positive(status.path("currentLap"));
+        return new Clock(status.path("finalType").asText(null), start,
+                finalSeconds == null ? null : finalSeconds * 1000,
+                finalLaps == null ? null : finalLaps.intValue(), currentLap == null ? null : currentLap.intValue(),
+                stop != null && start != null && stop < start ? null : stop, Math.max(0, stopped),
+                info.hasNonNull("utcOffset") ? info.path("utcOffset").asDouble() : null);
+    }
+
+    /** A whole number above zero, sent as a number or a string (the server sends both); else null. */
+    private static Long positive(JsonNode n) {
+        long v = n.asLong(0);
+        return v > 0 ? v : null;
+    }
+
+    /** An epoch time in ms, whether sent as ms or seconds; null when absent or zero. */
+    private static Long epochMs(JsonNode n) {
+        Long v = positive(n);
+        return v == null ? null : v < 100_000_000_000L ? v * 1000 : v;
     }
 
     // ---- lifecycle -----------------------------------------------------------------
