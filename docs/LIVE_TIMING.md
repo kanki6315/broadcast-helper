@@ -42,7 +42,7 @@ replica would see `STANDBY` and no data.
 | `GET /api/live/status` | member | State, bound event, what the feed says is running, message counters, last error. Poll it. |
 | `GET /api/live/classification` | member | The running order per class, matched to the bound event's entries — see below. Poll it. |
 | `GET /api/live/championships/{id}` | member | One class championship's rows against the running order — see *Championship positions*. Poll it. |
-| `POST /api/live/connect` `{ "eventId": n }` | admin | Ask for the connection and bind it to the Pit Pass event it is scored against. |
+| `POST /api/live/connect` `{ "eventId": n }` | admin | Ask for the connection and bind it to the Pit Pass event it is scored against. The iPad's live timing bar and, for admins, the web Timing page's top bar both call it. |
 | `POST /api/live/disconnect` | admin | Close the socket and free the login. |
 | `GET /api/live/timing` | member | The timing page's tower — see *Timing page API*. Poll it. |
 | `GET /api/live/cars/{car}?session=` | member | One car's laps, stints and drivers. |
