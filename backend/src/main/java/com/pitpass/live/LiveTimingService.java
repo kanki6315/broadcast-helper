@@ -94,12 +94,11 @@ public class LiveTimingService implements SmartLifecycle {
     private final AnalysisWriter analysisWriter;
     private final LiveCarSummaries summaries = new LiveCarSummaries();
     private final ImsaTelemetryProperties telemetryProps;
-    private final LiveEntryMatcher matcher;
-    /** Which recorded session is filed under which event, and when a non-matching binding may be tried again. */
-    private volatile Long filedSession;
-    private volatile Long filedEvent;
+    private final LiveFiling filing;
+    /** When an unbound feed event may be tried again, and the next sweep of recent ones. */
     private volatile String lastFilingTry;
     private volatile Instant nextFilingTry = Instant.MIN;
+    private volatile Instant nextSweep = Instant.MIN;
     /** eventId → whether its series sends IMSA energy; series do not change mid-weekend. */
     private final java.util.Map<Long, Boolean> telemetrySeries = new java.util.concurrent.ConcurrentHashMap<>();
     private final TelemetryRunner telemetry;
@@ -135,9 +134,9 @@ public class LiveTimingService implements SmartLifecycle {
     public LiveTimingService(AlKamelV2Properties props, LiveTimingStore store, ObjectMapper mapper,
                              PublicImageStorage storage, AnalysisWriter analysisWriter,
                              LiveDriverResolver driverResolver, ImsaTelemetryProperties telemetryProps,
-                             LiveEntryMatcher matcher) {
+                             LiveFiling filing) {
         this(props, store, mapper, storage, null, Pacing.PRODUCTION, analysisWriter, driverResolver, telemetryProps,
-                matcher);
+                filing);
     }
 
     /** Tests pass their own sink and pacing; a null sink means the real one. */
@@ -150,14 +149,14 @@ public class LiveTimingService implements SmartLifecycle {
     LiveTimingService(AlKamelV2Properties props, LiveTimingStore store, ObjectMapper mapper,
                       PublicImageStorage storage, LiveRecorder.Sink sink, Pacing pacing,
                       AnalysisWriter analysisWriter, AnalysisWriter.DriverResolver driverResolver,
-                      ImsaTelemetryProperties telemetryProps, LiveEntryMatcher matcher) {
+                      ImsaTelemetryProperties telemetryProps, LiveFiling filing) {
         this.props = props;
         this.store = store;
         this.mapper = mapper;
         this.storage = storage;
         this.sink = sink != null ? sink : this::storeSegment;
         this.pacing = pacing;
-        this.matcher = matcher;
+        this.filing = filing;
         this.analysisWriter = props.analysisEnabled() ? analysisWriter : null;
         if (this.analysisWriter != null) {
             this.analysisWriter.drivers(driverResolver, () -> tree.copyOf("timing.session.entry"), this::filedEventId);
@@ -188,6 +187,16 @@ public class LiveTimingService implements SmartLifecycle {
     public void request(boolean connected, Long eventId, String requestedBy) {
         store.request(connected, eventId, requestedBy);
         wake.release(); // act now if this process is the one that should
+    }
+
+    /**
+     * Connects with no event: every series on track is recorded and filed by
+     * championship (LiveFiling). Clears any earlier binding, so a stale one
+     * cannot be tried against the next series' cars.
+     */
+    public void connectWithoutEvent(String requestedBy) {
+        store.connectWithoutEvent(requestedBy);
+        wake.release();
     }
 
     /**
@@ -254,10 +263,10 @@ public class LiveTimingService implements SmartLifecycle {
                 Math.max(1, telemetryProps.staleSeconds()) * 1000L);
     }
 
-    /** The event the current session is filed under (by entry-list match), or null. */
+    /** The event the current session is filed under (live_session), or null. Drivers are matched against it. */
     Long filedEventId() {
         Long session = summaries.sessionDbId();
-        return session != null && session.equals(filedSession) ? filedEvent : null;
+        return session == null ? null : store.filedEvent(session).orElse(null);
     }
 
     /** A car's class as the Al Kamel feed has it, for the telemetry class guard. */
@@ -354,6 +363,7 @@ public class LiveTimingService implements SmartLifecycle {
 
     private void supervise() {
         while (running) {
+            sweepIfDue();
             try {
                 tick();
             } catch (RuntimeException e) {
@@ -544,59 +554,71 @@ public class LiveTimingService implements SmartLifecycle {
                 telemetry.ensure(false);
                 return;
             }
-            // Only a series that sends energy (WeatherTech) is worth the connection.
-            Long event = boundEventId;
-            boolean covered = event != null && telemetrySeries.computeIfAbsent(event, id -> store.seriesOf(id)
-                    .map(s -> telemetryProps.coversSeries(s.name(), s.abbreviation())).orElse(false));
-            telemetry.ensure(covered, covered ? null : "The bound event's series sends no energy telemetry");
+            // Only a series that sends energy (WeatherTech) is worth the connection — the
+            // series on track: its filed event's, else the feed's championship, else the binding's.
+            Long filed = analysisWriter == null ? null : filedEventId();
+            JsonNode info = tree.copyOf("timing.session.info");
+            String champ = info == null ? null : info.path("champName").asText(null);
+            boolean covered = filed != null ? seriesCovered(filed)
+                    : champ != null && !champ.isBlank() ? telemetryProps.coversSeries(champ, null)
+                    : boundEventId != null && seriesCovered(boundEventId);
+            telemetry.ensure(covered, covered ? null : "The series on track sends no energy telemetry");
         } catch (RuntimeException e) {
             log.warn("IMSA telemetry: {}", e.toString());
         }
     }
 
+    private boolean seriesCovered(long eventId) {
+        return telemetrySeries.computeIfAbsent(eventId, id -> store.seriesOf(id)
+                .map(s -> telemetryProps.coversSeries(s.name(), s.abbreviation())).orElse(false));
+    }
+
     /**
-     * Files the session on track under the bound event — only when that
-     * event's entry list matches the cars running, by number and class
-     * ({@link LiveEventMatch}). Binding the wrong series therefore files
-     * nothing; a session that loaded before a rebind is filed the tick the
-     * rebind matches it. A binding that does not match is retried every 10 s,
-     * as the running order fills in. Supervisor thread; never fatal.
+     * Files the session on track by its series weekend (LiveFiling): the feed
+     * event it belongs to is bound by championship, an earlier binding, or the
+     * connection's event — each confirmed by the entry list — and the session
+     * follows. An unbound feed event is tried again every 10 s as the running
+     * order fills in; a bound one only brings new sessions into line.
+     * Supervisor thread; never fatal.
      */
     private void fileSession() {
-        Long session = summaries.sessionDbId();
-        Long event = boundEventId;
-        if (analysisWriter == null || matcher == null || session == null || event == null) {
+        if (analysisWriter == null || filing == null) {
             return;
         }
-        if (session.equals(filedSession) && event.equals(filedEvent)) {
+        JsonNode info = tree.copyOf("timing.session.info");
+        if (info == null || !info.hasNonNull("eventDbId")) {
             return;
         }
-        String attempt = session + ">" + event;
+        long feedEvent = info.path("eventDbId").asLong();
+        String attempt = feedEvent + ">" + boundEventId;
         if (attempt.equals(lastFilingTry) && Instant.now().isBefore(nextFilingTry)) {
             return;
         }
         lastFilingTry = attempt;
         nextFilingTry = Instant.MIN;
         try {
-            LiveEventMatch.Result match = LiveEventMatch.score(tree.copyOf("timing.session"),
-                    matcher.entries(event), matcher.classAliases(event));
-            if (!match.matches()) {
-                // Only a mismatch waits; a match whose session row is not written yet retries next tick.
+            if (!filing.fileLive(feedEvent, boundEventId, LiveEventMatch.cars(tree.copyOf("timing.session")))) {
                 nextFilingTry = Instant.now().plusSeconds(10);
-                log.debug("Live session {} does not match event {} ({} of {} cars)", session, event,
-                        match.agreeing(), match.total());
-                return;
-            }
-            if (store.fileSession(session, event)) {
-                filedSession = session;
-                filedEvent = event;
-                // Drivers are matched against the filed event's crews: redo them now.
-                analysisWriter.offer(new AnalysisRows.EntriesChanged(session));
-                log.info("Live session {} filed under event {} ({} of {} cars match)", session, event,
-                        match.agreeing(), match.total());
             }
         } catch (RuntimeException e) {
-            log.warn("Live timing: filing session {} failed: {}", session, e.toString());
+            log.warn("Live timing: filing feed event {} failed: {}", feedEvent, e.toString());
+        }
+    }
+
+    /**
+     * Once a minute, whether connected or not: recent feed events that are
+     * still unbound are tried again from their stored cars — entries are often
+     * imported after Wednesday practice, and events or aliases get added later.
+     */
+    private void sweepIfDue() {
+        if (analysisWriter == null || filing == null || Instant.now().isBefore(nextSweep)) {
+            return;
+        }
+        nextSweep = Instant.now().plus(Duration.ofMinutes(1));
+        try {
+            filing.sweep();
+        } catch (RuntimeException e) {
+            log.warn("Live timing: filing sweep failed: {}", e.toString());
         }
     }
 

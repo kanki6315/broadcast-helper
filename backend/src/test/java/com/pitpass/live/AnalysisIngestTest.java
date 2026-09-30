@@ -29,6 +29,7 @@ import static com.pitpass.live.AnalysisFixtures.info;
 import static com.pitpass.live.AnalysisFixtures.lap;
 import static com.pitpass.live.AnalysisFixtures.stint;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -61,6 +62,7 @@ class AnalysisIngestTest {
             c.close();
         }
         db.sql("DELETE FROM live_session WHERE session_db_id = :s").param("s", session).update();
+        db.sql("DELETE FROM live_feed_event WHERE feed_event_db_id = 812").update();
     }
 
     private List<Recorded> feed() {
@@ -127,10 +129,12 @@ class AnalysisIngestTest {
 
         assertEquals("Practice 1", db.sql("SELECT name FROM live_session WHERE session_db_id = :s")
                 .param("s", session).query(String.class).single());
-        assertEquals("IMSA WeatherTech SportsCar Championship|38|Showcase 120|Road America|812", db.sql("""
+        assertEquals("Fixture Championship (not a series)|38|Showcase 120|Road America|812", db.sql("""
                 SELECT concat_ws('|', champ_name, champ_db_id, feed_event_name, feed_event_short_name, feed_event_db_id)
                 FROM live_session WHERE session_db_id = :s
                 """).param("s", session).query(String.class).single(), "the feed's own labels are kept");
+        await(() -> count("live_car WHERE session_db_id = :s AND car_number = '04' AND feed_class = 'GTD'") == 1);
+        assertEquals(1, count("live_feed_event WHERE feed_event_db_id = 812"), "its series weekend, for filing");
         assertEquals(List.of("04:1", "04:3", "04:4", "4:1"), db.sql("""
                 SELECT car_number || ':' || lap_number FROM live_lap WHERE session_db_id = :s
                 ORDER BY car_number, lap_number
@@ -242,6 +246,7 @@ class AnalysisIngestTest {
                 .param("e", wt04).param("d", ann).update();
         cleanup.add(() -> {
             db.sql("DELETE FROM live_session WHERE session_db_id = :s").param("s", session).update();
+            db.sql("DELETE FROM live_feed_event WHERE feed_event_db_id = 812").update();
             db.sql("DELETE FROM driver_assignment WHERE driver_id = :d").param("d", ann).update();
             db.sql("DELETE FROM event WHERE id IN (:a, :b)").param("a", wtEvent).param("b", pcEvent).update();
             db.sql("DELETE FROM season WHERE series_id IN (:a, :b)").param("a", wtSeries).param("b", pcSeries).update();
@@ -262,11 +267,6 @@ class AnalysisIngestTest {
         LiveTimingStore real = new LiveTimingStore(db);
         LiveTimingServiceTest.MemoryStore store = new LiveTimingServiceTest.MemoryStore() {
             @Override
-            public boolean fileSession(long sessionDbId, long eventId) {
-                return real.fileSession(sessionDbId, eventId);
-            }
-
-            @Override
             public java.util.Optional<Series> seriesOf(long eventId) {
                 return real.seriesOf(eventId);
             }
@@ -285,7 +285,7 @@ class AnalysisIngestTest {
         LiveTimingService service = new LiveTimingService(props, store, mapper, null, (segment, key) -> { },
                 new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
                         Duration.ofSeconds(5), Duration.ofSeconds(10)),
-                writer, resolver, telemetryProps, new LiveEntryMatcher(db));
+                writer, resolver, telemetryProps, new LiveFiling(db, new LiveEntryMatcher(db), resolver));
         service.start();
         cleanup.add(service::stop);
 
@@ -297,7 +297,7 @@ class AnalysisIngestTest {
         assertEquals(pcEvent, service.status().eventId(), "still bound to Pilot Challenge");
         assertNull(service.status().filedEventId(), "but Pit Pass rows come only from the filed event: none");
         assertEquals(TelemetryRunner.State.OFF, service.status().telemetry().state());
-        assertEquals("The bound event's series sends no energy telemetry", service.status().telemetry().idleReason());
+        assertEquals("The series on track sends no energy telemetry", service.status().telemetry().idleReason());
 
         // Rebind to the WeatherTech event: it matches, so the session is filed there at once,
         // its drivers are matched to that crew, and energy starts.
@@ -309,11 +309,12 @@ class AnalysisIngestTest {
                 """).param("s", session).query((rs, i) -> rs.getObject("driver_id", Long.class)).optional().orElse(null)));
         await(() -> count("live_energy_lap WHERE session_db_id = :s AND car_number = '04' AND lap_number = 1") == 1);
 
-        // Binding the other series again changes nothing about what this session is.
+        // Binding the other series again changes nothing about what this session is —
+        // and energy follows the series on track, not the binding.
         service.request(true, pcEvent, "t");
-        await(() -> service.status().telemetry().state() == TelemetryRunner.State.OFF);
-        Thread.sleep(200);
+        Thread.sleep(300);
         assertEquals(wtEvent, filedUnder());
+        assertNotEquals(TelemetryRunner.State.OFF, service.status().telemetry().state());
         assertEquals(wtEvent, service.status().filedEventId(), "the binding moved; what the session is did not");
     }
 

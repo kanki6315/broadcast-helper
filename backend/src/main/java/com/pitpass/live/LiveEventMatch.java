@@ -32,17 +32,39 @@ final class LiveEventMatch {
     private LiveEventMatch() {
     }
 
+    /** One car on track as the feed has it: its number and the feed's class for it. */
+    record FeedCar(String number, String feedClass) {
+    }
+
     /**
      * @param session      the feed tree at {@code timing.session}, or null
      * @param classAliases the series' class_alias, lower-cased alias → class name
      */
     static Result score(JsonNode session, List<Entry> entries, Map<String, String> classAliases) {
-        if (session == null || entries.isEmpty()) {
+        return score(cars(session), entries, classAliases);
+    }
+
+    /** Stored cars (live_car) or the live tree's, against an event's entry list. */
+    static Result score(List<FeedCar> cars, List<Entry> entries, Map<String, String> classAliases) {
+        if (cars.isEmpty() || entries.isEmpty()) {
             return new Result(0, 0);
         }
         LiveClassification.Numbers numbers = new LiveClassification.Numbers(entries);
-        int total = 0;
         int agreeing = 0;
+        for (FeedCar car : cars) {
+            if (agrees(numbers.find(car.number()), car.feedClass(), classAliases)) {
+                agreeing++;
+            }
+        }
+        return new Result(cars.size(), agreeing);
+    }
+
+    /** The cars in the running order, or — a session just loaded — in the entry channel. */
+    static List<FeedCar> cars(JsonNode session) {
+        if (session == null) {
+            return List.of();
+        }
+        List<FeedCar> cars = new java.util.ArrayList<>();
         JsonNode byClass = session.path("standings").path("byClass");
         JsonNode order = byClass.path("active").isObject() && !byClass.path("active").isEmpty()
                 ? byClass.path("active") : byClass.path("finishLine");
@@ -51,27 +73,18 @@ final class LiveEventMatch {
                 String feedClass = cls.getValue().path("class").asText(cls.getKey());
                 for (var row : cls.getValue().path("standings").properties()) {
                     String number = row.getValue().path("participant").asText("");
-                    if (number.isBlank()) {
-                        continue;
-                    }
-                    total++;
-                    if (agrees(numbers.find(number), feedClass, classAliases)) {
-                        agreeing++;
+                    if (!number.isBlank()) {
+                        cars.add(new FeedCar(number, feedClass));
                     }
                 }
             }
-            return new Result(total, agreeing);
+            return cars;
         }
-        // No running order yet (a session just loaded): the entry channel says who is here.
         for (var car : session.path("entry").properties()) {
-            String number = car.getValue().path("number").asText(car.getKey());
-            String feedClass = car.getValue().path("class").asText("");
-            total++;
-            if (agrees(numbers.find(number), feedClass, classAliases)) {
-                agreeing++;
-            }
+            cars.add(new FeedCar(car.getValue().path("number").asText(car.getKey()),
+                    car.getValue().path("class").asText("")));
         }
-        return new Result(total, agreeing);
+        return cars;
     }
 
     private static boolean agrees(Entry entry, String feedClass, Map<String, String> classAliases) {

@@ -58,6 +58,17 @@ public class LiveTimingStore {
                 .update();
     }
 
+    /** Asks for the connection with no event bound: filing goes by championship alone. */
+    public void connectWithoutEvent(String requestedBy) {
+        db.sql("""
+                UPDATE live_timing
+                SET desired_connected = true, event_id = NULL, requested_by = :by, requested_at = clock_timestamp()
+                WHERE id = 1
+                """)
+                .param("by", requestedBy)
+                .update();
+    }
+
     /**
      * Takes the lease if it is free, lapsed or already ours, and extends it.
      * One atomic UPDATE, so two processes racing here cannot both win.
@@ -97,19 +108,6 @@ public class LiveTimingStore {
                 .param("id", eventId)
                 .query((rs, i) -> new Series(rs.getString("name"), rs.getString("abbreviation")))
                 .optional();
-    }
-
-    /**
-     * Files a recorded session under an event. True when the session's row
-     * exists (the analysis writer may not have written it yet — try again).
-     */
-    public boolean fileSession(long sessionDbId, long eventId) {
-        return db.sql("""
-                UPDATE live_session SET event_id = :e, updated_at = clock_timestamp()
-                WHERE session_db_id = :s
-                """)
-                .param("s", sessionDbId).param("e", eventId)
-                .update() == 1;
     }
 
     /** The event a recorded session is filed under, if any. */

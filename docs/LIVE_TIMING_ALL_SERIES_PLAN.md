@@ -1,7 +1,7 @@
 # Live timing for every series on a weekend, and a shareable timing link: plan
 
-Status: **2026-09-30: slices 0, 1 and 2 done** on the branch below, not yet
-merged to main. Slices 3–6 not started.
+Status: **2026-09-30: slices 0–3 done** on the branch below, not yet merged
+to main. Slices 4–6 not started.
 Branch: `claude/alchemel-connection-switchover-686f5e`.
 This document is the handoff. It builds on `docs/LIVE_TIMING.md` (the feed
 pipeline) and `docs/LIVE_TIMING_PAGE_PLAN.md` (the timing page, slices 0–5).
@@ -176,7 +176,38 @@ The fix for the wrong screen seen on 2026-09-30. Small; do it first.
   their classes come from entries (slice 4 should fall back to the feed
   class stored per car).
 
-### Slice 3: feed events, binding and filing by championship (backend + web)
+### Slice 3: feed events, binding and filing by championship (backend + web) — DONE 2026-09-30
+
+**As built (differences from the plan below):**
+- V61: `live_feed_event` holds only the binding (`event_id`, `bound_by`,
+  `bound_by_email`, `bound_at`); its labels and first session date are read
+  from its `live_session` rows rather than copied. Existing filed sessions
+  were carried over as AUTO. `live_session.event_override` added.
+- V61 also adds **`live_car`** (feed class, team, vehicle, make per car per
+  session), written with `live_driver`. The plan had no way to re-check a
+  finished session's cars by class; this is it, and slice 4 can group a
+  finished unfiled session by feed class from it.
+- `LiveFiling` does the resolution; `LiveTimingService.fileSession()` calls
+  `fileLive` per tick (10 s back-off while unbound) and `sweep()` runs once
+  a minute from the supervisor loop, connected or not. There are no
+  per-controller hooks for "entries imported / event created": the sweep
+  covers them within a minute.
+- `LiveDriverResolver.rematch(session, event)` re-links a stored session's
+  drivers when it moves.
+- Telemetry covers the filed event's series, else the feed's `champName`,
+  else the binding's series.
+- `POST /api/live/connect` without an event clears the old binding
+  (`LiveTimingStore.connectWithoutEvent`).
+- Manage → Live timing (`LiveFeedPage.tsx`) with
+  `GET /api/live/feed-championships` and `POST …/map`.
+- **Deferred to slice 4:** the admin bind / "not in Pit Pass" controls and
+  their endpoints (ADMIN and ADMIN_NONE are honoured but only settable by
+  SQL for now), and a "Connect (all series)" button — the web connect
+  control lives on an event's Timing page, where passing that event as the
+  hint is right; the event-less connect belongs on slice 4's `#/timing`.
+- Test fixtures now use a championship name no real series has, so filing
+  by name can't pick a real local event.
+
 **The unit that gets bound is the feed event** (one championship at one
 weekend, `eventDbId`), not each session and not the connection. One feed
 event maps to one Pit Pass event: prod has no series with two Pit Pass

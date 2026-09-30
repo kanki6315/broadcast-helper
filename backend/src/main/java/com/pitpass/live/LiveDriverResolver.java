@@ -21,15 +21,22 @@ import java.util.Map;
  * matched 88 of 88. An unmatched driver is written with the feed's name and
  * a null driver_id — listed, never dropped.
  *
+ * Also fills live_car — each car's feed class, team and vehicle — so a
+ * session can be filed, and grouped by class, after it is over.
+ *
  * Runs on the analysis writer's thread. Entry diffs are frequent (the
  * current driver changes at every stop) and rarely change a crew, so an
- * unchanged result is not written again.
+ * unchanged result is not written again. {@link #rematch} redoes a stored
+ * session's links when it is filed, moved or unfiled after the fact.
  */
 @Component
 public class LiveDriverResolver implements AnalysisWriter.DriverResolver {
 
     record Row(String car, int order, String firstName, String lastName, String shortName, String license,
                String country, Long entryId, Long driverId, String rating) {
+    }
+
+    record Car(String number, String feedClass, String team, String vehicle, String manufacturer) {
     }
 
     private final JdbcClient db;
@@ -51,11 +58,27 @@ public class LiveDriverResolver implements AnalysisWriter.DriverResolver {
         List<Entry> eventEntries = eventId == null ? List.of() : matcher.entries(eventId);
         Map<Long, List<CrewMember>> crews = eventId == null ? Map.of() : matcher.crews(eventId);
         List<Row> rows = rows(entries, eventEntries, crews);
-        List<Object> key = List.of(sessionDbId, rows);
+        List<Car> cars = cars(entries);
+        List<Object> key = List.of(sessionDbId, rows, cars);
         if (key.equals(lastWritten)) {
             return;
         }
         tx.executeWithoutResult(status -> {
+            for (Car c : cars) {
+                db.sql("""
+                        INSERT INTO live_car (session_db_id, car_number, feed_class, team, vehicle, manufacturer)
+                        VALUES (:s, :car, :cls, :team, :vehicle, :make)
+                        ON CONFLICT (session_db_id, car_number) DO UPDATE SET
+                            feed_class = EXCLUDED.feed_class, team = EXCLUDED.team,
+                            vehicle = EXCLUDED.vehicle, manufacturer = EXCLUDED.manufacturer
+                        """)
+                        .param("s", sessionDbId).param("car", c.number())
+                        .param("cls", c.feedClass(), java.sql.Types.VARCHAR)
+                        .param("team", c.team(), java.sql.Types.VARCHAR)
+                        .param("vehicle", c.vehicle(), java.sql.Types.VARCHAR)
+                        .param("make", c.manufacturer(), java.sql.Types.VARCHAR)
+                        .update();
+            }
             for (Row r : rows) {
                 db.sql("""
                         INSERT INTO live_driver (session_db_id, car_number, driver_order, first_name, last_name,
@@ -80,6 +103,57 @@ public class LiveDriverResolver implements AnalysisWriter.DriverResolver {
             }
         });
         lastWritten = key;
+    }
+
+    /**
+     * A stored session's drivers against an event — or, with eventId null,
+     * against nothing: links cleared, ratings back to the feed's license.
+     * Works from live_driver alone, so it needs no feed. Supervisor thread;
+     * the next entry diff of a live session rewrites the same answer.
+     */
+    public void rematch(long sessionDbId, Long eventId) {
+        List<Entry> eventEntries = eventId == null ? List.of() : matcher.entries(eventId);
+        Map<Long, List<CrewMember>> crews = eventId == null ? Map.of() : matcher.crews(eventId);
+        LiveClassification.Numbers numbers = new LiveClassification.Numbers(eventEntries);
+        record Stored(String car, int order, String first, String last, String license) {
+        }
+        List<Stored> stored = db.sql("""
+                SELECT car_number, driver_order, first_name, last_name, license FROM live_driver
+                WHERE session_db_id = :s
+                """)
+                .param("s", sessionDbId)
+                .query((rs, i) -> new Stored(rs.getString("car_number"), rs.getInt("driver_order"),
+                        rs.getString("first_name"), rs.getString("last_name"), rs.getString("license")))
+                .list();
+        tx.executeWithoutResult(status -> {
+            for (Stored d : stored) {
+                Entry entry = numbers.find(d.car());
+                List<CrewMember> crew = entry == null ? List.of() : crews.getOrDefault(entry.id(), List.of());
+                CrewMember match = match(crew, d.first(), d.last());
+                db.sql("""
+                        UPDATE live_driver SET entry_id = :entry, driver_id = :driver, rating = :rating
+                        WHERE session_db_id = :s AND car_number = :car AND driver_order = :order
+                        """)
+                        .param("s", sessionDbId).param("car", d.car()).param("order", d.order())
+                        .param("entry", entry == null ? null : entry.id(), java.sql.Types.BIGINT)
+                        .param("driver", match == null ? null : match.driverId(), java.sql.Types.BIGINT)
+                        .param("rating", match != null && match.rating() != null ? match.rating() : rating(d.license()),
+                                java.sql.Types.VARCHAR)
+                        .update();
+            }
+        });
+        lastWritten = null; // what was last written live no longer describes the rows
+    }
+
+    /** Pure: each car's class, team and vehicle as the feed has them. */
+    static List<Car> cars(JsonNode entries) {
+        List<Car> cars = new ArrayList<>();
+        for (var car : entries.properties()) {
+            JsonNode feedCar = car.getValue();
+            cars.add(new Car(car.getKey(), text(feedCar, "class"), text(feedCar, "team"), text(feedCar, "vehicle"),
+                    text(feedCar, "manufacturer")));
+        }
+        return cars;
     }
 
     /** Pure: the feed's drivers against the event's entries and crews. */

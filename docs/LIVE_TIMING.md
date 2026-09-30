@@ -42,7 +42,8 @@ replica would see `STANDBY` and no data.
 | `GET /api/live/status` | member | State, bound event, the event the session on track is filed under (`filedEventId`), what the feed says is running, message counters, last error. Poll it. |
 | `GET /api/live/classification` | member | The running order per class, matched to the filed event's entries — see below. Poll it. |
 | `GET /api/live/championships/{id}` | member | One class championship's rows against the running order — see *Championship positions*. Poll it. |
-| `POST /api/live/connect` `{ "eventId": n }` | admin | Ask for the connection and bind it to the Pit Pass event it is scored against. The iPad's live timing bar and, for admins, the web Timing page's top bar both call it. |
+| `POST /api/live/connect` `{ "eventId": n }` | admin | Ask for the connection. `eventId` is optional: a hint for filing (see *Which event a session belongs to*); without it any earlier binding is cleared. The iPad's live timing bar and, for admins, the web Timing page's top bar both call it. |
+| `GET /api/live/feed-championships` / `POST …/map` | member / admin | Championships the feed has carried and the series each stands for; mapping adds a `series_alias` and files its weekends. |
 | `POST /api/live/disconnect` | admin | Close the socket and free the login. |
 | `GET /api/live/timing` | member | The timing page's tower — see *Timing page API*. Poll it. |
 | `GET /api/live/cars/{car}?session=` | member | One car's laps, stints and drivers. |
@@ -281,18 +282,38 @@ since every write is an idempotent upsert.
 feed writes them (#04 ≠ #4).
 
 **Which event a session belongs to.** Every session the feed shows is
-recorded, whichever series it is. A session is **filed** under an event
-(`live_session.event_id`) only when that event's entry list matches the cars
-on track, by car number **and** class (`LiveEventMatch`, at least half the
-field). Numbers alone would not do: a weekend's series share them (#7 in
-WeatherTech and in Pilot Challenge), but never their classes. The binding
-only says which event to try:
-- Binding Pilot Challenge while WeatherTech is on track files and moves
-  nothing.
-- A session that loads before you rebind stays unfiled, then is filed the
-  moment the rebind matches it (checked every supervisor tick).
-- A binding that doesn't match is re-checked every 10 s as the running order
-  fills in.
+recorded, whichever series it is. Sessions are **filed by series weekend**
+(`LiveFiling`, V61): Al Kamel's feed event (`info.eventDbId`, one championship
+at one weekend — `live_feed_event`) is bound to a Pit Pass event, and every
+session of it follows (`live_session.event_id`, or the session's own
+`event_override`). An unbound feed event is tried, in order:
+1. **Inherited:** the same championship (`champ_db_id`) at the same track
+   (`feed_event_short_name`) within 7 days already has a bound feed event —
+   covers Al Kamel issuing a new event id midweek.
+2. **By championship:** `champName` → `series.name` (case-insensitive), else a
+   `series_alias` → that series' one event with `event_date` from 1 day before
+   to 6 days after the first session (Pit Pass stores the race day).
+3. **The connection's event**, while live — now only a hint.
+
+2 and 3 must pass the entry-list check (`LiveEventMatch`: at least half the
+field agrees by car number **and** class). Numbers alone would not do: a
+weekend's series share them (#7 in WeatherTech and in Pilot Challenge), but
+never their classes. A binding, once made, is never replaced automatically,
+and an admin's never (`bound_by` ADMIN / ADMIN_NONE — set by hand until
+slice 4 adds the control).
+- The live session's feed event is tried every supervisor tick, and every
+  10 s while it doesn't match; once bound, later sessions of it file at once.
+- **Once a minute, connected or not**, feed events seen in the last 14 days
+  that are still unbound are tried again from their stored cars (`live_car`)
+  — entries imported after Wednesday practice, an event or alias added later.
+- Connecting **with no event** (`POST /api/live/connect {}`) clears any
+  earlier binding, so a stale one can't be tried against the next series.
+- Manage → Live timing lists every championship the feed has carried, the
+  series each stands for, and weekends not filed; mapping one writes a
+  `series_alias` and files its weekends
+  (`GET /api/live/feed-championships`, `POST …/map {champName, seriesId}`).
+- Moving a session re-matches its drivers from its stored `live_driver`
+  rows (`LiveDriverResolver.rematch`), so it works after the session is over.
 
 Drivers are matched against the **filed** event's crews, so they follow the
 filing, not the binding. An unfiled session appears on no event's Timing page
@@ -312,7 +333,8 @@ checksum.) Laps or stints that arrive before any
 (`analysis.withoutSession`); the JOIN order puts `info` first.
 
 **Drivers.** Whenever `timing.session.entry` changes, `LiveDriverResolver`
-writes `live_driver` for the session: driver order N of each car
+writes `live_car` (each car's feed class, team, vehicle) and `live_driver`
+for the session: driver order N of each car
 (`drivers."1"`, `"2"`…, what laps and stints call `driver`), matched to the
 bound event's entry by number (exact first, then leading zeros only if
 unambiguous) and to the crew by surname (full name when a crew shares a

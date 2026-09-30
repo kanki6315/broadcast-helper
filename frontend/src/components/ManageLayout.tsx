@@ -8,6 +8,7 @@ const MANAGE_LINKS = [
   { to: '/manage/logos', label: 'Manufacturer logos' },
   { to: '/manage/users', label: 'Users' },
   { to: '/manage/sessions', label: 'Sessions' },
+  { to: '/manage/live', label: 'Live timing' },
 ]
 
 /**

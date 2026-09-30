@@ -163,7 +163,7 @@ class AnalysisRouterTest {
         feed(info(SESSION, "Race"));
         var seen = ops(SessionSeen.class).getLast().session();
         assertEquals(38L, seen.champDbId());
-        assertEquals("IMSA WeatherTech SportsCar Championship", seen.champName());
+        assertEquals("Fixture Championship (not a series)", seen.champName());
         assertEquals("Showcase 120", seen.feedEventName());
         assertEquals("Road America", seen.feedEventShortName());
         assertEquals(812L, seen.feedEventDbId());
@@ -173,7 +173,7 @@ class AnalysisRouterTest {
         feed("{\"timing\":{\"session\":{\"info\":{\"closed\":true}}}}");
         var closed = ops(SessionSeen.class).getLast().session();
         assertTrue(closed.closed());
-        assertEquals("IMSA WeatherTech SportsCar Championship", closed.champName(), "the rest of info is kept");
+        assertEquals("Fixture Championship (not a series)", closed.champName(), "the rest of info is kept");
     }
 
     @Test

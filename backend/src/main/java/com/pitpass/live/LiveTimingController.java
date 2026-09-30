@@ -67,7 +67,11 @@ public class LiveTimingController {
         return classification.championship(id);
     }
 
-    /** Asks for the connection and binds it to the event it will be scored against. */
+    /**
+     * Asks for the connection. An eventId is a hint for filing: the event to
+     * try for a session whose championship does not identify one. Without it,
+     * any earlier binding is cleared and sessions are filed by championship.
+     */
     @PostMapping("/connect")
     public LiveStatus connect(@RequestBody ConnectRequest request, Authentication authentication) {
         if (!service.configured()) {
@@ -75,7 +79,9 @@ public class LiveTimingController {
                     "Live timing is not configured on this server (ALKAMELV2_HOST is not set)");
         }
         if (request == null || request.eventId() == null) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Choose the event to score against");
+            // Every series on track, filed by championship (LiveFiling).
+            service.connectWithoutEvent(who(authentication));
+            return service.status();
         }
         if (store.eventName(request.eventId()).isEmpty()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such event");

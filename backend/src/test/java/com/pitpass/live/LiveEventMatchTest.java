@@ -1,5 +1,6 @@
 package com.pitpass.live;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pitpass.live.LiveClassification.Entry;
 import org.junit.jupiter.api.Test;
@@ -72,7 +73,7 @@ class LiveEventMatchTest {
     @Test
     void nothingOnTrackMatchesNothing() throws Exception {
         assertFalse(LiveEventMatch.score(mapper.readTree("{}"), weatherTech, Map.of()).matches());
-        assertFalse(LiveEventMatch.score(null, weatherTech, Map.of()).matches());
+        assertFalse(LiveEventMatch.score((JsonNode) null, weatherTech, Map.of()).matches());
         assertFalse(LiveEventMatch.score(mapper.readTree(WEATHERTECH_ON_TRACK), List.of(), Map.of()).matches());
     }
 
