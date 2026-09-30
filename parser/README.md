@@ -40,7 +40,7 @@ code. The install provides three console commands — `parse-entry-list`,
 Install straight from the (private) repo at a release tag:
 
 ```bash
-pip install "pitpass-parser @ git+https://oauth2:${GH_TOKEN}@github.com/kanki6315/broadcast-helper.git@parser-v1.0.0#subdirectory=parser"
+pip install "pitpass-parser @ git+https://oauth2:${GH_TOKEN}@github.com/kanki6315/broadcast-helper.git@parser-v1.0.1#subdirectory=parser"
 ```
 
 (`GH_TOKEN` is a fine-grained PAT with read-only Contents on this repo; local
