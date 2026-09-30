@@ -46,7 +46,13 @@ class LiveTimingPageServiceTest {
                           "2": {"firstName": "Bea", "lastName": "Two", "shortName": "Two", "license": "Gold"}}},
                        "4": {"number": "4", "currentDriver": 1, "drivers": {
                           "1": {"firstName": "Cy", "lastName": "Unresolved", "shortName": "Unr", "license": "Silver"}}}},
-             "standings": {"byClass": {"active": {"GTD": {"class": "GTD", "standings": {
+             "standings": {"overall": {"participantDetails": {
+                "04": {"currentSector": 2, "status": "TRACK",
+                       "lastSectors": {"1": {"number": 1, "time": 30500, "isValid": true}},
+                       "bestSectors": {"1": {"number": 1, "time": 30000}, "2": {"number": 2, "time": 31000}}},
+                "4": {"currentSector": 1, "status": "BOX", "pitStops": 3,
+                      "bestSectors": {"1": {"number": 1, "time": 29000}, "2": {"number": 2, "time": 33000}}}}},
+                           "byClass": {"active": {"GTD": {"class": "GTD", "standings": {
                 "1": {"participant": "04", "position": 1, "lapNumber": 3},
                 "2": {"participant": "4", "position": 2, "lapNumber": 3, "gapFirstTime": 4200, "gapPreviousTime": 4200}}}}}}}
             """;
@@ -122,7 +128,9 @@ class LiveTimingPageServiceTest {
         LiveTimingService live = new LiveTimingService(props, store, mapper, null, null, LiveTimingService.Pacing.PRODUCTION) {
             @Override
             public JsonNode state(String path) {
-                return "timing.session".equals(path) ? tree : "timing.session.entry".equals(path) ? tree.get("entry") : null;
+                return "timing.session".equals(path) ? tree : "timing.session.entry".equals(path) ? tree.get("entry")
+                        : AlKamelV2Properties.PARTICIPANT_DETAILS_CHANNEL.equals(path) ? tree.at("/standings/overall/participantDetails")
+                        : null;
             }
 
             @Override
@@ -171,6 +179,18 @@ class LiveTimingPageServiceTest {
         assertEquals("Cy Unresolved", second.driverName(), "no live_driver row: the feed's own name");
         assertEquals("S", second.driverRating());
         assertNull(second.laps(), "no laps recorded and not known to be a race: the standings' lapNumber may be its best lap's");
+
+        assertEquals(2, first.currentSector());
+        assertEquals(30_500, first.sectors().get(0).ms());
+        assertTrue(first.sectors().get(0).currentLap());
+        assertNull(first.sectors().get(1));
+        assertEquals(61_000L, first.idealMs());
+        assertTrue(second.inPit(), "BOX marks the car in the pit with no PIT stint");
+        assertEquals("BOX", second.trackStatus());
+        var gtd = tower.classes().getFirst();
+        assertEquals(List.of(new LiveParticipantDetails.ClassSector(29_000, "4"), new LiveParticipantDetails.ClassSector(31_000, "04")),
+                gtd.bestSectors());
+        assertEquals(60_000L, gtd.idealMs());
     }
 
     @Test

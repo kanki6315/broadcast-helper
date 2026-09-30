@@ -42,8 +42,14 @@ public class LiveTimingPageService {
                         Long sessionDbId, Long feedClockMs, List<TowerClass> classes, int matched, int total) {
     }
 
-    /** color is the series' class_style colour (#rrggbb), or null when the class has none. */
-    public record TowerClass(String className, String feedClass, String color, List<TowerCar> cars) {
+    /**
+     * color is the series' class_style colour (#rrggbb), or null when the
+     * class has none. bestSectors is the class's fastest time in each sector
+     * and its holder, idealMs their sum (empty / null without participant
+     * details).
+     */
+    public record TowerClass(String className, String feedClass, String color, List<TowerCar> cars,
+                             List<LiveParticipantDetails.ClassSector> bestSectors, Long idealMs) {
     }
 
     /**
@@ -55,7 +61,12 @@ public class LiveTimingPageService {
      * of the car's best lap (Road Atlanta practice, 2026-09-30).
      * pitStops counts Al Kamel's PIT stints, as the Pits view does (null with
      * no session recorded); lastPitMs is the pit-lane time of the newest
-     * finished one.
+     * finished one; with no session recorded, participant details' own count.
+     * From participant details (null without them): trackStatus BOX /
+     * OUT_LAP / TRACK / STOPPED, which also marks a car in the pit when no
+     * PIT stint says so (a red flag's pit-lane stints arrive only once
+     * closed); currentSector; sectors as they are run; the car's best sectors
+     * and their sum, idealMs.
      */
     public record TowerCar(int position, String carNumber, Long entryId, String teamName, String vehicle,
                            String manufacturer, String status, Integer laps,
@@ -63,7 +74,9 @@ public class LiveTimingPageService {
                            Integer driverOrder, String driverName, String driverShortName, String driverRating,
                            Integer lastLap, Integer lastLapMs, Integer bestLap, Integer bestLapMs,
                            boolean inPit, Long stintStartMs, Integer stintLaps, Double energyPct,
-                           Double energyLapsLeft, Integer pitStops, Long lastPitMs) {
+                           Double energyLapsLeft, Integer pitStops, Long lastPitMs,
+                           String trackStatus, Integer currentSector, List<LiveParticipantDetails.SectorTime> sectors,
+                           List<Integer> bestSectorMs, Long idealMs) {
     }
 
     public record SessionSummary(long sessionDbId, Long eventId, String name, String type, Long dateMs,
@@ -123,6 +136,8 @@ public class LiveTimingPageService {
         Map<String, DriverRow> resolved = session == null ? Map.of() : resolvedDrivers(session);
         JsonNode feedEntries = live.state("timing.session.entry");
         Map<String, String> colors = order.eventId() == null ? Map.of() : classColors(order.eventId());
+        JsonNode details = live.state(AlKamelV2Properties.PARTICIPANT_DETAILS_CHANNEL);
+        int sectorCount = LiveParticipantDetails.sectorCount(details);
         boolean race = order.session() != null && "RACE".equalsIgnoreCase(order.session().type());
         Map<String, LiveAnalysis.PitCar> pits = session == null ? Map.of()
                 : LiveAnalysis.pitStops(stints(session), Map.of()).stream()
@@ -131,8 +146,14 @@ public class LiveTimingPageService {
         List<TowerClass> classes = new ArrayList<>();
         for (var cls : order.classification().classes()) {
             List<TowerCar> cars = new ArrayList<>();
+            Map<String, LiveParticipantDetails.Car> detailByCar = new HashMap<>();
             for (var car : cls.cars()) {
                 CarSummary s = summaries.get(car.carNumber());
+                LiveParticipantDetails.Car d = details == null ? null
+                        : LiveParticipantDetails.car(details.get(car.carNumber()), sectorCount);
+                if (d != null) {
+                    detailByCar.put(car.carNumber(), d);
+                }
                 JsonNode feedCar = feedEntries == null ? null : feedEntries.get(car.carNumber());
                 Integer order2 = feedCar != null && feedCar.hasNonNull("currentDriver")
                         ? feedCar.path("currentDriver").asInt() : s == null ? null : s.stintDriverOrder();
@@ -157,13 +178,18 @@ public class LiveTimingPageService {
                         s == null ? null : s.lastLap(), s == null ? null : s.lastLapMs(),
                         best != null ? Integer.valueOf(best[0]) : s == null ? null : s.bestLap(),
                         best != null ? Integer.valueOf(best[1]) : s == null ? null : s.bestLapMs(),
-                        s != null && "PIT".equalsIgnoreCase(s.stintType()),
+                        (s != null && "PIT".equalsIgnoreCase(s.stintType())) || (d != null && d.inBox()),
                         s == null ? null : s.stintStartMs(), s == null ? null : s.lapsInStint(),
                         energy == null ? null : energy.energyPct(), energy == null ? null : energy.lapsLeft(),
-                        session == null ? null : pit == null ? 0 : pit.stops().size(), lastPitMs));
+                        session == null ? (d == null ? null : d.pitStops()) : pit == null ? 0 : pit.stops().size(), lastPitMs,
+                        d == null ? null : d.trackStatus(), d == null ? null : d.currentSector(),
+                        d == null ? null : d.sectors(), d == null ? null : d.bestSectorMs(),
+                        d == null ? null : d.idealMs()));
             }
+            List<LiveParticipantDetails.ClassSector> bests = detailByCar.isEmpty() ? List.of()
+                    : LiveParticipantDetails.classBests(cars.stream().map(TowerCar::carNumber).toList(), detailByCar::get, sectorCount);
             classes.add(new TowerClass(cls.className(), cls.feedClass(),
-                    colors.get(cls.className().trim().toLowerCase()), cars));
+                    colors.get(cls.className().trim().toLowerCase()), cars, bests, LiveParticipantDetails.idealLap(bests)));
         }
         return new Tower(order.state(), order.eventId(), order.eventName(), order.session(), session,
                 session == null ? null : latestFeedTime(session), classes,

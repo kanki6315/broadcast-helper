@@ -77,6 +77,27 @@ export interface TowerCar {
   pitStops: number | null
   /** Pit-lane time of the newest finished stop. */
   lastPitMs: number | null
+  /** From participant details (null when that channel is off): BOX, OUT_LAP, TRACK or STOPPED. */
+  trackStatus: string | null
+  currentSector: number | null
+  /** Sector 1 first; null where the car has no time yet. */
+  sectors: (SectorTime | null)[] | null
+  bestSectorMs: (number | null)[] | null
+  /** The car's own best sectors summed; null until it has one in every sector. */
+  idealMs: number | null
+}
+
+/** A sector's newest time. currentLap false = the previous lap's, until the car runs that sector again. */
+export interface SectorTime {
+  ms: number
+  valid: boolean | null
+  currentLap: boolean
+}
+
+/** A class's fastest time in one sector, and the car that holds it. */
+export interface ClassSector {
+  ms: number | null
+  car: string | null
 }
 
 export interface TowerClass {
@@ -84,6 +105,9 @@ export interface TowerClass {
   feedClass: string
   color: string | null
   cars: TowerCar[]
+  /** Per sector; empty without participant details. */
+  bestSectors: ClassSector[]
+  idealMs: number | null
 }
 
 export interface Tower {
@@ -453,6 +477,17 @@ export function trackTime(wallMs: number, utcOffsetHours: number | null | undefi
 export function lastLapMark(car: Pick<TowerCar, 'lastLapMs' | 'bestLapMs'>, classBestMs: number | null): 'class' | 'pb' | null {
   if (car.lastLapMs == null || car.lastLapMs <= 0 || car.lastLapMs !== car.bestLapMs) return null
   return car.lastLapMs === classBestMs ? 'class' : 'pb'
+}
+
+/**
+ * How a sector time reads, as a lap does: 'class' when it is the class's
+ * fastest in that sector, 'pb' when it is the car's own best there.
+ */
+export function sectorMark(ms: number | null | undefined, carBest: number | null | undefined,
+  classBest: number | null | undefined): 'class' | 'pb' | null {
+  if (ms == null || ms <= 0) return null
+  if (ms === classBest) return 'class'
+  return ms === carBest ? 'pb' : null
 }
 
 /** The class's fastest best lap, to mark in the tower. */

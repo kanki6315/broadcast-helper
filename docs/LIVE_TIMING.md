@@ -182,6 +182,7 @@ All `ALKAMELV2_*`. Set the first three on Railway; the rest have working default
 | `ALKAMELV2_REPLAY_FILE` | — | Local dev: replay this recording instead of connecting. |
 | `ALKAMELV2_REPLAY_SPEED` | `1.0` | `10` = ten times faster; `0` = no pauses. |
 | `ALKAMELV2_ANALYSIS_ENABLED` | `false` | Also join `timing.analysis.laps` and `.stints` and stream them into Postgres — see *timing.analysis*. Off until a practice session has run clean with it. |
+| `ALKAMELV2_PARTICIPANT_DETAILS_ENABLED` | `false` | Also join `timing.session.standings.overall.participantDetails` into the state tree, for the tower's sector columns, class best sectors and BOX / OUT_LAP marks. It updates at every loop crossing of every car, so it stays off until a practice session has been recorded with it. |
 | `ALKAMELV2_ANALYSIS_MAX_LINE_BYTES` | `536870912` | Sanity cap on one **streamed** line (counted, never buffered). `ALKAMELV2_MAX_LINE_BYTES` then guards only buffered lines. |
 
 ### IMSA telemetry settings
@@ -366,6 +367,17 @@ client to count up from.
     stayed true and `stoppedMilliSeconds` stayed 0. **Unverified:** a real
     stop (`isSessionRunning` false), so whether `stoppedMilliSeconds` grows
     during one or only at the restart is still open.
+  - With `ALKAMELV2_PARTICIPANT_DETAILS_ENABLED` (`LiveParticipantDetails`),
+    each car also carries `trackStatus` (BOX / OUT_LAP / TRACK / STOPPED;
+    BOX also sets `inPit`, which covers the red-flag gap where a car's PIT
+    stint arrives only once it has closed), `currentSector`, `sectors`
+    (`lastSectors`: per sector `ms`, `valid`, and `currentLap` = before the
+    sector the car is in), `bestSectorMs` and `idealMs` (its own best
+    sectors summed). Each class carries `bestSectors` (fastest per sector and
+    its car) and `idealMs`. Without analysis, `pitStops` falls back to the
+    channel's own count. **Unverified until a recording holds the channel:**
+    that `lastSectors` keeps each sector's newest time rather than clearing at
+    the line, and that `currentSector` counts from 1.
   - `laps` is laps completed: the last lap from analysis, else the
     standings' `lapNumber` in a race only. In practice and qualifying the
     standings' `lapNumber` is the lap the car set its best on.

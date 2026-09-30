@@ -431,8 +431,14 @@ in a modal.
   lap borrows the same convention: violet when it set the class's fastest
   lap, the green `--res-win` tint in weight when it was the car's own best,
   plain otherwise. A **Pits** column counts stops as Al Kamel's tower does
-  (and the Pits view) with the last stop's pit-lane time muted beside
-  it. A car in the pit carries an amber-tint
+  (and the Pits view), with the last stop's pit-lane time muted beside it.
+  With participant details on, **S1–S3** follow Best and fill in as each
+  sector is run, in the same purple and green; a time left from the
+  previous lap sits in muted ink, an invalid one is struck through in error
+  red. The class band carries the class's best sectors and their holders
+  plus the ideal lap. An out lap wears a quiet outlined `Out` mark. With
+  sectors, the team column drops below 1100px instead of 900px, so the
+  tower still fits 1024px beside Energy. A car in the pit carries an amber-tint
   `Pit` mark; a retired car stays in its place in muted ink with its status
   in words. Interval and last lap drop below 640px. An **Energy** column
   (IMSA telemetry) appears only once some car has a reading: the percentage
