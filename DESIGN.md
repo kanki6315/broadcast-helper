@@ -438,7 +438,14 @@ in a modal.
   red. The class band carries the class's best sectors and their holders
   plus the ideal lap. An out lap wears a quiet outlined `Out` mark. With
   sectors, the team column drops below 1100px instead of 900px, so the
-  tower still fits 1024px beside Energy. A car in the pit carries an amber-tint
+  tower still fits 1024px beside Energy. In a race, places gained or lost
+  in class since the start follow the position as ▲2 in success green or
+  ▼1 in error red (shape and number carry it; the words are for screen
+  readers), in a reserved slot so positions stay in one column. A row that
+  changes place flashes an amber wash that fades over 3s (a steady wash for
+  4s under reduced motion); the first tower seen never flashes. Under the
+  clock, the field at a glance: "24 on track · 21 in pit · 0 stopped · 0
+  retired" (stopped only with participant details). A car in the pit carries an amber-tint
   `Pit` mark; a retired car stays in its place in muted ink with its status
   in words. Interval and last lap drop below 640px. An **Energy** column
   (IMSA telemetry) appears only once some car has a reading: the percentage

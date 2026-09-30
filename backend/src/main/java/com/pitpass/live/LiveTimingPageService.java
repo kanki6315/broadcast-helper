@@ -67,6 +67,9 @@ public class LiveTimingPageService {
      * PIT stint says so (a red flag's pit-lane stints arrive only once
      * closed); currentSector; sectors as they are run; the car's best sectors
      * and their sum, idealMs.
+     * startPosition is the car's place in its class on the starting grid, in
+     * a race only (the feed's grid is overall; ranked here within the class
+     * as the tower has it), for places gained. Null off the grid.
      */
     public record TowerCar(int position, String carNumber, Long entryId, String teamName, String vehicle,
                            String manufacturer, String status, Integer laps,
@@ -76,7 +79,7 @@ public class LiveTimingPageService {
                            boolean inPit, Long stintStartMs, Integer stintLaps, Double energyPct,
                            Double energyLapsLeft, Integer pitStops, Long lastPitMs,
                            String trackStatus, Integer currentSector, List<LiveParticipantDetails.SectorTime> sectors,
-                           List<Integer> bestSectorMs, Long idealMs) {
+                           List<Integer> bestSectorMs, Long idealMs, Integer startPosition) {
     }
 
     public record SessionSummary(long sessionDbId, Long eventId, String name, String type, Long dateMs,
@@ -137,6 +140,7 @@ public class LiveTimingPageService {
         JsonNode feedEntries = live.state("timing.session.entry");
         Map<String, String> colors = order.eventId() == null ? Map.of() : classColors(order.eventId());
         JsonNode details = live.state(AlKamelV2Properties.PARTICIPANT_DETAILS_CHANNEL);
+        Map<String, Integer> grid = gridPositions(live.state("timing.session.startingGrid"));
         int sectorCount = LiveParticipantDetails.sectorCount(details);
         boolean race = order.session() != null && "RACE".equalsIgnoreCase(order.session().type());
         Map<String, LiveAnalysis.PitCar> pits = session == null ? Map.of()
@@ -147,6 +151,7 @@ public class LiveTimingPageService {
         for (var cls : order.classification().classes()) {
             List<TowerCar> cars = new ArrayList<>();
             Map<String, LiveParticipantDetails.Car> detailByCar = new HashMap<>();
+            Map<String, Integer> classStart = race ? classStart(cls.cars().stream().map(c -> c.carNumber()).toList(), grid) : Map.of();
             for (var car : cls.cars()) {
                 CarSummary s = summaries.get(car.carNumber());
                 LiveParticipantDetails.Car d = details == null ? null
@@ -184,7 +189,7 @@ public class LiveTimingPageService {
                         session == null ? (d == null ? null : d.pitStops()) : pit == null ? 0 : pit.stops().size(), lastPitMs,
                         d == null ? null : d.trackStatus(), d == null ? null : d.currentSector(),
                         d == null ? null : d.sectors(), d == null ? null : d.bestSectorMs(),
-                        d == null ? null : d.idealMs()));
+                        d == null ? null : d.idealMs(), classStart.get(car.carNumber())));
             }
             List<LiveParticipantDetails.ClassSector> bests = detailByCar.isEmpty() ? List.of()
                     : LiveParticipantDetails.classBests(cars.stream().map(TowerCar::carNumber).toList(), detailByCar::get, sectorCount);
@@ -194,6 +199,32 @@ public class LiveTimingPageService {
         return new Tower(order.state(), order.eventId(), order.eventName(), order.session(), session,
                 session == null ? null : latestFeedTime(session), classes,
                 order.classification().matched(), order.classification().total());
+    }
+
+    /** The feed's starting grid: car number → overall grid position. */
+    static Map<String, Integer> gridPositions(JsonNode grid) {
+        Map<String, Integer> out = new HashMap<>();
+        if (grid == null) {
+            return out;
+        }
+        for (JsonNode p : grid.path("positions")) {
+            int position = p.path("position").asInt(0);
+            if (p.hasNonNull("participant") && position > 0) {
+                out.put(p.path("participant").asText(), position);
+            }
+        }
+        return out;
+    }
+
+    /** Each car's place in its class at the start: its overall grid slot ranked among the class's cars on the grid. */
+    static Map<String, Integer> classStart(List<String> classCars, Map<String, Integer> grid) {
+        List<String> onGrid = classCars.stream().filter(grid::containsKey)
+                .sorted(java.util.Comparator.comparing(grid::get)).toList();
+        Map<String, Integer> out = new HashMap<>();
+        for (int i = 0; i < onGrid.size(); i++) {
+            out.put(onGrid.get(i), i + 1);
+        }
+        return out;
     }
 
     /** Every stint of a session, for pit stops. */

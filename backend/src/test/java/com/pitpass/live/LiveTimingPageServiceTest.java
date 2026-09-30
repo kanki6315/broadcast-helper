@@ -191,6 +191,19 @@ class LiveTimingPageServiceTest {
         assertEquals(List.of(new LiveParticipantDetails.ClassSector(29_000, "4"), new LiveParticipantDetails.ClassSector(31_000, "04")),
                 gtd.bestSectors());
         assertEquals(60_000L, gtd.idealMs());
+        assertNull(first.startPosition(), "not a race: no places gained");
+    }
+
+    @Test
+    void theClassStartRanksTheOverallGridWithinTheClass() throws Exception {
+        var grid = LiveTimingPageService.gridPositions(mapper.readTree("""
+                {"positions": {"1": {"participant": "7", "position": 1}, "2": {"participant": "04", "position": 2},
+                               "3": {"participant": "31", "position": 3}, "4": {"participant": "4", "position": 4}}}
+                """));
+        assertEquals(java.util.Map.of("7", 1, "04", 2, "31", 3, "4", 4), grid);
+        assertEquals(java.util.Map.of("04", 1, "4", 2), LiveTimingPageService.classStart(List.of("4", "04", "23"), grid),
+                "#04 started 2nd overall, 1st in its class; #23 was not on the grid");
+        assertTrue(LiveTimingPageService.gridPositions(null).isEmpty());
     }
 
     @Test
