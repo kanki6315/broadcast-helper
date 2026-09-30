@@ -212,3 +212,24 @@
     border-radius: 0;
   }
 }
+
+/* Best sectors, in the tower's vocabulary: the car's own best in weight,
+ * fastest in class in weight on the violet result tint. */
+.lc-sector-pb {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.lc-table td.lc-sector-class-best {
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--res-top5);
+}
+
+.lc-caption {
+  caption-side: top;
+  padding: 0 0 var(--space-2);
+  text-align: left;
+  color: var(--text);
+  font-size: var(--text-xs);
+}

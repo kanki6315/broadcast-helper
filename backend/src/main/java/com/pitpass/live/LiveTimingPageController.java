@@ -18,9 +18,29 @@ import java.util.List;
 public class LiveTimingPageController {
 
     private final LiveTimingPageService service;
+    private final LiveAnalysisService analysis;
 
-    public LiveTimingPageController(LiveTimingPageService service) {
+    public LiveTimingPageController(LiveTimingPageService service, LiveAnalysisService analysis) {
         this.service = service;
+        this.analysis = analysis;
+    }
+
+    /** Every car's gap to its class leader after each lap, class by class. */
+    @GetMapping("/gaps")
+    public LiveAnalysisService.GapsResponse gaps(@RequestParam(required = false) Long session) {
+        return analysis.gaps(session);
+    }
+
+    /** Each car's best sectors and theoretical best over its valid laps, class by class. */
+    @GetMapping("/sectors")
+    public LiveAnalysisService.SectorsResponse sectors(@RequestParam(required = false) Long session) {
+        return analysis.sectors(session);
+    }
+
+    /** Each car's pit stops: pit-lane time, lap, and who got in and out. */
+    @GetMapping("/pits")
+    public LiveAnalysisService.PitsResponse pits(@RequestParam(required = false) Long session) {
+        return analysis.pits(session);
     }
 
     /** The tower: order, gaps and intervals from the feed, plus driver, laps and stint per car. */

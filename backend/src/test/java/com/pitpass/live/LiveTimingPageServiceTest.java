@@ -97,6 +97,17 @@ class LiveTimingPageServiceTest {
     }
 
     private LiveTimingPageService page(boolean current) throws Exception {
+        return pages(current).page();
+    }
+
+    private LiveAnalysisService analysis(boolean current) throws Exception {
+        return pages(current).analysis();
+    }
+
+    private record Pages(LiveTimingPageService page, LiveAnalysisService analysis) {
+    }
+
+    private Pages pages(boolean current) throws Exception {
         JsonNode tree = mapper.readTree(FEED);
         LiveCarSummaries summaries = new LiveCarSummaries();
         summaries.reset(current ? session : null);
@@ -130,7 +141,9 @@ class LiveTimingPageServiceTest {
             }
         };
         LiveEntryMatcher matcher = new LiveEntryMatcher(db);
-        return new LiveTimingPageService(db, live, new LiveClassificationService(db, live, matcher));
+        LiveClassificationService classification = new LiveClassificationService(db, live, matcher);
+        LiveTimingPageService page = new LiveTimingPageService(db, live, classification);
+        return new Pages(page, new LiveAnalysisService(db, live, classification, page));
     }
 
     @Test
@@ -220,5 +233,71 @@ class LiveTimingPageServiceTest {
         assertEquals(1, sessions.getFirst().cars());
         assertTrue(sessions.getFirst().current());
         assertFalse(page(false).sessions(event).getFirst().current());
+    }
+
+    /** #4 runs 101 s laps from T0 beside #04's 99.999, 99.998, 99.997; it pits at the end of lap 2. */
+    private void seedFour() {
+        for (int lap = 1; lap <= 3; lap++) {
+            db.sql("""
+                    INSERT INTO live_lap (session_db_id, car_number, lap_number, start_time_ms, lap_time_ms, is_valid,
+                                          sector_ms, pit_in_time_ms)
+                    VALUES (:s, '4', :lap, :start, 101000, true, '{29000,33000,39000}', :pit)
+                    """)
+                    .param("s", session).param("lap", lap).param("start", T0 + (lap - 1) * 101_000L)
+                    .param("pit", lap == 2 ? T0 : null, java.sql.Types.BIGINT).update();
+        }
+    }
+
+    @Test
+    void gapsByClassFromTheRecordedLaps() throws Exception {
+        seedFour();
+        var gaps = analysis(true).gaps(session);
+        assertEquals(1, gaps.classes().size(), "the session being fed: #4 is in GTD on the tower");
+        var gtd = gaps.classes().getFirst();
+        assertEquals("GTD", gtd.className());
+        assertEquals(List.of("4", "04"), gtd.cars().stream().map(LiveAnalysisService.CarInfo::carNumber).toList());
+        var four = gtd.gaps().get(1);
+        assertEquals("4", four.carNumber());
+        assertEquals(java.util.Arrays.asList(1_001L, 2_002L, 3_003L), four.gapMs(), "#04 finishes lap n at n × 100 s − n ms");
+        assertEquals(List.of(2), four.pitLaps());
+
+        var past = analysis(false).gaps(session);
+        assertEquals(List.of("GTD", LiveAnalysisService.NOT_ENTERED),
+                past.classes().stream().map(LiveAnalysisService.GapClass::className).toList(),
+                "an old session: #4's drivers were never matched to an entry");
+        assertEquals(java.util.Arrays.asList(0L, 0L, 0L), past.classes().getFirst().gaps().getFirst().gapMs());
+    }
+
+    @Test
+    void sectorBestsByClass() throws Exception {
+        seedFour();
+        var gtd = analysis(true).sectors(session).classes().getFirst();
+        assertEquals(java.util.Arrays.asList(29_000, 31_000, 32_000), gtd.bests().classBestSectorMs(),
+                "#04's lap 3 was invalid but laps 1-2 carry the same sectors");
+        var zero4 = gtd.bests().cars().getFirst();
+        assertEquals("04", zero4.carNumber());
+        assertEquals(93_000L, zero4.theoreticalMs());
+    }
+
+    @Test
+    void pitStopsWithTheDriversEitherSide() throws Exception {
+        db.sql("""
+                INSERT INTO live_stint (session_db_id, car_number, start_time_ms, type, driver_order, open_lap_number,
+                                        close_lap_number, finish_time_ms)
+                VALUES (:s, '04', :t, 'PIT', 1, 2, 3, :f)
+                """)
+                .param("s", session).param("t", T0 + H).param("f", T0 + H + 70_000).update();
+        var response = analysis(false).pits(session);
+        var gtd = response.classes().getFirst();
+        var zero4 = gtd.pits().getFirst();
+        assertEquals(1, zero4.stops().size());
+        var stop = zero4.stops().getFirst();
+        assertEquals(70_000L, stop.durationMs());
+        assertEquals(1, stop.driverIn());
+        assertEquals(2, stop.driverOut());
+        assertTrue(stop.driverChange());
+        assertTrue(mapper.valueToTree(stop).path("driverChange").asBoolean(), "sent to the page, not only a method");
+        assertEquals(1, zero4.lapsSinceStop(), "3 laps done, stopped on lap 2");
+        assertEquals("Two", response.drivers().get("04").get(2));
     }
 }
