@@ -59,6 +59,7 @@ const assert = require('node:assert/strict');
     : path === '/api/live/sessions' ? [{sessionDbId:3150,eventId:22,name:'Race',type:'RACE',dateMs:now,laps:3000,cars:5,current:true},{sessionDbId:3149,eventId:22,name:'Qualifying',type:'QUALIFYING',dateMs:now-86_400_000,laps:200,cars:5,current:false}]
     : path === '/api/live/cars/31' ? carDetail
     : path === '/api/live/drive-time' ? drive()
+    : path === '/api/live/sectors' ? {sessionDbId:3150,classes:[]}
     : /^\/api\/events\/\d+$/.test(path) ? {event:{id:Number(path.split('/')[3]),name:path.endsWith('/22') ? 'Petit Le Mans' : 'Road America'}}
     : [];
    return route.fulfill({json:body});
