@@ -169,3 +169,125 @@ struct LiveSessionSummary: Codable, Sendable, Equatable, Identifiable {
     let current: Bool
     var id: Int { sessionDbId }
 }
+
+// MARK: - Analysis: /gaps, /sectors, /pits (backend LiveAnalysisService)
+
+struct AnalysisCar: Codable, Sendable, Equatable, Identifiable {
+    let carNumber: String
+    let teamName: String?
+    let className: String
+    var id: String { carNumber }
+}
+
+/// One car's gap to its class leader after each lap, laps `firstLap`… in
+/// order. `gapMs` is nil where the car was lapped (`lapsDown` > 0) or the lap
+/// untimed; `lapsDown` is nil only where the lap was untimed.
+struct GapCar: Codable, Sendable, Equatable, Identifiable {
+    let carNumber: String
+    let firstLap: Int
+    let gapMs: [Int?]
+    let lapsDown: [Int?]
+    let pitLaps: [Int]
+    var id: String { carNumber }
+    var lastLap: Int { firstLap + gapMs.count - 1 }
+
+    func gap(at lap: Int) -> Int? {
+        let i = lap - firstLap
+        return gapMs.indices.contains(i) ? gapMs[i] : nil
+    }
+
+    func down(at lap: Int) -> Int? {
+        let i = lap - firstLap
+        return lapsDown.indices.contains(i) ? lapsDown[i] : nil
+    }
+}
+
+struct GapClass: Codable, Sendable, Equatable, Identifiable {
+    let className: String
+    let color: String?
+    let cars: [AnalysisCar]
+    /// Running order: most laps, then earliest to finish the last.
+    let gaps: [GapCar]
+    var id: String { className }
+}
+
+/// `GET /api/live/gaps?session=`.
+struct GapsResponse: Codable, Sendable, Equatable {
+    let sessionDbId: Int
+    let classes: [GapClass]
+}
+
+/// By sector, index 0 = S1; nil where the car has no valid time.
+struct SectorCar: Codable, Sendable, Equatable, Identifiable {
+    let carNumber: String
+    let bestSectorMs: [Int?]
+    let bestSectorLap: [Int?]
+    let bestLap: Int?
+    let bestLapMs: Int?
+    let theoreticalMs: Int?
+    var id: String { carNumber }
+}
+
+struct SectorBests: Codable, Sendable, Equatable {
+    let sectors: Int
+    let classBestSectorMs: [Int?]
+    let cars: [SectorCar]
+}
+
+struct SectorClass: Codable, Sendable, Equatable, Identifiable {
+    let className: String
+    let color: String?
+    let cars: [AnalysisCar]
+    let bests: SectorBests
+    var id: String { className }
+}
+
+/// `GET /api/live/sectors?session=`.
+struct SectorsResponse: Codable, Sendable, Equatable {
+    let sessionDbId: Int
+    let classes: [SectorClass]
+}
+
+struct PitStop: Codable, Sendable, Equatable, Identifiable {
+    let number: Int
+    let startTimeMs: Int
+    /// Pit-lane time; nil while the car is still in.
+    let durationMs: Int?
+    let lap: Int?
+    let pitType: String?
+    let driverIn: Int?
+    let driverOut: Int?
+    let driverChange: Bool
+    var id: Int { startTimeMs }
+}
+
+struct PitCar: Codable, Sendable, Equatable, Identifiable {
+    let carNumber: String
+    let stops: [PitStop]
+    let totalMs: Int
+    let averageMs: Int?
+    let inPit: Bool
+    let lapsSinceStop: Int?
+    var id: String { carNumber }
+}
+
+struct PitClass: Codable, Sendable, Equatable, Identifiable {
+    let className: String
+    let color: String?
+    let cars: [AnalysisCar]
+    let pits: [PitCar]
+    var id: String { className }
+}
+
+/// `GET /api/live/pits?session=`.
+struct PitsResponse: Codable, Sendable, Equatable {
+    let sessionDbId: Int
+    /// Car → driver order (as a string key) → surname.
+    let drivers: [String: [String: String?]]
+    let classes: [PitClass]
+
+    func driverName(car: String, order: Int?) -> String? {
+        guard let order else { return nil }
+        return (drivers[car]?[String(order)] ?? nil) ?? "Driver \(order)"
+    }
+}

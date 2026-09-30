@@ -1,13 +1,15 @@
 import SwiftUI
 
-/// The event's Timing tab: the live timing tower and drive time — the web's
-/// `/timing/:eventId` (TimingPage.tsx) on the iPad. Read-only apart from the
+/// The event's Timing tab: the live timing tower; gaps, best sectors and pit
+/// stops over a recorded session (TimingAnalysis.swift); and drive time — the
+/// web's `/timing/:eventId` (TimingPage.tsx) on the iPad. Read-only apart from the
 /// shared connect/disconnect switch, which stays in `LiveTimingBar` exactly as
 /// on the calculator. Rules are edited on the website.
 ///
 /// Everything here is polled through `LiveFeed` and never stored: the tower
-/// every 2 s (a 304 when nothing moved), drive time every 10 s while shown, a
-/// car's laps every 10 s while its sheet is open.
+/// every 2 s (a 304 when nothing moved), drive time every 10 s while shown, the
+/// analysis views every 15 s while their session is live, a car's laps every
+/// 10 s while its sheet is open.
 struct TimingSheet: View {
     @Environment(AppSession.self) private var session
     let eventId: Int
@@ -16,14 +18,15 @@ struct TimingSheet: View {
     @State private var mode: Mode = .tower
     @State private var openCar: OpenCar?
 
-    enum Mode: String { case tower, drive }
+    enum Mode: String { case tower, gaps, sectors, pits, drive }
 
     struct OpenCar: Identifiable {
-        let car: TowerCar
+        let carNumber: String
+        let teamName: String?
         let className: String
         let color: String?
         let sessionDbId: Int?
-        var id: String { car.carNumber }
+        var id: String { carNumber }
     }
 
     private var followingThis: Bool { tower.value?.eventId == eventId }
@@ -36,23 +39,34 @@ struct TimingSheet: View {
                 HStack(spacing: PP.Space.s3) {
                     Picker("View", selection: $mode) {
                         Text("Tower").tag(Mode.tower)
+                        Text("Gaps").tag(Mode.gaps)
+                        Text("Sectors").tag(Mode.sectors)
+                        Text("Pits").tag(Mode.pits)
                         Text("Drive time").tag(Mode.drive)
                     }
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 280)
+                    .frame(maxWidth: 480)
                     if followingThis, let s = tower.value?.session { SessionLine(session: s) }
                     Spacer(minLength: 0)
                     if let error = tower.error, tower.value != nil {
                         Text("Not updating: \(error)").font(.caption).foregroundStyle(PP.error).lineLimit(1)
                     }
                 }
-                switch mode {
-                case .tower: towerContent
-                case .drive:
-                    DriveTimeSection(eventId: eventId,
-                                     classColors: followingThis ? Dictionary((tower.value?.classes ?? []).map { ($0.className.lowercased(), $0.color ?? "") },
-                                                                             uniquingKeysWith: { a, _ in a }) : [:],
-                                     classOrder: followingThis ? (tower.value?.classes ?? []).map(\.className) : [])
+                if mode == .tower {
+                    towerContent
+                } else {
+                    RecordedSessions(eventId: eventId) { chosen in
+                        switch mode {
+                        case .gaps: GapsSection(chosen: chosen, open: { openAnalysis($0, chosen) })
+                        case .sectors: SectorsSection(chosen: chosen, open: { openAnalysis($0, chosen) })
+                        case .pits: PitsSection(chosen: chosen, open: { openAnalysis($0, chosen) })
+                        default:
+                            DriveTimeSection(chosen: chosen,
+                                             classColors: followingThis ? Dictionary((tower.value?.classes ?? []).map { ($0.className.lowercased(), $0.color ?? "") },
+                                                                                     uniquingKeysWith: { a, _ in a }) : [:],
+                                             classOrder: followingThis ? (tower.value?.classes ?? []).map(\.className) : [])
+                        }
+                    }
                 }
             }
             .padding(PP.Space.s5)
@@ -67,19 +81,25 @@ struct TimingSheet: View {
         }
     }
 
+    private func openAnalysis(_ target: AnalysisOpen, _ chosen: LiveSessionSummary) {
+        openCar = OpenCar(carNumber: target.car.carNumber, teamName: target.car.teamName, className: target.car.className,
+                          color: target.color, sessionDbId: chosen.sessionDbId)
+    }
+
     @ViewBuilder private var towerContent: some View {
         if let value = tower.value {
             if value.state == "NOT_CONFIGURED" {
                 EmptyState(message: "Live timing is not set up on this server.")
             } else if value.state == "OFF" || value.state == "STANDBY" {
-                EmptyState(message: "Live timing is off. Once it is connected, the tower fills in here. Recorded sessions stay under Drive time.")
+                EmptyState(message: "Live timing is off. Once it is connected, the tower fills in here. Recorded sessions stay under Gaps, Sectors, Pits and Drive time.")
             } else if !followingThis {
                 EmptyState(message: "Live timing is following \(value.eventName ?? "another event"), not this one. Open that event's Timing tab to follow it.")
             } else if value.classes.isEmpty {
                 EmptyState(message: "Connected. Waiting for the feed's first running order.")
             } else {
                 TowerGrid(tower: value) { car, cls in
-                    openCar = OpenCar(car: car, className: cls.className, color: cls.color, sessionDbId: value.sessionDbId)
+                    openCar = OpenCar(carNumber: car.carNumber, teamName: car.teamName, className: cls.className,
+                                      color: cls.color, sessionDbId: value.sessionDbId)
                 }
                 Text("\(value.matched) of \(value.total) cars matched to this event's entries. Tap a car for its laps and stints.")
                     .font(.caption).foregroundStyle(PP.textMuted)
@@ -255,10 +275,16 @@ private struct LiveCarSheet: View {
     @Environment(\.dismiss) private var dismiss
     let target: TimingSheet.OpenCar
     @State private var detail = LiveFeed<CarDetail>()
+    /// The class's best sectors, to mark this car's that match them (a 304 between laps).
+    @State private var sectors = LiveFeed<SectorsResponse>()
     @State private var showsStints = false
 
+    private var classBest: [Int?] {
+        sectors.value?.classes.first { $0.bests.cars.contains { $0.carNumber == target.carNumber } }?.bests.classBestSectorMs ?? []
+    }
+
     private var path: String {
-        let car = target.car.carNumber.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? target.car.carNumber
+        let car = target.carNumber.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? target.carNumber
         return "/api/live/cars/\(car)" + (target.sessionDbId.map { "?session=\($0)" } ?? "")
     }
 
@@ -300,7 +326,7 @@ private struct LiveCarSheet: View {
                 .padding(PP.Space.s4)
             }
             .background(PP.bg)
-            .navigationTitle("#\(target.car.carNumber) \(target.car.teamName ?? "")")
+            .navigationTitle("#\(target.carNumber) \(target.teamName ?? "")")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
@@ -310,6 +336,10 @@ private struct LiveCarSheet: View {
         .presentationSizing(.page)
         .tint(PP.accentInk)
         .task { await detail.run(session.client, path: path, every: .seconds(10)) }
+        .task {
+            await sectors.run(session.client, path: "/api/live/sectors" + (target.sessionDbId.map { "?session=\($0)" } ?? ""),
+                              every: .seconds(10))
+        }
     }
 
     private func driverLabel(_ value: CarDetail, _ order: Int?) -> String {
@@ -322,6 +352,9 @@ private struct LiveCarSheet: View {
     private func laps(_ value: CarDetail) -> some View {
         let sectors = value.laps.map { $0.sectorMs?.count ?? 0 }.max() ?? 0
         let best = value.laps.filter { $0.valid != false }.compactMap(\.lapTimeMs).filter { $0 > 0 }.min()
+        let ownBest = TimingFormat.bestSectors(value.laps, count: sectors)
+        let theoretical: Int? = ownBest.isEmpty || ownBest.contains(where: { $0 == nil }) ? nil : ownBest.compactMap { $0 }.reduce(0, +)
+        let classBest = self.classBest
         let hasEnergy = value.laps.contains { $0.energyPct != nil }
         var data: [GridColumn] = [.text("time", "Time", width: 96, align: .trailing)]
         data += (0..<sectors).map { .text("s\($0)", "S\($0 + 1)", width: 76, align: .trailing) }
@@ -346,9 +379,19 @@ private struct LiveCarSheet: View {
                 let ms = (l.sectorMs?.count ?? 0) > i ? l.sectorMs?[i] ?? nil : nil
                 let flag = (l.sectorFlags?.count ?? 0) > i ? l.sectorFlags?[i] ?? nil : nil
                 let flagged = flag != nil && !(flag!.uppercased().contains("GREEN"))
-                return AnyView(Text(TimingFormat.lapTime(ms)).font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.text)
+                // The car's own best sector in weight; the class's best on the violet tint.
+                let counts = ms != nil && !invalid
+                let isClassBest = counts && classBest.indices.contains(i) && ms == classBest[i]
+                let isOwnBest = counts && !isClassBest && ms == ownBest[i]
+                return AnyView(Text(TimingFormat.lapTime(ms))
+                    .font(PP.mono(PP.TextSize.sm, weight: isClassBest ? 700 : isOwnBest ? 600 : 400))
+                    .foregroundStyle(isClassBest || isOwnBest ? PP.ink : PP.text)
+                    .padding(.horizontal, isClassBest ? 4 : 0)
+                    .background(isClassBest ? ResultTint.top5 : .clear, in: RoundedRectangle(cornerRadius: PP.Radius.xs))
                     .underline(flagged, pattern: .dot, color: PP.accentInk)
-                    .accessibilityLabel(TimingFormat.lapTime(ms) + (flagged ? ", \(TimingFormat.flagLabel(flag) ?? "") flag" : "")))
+                    .accessibilityLabel([TimingFormat.lapTime(ms), flagged ? "\(TimingFormat.flagLabel(flag) ?? "") flag" : nil,
+                                         isClassBest ? "fastest in class" : isOwnBest ? "personal best" : nil]
+                        .compactMap { $0 }.joined(separator: ", ")))
             }
             cells += [GridCell.num(l.position.map(String.init) ?? "", muted: true),
                       GridCell.num(l.topSpeed.map { String(format: "%.1f", $0) } ?? "", muted: true)]
@@ -365,6 +408,16 @@ private struct LiveCarSheet: View {
         return Group {
             if rows.isEmpty { EmptyState(message: "No laps recorded yet.") }
             else {
+                if let theoretical, let best {
+                    HStack(spacing: 4) {
+                        Text("Best lap \(TimingFormat.lapTime(best)) · theoretical best \(TimingFormat.lapTime(theoretical))")
+                            .foregroundStyle(PP.text)
+                        if best > theoretical {
+                            Text("(\(TimingFormat.lapTime(best - theoretical)) in hand)").foregroundStyle(PP.textMuted)
+                        }
+                    }
+                    .font(.caption)
+                }
                 GridTable(identColumns: [.text("lap", "Lap", width: 56, align: .trailing), .text("driver", "Driver", width: 130)],
                           dataColumns: data, sections: [GridSection(id: "laps", rows: rows)],
                           cellPadV: 4, cellPadH: 8, headerHeight: 32, separatesIdentity: true, centersCells: true)
@@ -411,13 +464,13 @@ private struct LiveCarSheet: View {
 
 // MARK: - Drive time
 
-private struct DriveTimeSection: View {
+/// The views over one recorded session — gaps, sectors, pits, drive time —
+/// share a session picker: the one chosen, else the one being fed, else the newest.
+private struct RecordedSessions<Content: View>: View {
     @Environment(AppSession.self) private var session
     let eventId: Int
-    let classColors: [String: String]
-    let classOrder: [String]
+    @ViewBuilder let content: (LiveSessionSummary) -> Content
     @State private var sessions = LiveFeed<[LiveSessionSummary]>()
-    @State private var drive = LiveFeed<DriveTimeResponse>()
     @State private var chosen: Int?
 
     private var shown: LiveSessionSummary? {
@@ -428,11 +481,9 @@ private struct DriveTimeSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: PP.Space.s3) {
             if let list = sessions.value {
-                if list.isEmpty {
-                    EmptyState(message: "No timed sessions recorded for this event yet. Laps and stints are recorded while live timing is connected to this event.")
-                } else {
+                if let shown {
                     if list.count > 1 {
-                        Picker("Session", selection: Binding(get: { shown?.sessionDbId ?? 0 }, set: { chosen = $0 })) {
+                        Picker("Session", selection: Binding(get: { shown.sessionDbId }, set: { chosen = $0 })) {
                             ForEach(list) { s in
                                 Text((s.name ?? "Session \(s.sessionDbId)") + (s.current ? " · live" : "")).tag(s.sessionDbId)
                             }
@@ -440,14 +491,9 @@ private struct DriveTimeSection: View {
                         .pickerStyle(.segmented)
                         .frame(maxWidth: 520)
                     }
-                    if let value = drive.value, value.sessionDbId == shown?.sessionDbId {
-                        DriveTable(drive: value, classColors: classColors, classOrder: classOrder)
-                        RulesList(rules: value.rules)
-                    } else if let error = drive.error {
-                        ErrorPanel(message: "Could not load drive time: \(error)")
-                    } else {
-                        SkeletonLines()
-                    }
+                    content(shown)
+                } else {
+                    EmptyState(message: "No timed sessions recorded for this event yet. Laps and stints are recorded while live timing is connected to this event.")
                 }
             } else if let error = sessions.error {
                 ErrorPanel(message: error)
@@ -456,9 +502,29 @@ private struct DriveTimeSection: View {
             }
         }
         .task { await sessions.run(session.client, path: "/api/live/sessions?eventId=\(eventId)", every: .seconds(30)) }
-        .task(id: shown?.sessionDbId) {
-            guard let id = shown?.sessionDbId else { return }
-            await drive.run(session.client, path: "/api/live/drive-time?session=\(id)", every: .seconds(10))
+    }
+}
+
+private struct DriveTimeSection: View {
+    @Environment(AppSession.self) private var session
+    let chosen: LiveSessionSummary
+    let classColors: [String: String]
+    let classOrder: [String]
+    @State private var drive = LiveFeed<DriveTimeResponse>()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: PP.Space.s3) {
+            if let value = drive.value, value.sessionDbId == chosen.sessionDbId {
+                DriveTable(drive: value, classColors: classColors, classOrder: classOrder)
+                RulesList(rules: value.rules)
+            } else if let error = drive.error {
+                ErrorPanel(message: "Could not load drive time: \(error)")
+            } else {
+                SkeletonLines()
+            }
+        }
+        .task(id: chosen.sessionDbId) {
+            await drive.run(session.client, path: "/api/live/drive-time?session=\(chosen.sessionDbId)", every: .seconds(10))
         }
     }
 }
