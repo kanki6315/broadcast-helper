@@ -531,6 +531,37 @@ Auto-width cells (lineup crews) compute their width from the longest line;
 chip columns are fixed; breakdown points columns widen for the marks gutter.
 Headers don't pin to the viewport yet (the web's do).
 
+A blank cell is `GridCell.empty()`, which is a clear view that keeps its
+column. **Never an `EmptyView`:** SwiftUI drops an `EmptyView` together with
+its frame, so every cell after it slides a column left. This hit a crew's
+second row on the timing page. Rows can be tappable (`onTap` / `tapLabel`):
+the whole row is the hit area, and the identity half carries the one
+accessible name.
+
+### Live timing (the Timing tab)
+
+The web's `/timing/:eventId` as a tab in the event workspace
+(`Views/Sheet/TimingSheet.swift`), beside the calculator. `LiveTimingBar`
+sits on top, so connect and disconnect stay where they are on the
+calculator. Everything is a `LiveFeed`, polled and never stored: the tower
+every 2 s, drive time every 10 s while shown, a car every 10 s while its
+sheet is open.
+
+- **Tower:** position, number and driver pinned; gap, interval, last, best
+  (class-fastest on the violet tint), stint laps and a time that ticks on the
+  feed's clock (`TimingFormat.feedNow`, so a replay stops counting), IMSA
+  energy with laps left, and Pit or a status in words. Tap a row for the
+  car.
+- **Car:** a page-sized sheet (a form sheet cuts the energy and notes off).
+  Laps newest first, stints, crew with ratings. The class tag is in the
+  content, not the toolbar, because iOS 26 truncates leading toolbar items.
+- **Drive time:** classes in the tower's order. Status in words sits next to
+  the time, so the answer is on screen in portrait, and the meter goes last.
+  Rules are read-only here and edited on the website.
+
+`Model/TimingModels.swift` mirrors the API. `Season/TimingFormat.swift` is
+the port of the web's `lib/liveTiming.ts`, so change both together.
+
 ### The season pages
 
 `SeasonView` is SeasonLayout: series title with the year strip and

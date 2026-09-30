@@ -1,6 +1,6 @@
 # Live timing page, drive time and IMSA energy: plan
 
-Status: **plan approved 2026-09-29. Slices 0–4 are done. Slice 5 (iPad) is next.**
+Status: **plan approved 2026-09-29. Slices 0–5 are done. What remains is the rollout below: a practice session with the flags on.**
 Branch: `claude/custom-live-timing-page-882b20`.
 This document is the handoff: everything a fresh session needs is here or in
 `docs/LIVE_TIMING.md` (the existing feed pipeline).
@@ -319,7 +319,21 @@ Original plan:
 - Expose energy % in the tower (null when stale, over 15 s), energy per lap,
   and per-stint average plus projected laps left.
 
-### Slice 5: iPad
+### Slice 5: iPad — DONE 2026-09-29
+
+Built as planned: a `timing` case in the `SheetView` `Page` enum
+(`TimingSheet`), with `LiveFeed<T>` throughout and connect/disconnect in
+`LiveTimingBar`. `docs/IOS.md` *Live timing (the Timing tab)* describes it as
+it is. Where the build settled something:
+- Tower, car sheet and drive time as on the web. Rules are read-only on the
+  iPad (the app is read-only by design); they are edited on the website.
+- Drive time puts the status next to the time, so it shows in portrait
+  without scrolling, and the meter last.
+- `GridCell.empty()` no longer returns `EmptyView`; see IOS.md.
+- Checked in the iPad Pro 11" simulator against the replay backend; the full
+  iOS suite passes.
+
+Original plan:
 - A `timing` case in the `SheetView` `Page` enum, using `LiveFeed<T>`.
 - Connect and disconnect stay in `LiveTimingBar`.
 

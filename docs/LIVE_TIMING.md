@@ -312,7 +312,7 @@ settles these.
 ## Timing page API
 
 Everything the web timing page (`#/timing/:eventId`, linked from the event
-page as "Timing →") and, later, the iPad read. All member GETs,
+page as "Timing →") and the iPad's Timing tab read. All member GETs,
 all gzipped over 1 kB (`server.compression`), and the ETag filter answers
 `If-None-Match` with 304 when nothing changed. The tower carries no timestamps
 for that reason; a stint's running time is sent as `stintStartMs` for the
