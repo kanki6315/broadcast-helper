@@ -339,6 +339,36 @@ client to count up from.
   `owedMs`) / `OVER_MAX` (with `overMs`) / `NO_RULE`, plus `remainingMs`.
 - **`/api/live/sessions?eventId=`** — `sessionDbId`, name, type, date, lap and
   car counts, and whether it is the one being fed.
+- **`/api/live/gaps?session=`**, **`/api/live/sectors?session=`**,
+  **`/api/live/pits?session=`** — the analysis views (below), class by class.
+
+### Analysis: gaps, sectors, pits
+
+Ported from Gantry (`iracing-broadcast-graphics`: gap visualizer, best
+sectors, pit cycles). `LiveAnalysis` is pure; `LiveAnalysisService` loads the
+rows. Nothing is stored: every poll recomputes from `live_lap` / `live_stint`,
+so a lap the feed corrects later corrects every gap and best built on it, and
+a fix to the formula fixes old sessions too. A 24-hour race is ~50k laps,
+keyed by `session_db_id` first, so the reads are cheap.
+
+A car's class is the one it runs in on the tower while its session is the one
+being fed, else the class of the entry its drivers matched. Cars matched to
+no entry are grouped under "Not entered", not dropped.
+
+- **Gaps.** A lap's crossing time is `start_time_ms + lap_time_ms`. The class
+  leader at lap L is the first car in the class to finish lap L; a car's gap
+  is how much later it finished the same lap. A car that finished lap L after
+  the leader finished lap L + n is n laps down and gets `lapsDown` instead of
+  a gap — the chart breaks its line there. `pitLaps` are laps with a
+  `pit_in_time_ms`. **Rests on `start_time_ms` being the lap's start, epoch
+  ms**: check it against the feed's own `gapFirstTime` at the practice session.
+- **Sectors.** Best time per sector over valid laps only (a lap marked
+  invalid keeps none of its sectors; validity unknown counts), the lap it came
+  on, and the theoretical best when the car has a best in every sector. The
+  car panel marks its own best sectors and the class's.
+- **Pits.** One stop per Al Kamel PIT stint: pit-lane time is the stint's
+  length, the lap is its `open_lap_number`, and the driver in and out are the
+  TRACK stints either side. Penalty / safety-car stops keep `pit_type`.
 
 ### Drive time
 

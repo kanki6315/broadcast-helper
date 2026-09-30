@@ -164,6 +164,108 @@ export interface SessionSummary {
   current: boolean
 }
 
+// ---- analysis (backend: live/LiveAnalysisService, LiveAnalysis) -------------------------
+
+export interface AnalysisCar {
+  carNumber: string
+  teamName: string | null
+  className: string
+}
+
+/**
+ * One car's gap to its class leader after each lap, laps firstLap… in order.
+ * gapMs is null where the car was lapped (lapsDown > 0) or the lap untimed;
+ * lapsDown is null only where the lap was untimed.
+ */
+export interface GapCar {
+  carNumber: string
+  firstLap: number
+  gapMs: (number | null)[]
+  lapsDown: (number | null)[]
+  pitLaps: number[]
+}
+
+export interface GapClass {
+  className: string
+  color: string | null
+  cars: AnalysisCar[]
+  /** Running order: most laps, then earliest to finish the last. */
+  gaps: GapCar[]
+}
+
+export interface GapsResponse {
+  sessionDbId: number
+  classes: GapClass[]
+}
+
+/** By sector, index 0 = S1; null where the car has no valid time. */
+export interface SectorCar {
+  carNumber: string
+  bestSectorMs: (number | null)[]
+  bestSectorLap: (number | null)[]
+  bestLap: number | null
+  bestLapMs: number | null
+  theoreticalMs: number | null
+}
+
+export interface SectorClass {
+  className: string
+  color: string | null
+  cars: AnalysisCar[]
+  bests: { sectors: number; classBestSectorMs: (number | null)[]; cars: SectorCar[] }
+}
+
+export interface SectorsResponse {
+  sessionDbId: number
+  classes: SectorClass[]
+}
+
+export interface PitStop {
+  number: number
+  startTimeMs: number
+  /** Pit-lane time; null while the car is still in. */
+  durationMs: number | null
+  lap: number | null
+  pitType: string | null
+  driverIn: number | null
+  driverOut: number | null
+  driverChange: boolean
+}
+
+export interface PitCar {
+  carNumber: string
+  stops: PitStop[]
+  totalMs: number
+  averageMs: number | null
+  inPit: boolean
+  lapsSinceStop: number | null
+}
+
+export interface PitClass {
+  className: string
+  color: string | null
+  cars: AnalysisCar[]
+  pits: PitCar[]
+}
+
+export interface PitsResponse {
+  sessionDbId: number
+  /** Car → driver order → surname. */
+  drivers: Record<string, Record<string, string | null>>
+  classes: PitClass[]
+}
+
+/** A gap in seconds for a chart axis or tooltip: +12.345, or +1 lap when lapped. */
+export function gapAt(car: GapCar, lap: number): string | null {
+  const i = lap - car.firstLap
+  if (i < 0 || i >= car.gapMs.length) return null
+  const down = car.lapsDown[i]
+  if (down == null) return null
+  if (down > 0) return `+${down} ${down === 1 ? 'lap' : 'laps'}`
+  const ms = car.gapMs[i]
+  return ms == null ? null : ms === 0 ? 'Leader' : `+${lapTime(ms)}`
+}
+
 export const RATINGS: { code: string; name: string }[] = [
   { code: 'B', name: 'Bronze' },
   { code: 'S', name: 'Silver' },

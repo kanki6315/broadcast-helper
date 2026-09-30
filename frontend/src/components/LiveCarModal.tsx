@@ -8,6 +8,7 @@ import {
   ratingName,
   type CarDetail,
   type LapRow,
+  type SectorsResponse,
 } from '../lib/liveTiming'
 import './live-car-modal.css'
 
@@ -39,6 +40,15 @@ export default function LiveCarModal({
   const [view, setView] = useState<'laps' | 'stints'>('laps')
   const path = `/api/live/cars/${encodeURIComponent(carNumber)}${sessionDbId != null ? `?session=${sessionDbId}` : ''}`
   const { value: car, error } = useLivePoll<CarDetail>(path, 10_000)
+  // The class's best sectors, to mark this car's that match them (a 304 between laps).
+  const { value: sectors } = useLivePoll<SectorsResponse>(
+    `/api/live/sectors${sessionDbId != null ? `?session=${sessionDbId}` : ''}`,
+    10_000,
+  )
+  const classBest = useMemo(() => {
+    const cls = sectors?.classes.find((c) => c.bests.cars.some((x) => x.carNumber === carNumber))
+    return cls?.bests.classBestSectorMs ?? []
+  }, [sectors, carNumber])
 
   useEffect(() => {
     const d = dialogRef.current
@@ -128,7 +138,7 @@ export default function LiveCarModal({
             <span className="skeleton" />
           </div>
         ) : view === 'laps' ? (
-          <LapTable laps={car.laps} driverLabel={short} />
+          <LapTable laps={car.laps} driverLabel={short} classBest={classBest} />
         ) : (
           <StintTable car={car} driverLabel={short} />
         )}
@@ -137,17 +147,42 @@ export default function LiveCarModal({
   )
 }
 
-function LapTable({ laps, driverLabel }: { laps: LapRow[]; driverLabel: (order: number | null) => string }) {
+/**
+ * Sector cells: the car's own best sector (valid laps only) in weight, the
+ * class's best on the violet tint — the tower's personal-best / fastest-in-
+ * class vocabulary. A sector run under a flag keeps its flag tint.
+ */
+function LapTable({
+  laps,
+  driverLabel,
+  classBest,
+}: {
+  laps: LapRow[]
+  driverLabel: (order: number | null) => string
+  classBest: (number | null)[]
+}) {
   if (laps.length === 0) return <div className="empty-state">No laps recorded yet.</div>
   const sectors = Math.max(0, ...laps.map((l) => l.sectorMs?.length ?? 0))
   let best: number | null = null
+  const ownBest: (number | null)[] = Array.from({ length: sectors }, () => null)
   for (const l of laps) {
-    if (l.valid !== false && l.lapTimeMs != null && l.lapTimeMs > 0 && (best == null || l.lapTimeMs < best)) best = l.lapTimeMs
+    if (l.valid === false) continue
+    if (l.lapTimeMs != null && l.lapTimeMs > 0 && (best == null || l.lapTimeMs < best)) best = l.lapTimeMs
+    l.sectorMs?.forEach((ms, i) => {
+      if (ms != null && ms > 0 && (ownBest[i] == null || ms < ownBest[i]!)) ownBest[i] = ms
+    })
   }
+  const theoretical = ownBest.length > 0 && ownBest.every((v) => v != null) ? ownBest.reduce<number>((a, v) => a + v!, 0) : null
   const newestFirst = [...laps].reverse()
   const hasEnergy = laps.some((l) => l.energyPct != null)
   return (
     <table className="grid-table lc-table">
+      {theoretical != null && best != null && (
+        <caption className="lc-caption">
+          Best lap {lapTime(best)} · theoretical best {lapTime(theoretical)}
+          {best > theoretical && <span className="muted"> ({lapTime(best - theoretical)} in hand)</span>}
+        </caption>
+      )}
       <thead>
         <tr>
           <th className="num">Lap</th>
@@ -192,10 +227,18 @@ function LapTable({ laps, driverLabel }: { laps: LapRow[]; driverLabel: (order: 
               </td>
               {Array.from({ length: sectors }, (_, i) => {
                 const flag = l.sectorFlags?.[i] ?? null
-                const tone = flag && !/green/i.test(flag) ? ' lc-sector-flag' : ''
+                const ms = l.sectorMs?.[i] ?? null
+                const counts = ms != null && l.valid !== false
+                const isClassBest = counts && ms === classBest[i]
+                const isOwnBest = counts && !isClassBest && ms === ownBest[i]
+                const tone =
+                  (flag && !/green/i.test(flag) ? ' lc-sector-flag' : '') +
+                  (isClassBest ? ' lc-sector-class-best' : isOwnBest ? ' lc-sector-pb' : '')
+                const note = isClassBest ? 'Fastest in class' : isOwnBest ? 'Personal best' : null
                 return (
-                  <td key={i} className={`num${tone}`} title={flag ?? undefined}>
-                    {lapTime(l.sectorMs?.[i] ?? null)}
+                  <td key={i} className={`num${tone}`} title={[flag, note].filter(Boolean).join(' · ') || undefined}>
+                    {lapTime(ms)}
+                    {note && <span className="sr-only"> ({note.toLowerCase()})</span>}
                   </td>
                 )
               })}
