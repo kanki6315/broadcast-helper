@@ -559,15 +559,15 @@ picker (`RecordedSessions`).
 - **Tower:** position, number and driver pinned; gap, interval, last and best
   in timing screens' purple and green (`TimingFormat.lastLapMark`: the
   class's fastest on the violet tint, a last lap that was the car's own best
-  on the green tint). In a race, places gained or lost in class since the
-  start follow the position (▲ success green / ▼ error red, in a fixed
-  slot). A row that changes place gets an amber wash (`GridRowItem.wash`,
-  set from `TimingFormat.moved`) that fades over 3 s, or holds 4 s under
-  Reduce Motion; the first tower seen never flashes. Sectors, Pits and Top
-  speed are web-only until the iPad's layout pass. Then stint laps and a time that ticks on the
-  feed's clock (`TimingFormat.feedNow`, so a replay stops counting), IMSA
-  energy with laps left, and Pit or a status in words. Tap a row for the
-  car.
+  on the green tint), stint laps and a time that ticks on the feed's clock
+  (`TimingFormat.feedNow`, so a replay stops counting), IMSA energy with
+  laps left, and Pit or a status in words. Tap a row for the car.
+  - In a race, places gained or lost in class since the start follow the
+    position (▲ success green / ▼ error red, in a fixed slot).
+  - A row that changes place gets an amber wash (`GridRowItem.wash`, set
+    from `TimingFormat.moved`) that fades over 3 s, or holds 4 s under
+    Reduce Motion; the first tower seen never flashes.
+  - Sectors, Pits and Top speed are web-only until the iPad's layout pass.
 - **Gaps, Sectors, Pits** (`Views/Sheet/TimingAnalysis.swift`, the web's
   `pages/TimingAnalysis.tsx`; see docs/LIVE_TIMING.md "Analysis"). Gaps is a
   Swift Charts line chart, one class at a time: every car in grey, up to
