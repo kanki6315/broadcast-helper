@@ -38,8 +38,14 @@ public class LiveTimingPageService {
      * a replay or over. It moves only when a lap completes, as the lap fields
      * do, so it costs the ETag nothing.
      */
+    /**
+     * eventId is the bound event; filedEventId the event the session on track
+     * is filed under, which is where teams, class colours and driver names
+     * come from. Filed nowhere, the tower shows the feed's own.
+     */
     public record Tower(State state, Long eventId, String eventName, LiveTimingService.Session session,
-                        Long sessionDbId, Long feedClockMs, List<TowerClass> classes, int matched, int total) {
+                        Long sessionDbId, Long feedClockMs, List<TowerClass> classes, int matched, int total,
+                        Long filedEventId, String filedEventName) {
     }
 
     /** color is the series' class_style colour (#rrggbb), or null when the class has none. */
@@ -116,7 +122,7 @@ public class LiveTimingPageService {
         Map<String, int[]> bestFromDb = session == null ? Map.of() : staleBests(session, summaries);
         Map<String, DriverRow> resolved = session == null ? Map.of() : resolvedDrivers(session);
         JsonNode feedEntries = live.state("timing.session.entry");
-        Map<String, String> colors = order.eventId() == null ? Map.of() : classColors(order.eventId());
+        Map<String, String> colors = order.filedEventId() == null ? Map.of() : classColors(order.filedEventId());
 
         List<TowerClass> classes = new ArrayList<>();
         for (var cls : order.classification().classes()) {
@@ -151,7 +157,8 @@ public class LiveTimingPageService {
         }
         return new Tower(order.state(), order.eventId(), order.eventName(), order.session(), session,
                 session == null ? null : latestFeedTime(session), classes,
-                order.classification().matched(), order.classification().total());
+                order.classification().matched(), order.classification().total(),
+                order.filedEventId(), order.filedEventName());
     }
 
     /** The event's series' class colours, keyed by lower-cased class code. */

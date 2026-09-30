@@ -70,7 +70,8 @@ public class LiveTimingService implements SmartLifecycle {
                              Instant connectedSince, Instant lastMessageAt, long messages, long bytes,
                              int attempts, int drops, String lastError, String lastWarning,
                              Instant nextAttemptAt, Server server, Session session, List<String> channels,
-                             Analysis analysis, TelemetryRunner.Status telemetry) {
+                             Analysis analysis, TelemetryRunner.Status telemetry,
+                             Long filedEventId, String filedEventName) {
     }
 
     /**
@@ -189,6 +190,13 @@ public class LiveTimingService implements SmartLifecycle {
         wake.release(); // act now if this process is the one that should
     }
 
+    /**
+     * eventId is the event an admin bound the connection to: a hint for
+     * filing, and where the connect control stands. filedEventId is the event
+     * the session on track is filed under ({@link #overlayEventId}) — the one
+     * whose Pit Pass rows belong with it. They differ when the binding has
+     * outlived its series' session.
+     */
     public LiveStatus status() {
         LiveTimingStore.Row row = store.read();
         boolean heldHere = instanceId.equals(row.holder());
@@ -204,16 +212,34 @@ public class LiveTimingService implements SmartLifecycle {
         if (props.configured() && !row.desiredConnected()) {
             shown = State.OFF;
         }
+        String bound = row.eventId() == null ? null : store.eventName(row.eventId()).orElse(null);
+        Long filed = overlayEventId(row.eventId());
         return new LiveStatus(shown, props.configured(), props.replaying(),
-                row.desiredConnected(), row.eventId(),
-                row.eventId() == null ? null : store.eventName(row.eventId()).orElse(null),
+                row.desiredConnected(), row.eventId(), bound,
                 row.requestedBy(), row.requestedAt(),
                 row.holder(), heldHere,
                 connectedSince, lastMessageAt, messages.get(), bytes.get(),
                 attempts, drops, lastError, lastWarning,
                 state == State.BACKING_OFF ? nextAttemptAt : null,
                 server, session(), props.configured() ? props.joinedChannels() : List.of(), analysis(),
-                telemetry == null ? null : telemetry.status());
+                telemetry == null ? null : telemetry.status(), filed,
+                filed == null ? null : filed.equals(row.eventId()) ? bound : store.eventName(filed).orElse(null));
+    }
+
+    /**
+     * The event whose Pit Pass rows — entries, class colours, driver links,
+     * championships — belong with the session on track: the one it is filed
+     * under, read from live_session so a restart does not forget it. Never
+     * just the binding: an IMPC binding left up while VP Racing runs would
+     * put IMPC teams on VP cars that share their numbers. Without analysis
+     * nothing is recorded or filed, so the binding stands in, as it always has.
+     */
+    Long overlayEventId(Long boundEventId) {
+        if (analysisWriter == null) {
+            return boundEventId;
+        }
+        Long session = analysisSessionDbId();
+        return session == null ? null : store.filedEvent(session).orElse(null);
     }
 
     /**

@@ -24,7 +24,7 @@ const assert = require('node:assert/strict');
   const live = {
    1:{kind:'TEAMS',rows:[{competitorKey:'6',live:running(2,'6',1830),qualifyingPosition:3},{competitorKey:'31',live:running(1,'31'),qualifyingPosition:1},{competitorKey:'10',live:null,qualifyingPosition:null}],newcomers:[{name:'Late Entry Racing',carNumber:'99',position:3}]},
    2:{kind:'MANUFACTURERS',rows:[{competitorKey:'Porsche',live:running(2,'6',1830),qualifyingPosition:2},{competitorKey:'Cadillac',live:running(1,'31'),qualifyingPosition:1},{competitorKey:'BMW',live:null,qualifyingPosition:null}],newcomers:[]}};
-  let status = {state:'LIVE',configured:true,replaying:false,desiredConnected:true,eventId:22,eventName:'Road Atlanta',lastError:null,session};
+  let status = {state:'LIVE',configured:true,replaying:false,desiredConnected:true,eventId:22,eventName:'Road Atlanta',filedEventId:22,filedEventName:'Road Atlanta',lastError:null,session};
   const writes=[], errors=[];
   page.on('pageerror', e => errors.push(String(e)));
   await page.route('**/api/**', route => {
@@ -70,8 +70,13 @@ const assert = require('node:assert/strict');
   assert.deepEqual(await makes.locator('.calculator-total').allTextContents(), ['1375','1352','900']);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false);
 
+  // Another series' session on track, filed nowhere (the binding outlived its session): nothing projected.
+  status = {...status, filedEventId:null, filedEventName:null};
+  await page.getByText('is not filed under an event of this season').waitFor({timeout:9000});
+  assert.equal(await page.locator('.calculator-live-table').count(), 0);
+  assert.match(await bar.innerText(), /Not filed under an event/);
   // The feed moves to another season's event: say so, show no table.
-  status = {...status, eventId:999, eventName:'Somewhere Else'};
+  status = {...status, eventId:999, eventName:'Somewhere Else', filedEventId:999, filedEventName:'Somewhere Else'};
   await page.getByText('which is not an event of this season').waitFor({timeout:9000});
   assert.equal(await page.locator('.calculator-live-table').count(), 0);
   // Switched off from the iPad: the page follows within a poll.

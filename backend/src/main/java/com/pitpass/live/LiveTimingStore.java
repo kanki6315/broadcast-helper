@@ -112,6 +112,14 @@ public class LiveTimingStore {
                 .update() == 1;
     }
 
+    /** The event a recorded session is filed under, if any. */
+    public Optional<Long> filedEvent(long sessionDbId) {
+        return db.sql("SELECT event_id FROM live_session WHERE session_db_id = :s")
+                .param("s", sessionDbId)
+                .query((rs, i) -> rs.getObject("event_id", Long.class))
+                .list().stream().filter(java.util.Objects::nonNull).findFirst();
+    }
+
     public Optional<String> eventName(long eventId) {
         return db.sql("SELECT name FROM event WHERE id = :id").param("id", eventId)
                 .query(String.class).optional();

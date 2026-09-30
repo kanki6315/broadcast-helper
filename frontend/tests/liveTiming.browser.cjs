@@ -16,7 +16,7 @@ const assert = require('node:assert/strict');
    status:'CLASSIFIED',laps:50,gapToLeaderMs:null,gapToLeaderLaps:null,intervalMs:null,intervalLaps:null,driverOrder:1,driverName:`Driver ${carNumber}`,
    driverShortName:null,driverRating:'G',lastLap:50,lastLapMs:98_000,bestLap:12,bestLapMs:97_500,inPit:false,stintStartMs:now-30*60_000,stintLaps:18,energyPct:null,energyLapsLeft:null,...extra});
   const session = {championship:'IMSA WeatherTech SportsCar Championship',event:'Petit Le Mans',name:'Race',type:'RACE',flag:'FULL_YELLOW',running:true,finished:false};
-  let tower = {state:'LIVE',eventId:22,eventName:'Petit Le Mans',session,sessionDbId:3150,feedClockMs:now-20_000,matched:4,total:5,classes:[
+  let tower = {state:'LIVE',eventId:22,eventName:'Petit Le Mans',filedEventId:22,filedEventName:'Petit Le Mans',session,sessionDbId:3150,feedClockMs:now-20_000,matched:4,total:5,classes:[
    {className:'GTP',feedClass:'GTP',color:'#1a1a1a',cars:[car(1,'7',{energyPct:62.4,energyLapsLeft:9.6}),car(2,'31',{gapToLeaderMs:4200,intervalMs:4200,bestLapMs:97_100,inPit:true})]},
    {className:'GTD PRO',feedClass:'GTDPRO',color:'#e30d0d',cars:[car(1,'04',{bestLapMs:105_000}),car(2,'4',{gapToLeaderLaps:1,intervalLaps:1,bestLapMs:104_000,entryId:null}),
     car(3,'23',{status:'RETIRED',stintStartMs:null,stintLaps:null})]}]};
@@ -34,7 +34,7 @@ const assert = require('node:assert/strict');
    driveResult('7',1,'Bronze Driver','B',1_800_000,'UNDER_MIN',{minMs:3_600_000,owedMs:1_800_000})]});
   const puts = [], posts = [], errors = [];
   let isAdmin = true;
-  let status = {state:'LIVE',configured:true,desiredConnected:true,eventId:22,eventName:'Petit Le Mans',lastError:null};
+  let status = {state:'LIVE',configured:true,desiredConnected:true,eventId:22,eventName:'Petit Le Mans',filedEventId:22,filedEventName:'Petit Le Mans',lastError:null};
   let carRequests = 0;
   page.on('pageerror', e => errors.push(String(e)));
   await page.route('**/api/**', async route => {
@@ -156,13 +156,19 @@ const assert = require('node:assert/strict');
   assert.match(await page.locator('.rules-list').innerText(), /GTD PRO\s*Bronze\s*min 1:30:00/);
 
   // Feed following another event: this page says so and points there.
-  tower = {...tower, eventId:99, eventName:'Road America'};
+  tower = {...tower, eventId:99, eventName:'Road America', filedEventId:99, filedEventName:'Road America'};
   await page.getByRole('tab',{name:'Tower'}).click();
   await page.getByText('Live timing is following').waitFor({timeout:5000});
   assert.equal(await page.getByRole('link',{name:'Road America'}).getAttribute('href'), '#/timing/99');
   assert.equal(await page.locator('h1').innerText(), 'Petit Le Mans', "this event's own name, not the feed's");
+  // Bound here, but the session on track is another series', filed nowhere: its own teams, said once.
+  tower = {...tower, eventId:22, eventName:'Petit Le Mans', filedEventId:null, filedEventName:null};
+  await page.locator('.timing-unfiled').waitFor({timeout:5000});
+  assert.match(await page.locator('.timing-unfiled').innerText(), /not filed under this event/);
+  assert.equal(await page.locator('.tower-unmatched').count(), 0, 'no per-row "not entered" when nothing is filed');
+  assert.doesNotMatch(await page.locator('.timing-foot').innerText(), /matched to this event/);
   // Switched off from the iPad: the page follows within a poll.
-  tower = {...tower, state:'OFF', eventId:22, eventName:'Petit Le Mans'};
+  tower = {...tower, state:'OFF', eventId:22, eventName:'Petit Le Mans', filedEventId:22, filedEventName:'Petit Le Mans'};
   await page.getByText('Live timing is off.').waitFor({timeout:5000});
   assert.match(await page.locator('.timing-status').innerText(), /Off/);
 

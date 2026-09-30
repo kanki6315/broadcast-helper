@@ -11,9 +11,12 @@ export interface LiveStatus {
   state: LiveState
   configured: boolean
   desiredConnected: boolean
-  /** The event the feed is being scored against. */
+  /** The event the connection is bound to: a filing hint, and where the connect control stands. */
   eventId: number | null
   eventName: string | null
+  /** The event the session on track is filed under; null = filed nowhere (the feed's own teams). */
+  filedEventId: number | null
+  filedEventName: string | null
   lastError: string | null
 }
 
@@ -74,6 +77,9 @@ export interface Tower {
   classes: TowerClass[]
   matched: number
   total: number
+  /** Where teams, colours and drivers come from; null = filed nowhere, so they are the feed's own. */
+  filedEventId: number | null
+  filedEventName: string | null
 }
 
 export interface LapRow {

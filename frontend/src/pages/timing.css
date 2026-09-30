@@ -131,6 +131,12 @@
   margin-bottom: var(--space-4);
 }
 
+.timing-unfiled {
+  margin: 0 0 var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
 .timing-foot {
   margin: calc(-1 * var(--space-3)) 0 0;
   color: var(--text-muted);

@@ -19,7 +19,9 @@ final class AnalysisFixtures {
 
     static String info(long sessionDbId, String name) {
         return "{\"timing\":{\"session\":{\"info\":{\"sessionDbId\":" + sessionDbId
-                + ",\"sessionMongoId\":\"66f0c0ffee\",\"eventDbId\":812,\"name\":\"" + name
+                + ",\"sessionMongoId\":\"66f0c0ffee\",\"eventDbId\":812,\"champDbId\":38"
+                + ",\"champName\":\"IMSA WeatherTech SportsCar Championship\",\"eventName\":\"Showcase 120\""
+                + ",\"eventShortName\":\"Road America\",\"name\":\"" + name
                 + "\",\"type\":\"RACE\",\"date\":" + RACE_START + ",\"stintCalcType\":\"IMSA\",\"closed\":false}}}}";
     }
 

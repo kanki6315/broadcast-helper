@@ -127,6 +127,10 @@ class AnalysisIngestTest {
 
         assertEquals("Practice 1", db.sql("SELECT name FROM live_session WHERE session_db_id = :s")
                 .param("s", session).query(String.class).single());
+        assertEquals("IMSA WeatherTech SportsCar Championship|38|Showcase 120|Road America|812", db.sql("""
+                SELECT concat_ws('|', champ_name, champ_db_id, feed_event_name, feed_event_short_name, feed_event_db_id)
+                FROM live_session WHERE session_db_id = :s
+                """).param("s", session).query(String.class).single(), "the feed's own labels are kept");
         assertEquals(List.of("04:1", "04:3", "04:4", "4:1"), db.sql("""
                 SELECT car_number || ':' || lap_number FROM live_lap WHERE session_db_id = :s
                 ORDER BY car_number, lap_number
@@ -205,7 +209,8 @@ class AnalysisIngestTest {
     void energyLapsUpsert() throws Exception {
         AnalysisWriter writer = new AnalysisWriter(jdbc, mapper, 100, 500, Duration.ofMillis(20));
         cleanup.add(writer::stop);
-        writer.offer(new AnalysisRows.SessionSeen(new AnalysisRows.SessionInfo(session, null, null, "Race", "RACE", null)));
+        writer.offer(new AnalysisRows.SessionSeen(new AnalysisRows.SessionInfo(session, null, null, "Race", "RACE", null,
+                null, null, null, null, false)));
         writer.offer(new AnalysisRows.EnergyLap(session, "04", 7, 81.5, false));
         writer.offer(new AnalysisRows.EnergyLap(session, "04", 7, 80.5, true)); // the same lap again: the later reading wins
         await(() -> count("live_energy_lap WHERE session_db_id = :s AND energy_pct < 81") == 1);
@@ -265,6 +270,11 @@ class AnalysisIngestTest {
             public java.util.Optional<Series> seriesOf(long eventId) {
                 return real.seriesOf(eventId);
             }
+
+            @Override
+            public java.util.Optional<Long> filedEvent(long sessionDbId) {
+                return real.filedEvent(sessionDbId);
+            }
         };
         AlKamelV2Properties props = new AlKamelV2Properties("127.0.0.1", server.port(), "u", "p", false, false,
                 "Pit Pass test", List.of("timing.session.info", "timing.session.entry"), 1 << 10, 2, 1,
@@ -284,6 +294,8 @@ class AnalysisIngestTest {
         await(() -> count("live_lap WHERE session_db_id = :s") >= 4 && writer.stats().queued() == 0);
         Thread.sleep(200);
         assertNull(filedUnder(), "PC's #04 is TCR; the car on track is GTD");
+        assertEquals(pcEvent, service.status().eventId(), "still bound to Pilot Challenge");
+        assertNull(service.status().filedEventId(), "but Pit Pass rows come only from the filed event: none");
         assertEquals(TelemetryRunner.State.OFF, service.status().telemetry().state());
         assertEquals("The bound event's series sends no energy telemetry", service.status().telemetry().idleReason());
 
@@ -291,6 +303,7 @@ class AnalysisIngestTest {
         // its drivers are matched to that crew, and energy starts.
         service.request(true, wtEvent, "t");
         await(() -> Long.valueOf(wtEvent).equals(filedUnder()));
+        assertEquals(wtEvent, service.status().filedEventId());
         await(() -> Long.valueOf(ann).equals(db.sql("""
                 SELECT driver_id FROM live_driver WHERE session_db_id = :s AND car_number = '04' AND driver_order = 1
                 """).param("s", session).query((rs, i) -> rs.getObject("driver_id", Long.class)).optional().orElse(null)));
@@ -301,6 +314,7 @@ class AnalysisIngestTest {
         await(() -> service.status().telemetry().state() == TelemetryRunner.State.OFF);
         Thread.sleep(200);
         assertEquals(wtEvent, filedUnder());
+        assertEquals(wtEvent, service.status().filedEventId(), "the binding moved; what the session is did not");
     }
 
     private Long filedUnder() {

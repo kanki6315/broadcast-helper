@@ -1,7 +1,7 @@
 # Live timing for every series on a weekend, and a shareable timing link: plan
 
-Status: **draft 2026-09-30. Open questions answered by Arjuna the same day;
-slice 0 findings done. Not yet approved to build.**
+Status: **2026-09-30: slices 0, 1 and 2 done** on the branch below, not yet
+merged to main. Slices 3–6 not started.
 Branch: `claude/alchemel-connection-switchover-686f5e`.
 This document is the handoff. It builds on `docs/LIVE_TIMING.md` (the feed
 pipeline) and `docs/LIVE_TIMING_PAGE_PLAN.md` (the timing page, slices 0–5).
@@ -123,7 +123,7 @@ What this means:
 
 ## Slices
 
-### Slice 1: tower and calculator from the filed event only (backend + web)
+### Slice 1: tower and calculator from the filed event only (backend + web) — DONE 2026-09-30
 The fix for the wrong screen seen on 2026-09-30. Small; do it first.
 - `LiveTimingService`: expose `filedEventId()` (package-private today).
 - `LiveClassificationService.current()`: build with the **filed** event's
@@ -146,15 +146,35 @@ The fix for the wrong screen seen on 2026-09-30. Small; do it first.
   numbers shared. Expect feed teams, no `entryId`s, and a refused
   championship.
 
-### Slice 2: record the feed's own labels (backend)
+### Slice 2: record the feed's own labels (backend) — DONE 2026-09-30
 - V60: `live_session` gains `champ_name TEXT`, `champ_db_id BIGINT`,
   `feed_event_name TEXT`, `feed_event_short_name TEXT`, `closed BOOLEAN`
   (`feed_event_db_id` exists already).
 - `AnalysisRouter` / `AnalysisWriter`: fill them from `timing.session.info`
   in the existing upsert (`AnalysisWriter.java:257`); set `closed` when the
   `{"closed": true}` patch arrives.
-- Backfill 3183, 3185 and 3189 by hand from the table above (3185 shares 3189's feed event and championship; one `UPDATE` per session in
+- Still owed in production: backfill 3183, 3185 and 3189 by hand from the table above (3185 shares 3189's feed event and championship; one `UPDATE` per session in
   production), so the browser can label them.
+
+**As built (slices 1–2):**
+- `LiveStatus` gained `filedEventId` / `filedEventName` (from
+  `LiveTimingService.overlayEventId`, which reads `live_session.event_id` for
+  the session on track; the binding when analysis is off). The
+  classification, tower (`Tower.filedEventId` / `filedEventName`) and
+  championship responses use it; `eventId` stays the binding.
+- Web: the Timing page follows the filed event; bound here but filed nowhere
+  it shows the tower with one "not filed under this event" line and no
+  per-row "not entered". The calculator projects only against the filed
+  event and says when the session is filed nowhere.
+- V60 adds `champ_db_id`, `champ_name`, `feed_event_name`,
+  `feed_event_short_name`, `closed` to `live_session` (plus an index on
+  `feed_event_db_id`), written by the session upsert.
+- **Not done, for later slices:** the iPad still treats the binding as the
+  tower's event (its calculator gets empty rows for an unfiled session from
+  the server, so nothing wrong is projected); gaps/sectors/pits for a
+  *finished* unfiled session group every car as "Not entered", because
+  their classes come from entries (slice 4 should fall back to the feed
+  class stored per car).
 
 ### Slice 3: feed events, binding and filing by championship (backend + web)
 **The unit that gets bound is the feed event** (one championship at one

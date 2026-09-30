@@ -67,8 +67,11 @@ export default function TimingPage({ eventId }: { eventId: number }) {
       .catch(() => setEventName(null))
   }, [eventId])
 
-  const followingThis = tower != null && tower.eventId === eventId
-  const title = followingThis ? tower.eventName : eventName === undefined ? undefined : (eventName ?? 'Live timing')
+  // The session on track belongs to this page when it is filed here or, filed
+  // nowhere, when the connection is bound here (its own teams, flagged below).
+  const followingThis = tower != null && (tower.filedEventId ?? tower.eventId) === eventId
+  const title =
+    followingThis && tower.filedEventName ? tower.filedEventName : eventName === undefined ? undefined : (eventName ?? 'Live timing')
   useEffect(() => {
     document.title = title ? `Timing · ${title}` : 'Timing'
   }, [title])
@@ -154,7 +157,7 @@ function FeedStatus({ tower, followingThis }: { tower: Tower; followingThis: boo
     <span className={`timing-status timing-status--${tone}`} role="status">
       <i aria-hidden="true" />
       {STATE_TEXT[tower.state]}
-      {!followingThis && tower.eventId != null && tower.state !== 'OFF' && (
+      {!followingThis && (tower.filedEventId ?? tower.eventId) != null && tower.state !== 'OFF' && (
         <span className="muted"> · following another event</span>
       )}
     </span>
@@ -314,7 +317,13 @@ function TowerView({
     return (
       <div className="empty-state">
         Live timing is following{' '}
-        {tower.eventId != null ? <a href={`#/timing/${tower.eventId}`}>{tower.eventName ?? 'another event'}</a> : 'no event'}
+        {tower.filedEventId != null ? (
+          <a href={`#/timing/${tower.filedEventId}`}>{tower.filedEventName ?? 'another event'}</a>
+        ) : tower.eventId != null ? (
+          <a href={`#/timing/${tower.eventId}`}>{tower.eventName ?? 'another event'}</a>
+        ) : (
+          'no event'
+        )}
         , not this one.
         <br />
         This event's recorded sessions are under <a href={`#/timing/${eventId}?view=gaps`}>Gaps</a>,{' '}
@@ -328,12 +337,20 @@ function TowerView({
   }
 
   const now = feedNow(tower, wall)
+  // Filed nowhere: every car is "not entered", so say it once rather than per row.
+  const unfiled = tower.filedEventId == null
   const hasEnergy = tower.classes.some((c) => c.cars.some((car) => car.energyPct != null))
   const hasLaps = tower.classes.some((c) => c.cars.some((car) => car.lastLapMs != null || car.stintStartMs != null))
   const columns = 8 + (hasLaps ? 3 : 0) + (hasEnergy ? 1 : 0)
 
   return (
     <>
+      {unfiled && (
+        <p className="timing-unfiled" role="status">
+          {tower.session?.championship ?? 'This session'} is not filed under this event: its cars do not match the
+          entry list. Teams and drivers are the feed's own.
+        </p>
+      )}
       <table className="grid-table tower" aria-label="Running order by class">
         <thead>
           <tr>
@@ -398,6 +415,7 @@ function TowerView({
                   hasLaps={hasLaps}
                   hasEnergy={hasEnergy}
                   now={now}
+                  unfiled={unfiled}
                   onOpen={() => setOpen({ car, cls })}
                 />
               ))}
@@ -406,7 +424,7 @@ function TowerView({
         })}
       </table>
       <p className="timing-foot">
-        {tower.matched} of {tower.total} cars matched to this event's entries.
+        {!unfiled && `${tower.matched} of ${tower.total} cars matched to this event's entries.`}
         {hasLaps ? ' Select a car for its laps and stints.' : ' Lap and stint columns appear once lap data is recorded.'}
       </p>
       {open && (
@@ -429,6 +447,7 @@ function TowerRow({
   hasLaps,
   hasEnergy,
   now,
+  unfiled,
   onOpen,
 }: {
   car: TowerCar
@@ -436,6 +455,7 @@ function TowerRow({
   hasLaps: boolean
   hasEnergy: boolean
   now: number | null
+  unfiled: boolean
   onOpen: () => void
 }) {
   const running = !car.status || car.status === 'CLASSIFIED' || car.status === 'RUNNING'
@@ -468,7 +488,7 @@ function TowerRow({
       </td>
       <td className="tower-team">
         {car.teamName ?? <span className="muted">—</span>}
-        {car.entryId == null && (
+        {car.entryId == null && !unfiled && (
           <span className="tower-unmatched" title="Not in this event's entry list">
             not entered
           </span>

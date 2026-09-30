@@ -39,8 +39,8 @@ replica would see `STANDBY` and no data.
 
 | Endpoint | Who | |
 |---|---|---|
-| `GET /api/live/status` | member | State, bound event, what the feed says is running, message counters, last error. Poll it. |
-| `GET /api/live/classification` | member | The running order per class, matched to the bound event's entries — see below. Poll it. |
+| `GET /api/live/status` | member | State, bound event, the event the session on track is filed under (`filedEventId`), what the feed says is running, message counters, last error. Poll it. |
+| `GET /api/live/classification` | member | The running order per class, matched to the filed event's entries — see below. Poll it. |
 | `GET /api/live/championships/{id}` | member | One class championship's rows against the running order — see *Championship positions*. Poll it. |
 | `POST /api/live/connect` `{ "eventId": n }` | admin | Ask for the connection and bind it to the Pit Pass event it is scored against. The iPad's live timing bar and, for admins, the web Timing page's top bar both call it. |
 | `POST /api/live/disconnect` | admin | Close the socket and free the login. |
@@ -60,6 +60,20 @@ The feed's own session (`status.session`) is shown next to the bound event so
 a mismatch — connected during the wrong series' session — is visible. The feed
 is never trusted to pick the event.
 
+**Bound vs filed.** `eventId` is the event an admin bound the connection to:
+where the connect control stands, and which event filing tries (see
+*Which event a session belongs to*). `filedEventId` / `filedEventName` is
+the event the session on track is actually filed under, read from
+`live_session`. **Every Pit Pass overlay — entries, teams, class colours,
+driver links, championship positions — comes from the filed event, never
+the binding.** A binding can outlive its series' session: on 2026-09-30 an
+IMPC binding stayed up while VP Racing ran, and matching VP cars against the
+IMPC entry list put IMPC teams on VP cars that share their numbers. Filed
+nowhere, the classification and tower show the feed's own teams and cars,
+and no championship is projected. With `timing.analysis` off there are no
+session rows and nothing is filed, so `filedEventId` falls back to the
+binding, as before.
+
 ## Classification
 
 `GET /api/live/classification` is what the championship calculators score. No
@@ -68,6 +82,7 @@ calculators — it supplies the positions a person would otherwise type in.
 
 ```json
 { "state": "LIVE", "eventId": 8, "eventName": "Rolex 24 at Daytona",
+  "filedEventId": 8, "filedEventName": "Rolex 24 at Daytona",
   "session": { "name": "Race", "type": "RACE", "flag": "GREEN", "running": true, "finished": false, … },
   "classification": {
     "classes": [ { "className": "GTP", "feedClass": "GTP", "cars": [
@@ -78,7 +93,7 @@ calculators — it supplies the positions a person would otherwise type in.
     "unmatched": [ … ], "missing": [ … ], "classMismatches": [ … ] } }
 ```
 
-- **Matching is by car number within the bound event**, exactly as written
+- **Matching is by car number within the filed event**, exactly as written
   first: a grid really does hold #04 and #4, #23 and #023, as different cars.
   Only a number with no exact match falls back to ignoring leading zeros, and
   only when that points at a single entry; otherwise it is left unmatched.
@@ -95,7 +110,8 @@ calculators — it supplies the positions a person would otherwise type in.
   feed class other than the one entered. `matched` of `total` near zero means
   the feed is showing another series' session: check `session` against the
   bound event. In that case `missing` is left empty rather than listing the
-  whole entry list.
+  whole entry list. (With filing, that session is normally filed nowhere, and
+  then every car is unmatched by design.)
 - **Built for polling.** The body carries no timestamps or counters, so it
   changes only when the order (or a gap) does and `If-None-Match` earns a 304.
   Staleness is `state`: `BACKING_OFF` means last-known order, `OFF`/`STANDBY`
@@ -139,7 +155,7 @@ position here is scored by the client exactly as one set by hand.
 
 `livePhase` says which column the live positions fill: `RACE`, `QUALIFYING`,
 or null for a session that pays nothing (practice). `qualifyingPosition` is the
-bound event's **imported** qualifying result, ranked by the same rules:
+filed event's **imported** qualifying result, ranked by the same rules:
 official standings leave a weekend's qualifying points out until after the
 race, so a live race projection adds them itself — and says so when the
 qualifying result has not been imported (`qualifyingImported: false`).
@@ -147,7 +163,8 @@ qualifying result has not been imported (`qualifyingImported: false`).
 `newcomers` are scoring now without a standings row (a late entry, an
 endurance-only driver): named, with a baseline of zero. Overall championships
 answer 422 (positions are per class); a championship of another season than
-the bound event answers 409.
+the filed event answers 409. With the session filed nowhere the response has
+`eventId: null` and no rows.
 
 Assumed, not yet checked against the regulations: that manufacturers score
 qualifying points on the same collapse-and-rerank rule as race points, and
@@ -279,7 +296,16 @@ only says which event to try:
 
 Drivers are matched against the **filed** event's crews, so they follow the
 filing, not the binding. An unfiled session appears on no event's Timing page
-until it is filed. (V57's comment still describes the old "bound when first
+until it is filed.
+
+**The feed's own labels** (V60): each `live_session` row also keeps
+`champ_name`, `champ_db_id`, `feed_event_name`, `feed_event_short_name` and
+`closed` from `timing.session.info`, so a session filed nowhere can still be
+told apart later. On 2026-09-30 `champName` matched our `series.name`
+exactly (IMSA Michelin Pilot Challenge, IMSA VP Racing SportsCar Challenge),
+and the feed event id carried over between one series' sessions — see
+`docs/LIVE_TIMING_ALL_SERIES_PLAN.md`. The feed closes a session with a bare
+`info` patch `{"closed": true}`. (V57's comment still describes the old "bound when first
 seen" rule; a merged migration's text can't change without breaking Flyway's
 checksum.) Laps or stints that arrive before any
 `info.sessionDbId` has been seen are skipped and counted
