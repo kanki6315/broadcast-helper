@@ -86,17 +86,7 @@ public class LiveAnalysisService {
 
     public PitsResponse pits(Long sessionParam) {
         long session = page.session(sessionParam);
-        List<Stint> stints = db.sql("""
-                SELECT car_number, start_time_ms, type, pit_type, driver_order, open_lap_number, close_lap_number,
-                       finish_time_ms
-                FROM live_stint WHERE session_db_id = :s
-                """)
-                .param("s", session)
-                .query((rs, i) -> new Stint(rs.getString("car_number"), rs.getLong("start_time_ms"), rs.getString("type"),
-                        rs.getString("pit_type"), rs.getObject("driver_order", Integer.class),
-                        rs.getObject("open_lap_number", Integer.class), rs.getObject("close_lap_number", Integer.class),
-                        rs.getObject("finish_time_ms", Long.class)))
-                .list();
+        List<Stint> stints = page.stints(session);
         Map<String, Integer> lastLap = new HashMap<>();
         db.sql("SELECT car_number, max(lap_number) AS last FROM live_lap WHERE session_db_id = :s AND lap_time_ms > 0 GROUP BY car_number")
                 .param("s", session)

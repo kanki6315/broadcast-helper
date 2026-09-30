@@ -46,7 +46,13 @@ class LiveTimingPageServiceTest {
                           "2": {"firstName": "Bea", "lastName": "Two", "shortName": "Two", "license": "Gold"}}},
                        "4": {"number": "4", "currentDriver": 1, "drivers": {
                           "1": {"firstName": "Cy", "lastName": "Unresolved", "shortName": "Unr", "license": "Silver"}}}},
-             "standings": {"byClass": {"active": {"GTD": {"class": "GTD", "standings": {
+             "standings": {"overall": {"participantDetails": {
+                "04": {"currentSector": 2, "status": "TRACK",
+                       "lastSectors": {"1": {"number": 1, "time": 30500, "isValid": true}},
+                       "bestSectors": {"1": {"number": 1, "time": 30000}, "2": {"number": 2, "time": 31000}}},
+                "4": {"currentSector": 1, "status": "BOX", "pitStops": 3,
+                      "bestSectors": {"1": {"number": 1, "time": 29000}, "2": {"number": 2, "time": 33000}}}}},
+                           "byClass": {"active": {"GTD": {"class": "GTD", "standings": {
                 "1": {"participant": "04", "position": 1, "lapNumber": 3},
                 "2": {"participant": "4", "position": 2, "lapNumber": 3, "gapFirstTime": 4200, "gapPreviousTime": 4200}}}}}}}
             """;
@@ -122,7 +128,9 @@ class LiveTimingPageServiceTest {
         LiveTimingService live = new LiveTimingService(props, store, mapper, null, null, LiveTimingService.Pacing.PRODUCTION) {
             @Override
             public JsonNode state(String path) {
-                return "timing.session".equals(path) ? tree : "timing.session.entry".equals(path) ? tree.get("entry") : null;
+                return "timing.session".equals(path) ? tree : "timing.session.entry".equals(path) ? tree.get("entry")
+                        : AlKamelV2Properties.PARTICIPANT_DETAILS_CHANNEL.equals(path) ? tree.at("/standings/overall/participantDetails")
+                        : null;
             }
 
             @Override
@@ -159,6 +167,7 @@ class LiveTimingPageServiceTest {
         assertEquals("Bea Two", first.driverName());
         assertEquals("G", first.driverRating(), "our rating, from live_driver");
         assertEquals(3, first.lastLap());
+        assertEquals(3, first.laps(), "laps completed, from analysis");
         assertEquals(2, first.bestLap(), "lap 3 was invalidated after the fact, so the best comes from live_lap");
         assertEquals(99_998, first.bestLapMs());
         assertEquals(42.0, first.energyPct(), "IMSA telemetry, matched to the Al Kamel car");
@@ -169,6 +178,19 @@ class LiveTimingPageServiceTest {
         assertEquals(4_200L, second.intervalMs(), "the feed's gapPreviousTime");
         assertEquals("Cy Unresolved", second.driverName(), "no live_driver row: the feed's own name");
         assertEquals("S", second.driverRating());
+        assertNull(second.laps(), "no laps recorded and not known to be a race: the standings' lapNumber may be its best lap's");
+
+        assertEquals(2, first.currentSector());
+        assertEquals(30_500, first.sectors().get(0).ms());
+        assertTrue(first.sectors().get(0).currentLap());
+        assertNull(first.sectors().get(1));
+        assertEquals(61_000L, first.idealMs());
+        assertTrue(second.inPit(), "BOX marks the car in the pit with no PIT stint");
+        assertEquals("BOX", second.trackStatus());
+        var gtd = tower.classes().getFirst();
+        assertEquals(List.of(new LiveParticipantDetails.ClassSector(29_000, "4"), new LiveParticipantDetails.ClassSector(31_000, "04")),
+                gtd.bestSectors());
+        assertEquals(60_000L, gtd.idealMs());
     }
 
     @Test
@@ -299,5 +321,24 @@ class LiveTimingPageServiceTest {
         assertTrue(mapper.valueToTree(stop).path("driverChange").asBoolean(), "sent to the page, not only a method");
         assertEquals(1, zero4.lapsSinceStop(), "3 laps done, stopped on lap 2");
         assertEquals("Two", response.drivers().get("04").get(2));
+
+        var tower = page(true).tower().classes().getFirst().cars();
+        assertEquals(1, tower.get(0).pitStops(), "the tower counts stops as the Pits view does");
+        assertEquals(70_000L, tower.get(0).lastPitMs());
+        assertEquals(0, tower.get(1).pitStops(), "#4 has no stints: none yet, not unknown");
+        assertNull(tower.get(1).lastPitMs());
+    }
+
+    @Test
+    void theTowerCountsAnOpenStopButTimesOnlyFinishedOnes() throws Exception {
+        db.sql("""
+                INSERT INTO live_stint (session_db_id, car_number, start_time_ms, type, driver_order, open_lap_number,
+                                        finish_time_ms)
+                VALUES (:s, '04', :a, 'PIT', 1, 1, :af), (:s, '04', :b, 'PIT', 2, 3, NULL)
+                """)
+                .param("s", session).param("a", T0 + H).param("af", T0 + H + 65_000).param("b", T0 + 3 * H).update();
+        var car = page(true).tower().classes().getFirst().cars().getFirst();
+        assertEquals(2, car.pitStops());
+        assertEquals(65_000L, car.lastPitMs(), "the stop in progress has no time yet");
     }
 }

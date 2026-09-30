@@ -136,6 +136,11 @@ pit-pass:
       enabled: ${ALKAMELV2_ANALYSIS_ENABLED:false}
       # A sanity cap on one streamed line — counted, never buffered.
       max-line-bytes: ${ALKAMELV2_ANALYSIS_MAX_LINE_BYTES:536870912}
+    # Per car sectors as they are run, the sector each car is in, its best
+    # sectors and BOX/OUT_LAP/TRACK/STOPPED, for the tower's sector columns.
+    # Off until a practice session has been recorded with it.
+    participant-details:
+      enabled: ${ALKAMELV2_PARTICIPANT_DETAILS_ENABLED:false}
   # IMSA's own telemetry (imsa.com/telemetry): an AWS AppSync Events websocket
   # carrying energy remaining per car. Unofficial and undocumented — off by
   # default, fails soft, and only ever runs beside the Al Kamel connection in

@@ -13,9 +13,13 @@ import {
   flagTone,
   gap,
   lapTime,
+  lastLapMark,
+  sectorMark,
   parseRuleTime,
   ratingName,
   ruleTime,
+  sessionClock,
+  trackTime,
   type DriveTimeResponse,
   type LiveStatus,
   type DriveTimeResult,
@@ -24,6 +28,7 @@ import {
   type Tower,
   type TowerCar,
   type TowerClass,
+  type SectorTime,
 } from '../lib/liveTiming'
 import LiveCarModal from '../components/LiveCarModal'
 import { GapsView, PitsView, SectorsView } from './TimingAnalysis'
@@ -97,8 +102,11 @@ export default function TimingPage({ eventId }: { eventId: number }) {
       </div>
 
       <header className="timing-head">
-        <h1>{title ?? <span className="skeleton timing-title-skeleton" aria-label="Loading" />}</h1>
-        {followingThis && tower.session && <SessionLine session={tower.session} />}
+        <div className="timing-head-text">
+          <h1>{title ?? <span className="skeleton timing-title-skeleton" aria-label="Loading" />}</h1>
+          {followingThis && tower.session && <SessionLine session={tower.session} />}
+        </div>
+        {followingThis && <SessionClockView tower={tower} />}
       </header>
 
       {view === 'tower' ? (
@@ -256,6 +264,32 @@ function SessionLine({ session }: { session: NonNullable<Tower['session']> }) {
   )
 }
 
+/**
+ * The session clock, counted down in the browser from the feed's status: time
+ * to go (frozen and labelled while a red flag stops it), or the leader's lap
+ * of a lap-limited race, with the time of day at the track beneath.
+ */
+function SessionClockView({ tower }: { tower: Tower }) {
+  const wall = useTick(tower.state === 'LIVE')
+  const reading = sessionClock(tower, wall)
+  // The time at the track only while the feed is current: a replay's "now" is not today's.
+  const local = feedNow(tower, wall) === wall ? trackTime(wall, tower.session?.clock?.utcOffsetHours) : null
+  if (!reading && !local) return null
+  return (
+    <div className={`timing-clock${reading?.stopped ? ' timing-clock--stopped' : ''}`}>
+      {reading && (
+        <p className="timing-clock-main">
+          <span className="timing-clock-time">{reading.time}</span>
+          {reading.note && <span className="timing-clock-note">{reading.note}</span>}
+        </p>
+      )}
+      {(reading?.laps || local) && (
+        <p className="timing-clock-sub">{[reading?.laps, local && `${local} at the track`].filter(Boolean).join(' · ')}</p>
+      )}
+    </div>
+  )
+}
+
 /** Re-renders once a second while something on screen is counting up. */
 function useTick(active: boolean): number {
   const [now, setNow] = useState(() => Date.now())
@@ -330,11 +364,13 @@ function TowerView({
   const now = feedNow(tower, wall)
   const hasEnergy = tower.classes.some((c) => c.cars.some((car) => car.energyPct != null))
   const hasLaps = tower.classes.some((c) => c.cars.some((car) => car.lastLapMs != null || car.stintStartMs != null))
-  const columns = 8 + (hasLaps ? 3 : 0) + (hasEnergy ? 1 : 0)
+  const hasPits = tower.classes.some((c) => c.cars.some((car) => car.pitStops != null))
+  const sectorCount = Math.max(0, ...tower.classes.flatMap((c) => c.cars.map((car) => car.sectors?.length ?? 0)))
+  const columns = 8 + (hasLaps ? 3 : 0) + sectorCount + (hasPits ? 1 : 0) + (hasEnergy ? 1 : 0)
 
   return (
     <>
-      <table className="grid-table tower" aria-label="Running order by class">
+      <table className={`grid-table tower${sectorCount > 0 ? ' tower--sectors' : ''}`} aria-label="Running order by class">
         <thead>
           <tr>
             <th className="num" scope="col">
@@ -362,10 +398,20 @@ function TowerView({
                 <th className="num" scope="col">
                   Best
                 </th>
+                {Array.from({ length: sectorCount }, (_, i) => (
+                  <th key={i} className="num tower-sector" scope="col" title={`Sector ${i + 1}, as it is run`}>
+                    S{i + 1}
+                  </th>
+                ))}
                 <th className="num" scope="col" title="Laps and time in the current stint">
                   Stint
                 </th>
               </>
+            )}
+            {hasPits && (
+              <th className="num" scope="col" title="Pit stops, and the last stop's pit-lane time">
+                Pits
+              </th>
             )}
             {hasEnergy && (
               <th className="num" scope="col" title="Energy remaining (IMSA telemetry)">
@@ -388,6 +434,7 @@ function TowerView({
                     {cls.className}
                     {cls.feedClass !== cls.className && <span className="band-feed"> ({cls.feedClass})</span>}
                   </span>
+                  <BestSectors cls={cls} />
                 </td>
               </tr>
               {cls.cars.map((car) => (
@@ -396,6 +443,9 @@ function TowerView({
                   car={car}
                   classBestMs={best}
                   hasLaps={hasLaps}
+                  sectorCount={sectorCount}
+                  classSectors={cls.bestSectors}
+                  hasPits={hasPits}
                   hasEnergy={hasEnergy}
                   now={now}
                   onOpen={() => setOpen({ car, cls })}
@@ -427,6 +477,9 @@ function TowerRow({
   car,
   classBestMs,
   hasLaps,
+  sectorCount,
+  classSectors,
+  hasPits,
   hasEnergy,
   now,
   onOpen,
@@ -434,13 +487,16 @@ function TowerRow({
   car: TowerCar
   classBestMs: number | null
   hasLaps: boolean
+  sectorCount: number
+  classSectors: TowerClass['bestSectors']
+  hasPits: boolean
   hasEnergy: boolean
   now: number | null
   onOpen: () => void
 }) {
   const running = !car.status || car.status === 'CLASSIFIED' || car.status === 'RUNNING'
   const isClassBest = classBestMs != null && car.bestLapMs === classBestMs
-  const lastIsBest = car.lastLapMs != null && car.lastLapMs === car.bestLapMs
+  const lastMark = lastLapMark(car, classBestMs)
   const stintTime = car.stintStartMs != null && now != null ? duration(now - car.stintStartMs) : null
   return (
     <tr className={`tower-row${running ? '' : ' tower-row--out'}`} onClick={onOpen}>
@@ -479,14 +535,23 @@ function TowerRow({
       <td className="num tower-int">{car.position === 1 ? '' : gap(car.intervalMs, car.intervalLaps)}</td>
       {hasLaps && (
         <>
-          <td className={`num tower-last${lastIsBest ? ' tower-pb' : ''}`}>
+          <td
+            className={`num tower-last${lastMark === 'class' ? ' tower-class-best' : lastMark === 'pb' ? ' tower-pb' : ''}`}
+            title={lastMark === 'class' ? 'Fastest in class' : lastMark === 'pb' ? 'Personal best' : undefined}
+          >
             {lapTime(car.lastLapMs)}
-            {lastIsBest && <span className="sr-only"> (personal best)</span>}
+            {lastMark && <span className="sr-only">{lastMark === 'class' ? ' (fastest in class)' : ' (personal best)'}</span>}
           </td>
-          <td className={`num${isClassBest ? ' tower-class-best' : ''}`} title={isClassBest ? 'Fastest in class' : undefined}>
+          <td
+            className={`num${isClassBest ? ' tower-class-best' : ''}`}
+            title={[isClassBest && 'Fastest in class', car.idealMs != null && `Ideal ${lapTime(car.idealMs)}`].filter(Boolean).join(' · ') || undefined}
+          >
             {lapTime(car.bestLapMs)}
             {isClassBest && <span className="sr-only"> (fastest in class)</span>}
           </td>
+          {Array.from({ length: sectorCount }, (_, i) => (
+            <SectorCell key={i} sector={car.sectors?.[i] ?? null} carBest={car.bestSectorMs?.[i]} classBest={classSectors[i]?.ms} />
+          ))}
           <td className="num tower-stint">
             <span className="tower-pair">
               {car.stintLaps != null && !car.inPit && <span>{car.stintLaps} L</span>}
@@ -494,6 +559,18 @@ function TowerRow({
             </span>
           </td>
         </>
+      )}
+      {hasPits && (
+        <td className="num tower-pits">
+          <span className="tower-pair">
+            {car.pitStops != null && <span>{car.pitStops}</span>}
+            {car.lastPitMs != null && (
+              <span className="muted" title="The last stop's pit-lane time">
+                {duration(car.lastPitMs)}
+              </span>
+            )}
+          </span>
+        </td>
       )}
       {hasEnergy && (
         <td className="num tower-energy">
@@ -510,11 +587,61 @@ function TowerRow({
       <td className="tower-state">
         {!running ? (
           <span className="tower-status">{car.status?.toLowerCase().replace(/_/g, ' ')}</span>
+        ) : car.inPit ? (
+          <span className="tower-pit-mark">Pit</span>
+        ) : car.trackStatus === 'OUT_LAP' ? (
+          <span className="tower-out-mark" title="Out lap">Out</span>
         ) : (
-          car.inPit && <span className="tower-pit-mark">Pit</span>
+          car.trackStatus === 'STOPPED' && <span className="tower-status">stopped</span>
         )}
       </td>
     </tr>
+  )
+}
+
+/**
+ * One sector's newest time: purple for the class's fastest, green for the
+ * car's own best, as the lap columns. A time left from the previous lap (the
+ * car has not run that sector again yet) is muted; an invalid one struck
+ * through.
+ */
+function SectorCell({ sector, carBest, classBest }: { sector: SectorTime | null; carBest: number | null | undefined; classBest: number | null | undefined }) {
+  if (!sector) return <td className="num tower-sector" />
+  const mark = sectorMark(sector.ms, carBest, classBest)
+  const cls = [
+    'num tower-sector',
+    mark === 'class' ? 'tower-class-best' : mark === 'pb' ? 'tower-pb' : '',
+    !sector.currentLap && !mark ? 'tower-sector--old' : '',
+    sector.valid === false ? 'tower-sector--invalid' : '',
+  ].filter(Boolean).join(' ')
+  const words = [mark === 'class' ? 'fastest in class' : mark === 'pb' ? 'personal best' : null,
+    sector.valid === false ? 'invalid' : null, sector.currentLap ? null : 'previous lap'].filter(Boolean)
+  return (
+    <td className={cls} title={words.length ? words.join(', ') : undefined}>
+      {lapTime(sector.ms)}
+      {words.length > 0 && <span className="sr-only"> ({words.join(', ')})</span>}
+    </td>
+  )
+}
+
+/** The class's best sectors and who holds them, and their sum, on the class band. */
+function BestSectors({ cls }: { cls: TowerClass }) {
+  if (!cls.bestSectors?.some((s) => s.ms != null)) return null
+  return (
+    <span className="band-bests">
+      {cls.bestSectors.map((s, i) =>
+        s.ms == null ? null : (
+          <span key={i}>
+            S{i + 1} <span className="band-num">{lapTime(s.ms)}</span> #{s.car}
+          </span>
+        ),
+      )}
+      {cls.idealMs != null && (
+        <span title="The class's best sectors added up">
+          Ideal <span className="band-num">{lapTime(cls.idealMs)}</span>
+        </span>
+      )}
+    </span>
   )
 }
 

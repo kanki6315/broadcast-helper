@@ -25,6 +25,24 @@ export interface FeedSession {
   flag: string | null
   running: boolean
   finished: boolean
+  clock: SessionClock | null
+}
+
+/**
+ * timing.session.status's clock, for the client to count down. startMs is
+ * null before the start; stopMs is set only while the clock is stopped (red
+ * flag); stoppedMs is the time stopped so far. finalType is BY_TIME, BY_LAPS,
+ * BY_LAPS_WITH_MAX_TIME, BY_TIME_PLUS_LAPS or MANUAL.
+ */
+export interface SessionClock {
+  finalType: string | null
+  startMs: number | null
+  finalMs: number | null
+  finalLaps: number | null
+  currentLap: number | null
+  stopMs: number | null
+  stoppedMs: number
+  utcOffsetHours: number | null
 }
 
 export interface TowerCar {
@@ -55,6 +73,31 @@ export interface TowerCar {
   energyPct: number | null
   /** energyPct over this stint's average use per lap; null until two laps are sampled. */
   energyLapsLeft: number | null
+  /** Al Kamel PIT stints so far, as the Pits view counts them; null with no session recorded. */
+  pitStops: number | null
+  /** Pit-lane time of the newest finished stop. */
+  lastPitMs: number | null
+  /** From participant details (null when that channel is off): BOX, OUT_LAP, TRACK or STOPPED. */
+  trackStatus: string | null
+  currentSector: number | null
+  /** Sector 1 first; null where the car has no time yet. */
+  sectors: (SectorTime | null)[] | null
+  bestSectorMs: (number | null)[] | null
+  /** The car's own best sectors summed; null until it has one in every sector. */
+  idealMs: number | null
+}
+
+/** A sector's newest time. currentLap false = the previous lap's, until the car runs that sector again. */
+export interface SectorTime {
+  ms: number
+  valid: boolean | null
+  currentLap: boolean
+}
+
+/** A class's fastest time in one sector, and the car that holds it. */
+export interface ClassSector {
+  ms: number | null
+  car: string | null
 }
 
 export interface TowerClass {
@@ -62,6 +105,9 @@ export interface TowerClass {
   feedClass: string
   color: string | null
   cars: TowerCar[]
+  /** Per sector; empty without participant details. */
+  bestSectors: ClassSector[]
+  idealMs: number | null
 }
 
 export interface Tower {
@@ -377,6 +423,71 @@ export function feedNow(tower: Pick<Tower, 'state' | 'session' | 'feedClockMs'>,
   if (clock == null || clock <= 0) return tower.state === 'LIVE' ? wallMs : null
   const live = tower.state === 'LIVE' && !tower.session?.finished && wallMs >= clock && wallMs - clock < 10 * 60_000
   return live ? wallMs : clock
+}
+
+/**
+ * What the header clock shows. Time-limited sessions count down: the time
+ * run is now (or the red-flag stop) less the start and the time stopped. A
+ * lap-limited one shows the leader's lap. null when there is nothing to
+ * show: no clock, a MANUAL session, or a finished one (the Finished chip
+ * says so).
+ *
+ * "Now" is the wall clock while the feed is live and the session's
+ * scheduled end is still ahead of it; otherwise the feed's own newest time,
+ * so a replay shows the clock as it stood rather than 0:00. The clock keeps
+ * running under a practice red flag (Road Atlanta, 2026-09-30); only
+ * isSessionRunning false stops it.
+ */
+export function sessionClock(
+  tower: Pick<Tower, 'state' | 'session' | 'feedClockMs'>,
+  wallMs: number,
+): { time: string; note: string; stopped: boolean; laps: string | null } | null {
+  const session = tower.session
+  const c = session?.clock
+  if (!session || !c || session.finished) return null
+  const laps =
+    c.finalLaps != null && (c.finalType === 'BY_LAPS' || c.finalType === 'BY_LAPS_WITH_MAX_TIME')
+      ? c.currentLap != null
+        ? `Lap ${Math.min(c.currentLap, c.finalLaps)} of ${c.finalLaps}`
+        : `${c.finalLaps} laps`
+      : null
+  const timed = c.finalMs != null && c.finalType !== 'BY_LAPS' && c.finalType !== 'MANUAL'
+  if (!timed) return laps ? { time: laps, note: '', stopped: false, laps: null } : null
+  const finalMs = c.finalMs as number
+  if (c.startMs == null) return { time: duration(finalMs), note: 'Not started', stopped: false, laps }
+  const scheduledEnd = c.startMs + finalMs + c.stoppedMs
+  const now = c.stopMs ?? (tower.state === 'LIVE' && wallMs < scheduledEnd ? wallMs : feedNow(tower, wallMs))
+  if (now == null) return null
+  const left = Math.max(0, finalMs - (now - c.startMs - c.stoppedMs))
+  return { time: duration(left), note: c.stopMs != null ? 'Clock stopped' : 'to go', stopped: c.stopMs != null, laps }
+}
+
+/** Time of day at the track (24 h, h:mm:ss), from the feed's UTC offset; null without one. */
+export function trackTime(wallMs: number, utcOffsetHours: number | null | undefined): string | null {
+  if (utcOffsetHours == null) return null
+  const d = new Date(wallMs + utcOffsetHours * 3_600_000)
+  return `${d.getUTCHours()}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
+}
+
+/**
+ * How a last lap reads: 'class' when it set the class's fastest lap, 'pb'
+ * when it was the car's own best, else null. Timing screens' purple and
+ * green.
+ */
+export function lastLapMark(car: Pick<TowerCar, 'lastLapMs' | 'bestLapMs'>, classBestMs: number | null): 'class' | 'pb' | null {
+  if (car.lastLapMs == null || car.lastLapMs <= 0 || car.lastLapMs !== car.bestLapMs) return null
+  return car.lastLapMs === classBestMs ? 'class' : 'pb'
+}
+
+/**
+ * How a sector time reads, as a lap does: 'class' when it is the class's
+ * fastest in that sector, 'pb' when it is the car's own best there.
+ */
+export function sectorMark(ms: number | null | undefined, carBest: number | null | undefined,
+  classBest: number | null | undefined): 'class' | 'pb' | null {
+  if (ms == null || ms <= 0) return null
+  if (ms === classBest) return 'class'
+  return ms === carBest ? 'pb' : null
 }
 
 /** The class's fastest best lap, to mark in the tower. */

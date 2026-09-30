@@ -128,7 +128,62 @@
 }
 
 .timing-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
   margin-bottom: var(--space-4);
+}
+
+/* The session clock: the one big number on the page, time to go in tabular
+ * figures. A red-flag stop turns it error red and says so in words. */
+.timing-clock {
+  text-align: right;
+}
+
+.timing-clock p {
+  margin: 0;
+}
+
+.timing-clock-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.timing-clock-time {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.timing-clock-note {
+  color: var(--text-muted);
+}
+
+.timing-clock--stopped .timing-clock-time,
+.timing-clock--stopped .timing-clock-note {
+  color: var(--error);
+}
+
+.timing-clock-sub {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .timing-clock {
+    text-align: left;
+  }
+
+  .timing-clock-main {
+    justify-content: flex-start;
+  }
 }
 
 .timing-foot {
@@ -170,6 +225,45 @@
 .tower .band-feed {
   font-weight: 500;
   opacity: 0.8;
+}
+
+/* The class's best sectors ride on its band, in the band's own ink. */
+.tower .band-bests {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-4);
+  margin-left: var(--space-5);
+  font-weight: 500;
+  font-size: var(--text-xs);
+}
+
+.tower .band-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+/* The stint's laps would otherwise butt against the last sector time. */
+.tower--sectors td.tower-stint {
+  padding-left: var(--space-4);
+}
+
+/* A sector time left from the previous lap: the car has not run it again yet. */
+.tower-sector--old {
+  color: var(--text-muted);
+}
+
+.tower-sector--invalid {
+  text-decoration: line-through;
+  text-decoration-color: var(--error);
+}
+
+.tower-out-mark {
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  box-shadow: 0 0 0 1px var(--border-strong);
 }
 
 .tower-row {
@@ -231,13 +325,22 @@
   color: var(--text-muted);
 }
 
-/* Personal best on the last lap: weight only. Fastest in class: weight and
- * ink on the violet result tint — timing screens already read purple as
- * "fastest", so it borrows a convention rather than inventing one. The number
- * is the fact; "Fastest in class" is on hover and in the accessible name. */
+/* Timing screens' purple and green, borrowed rather than invented. Fastest
+ * in class (the best lap, and a last lap that set it): weight and ink on the
+ * violet result tint. A last lap that was the car's own best: weight on the
+ * green tint. The number is the fact; the words are on hover and in the
+ * accessible name. */
 .tower-pb {
   font-weight: 600;
   color: var(--ink);
+}
+
+.tower td.tower-pb {
+  background: var(--res-win);
+}
+
+.tower-row:hover td.tower-pb {
+  background: color-mix(in oklab, var(--res-win), var(--ink) 6%);
 }
 
 .tower-class-best {
@@ -272,6 +375,11 @@
 
 .tower-energy .muted {
   min-width: 5ch;
+  text-align: right;
+}
+
+.tower-pits .muted {
+  min-width: 4ch;
   text-align: right;
 }
 
@@ -551,6 +659,15 @@
 
   .timing {
     padding-inline: var(--space-3);
+  }
+}
+
+/* Sector columns take the room the team name had: with them the team goes a
+ * step earlier, so the tower still fits 1024px beside the energy column. */
+@media (max-width: 1100px) {
+  .tower--sectors .tower-team,
+  .tower--sectors thead th:nth-child(4) {
+    display: none;
   }
 }
 

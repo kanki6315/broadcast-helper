@@ -66,6 +66,63 @@ final class TimingFormatTests: XCTestCase {
         XCTAssertTrue(tower.classes[0].cars[0].running)
     }
 
+    // MARK: Session clock and lap marks
+
+    /// Road Atlanta practice 1 (2026-09-30): an hour from 16:25:00Z. At
+    /// 16:50:14Z Al Kamel's own tower said 34:46, under a red flag that did
+    /// not stop the clock.
+    private func tower(state: String = "LIVE", finished: Bool = false, stopMs: Int? = nil, stoppedMs: Int = 0,
+                       feedClockMs: Int? = nil, finalType: String = "BY_TIME", finalLaps: Int? = nil,
+                       currentLap: Int? = nil, startMs: Int? = 1_790_785_500_000) throws -> Tower {
+        let clock: [String: Any?] = ["finalType": finalType, "startMs": startMs, "finalMs": 3_600_000, "finalLaps": finalLaps,
+                                     "currentLap": currentLap, "stopMs": stopMs, "stoppedMs": stoppedMs, "utcOffsetHours": -4.0]
+        let session: [String: Any?] = ["championship": "IMSA Michelin Pilot Challenge", "event": nil, "name": "Practice 1",
+                                       "type": "FREE_PRACTICE", "flag": "RED", "running": true, "finished": finished,
+                                       "clock": clock.mapValues { $0 ?? NSNull() }]
+        let body: [String: Any?] = ["state": state, "eventId": 232, "eventName": nil, "session": session.mapValues { $0 ?? NSNull() },
+                                    "sessionDbId": 3183, "feedClockMs": feedClockMs, "classes": [], "matched": 0, "total": 0]
+        let data = try JSONSerialization.data(withJSONObject: body.mapValues { $0 ?? NSNull() })
+        return try JSONDecoder().decode(Tower.self, from: data)
+    }
+
+    func testTheClockCountsDownAsAlKamelsDid() throws {
+        let screenshot = 1_790_787_014_000
+        let reading = TimingFormat.sessionClock(try tower(), wallMs: screenshot)
+        XCTAssertEqual(reading, TimingFormat.ClockReading(time: "34:46", note: "to go", stopped: false, laps: nil))
+        XCTAssertEqual(TimingFormat.trackTime(wallMs: screenshot, utcOffsetHours: -4), "12:50:14")
+    }
+
+    func testAStoppedClockFreezesAtTheStop() throws {
+        let start = 1_790_785_500_000
+        let reading = TimingFormat.sessionClock(try tower(stopMs: start + 300_000, stoppedMs: 60_000), wallMs: start + 3_000_000)
+        XCTAssertEqual(reading?.time, "56:00", "4 min run: 5 to the stop, less 1 stopped before")
+        XCTAssertEqual(reading?.note, "Clock stopped")
+        XCTAssertEqual(reading?.stopped, true)
+    }
+
+    func testAReplayShowsTheClockAsItStood() throws {
+        let lastLap = 1_790_788_106_637 // the recording's newest lap end
+        let reading = TimingFormat.sessionClock(try tower(feedClockMs: lastLap), wallMs: 1_800_000_000_000)
+        XCTAssertEqual(reading?.time, "16:33", "past the scheduled end: the feed's own time, not 0:00")
+    }
+
+    func testBeforeTheStartLapRacesAndTheFinish() throws {
+        XCTAssertEqual(TimingFormat.sessionClock(try tower(startMs: nil), wallMs: 0)?.note, "Not started")
+        XCTAssertEqual(TimingFormat.sessionClock(try tower(startMs: nil), wallMs: 0)?.time, "1:00:00")
+        XCTAssertEqual(TimingFormat.sessionClock(try tower(finalType: "BY_LAPS", finalLaps: 30, currentLap: 12), wallMs: 0)?.time,
+                       "Lap 12 of 30")
+        XCTAssertNil(TimingFormat.sessionClock(try tower(finished: true), wallMs: 0), "the Finished chip says it")
+    }
+
+    func testLastLapMarks() throws {
+        let json = #"{"position":1,"carNumber":"7","inPit":false,"lastLapMs":97100,"bestLapMs":97100}"#
+        let car = try JSONDecoder().decode(TowerCar.self, from: Data(json.utf8))
+        XCTAssertEqual(TimingFormat.lastLapMark(car, classBest: 97_100), .classBest)
+        XCTAssertEqual(TimingFormat.lastLapMark(car, classBest: 96_000), .personalBest)
+        let slower = try JSONDecoder().decode(TowerCar.self, from: Data(#"{"position":1,"carNumber":"7","inPit":false,"lastLapMs":98000,"bestLapMs":97100}"#.utf8))
+        XCTAssertNil(TimingFormat.lastLapMark(slower, classBest: 97_100))
+    }
+
     // MARK: Analysis (gaps, sectors, pits)
 
     func testTheGapReadoutSaysLeaderGapOrLapsDown() {

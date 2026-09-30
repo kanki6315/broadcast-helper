@@ -71,6 +71,56 @@ enum TimingFormat {
         return live ? wallMs : clock
     }
 
+    /// What the header clock shows, as on the web (liveTiming.ts sessionClock).
+    struct ClockReading: Equatable {
+        let time: String
+        let note: String
+        let stopped: Bool
+        let laps: String?
+    }
+
+    /// Time-limited sessions count down: the time run is now (or the stop)
+    /// less the start and the time stopped. A lap-limited one shows the
+    /// leader's lap. nil for no clock, a MANUAL session or a finished one.
+    /// "Now" is the wall clock while the feed is live and the scheduled end
+    /// is still ahead, else the feed's own newest time, so a replay shows the
+    /// clock as it stood. A practice red flag does not stop the clock; only
+    /// the feed's isSessionRunning does.
+    static func sessionClock(_ tower: Tower, wallMs: Int) -> ClockReading? {
+        guard let session = tower.session, let c = session.clock, !session.finished else { return nil }
+        var laps: String?
+        if let final = c.finalLaps, c.finalType == "BY_LAPS" || c.finalType == "BY_LAPS_WITH_MAX_TIME" {
+            laps = c.currentLap.map { "Lap \(min($0, final)) of \(final)" } ?? "\(final) laps"
+        }
+        guard let finalMs = c.finalMs, c.finalType != "BY_LAPS", c.finalType != "MANUAL" else {
+            return laps.map { ClockReading(time: $0, note: "", stopped: false, laps: nil) }
+        }
+        guard let start = c.startMs else { return ClockReading(time: duration(finalMs), note: "Not started", stopped: false, laps: laps) }
+        let scheduledEnd = start + finalMs + c.stoppedMs
+        let now = c.stopMs ?? (tower.state == "LIVE" && wallMs < scheduledEnd ? wallMs
+            : feedNow(state: tower.state, finished: session.finished, feedClockMs: tower.feedClockMs, wallMs: wallMs))
+        guard let now else { return nil }
+        let left = max(0, finalMs - (now - start - c.stoppedMs))
+        return ClockReading(time: duration(left), note: c.stopMs != nil ? "Clock stopped" : "to go",
+                            stopped: c.stopMs != nil, laps: laps)
+    }
+
+    /// Time of day at the track (24 h, h:mm:ss) from the feed's UTC offset.
+    static func trackTime(wallMs: Int, utcOffsetHours: Double?) -> String? {
+        guard let offset = utcOffsetHours else { return nil }
+        let secs = ((wallMs / 1000 + Int(offset * 3600)) % 86_400 + 86_400) % 86_400
+        return "\(secs / 3600):\(pad((secs % 3600) / 60)):\(pad(secs % 60))"
+    }
+
+    enum LapMark { case classBest, personalBest }
+
+    /// How a last lap reads: it set the class's fastest lap, or it was the
+    /// car's own best — timing screens' purple and green.
+    static func lastLapMark(_ car: TowerCar, classBest: Int?) -> LapMark? {
+        guard let last = car.lastLapMs, last > 0, last == car.bestLapMs else { return nil }
+        return last == classBest ? .classBest : .personalBest
+    }
+
     /// The class's fastest best lap, to mark in the tower.
     static func classBest(_ cars: [TowerCar]) -> Int? {
         cars.compactMap(\.bestLapMs).filter { $0 > 0 }.min()

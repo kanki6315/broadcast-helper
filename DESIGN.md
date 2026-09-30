@@ -427,8 +427,18 @@ in a modal.
   900px), laps, gap, interval, last, best, and stint (laps plus a time
   counting up from the stint's start). **Fastest lap in class** sits on the
   violet `--res-top5` tint in bold ink. Timing screens already read purple as
-  "fastest", and the cell's title and screen-reader text say it. A personal
-  best on the last lap is weight only. A car in the pit carries an amber-tint
+  "fastest", and the cell's title and screen-reader text say it. The last
+  lap borrows the same convention: violet when it set the class's fastest
+  lap, the green `--res-win` tint in weight when it was the car's own best,
+  plain otherwise. A **Pits** column counts stops as Al Kamel's tower does
+  (and the Pits view), with the last stop's pit-lane time muted beside it.
+  With participant details on, **S1–S3** follow Best and fill in as each
+  sector is run, in the same purple and green; a time left from the
+  previous lap sits in muted ink, an invalid one is struck through in error
+  red. The class band carries the class's best sectors and their holders
+  plus the ideal lap. An out lap wears a quiet outlined `Out` mark. With
+  sectors, the team column drops below 1100px instead of 900px, so the
+  tower still fits 1024px beside Energy. A car in the pit carries an amber-tint
   `Pit` mark; a retired car stays in its place in muted ink with its status
   in words. Interval and last lap drop below 640px. An **Energy** column
   (IMSA telemetry) appears only once some car has a reading: the percentage
@@ -453,6 +463,11 @@ in a modal.
   the words are the fact. Admins edit rules inline in a `--surface` panel.
   Times are parsed as hours, h:mm or h:mm:ss, and an unreadable one is
   reported before anything is sent.
+- **Session clock**: the page's one big number, right of the title (below
+  it under 640px), in tabular figures: time to go, counted down in the
+  browser from the feed's status, or "Lap 12 of 30" for a lap-limited race.
+  A red flag freezes it in error red with "Clock stopped" in words. The time
+  of day at the track sits beneath it in muted xs, while the feed is live.
 - Feed state is always words ("Live", "Reconnecting · last known", "Off").
   The dot beside it only repeats them. When the feed is off or following
   another event, the tower is replaced by an empty state that says which and

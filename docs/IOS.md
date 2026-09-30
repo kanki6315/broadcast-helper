@@ -549,8 +549,15 @@ while their session is live (2 min once it is over), a car every 10 s while
 its sheet is open. Gaps, Sectors, Pits and Drive time share one session
 picker (`RecordedSessions`).
 
-- **Tower:** position, number and driver pinned; gap, interval, last, best
-  (class-fastest on the violet tint), stint laps and a time that ticks on the
+- **Session clock** (`SessionClockView`), right of the "Live timing" title:
+  time to go counted down on the device (`TimingFormat.sessionClock`, the
+  web's `sessionClock`), frozen in error red with "Clock stopped" while the
+  feed says the clock is stopped, or "Lap 12 of 30" for a lap-limited race;
+  the time of day at the track beneath while the feed is current.
+- **Tower:** position, number and driver pinned; gap, interval, last and best
+  in timing screens' purple and green (`TimingFormat.lastLapMark`: the
+  class's fastest on the violet tint, a last lap that was the car's own best
+  on the green tint), stint laps and a time that ticks on the
   feed's clock (`TimingFormat.feedNow`, so a replay stops counting), IMSA
   energy with laps left, and Pit or a status in words. Tap a row for the
   car.

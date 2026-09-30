@@ -607,7 +607,8 @@ export function PitsView({ session }: { session: SessionSummary }) {
         })}
       </table>
       <p className="timing-foot an-foot">
-        Pit-lane time is Al Kamel's pit stint, entry to exit. Penalty and safety-car stops are marked.
+        Stops count as on Al Kamel's tower: leaving the garage at the start is not one, and a stop a red flag
+        interrupts is one. Pit-lane time is entry to exit. Penalty and safety-car stops are marked.
       </p>
       {modal}
     </>
