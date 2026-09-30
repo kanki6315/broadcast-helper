@@ -145,6 +145,9 @@ pit-pass:
   imsa-telemetry:
     enabled: ${IMSA_TELEMETRY_ENABLED:false}
     app-url: ${IMSA_TELEMETRY_APP_URL:https://d3aqeo5txo0gzi.cloudfront.net/}
+    # Only these series send energy (WeatherTech's GTP), by series name or
+    # abbreviation: the connection runs only while the bound event is one of them.
+    series: ${IMSA_TELEMETRY_SERIES:IMSA WeatherTech SportsCar Championship,IWSC}
     channels: ${IMSA_TELEMETRY_CHANNELS:/telemetry/message,/telemetry/session}
     # A reading older than this shows as no energy rather than a stale one.
     stale-seconds: ${IMSA_TELEMETRY_STALE_SECONDS:15}

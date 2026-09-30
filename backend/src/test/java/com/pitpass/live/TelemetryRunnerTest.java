@@ -52,15 +52,21 @@ class TelemetryRunnerTest {
     }
 
     private ImsaTelemetryProperties props(String replayFile) {
-        return new ImsaTelemetryProperties(false, "https://example.invalid/", List.of("telemetry/message"), 15,
+        return new ImsaTelemetryProperties(false, "https://example.invalid/", List.of("IMSA WeatherTech SportsCar Championship"),
+                List.of("telemetry/message"), 15,
                 true, replayFile, 0);
     }
 
     private TelemetryRunner runner(ImsaTelemetryProperties props, TelemetryRunner.SourceFactory sources,
                                    AtomicReference<Long> session) {
+        return runner(props, sources, session, car -> null);
+    }
+
+    private TelemetryRunner runner(ImsaTelemetryProperties props, TelemetryRunner.SourceFactory sources,
+                                   AtomicReference<Long> session, java.util.function.Function<String, String> feedClassOf) {
         TelemetryRunner r = new TelemetryRunner(props, mapper, sources,
                 () -> new LiveRecorder(tmp.resolve("rec"), Duration.ofHours(1), (seg, key) -> segments.add(seg), "imsa-telemetry/"),
-                session::get, op -> written.add(op),
+                session::get, op -> written.add(op), feedClassOf,
                 List.of(Duration.ofMillis(50)), Duration.ofMinutes(1));
         runners.add(r);
         return r;
@@ -96,7 +102,7 @@ class TelemetryRunnerTest {
         assertEquals(TelemetryRunner.State.LIVE, status.state());
         assertEquals(frames.size(), status.messages());
         assertEquals(2, status.cars());
-        assertEquals(87.0, r.telemetry().energy("7", null, System.currentTimeMillis(), 15_000).energyPct());
+        assertEquals(87.0, r.telemetry().energy("7", null, null, System.currentTimeMillis(), 15_000).energyPct());
 
         r.ensure(false);
         assertEquals(TelemetryRunner.State.OFF, r.status().state());
@@ -118,7 +124,37 @@ class TelemetryRunnerTest {
         r.ensure(true);
         await(() -> r.status().messages() == 2);
         assertTrue(written.isEmpty());
-        assertEquals(88.0, r.telemetry().energy("7", null, System.currentTimeMillis(), 15_000).energyPct());
+        assertEquals(88.0, r.telemetry().energy("7", null, null, System.currentTimeMillis(), 15_000).energyPct());
+    }
+
+    @Test
+    void aCarOfAnotherSeriesSharingTheNumberStoresNoEnergy() throws Exception {
+        // IMSA still streams WeatherTech's #7 (GTP) while Al Kamel times Pilot Challenge, whose #7 is GS.
+        Path file = tmp.resolve("t2.imsa");
+        Files.writeString(file, "1\t" + TelemetryFixtures.data("x", cars(car("7", 90, 1, false), car("04", 70, 1, false))) + "\n"
+                + "2\t" + TelemetryFixtures.data("x", cars(car("7", 88, 2, false), car("04", 68, 2, false))) + "\n");
+        TelemetryRunner r = runner(props(file.toString()), () -> new ReplayTelemetrySource(file, 0, mapper),
+                new AtomicReference<>(3150L), car -> car.equals("7") ? "GS" : "GTP");
+        r.ensure(true);
+        await(() -> r.status().messages() == 2);
+        assertEquals(List.of(new AnalysisRows.EnergyLap(3150, "04", 1, 68.0, false)), written, "only the car whose class agrees");
+        assertEquals(1, r.status().classRejected());
+        assertNull(r.telemetry().energy("7", "GS", null, System.currentTimeMillis(), 15_000),
+                "nor is it shown on the GS car");
+        assertEquals(88.0, r.telemetry().energy("7", "GTP", null, System.currentTimeMillis(), 15_000).energyPct());
+    }
+
+    @Test
+    void offWithAReasonWhenTheSeriesSendsNoEnergy() {
+        TelemetryRunner r = runner(props("x"), () -> { throw new AssertionError("must not connect"); }, new AtomicReference<>(1L));
+        r.ensure(false, "The bound event's series sends no energy telemetry");
+        assertEquals(TelemetryRunner.State.OFF, r.status().state());
+        assertEquals("The bound event's series sends no energy telemetry", r.status().idleReason());
+        assertTrue(new ImsaTelemetryProperties(true, "", List.of("IMSA WeatherTech SportsCar Championship", "IWSC"), List.of(), 15,
+                false, "", 1).coversSeries("imsa weathertech sportscar championship", null));
+        assertTrue(new ImsaTelemetryProperties(true, "", List.of("IWSC"), List.of(), 15, false, "", 1).coversSeries("Renamed", "iwsc"));
+        assertTrue(!new ImsaTelemetryProperties(true, "", List.of("IWSC"), List.of(), 15, false, "", 1)
+                .coversSeries("IMSA Michelin Pilot Challenge", "IMPC"));
     }
 
     @Test

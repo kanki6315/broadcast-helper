@@ -134,7 +134,7 @@ public class LiveTimingPageService {
                 String shortName = driver != null ? driver.shortName() : feedDriver == null ? null : text(feedDriver, "shortName");
                 String rating = driver != null ? driver.rating() : feedDriver == null ? null : initial(text(feedDriver, "license"));
                 int[] best = bestFromDb.get(car.carNumber());
-                LiveTelemetry.CarEnergy energy = live.energy(car.carNumber(), s == null ? null : s.stintOpenLap());
+                LiveTelemetry.CarEnergy energy = live.energy(car.carNumber(), cls.feedClass(), s == null ? null : s.stintOpenLap());
                 cars.add(new TowerCar(car.position(), car.carNumber(), car.entryId(), car.teamName(), car.vehicle(),
                         car.manufacturer(), car.status(), car.laps(),
                         car.gapToLeaderMs(), car.gapToLeaderLaps(), car.intervalMs(), car.intervalLaps(),

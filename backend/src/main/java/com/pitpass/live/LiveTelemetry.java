@@ -29,8 +29,8 @@ final class LiveTelemetry {
     record Reading(CarReading car, long receivedAtMs) {
     }
 
-    /** Energy at the line after {@code lap}: the lap-crossing sample that is stored. */
-    record LapSample(String car, int lap, double energyPct, Boolean pitLane) {
+    /** Energy at the line after {@code lap}: the lap-crossing sample that is stored. className is IMSA's. */
+    record LapSample(String car, int lap, double energyPct, Boolean pitLane, String className) {
     }
 
     /** For the tower: energy now and, from this stint's laps, the average use per lap. */
@@ -59,7 +59,7 @@ final class LiveTelemetry {
             if (energy == null) {
                 continue;
             }
-            LapSample sample = new LapSample(car.number(), car.lapNumber() - 1, energy, car.pitLane());
+            LapSample sample = new LapSample(car.number(), car.lapNumber() - 1, energy, car.pitLane(), car.className());
             completed.add(sample);
             Deque<LapSample> kept = samples.computeIfAbsent(car.number(), k -> new ArrayDeque<>());
             synchronized (kept) {
@@ -89,19 +89,30 @@ final class LiveTelemetry {
 
     /**
      * The Al Kamel car's telemetry: its number exactly first (#04 is not #4),
-     * then without leading zeros only when that is unambiguous. Null energy
-     * when the last reading is older than staleMs.
+     * then without leading zeros only when that is unambiguous — and only when
+     * the reading's class agrees with the car's class in the Al Kamel feed, so
+     * another series' car sharing the number never lends it its energy. Null
+     * energy when the last reading is older than staleMs.
      */
-    CarEnergy energy(String alKamelNumber, Integer stintOpenLap, long nowMs, long staleMs) {
+    CarEnergy energy(String alKamelNumber, String feedClass, Integer stintOpenLap, long nowMs, long staleMs) {
         String key = resolve(alKamelNumber);
         if (key == null) {
             return null;
         }
         Reading r = latest.get(key);
+        if (r != null && !classAgrees(r.car().className(), feedClass)) {
+            return null;
+        }
         Double now = r != null && nowMs - r.receivedAtMs() <= staleMs ? r.car().energyPct() : null;
         Double avg = averageUse(key, stintOpenLap);
         Double left = now != null && avg != null && avg > 0 ? now / avg : null;
         return new CarEnergy(now, avg, left);
+    }
+
+    /** Either side unknown agrees: the guard can only refuse what it can see differ. */
+    static boolean classAgrees(String telemetryClass, String feedClass) {
+        return telemetryClass == null || telemetryClass.isBlank() || feedClass == null || feedClass.isBlank()
+                || LiveEventMatch.sameClass(telemetryClass, feedClass);
     }
 
     private String resolve(String number) {

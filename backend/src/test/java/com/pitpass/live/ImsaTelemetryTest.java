@@ -157,10 +157,10 @@ class ImsaTelemetryTest {
         LiveTelemetry t = new LiveTelemetry();
         assertTrue(feed(t, "7", 90.0, 10).isEmpty(), "the first reading has nothing to cross from");
         assertTrue(feed(t, "7", 89.1, 10).isEmpty(), "readings within a lap are not stored");
-        assertEquals(List.of(new LiveTelemetry.LapSample("7", 10, 88.0, false)), feed(t, "7", 88.0, 11),
+        assertEquals(List.of(new LiveTelemetry.LapSample("7", 10, 88.0, false, "GTP")), feed(t, "7", 88.0, 11),
                 "the first reading on lap 11 is the energy at the line after lap 10");
         assertTrue(feed(t, "7", 87.5, 11).isEmpty());
-        assertEquals(List.of(new LiveTelemetry.LapSample("7", 13, 83.0, false)), feed(t, "7", 83.0, 14),
+        assertEquals(List.of(new LiveTelemetry.LapSample("7", 13, 83.0, false, "GTP")), feed(t, "7", 83.0, 14),
                 "missed crossings are not invented: only the lap just completed");
     }
 
@@ -173,14 +173,14 @@ class ImsaTelemetryTest {
         feed(t, "04", 98, 4);   // after lap 3: 98 — a refill, a rise, not use
         feed(t, "04", 95, 5);   // after lap 4: 3 used
         feed(t, "04", 91, 6);   // after lap 5: 4 used
-        LiveTelemetry.CarEnergy stint = t.energy("04", 3, 0, 15_000);
+        LiveTelemetry.CarEnergy stint = t.energy("04", null, 3, 0, 15_000);
         assertEquals(91.0, stint.energyPct());
         assertEquals(3.5, stint.avgPerLapPct(), 1e-9, "only this stint's laps (from lap 3)");
         assertEquals(26.0, stint.lapsLeft(), 1e-9);
 
-        assertEquals((46 + 3 + 4) / 3.0, t.energy("04", null, 0, 15_000).avgPerLapPct(), 1e-9,
+        assertEquals((46 + 3 + 4) / 3.0, t.energy("04", null, null, 0, 15_000).avgPerLapPct(), 1e-9,
                 "the refill's rise is left out, not counted as negative use");
-        assertNull(t.energy("04", 3, 16_000, 15_000).energyPct(), "stale after 15 s");
+        assertNull(t.energy("04", null, 3, 16_000, 15_000).energyPct(), "stale after 15 s");
     }
 
     @Test
@@ -188,10 +188,10 @@ class ImsaTelemetryTest {
         LiveTelemetry t = new LiveTelemetry();
         feed(t, "04", 70, 1);
         feed(t, "4", 40, 1);
-        assertEquals(70.0, t.energy("04", null, 0, 15_000).energyPct());
-        assertEquals(40.0, t.energy("4", null, 0, 15_000).energyPct());
+        assertEquals(70.0, t.energy("04", null, null, 0, 15_000).energyPct());
+        assertEquals(40.0, t.energy("4", null, null, 0, 15_000).energyPct());
         LiveTelemetry only = new LiveTelemetry();
         feed(only, "023", 55, 1);
-        assertEquals(55.0, only.energy("23", null, 0, 15_000).energyPct(), "unambiguous without leading zeros");
+        assertEquals(55.0, only.energy("23", null, null, 0, 15_000).energyPct(), "unambiguous without leading zeros");
     }
 }

@@ -72,7 +72,7 @@ public class AnalysisWriter implements AnalysisRouter.Sink {
 
     private volatile DriverResolver resolver;
     private volatile Supplier<JsonNode> entrySource = () -> null;
-    private volatile Supplier<Long> boundEventId = () -> null;
+    private volatile Supplier<Long> filedEventId = () -> null;
     private volatile boolean stopping;
     private Thread thread;
 
@@ -90,11 +90,14 @@ public class AnalysisWriter implements AnalysisRouter.Sink {
         this.interval = interval;
     }
 
-    /** Where driver resolution reads the feed's entries and the bound event from; set by the service. */
-    void drivers(DriverResolver resolver, Supplier<JsonNode> entrySource, Supplier<Long> boundEventId) {
+    /**
+     * Where driver resolution reads the feed's entries from, and the event the
+     * current session is filed under (not merely bound: see LiveEventMatch).
+     */
+    void drivers(DriverResolver resolver, Supplier<JsonNode> entrySource, Supplier<Long> filedEventId) {
         this.resolver = resolver;
         this.entrySource = entrySource;
-        this.boundEventId = boundEventId;
+        this.filedEventId = filedEventId;
     }
 
     @Override
@@ -189,7 +192,7 @@ public class AnalysisWriter implements AnalysisRouter.Sink {
         }
         if (resolveSession != null && resolver != null) {
             try {
-                resolver.resolve(resolveSession, entrySource.get(), boundEventId.get());
+                resolver.resolve(resolveSession, entrySource.get(), filedEventId.get());
             } catch (RuntimeException e) {
                 log.warn("Live analysis: resolving drivers failed: {}", e.toString());
             }
@@ -248,12 +251,12 @@ public class AnalysisWriter implements AnalysisRouter.Sink {
 
     // ---- SQL -------------------------------------------------------------------------
 
-    // The event bound when the session was last seen wins; an unbound connection leaves it.
+    // event_id is never written here: a session is filed under an event only when
+    // that event's entry list matches the cars on track (LiveTimingService.fileSession).
     private static final String SESSION_UPSERT = """
-            INSERT INTO live_session (session_db_id, event_id, session_mongo_id, feed_event_db_id, name, type, session_date_ms)
-            VALUES (:s, :event, :mongo, :feedEvent, :name, :type, :date)
+            INSERT INTO live_session (session_db_id, session_mongo_id, feed_event_db_id, name, type, session_date_ms)
+            VALUES (:s, :mongo, :feedEvent, :name, :type, :date)
             ON CONFLICT (session_db_id) DO UPDATE SET
-                event_id = COALESCE(EXCLUDED.event_id, live_session.event_id),
                 session_mongo_id = EXCLUDED.session_mongo_id,
                 feed_event_db_id = EXCLUDED.feed_event_db_id,
                 name = EXCLUDED.name,
@@ -299,7 +302,6 @@ public class AnalysisWriter implements AnalysisRouter.Sink {
     private static SqlParameterSource session(SessionSeen seen) {
         var s = seen.session();
         return new MapSqlParameterSource("s", s.sessionDbId())
-                .addValue("event", s.eventId(), Types.BIGINT)
                 .addValue("mongo", s.mongoId(), Types.VARCHAR)
                 .addValue("feedEvent", s.feedEventDbId(), Types.BIGINT)
                 .addValue("name", s.name(), Types.VARCHAR)

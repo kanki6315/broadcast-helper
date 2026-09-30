@@ -37,7 +37,7 @@ class AnalysisRouterTest {
     private final LiveCarSummaries summaries = new LiveCarSummaries();
     private int capacity = Integer.MAX_VALUE;
     private final AnalysisRouter router = new AnalysisRouter(mapper, tree,
-            op -> ops.size() < capacity && ops.add(op), summaries, () -> 224L);
+            op -> ops.size() < capacity && ops.add(op), summaries);
 
     private void feed(String json) throws Exception {
         feed("", json);
@@ -76,7 +76,6 @@ class AnalysisRouterTest {
 
         SessionSeen seen = ops(SessionSeen.class).getFirst();
         assertEquals(SESSION, seen.session().sessionDbId());
-        assertEquals(224L, seen.session().eventId());
         assertEquals("RACE", seen.session().type());
         assertEquals(2, router.laps());
     }

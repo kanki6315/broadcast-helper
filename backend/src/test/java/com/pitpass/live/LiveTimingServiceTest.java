@@ -235,7 +235,7 @@ class LiveTimingServiceTest {
     }
 
     /** The live_timing row without Postgres; synchronized like the single UPDATE it stands in for. */
-    static final class MemoryStore extends LiveTimingStore {
+    static class MemoryStore extends LiveTimingStore {
         private boolean desired;
         private Long eventId;
         private String by;

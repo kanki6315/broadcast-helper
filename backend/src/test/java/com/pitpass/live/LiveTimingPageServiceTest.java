@@ -125,7 +125,7 @@ class LiveTimingPageServiceTest {
             }
 
             @Override
-            public LiveTelemetry.CarEnergy energy(String carNumber, Integer stintOpenLap) {
+            public LiveTelemetry.CarEnergy energy(String carNumber, String feedClass, Integer stintOpenLap) {
                 return "04".equals(carNumber) ? new LiveTelemetry.CarEnergy(42.0, 3.5, 12.0) : null;
             }
         };

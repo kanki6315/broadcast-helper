@@ -17,9 +17,13 @@ final class TelemetryFixtures {
     }
 
     static String car(String number, double energy, int lap, boolean pitLane) {
+        return car(number, energy, lap, pitLane, "GTP");
+    }
+
+    static String car(String number, double energy, int lap, boolean pitLane, String className) {
         return "{\"car_id\":\"c" + number + "\",\"speed\":251.3,\"throttle_percentage\":100,\"brake_percentage_front\":0,"
                 + "\"gear\":6,\"energy_remaining\":" + energy + ",\"regen\":0,\"is_recharging\":false,\"pit_lane\":" + pitLane
-                + ",\"is_jacked_up\":false,\"time\":1769000000,\"sIndex\":3,\"scoring\":{\"position\":1,\"class\":\"GTP\","
+                + ",\"is_jacked_up\":false,\"time\":1769000000,\"sIndex\":3,\"scoring\":{\"position\":1,\"class\":\"" + className + "\","
                 + "\"number\":\"" + number + "\",\"team\":\"Team " + number + "\",\"manufacturer\":\"Porsche\","
                 + "\"activeDriver\":\"Driver " + number + "\",\"lapNumber\":" + lap + "}}";
     }

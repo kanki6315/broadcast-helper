@@ -107,7 +107,7 @@ class AnalysisIngestTest {
                 null, (segment, key) -> segments.add(segment),
                 new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
                         Duration.ofSeconds(5), Duration.ofSeconds(10)),
-                writer, resolver, null);
+                writer, resolver, null, null);
         service.start();
         cleanup.add(service::stop);
 
@@ -186,7 +186,7 @@ class AnalysisIngestTest {
                 null, (segment, key) -> { },
                 new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
                         Duration.ofSeconds(5), Duration.ofSeconds(10)),
-                writer, null, null);
+                writer, null, null, null);
         service.start();
         cleanup.add(service::stop);
 
@@ -205,11 +205,118 @@ class AnalysisIngestTest {
     void energyLapsUpsert() throws Exception {
         AnalysisWriter writer = new AnalysisWriter(jdbc, mapper, 100, 500, Duration.ofMillis(20));
         cleanup.add(writer::stop);
-        writer.offer(new AnalysisRows.SessionSeen(new AnalysisRows.SessionInfo(session, null, null, "Race", "RACE", null, null)));
+        writer.offer(new AnalysisRows.SessionSeen(new AnalysisRows.SessionInfo(session, null, null, "Race", "RACE", null)));
         writer.offer(new AnalysisRows.EnergyLap(session, "04", 7, 81.5, false));
         writer.offer(new AnalysisRows.EnergyLap(session, "04", 7, 80.5, true)); // the same lap again: the later reading wins
         await(() -> count("live_energy_lap WHERE session_db_id = :s AND energy_pct < 81") == 1);
         assertEquals(0, writer.stats().failed());
+    }
+
+    /**
+     * The weekend case: two series on one feed, sharing car numbers. The
+     * session is filed only under the event whose entries match the cars on
+     * track by number and class; binding the other series files nothing and
+     * moves nothing; drivers follow the filed event; and IMSA energy runs
+     * only while the bound event's series sends it.
+     */
+    @Test
+    void aSessionIsFiledUnderTheEventItsCarsMatchAndEnergyFollowsTheSeries() throws Exception {
+        String u = java.util.UUID.randomUUID().toString().substring(0, 8);
+        String wtName = "Filing WT " + u;
+        long wtSeries = id("INSERT INTO series (name) VALUES (:n) RETURNING id", wtName);
+        long pcSeries = id("INSERT INTO series (name) VALUES (:n) RETURNING id", "Filing PC " + u);
+        long wtEvent = event(wtSeries, "WT " + u);
+        long pcEvent = event(pcSeries, "PC " + u);
+        long wt04 = db.sql("INSERT INTO entry (event_id, car_number, class_name, team_name) VALUES (:e, '04', 'GTD', 'WT Team') RETURNING id")
+                .param("e", wtEvent).query(Long.class).single();
+        db.sql("INSERT INTO entry (event_id, car_number, class_name, team_name) VALUES (:e, '04', 'TCR', 'PC Team')")
+                .param("e", pcEvent).update();
+        long ann = db.sql("INSERT INTO driver (first_name, surname) VALUES (:f, 'Driver') RETURNING id")
+                .param("f", "Ann" + u).query(Long.class).single();
+        db.sql("INSERT INTO driver_assignment (entry_id, driver_id, seat_order, rating) VALUES (:e, :d, 1, 'S')")
+                .param("e", wt04).param("d", ann).update();
+        cleanup.add(() -> {
+            db.sql("DELETE FROM live_session WHERE session_db_id = :s").param("s", session).update();
+            db.sql("DELETE FROM driver_assignment WHERE driver_id = :d").param("d", ann).update();
+            db.sql("DELETE FROM event WHERE id IN (:a, :b)").param("a", wtEvent).param("b", pcEvent).update();
+            db.sql("DELETE FROM season WHERE series_id IN (:a, :b)").param("a", wtSeries).param("b", pcSeries).update();
+            db.sql("DELETE FROM series WHERE id IN (:a, :b)").param("a", wtSeries).param("b", pcSeries).update();
+            db.sql("DELETE FROM driver WHERE id = :d").param("d", ann).update();
+        });
+
+        // IMSA telemetry for #04 in GTD, lap 1 then lap 2: one lap-crossing sample.
+        Path telemetry = recordings.resolve("t.imsa");
+        java.nio.file.Files.writeString(telemetry,
+                "1\t" + TelemetryFixtures.data("x", TelemetryFixtures.cars(TelemetryFixtures.car("04", 80, 1, false, "GTD"))) + "\n"
+                + "2\t" + TelemetryFixtures.data("x", TelemetryFixtures.cars(TelemetryFixtures.car("04", 77, 2, false, "GTD"))) + "\n");
+
+        AksReplayServer server = new AksReplayServer(feed(), 0, 20).start();
+        cleanup.add(server);
+        AnalysisWriter writer = new AnalysisWriter(jdbc, mapper, 1_000, 500, Duration.ofMillis(50));
+        cleanup.add(writer::stop);
+        LiveTimingStore real = new LiveTimingStore(db);
+        LiveTimingServiceTest.MemoryStore store = new LiveTimingServiceTest.MemoryStore() {
+            @Override
+            public boolean fileSession(long sessionDbId, long eventId) {
+                return real.fileSession(sessionDbId, eventId);
+            }
+
+            @Override
+            public java.util.Optional<Series> seriesOf(long eventId) {
+                return real.seriesOf(eventId);
+            }
+        };
+        AlKamelV2Properties props = new AlKamelV2Properties("127.0.0.1", server.port(), "u", "p", false, false,
+                "Pit Pass test", List.of("timing.session.info", "timing.session.entry"), 1 << 10, 2, 1,
+                new AlKamelV2Properties.Recording(false, recordings.toString(), "", 10, 64),
+                new AlKamelV2Properties.Replay("", 1.0), new AlKamelV2Properties.Analysis(true, 1 << 20));
+        ImsaTelemetryProperties telemetryProps = new ImsaTelemetryProperties(false, "https://example.invalid/",
+                List.of(wtName), List.of("telemetry/message"), 15, false, telemetry.toString(), 0);
+        LiveTimingService service = new LiveTimingService(props, store, mapper, null, (segment, key) -> { },
+                new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
+                        Duration.ofSeconds(5), Duration.ofSeconds(10)),
+                writer, resolver, telemetryProps, new LiveEntryMatcher(db));
+        service.start();
+        cleanup.add(service::stop);
+
+        // Bound to the Pilot Challenge event while WeatherTech's cars run: recorded, filed nowhere, no energy.
+        service.request(true, pcEvent, "t");
+        await(() -> count("live_lap WHERE session_db_id = :s") >= 4 && writer.stats().queued() == 0);
+        Thread.sleep(200);
+        assertNull(filedUnder(), "PC's #04 is TCR; the car on track is GTD");
+        assertEquals(TelemetryRunner.State.OFF, service.status().telemetry().state());
+        assertEquals("The bound event's series sends no energy telemetry", service.status().telemetry().idleReason());
+
+        // Rebind to the WeatherTech event: it matches, so the session is filed there at once,
+        // its drivers are matched to that crew, and energy starts.
+        service.request(true, wtEvent, "t");
+        await(() -> Long.valueOf(wtEvent).equals(filedUnder()));
+        await(() -> Long.valueOf(ann).equals(db.sql("""
+                SELECT driver_id FROM live_driver WHERE session_db_id = :s AND car_number = '04' AND driver_order = 1
+                """).param("s", session).query((rs, i) -> rs.getObject("driver_id", Long.class)).optional().orElse(null)));
+        await(() -> count("live_energy_lap WHERE session_db_id = :s AND car_number = '04' AND lap_number = 1") == 1);
+
+        // Binding the other series again changes nothing about what this session is.
+        service.request(true, pcEvent, "t");
+        await(() -> service.status().telemetry().state() == TelemetryRunner.State.OFF);
+        Thread.sleep(200);
+        assertEquals(wtEvent, filedUnder());
+    }
+
+    private Long filedUnder() {
+        return db.sql("SELECT event_id FROM live_session WHERE session_db_id = :s").param("s", session)
+                .query((rs, i) -> rs.getObject("event_id", Long.class)).optional().orElse(null);
+    }
+
+    private long id(String sql, String name) {
+        return db.sql(sql).param("n", name).query(Long.class).single();
+    }
+
+    private long event(long seriesId, String name) {
+        long season = db.sql("INSERT INTO season (series_id, year) VALUES (:s, 2099) RETURNING id")
+                .param("s", seriesId).query(Long.class).single();
+        return db.sql("INSERT INTO event (season_id, name, round_ordinal) VALUES (:s, :n, 1) RETURNING id")
+                .param("s", season).param("n", name).query(Long.class).single();
     }
 
     private long count(String fromWhere) {

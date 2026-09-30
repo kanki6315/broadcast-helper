@@ -40,7 +40,7 @@ class DaytonaSnapshotTest {
                 }
             }
             return true; // retained by nobody: this test is about throughput and framing
-        }, new LiveCarSummaries(), () -> null);
+        }, new LiveCarSummaries());
         router.frame("", "", new java.io.ByteArrayInputStream(
                 AnalysisFixtures.info(AnalysisFixtures.SESSION, "Race").getBytes()));
 
