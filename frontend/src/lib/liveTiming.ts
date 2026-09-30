@@ -87,6 +87,8 @@ export interface TowerCar {
   idealMs: number | null
   /** Its place in its class on the starting grid, in a race; null off the grid. */
   startPosition: number | null
+  /** Best speed trap of the session, in the tower's speedUnit. */
+  topSpeed: number | null
 }
 
 /** A sector's newest time. currentLap false = the previous lap's, until the car runs that sector again. */
@@ -122,6 +124,8 @@ export interface Tower {
   classes: TowerClass[]
   matched: number
   total: number
+  /** "mph" or "km/h", from the feed's unit of measure; null before the feed says. */
+  speedUnit: string | null
 }
 
 export interface LapRow {

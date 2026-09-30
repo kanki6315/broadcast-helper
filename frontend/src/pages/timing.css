@@ -243,6 +243,55 @@
   font-weight: 700;
 }
 
+/* The optional-columns disclosure: right-aligned above the tower, its
+ * checkboxes in a small raised panel. */
+.tower-columns {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.tower-columns summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 1px var(--border);
+  list-style: none;
+}
+
+.tower-columns summary::-webkit-details-marker {
+  display: none;
+}
+
+.tower-columns[open] summary {
+  color: var(--ink);
+}
+
+.tower-columns fieldset {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 3;
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.tower-columns label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+  color: var(--text);
+}
+
 /* The stint's laps would otherwise butt against the last sector time. */
 .tower--sectors td.tower-stint {
   padding-left: var(--space-4);

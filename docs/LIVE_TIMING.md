@@ -378,6 +378,10 @@ client to count up from.
     channel's own count. **Unverified until a recording holds the channel:**
     that `lastSectors` keeps each sector's newest time rather than clearing at
     the line, and that `currentSector` counts from 1.
+  - `topSpeed` is the car's best speed trap of the session (`max(top_speed)`
+    over its recorded laps, invalid laps included); the tower's `speedUnit`
+    is "mph" or "km/h" from `session.info.unitOfMeasure` (US / METRIC).
+    Road Atlanta's feed was US: 151.3 is mph.
   - `startPosition` is the car's place in its class at the start, in a race
     only: `timing.session.startingGrid` is overall, so it is ranked among the
     class's cars on the grid as the tower groups them. The standings'

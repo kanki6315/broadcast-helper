@@ -74,9 +74,10 @@ class LiveTimingPageServiceTest {
         for (int lap = 1; lap <= 3; lap++) {
             db.sql("""
                     INSERT INTO live_lap (session_db_id, car_number, lap_number, driver_order, start_time_ms, lap_time_ms,
-                                          is_valid, sector_ms, sector_flags)
-                    VALUES (:s, '04', :lap, 1, :start, :time, :valid, '{30000,31000,32000}', '{GREEN,GREEN,YELLOW}')
+                                          is_valid, sector_ms, sector_flags, top_speed)
+                    VALUES (:s, '04', :lap, 1, :start, :time, :valid, '{30000,31000,32000}', '{GREEN,GREEN,YELLOW}', :speed)
                     """)
+                    .param("speed", 250f + lap)
                     .param("s", session).param("lap", lap).param("start", T0 + (lap - 1) * 100_000L)
                     .param("time", 100_000 - lap).param("valid", lap != 3).update();
         }
@@ -192,6 +193,8 @@ class LiveTimingPageServiceTest {
                 gtd.bestSectors());
         assertEquals(60_000L, gtd.idealMs());
         assertNull(first.startPosition(), "not a race: no places gained");
+        assertEquals(253.0, first.topSpeed(), "the best trap counts on an invalid lap too");
+        assertNull(second.topSpeed());
     }
 
     @Test

@@ -14,13 +14,13 @@ const assert = require('node:assert/strict');
   const now = Date.now();
   const car = (position, carNumber, extra={}) => ({position,carNumber,entryId:100+position,teamName:`Team ${carNumber}`,vehicle:null,manufacturer:null,
    status:'CLASSIFIED',laps:50,gapToLeaderMs:null,gapToLeaderLaps:null,intervalMs:null,intervalLaps:null,driverOrder:1,driverName:`Driver ${carNumber}`,
-   driverShortName:null,driverRating:'G',lastLap:50,lastLapMs:98_000,bestLap:12,bestLapMs:97_500,inPit:false,stintStartMs:now-30*60_000,stintLaps:18,energyPct:null,energyLapsLeft:null,pitStops:0,lastPitMs:null,trackStatus:null,currentSector:null,sectors:null,bestSectorMs:null,idealMs:null,startPosition:null,...extra});
+   driverShortName:null,driverRating:'G',lastLap:50,lastLapMs:98_000,bestLap:12,bestLapMs:97_500,inPit:false,stintStartMs:now-30*60_000,stintLaps:18,energyPct:null,energyLapsLeft:null,pitStops:0,lastPitMs:null,trackStatus:null,currentSector:null,sectors:null,bestSectorMs:null,idealMs:null,startPosition:null,topSpeed:null,...extra});
   const sec = (ms, currentLap=true, valid=true) => ({ms,valid,currentLap});
   const session = {championship:'IMSA WeatherTech SportsCar Championship',event:'Petit Le Mans',name:'Race',type:'RACE',flag:'FULL_YELLOW',running:true,finished:false,
    clock:{finalType:'BY_TIME',startMs:now-10*60_000,finalMs:2*3_600_000,finalLaps:null,currentLap:null,stopMs:null,stoppedMs:60_000,utcOffsetHours:-4}};
-  let tower = {state:'LIVE',eventId:22,eventName:'Petit Le Mans',session,sessionDbId:3150,feedClockMs:now-20_000,matched:4,total:5,classes:[
-   {className:'GTP',feedClass:'GTP',color:'#1a1a1a',bestSectors:[{ms:31_900,car:'31'},{ms:33_000,car:'7'},{ms:32_700,car:'31'}],idealMs:97_600,cars:[car(1,'7',{startPosition:3,energyPct:62.4,energyLapsLeft:9.6,pitStops:2,lastPitMs:65_000,
-    trackStatus:'TRACK',currentSector:3,sectors:[sec(32_000),sec(33_000),sec(32_900,false)],bestSectorMs:[32_000,33_000,32_800],idealMs:97_800}),car(2,'31',{startPosition:1,gapToLeaderMs:4200,intervalMs:4200,lastLapMs:97_100,bestLapMs:97_100,inPit:true,trackStatus:'BOX',currentSector:1,
+  let tower = {state:'LIVE',eventId:22,eventName:'Petit Le Mans',session,sessionDbId:3150,feedClockMs:now-20_000,matched:4,total:5,speedUnit:'mph',classes:[
+   {className:'GTP',feedClass:'GTP',color:'#1a1a1a',bestSectors:[{ms:31_900,car:'31'},{ms:33_000,car:'7'},{ms:32_700,car:'31'}],idealMs:97_600,cars:[car(1,'7',{startPosition:3,topSpeed:151.3,energyPct:62.4,energyLapsLeft:9.6,pitStops:2,lastPitMs:65_000,
+    trackStatus:'TRACK',currentSector:3,sectors:[sec(32_000),sec(33_000),sec(32_900,false)],bestSectorMs:[32_000,33_000,32_800],idealMs:97_800}),car(2,'31',{startPosition:1,topSpeed:150.2,gapToLeaderMs:4200,intervalMs:4200,lastLapMs:97_100,bestLapMs:97_100,inPit:true,trackStatus:'BOX',currentSector:1,
     sectors:[sec(31_900,false),sec(33_100,false,false),null],bestSectorMs:[31_900,33_050,32_700]})]},
    {className:'GTD PRO',feedClass:'GTDPRO',color:'#e30d0d',bestSectors:[],idealMs:null,cars:[car(1,'04',{lastLapMs:105_000,bestLapMs:105_000,trackStatus:'OUT_LAP'}),car(2,'4',{gapToLeaderLaps:1,intervalLaps:1,bestLapMs:104_000,entryId:null}),
     car(3,'23',{status:'RETIRED',stintStartMs:null,stintLaps:null})]}]};
@@ -132,6 +132,24 @@ const assert = require('node:assert/strict');
   await page.setViewportSize({width:1024,height:900});
   assert.equal(await page.evaluate(() => document.body.scrollWidth > document.documentElement.clientWidth), false, 'the tower with sectors, pits and energy fits 1024px');
   await page.setViewportSize({width:1280,height:900});
+
+  // Optional columns: top speed is opt-in, the rest can be hidden; only columns with data are offered.
+  assert.equal(await towerTable.locator('thead th.tower-speed').count(), 0, 'top speed starts hidden');
+  await page.locator('.tower-columns summary').click();
+  const choice = page.locator('.tower-columns fieldset');
+  assert.deepEqual(await choice.locator('label').allInnerTexts(), ['Sectors','Top speed','Pits','Energy']);
+  await choice.getByLabel('Top speed').check();
+  assert.equal(await towerTable.locator('thead th.tower-speed').innerText(), 'Top');
+  assert.equal(await towerTable.locator('thead th.tower-speed').getAttribute('title'), 'Best speed trap of the session (mph)');
+  assert.match(await towerTable.locator('.tower-row').nth(0).locator('td.tower-speed').getAttribute('class'), /tower-class-best/);
+  assert.match(await towerTable.locator('.tower-row').nth(1).locator('td.tower-speed').innerText(), /^150\.2\s+mph$/);
+  await choice.getByLabel('Sectors').uncheck();
+  assert.equal(await towerTable.locator('thead th.tower-sector').count(), 0);
+  assert.equal(await page.evaluate(() => localStorage.getItem('pitpass.timing.columns')),
+    JSON.stringify({sectors:false,topSpeed:true,pits:true,energy:true}), 'remembered in this browser');
+  await choice.getByLabel('Sectors').check();
+  await choice.getByLabel('Top speed').uncheck();
+  await page.locator('.tower-columns summary').click();
 
   // Places gained in class since the start, and the field at a glance.
   assert.match(await towerTable.locator('.tower-row').nth(0).locator('.tower-pos').innerText(), /^1\s*▲2/);

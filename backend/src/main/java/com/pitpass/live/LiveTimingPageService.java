@@ -36,10 +36,12 @@ public class LiveTimingPageService {
      * feedClockMs is the newest time the feed itself has reported (the last
      * lap's end): what a stint's running time counts up to when the session is
      * a replay or over. It moves only when a lap completes, as the lap fields
-     * do, so it costs the ETag nothing.
+     * do, so it costs the ETag nothing. speedUnit is "mph" or "km/h", from the
+     * feed's unitOfMeasure (US or METRIC), for topSpeed.
      */
     public record Tower(State state, Long eventId, String eventName, LiveTimingService.Session session,
-                        Long sessionDbId, Long feedClockMs, List<TowerClass> classes, int matched, int total) {
+                        Long sessionDbId, Long feedClockMs, List<TowerClass> classes, int matched, int total,
+                        String speedUnit) {
     }
 
     /**
@@ -67,6 +69,8 @@ public class LiveTimingPageService {
      * PIT stint says so (a red flag's pit-lane stints arrive only once
      * closed); currentSector; sectors as they are run; the car's best sectors
      * and their sum, idealMs.
+     * topSpeed is the car's best speed trap of the session, from the laps
+     * recorded (in the tower's speedUnit).
      * startPosition is the car's place in its class on the starting grid, in
      * a race only (the feed's grid is overall; ranked here within the class
      * as the tower has it), for places gained. Null off the grid.
@@ -79,7 +83,7 @@ public class LiveTimingPageService {
                            boolean inPit, Long stintStartMs, Integer stintLaps, Double energyPct,
                            Double energyLapsLeft, Integer pitStops, Long lastPitMs,
                            String trackStatus, Integer currentSector, List<LiveParticipantDetails.SectorTime> sectors,
-                           List<Integer> bestSectorMs, Long idealMs, Integer startPosition) {
+                           List<Integer> bestSectorMs, Long idealMs, Integer startPosition, Double topSpeed) {
     }
 
     public record SessionSummary(long sessionDbId, Long eventId, String name, String type, Long dateMs,
@@ -141,6 +145,7 @@ public class LiveTimingPageService {
         Map<String, String> colors = order.eventId() == null ? Map.of() : classColors(order.eventId());
         JsonNode details = live.state(AlKamelV2Properties.PARTICIPANT_DETAILS_CHANNEL);
         Map<String, Integer> grid = gridPositions(live.state("timing.session.startingGrid"));
+        Map<String, Double> topSpeeds = session == null ? Map.of() : topSpeeds(session);
         int sectorCount = LiveParticipantDetails.sectorCount(details);
         boolean race = order.session() != null && "RACE".equalsIgnoreCase(order.session().type());
         Map<String, LiveAnalysis.PitCar> pits = session == null ? Map.of()
@@ -189,16 +194,32 @@ public class LiveTimingPageService {
                         session == null ? (d == null ? null : d.pitStops()) : pit == null ? 0 : pit.stops().size(), lastPitMs,
                         d == null ? null : d.trackStatus(), d == null ? null : d.currentSector(),
                         d == null ? null : d.sectors(), d == null ? null : d.bestSectorMs(),
-                        d == null ? null : d.idealMs(), classStart.get(car.carNumber())));
+                        d == null ? null : d.idealMs(), classStart.get(car.carNumber()), topSpeeds.get(car.carNumber())));
             }
             List<LiveParticipantDetails.ClassSector> bests = detailByCar.isEmpty() ? List.of()
                     : LiveParticipantDetails.classBests(cars.stream().map(TowerCar::carNumber).toList(), detailByCar::get, sectorCount);
             classes.add(new TowerClass(cls.className(), cls.feedClass(),
                     colors.get(cls.className().trim().toLowerCase()), cars, bests, LiveParticipantDetails.idealLap(bests)));
         }
+        JsonNode info = live.state("timing.session.info");
+        String unit = info == null || !info.hasNonNull("unitOfMeasure") ? null
+                : "US".equalsIgnoreCase(info.path("unitOfMeasure").asText()) ? "mph" : "km/h";
         return new Tower(order.state(), order.eventId(), order.eventName(), order.session(), session,
                 session == null ? null : latestFeedTime(session), classes,
-                order.classification().matched(), order.classification().total());
+                order.classification().matched(), order.classification().total(), unit);
+    }
+
+    /** Each car's best speed trap of the session. A speed is a speed on an invalid lap too. */
+    private Map<String, Double> topSpeeds(long session) {
+        Map<String, Double> out = new HashMap<>();
+        db.sql("""
+                SELECT car_number, max(top_speed) AS best FROM live_lap
+                WHERE session_db_id = :s AND top_speed > 0 GROUP BY car_number
+                """)
+                .param("s", session)
+                .query((rs, i) -> out.put(rs.getString("car_number"), rs.getDouble("best")))
+                .list();
+        return out;
     }
 
     /** The feed's starting grid: car number → overall grid position. */
