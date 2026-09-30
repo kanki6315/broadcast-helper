@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pitpass-parser"
-version = "1.0.0"
+version = "1.0.1"
 description = "IMSA/PACCA entry-list, points, starting-grid, and team-sheet PDF parsers (pdfplumber sidecars)"
 requires-python = ">=3.10"
 dependencies = ["pdfplumber>=0.11"]
