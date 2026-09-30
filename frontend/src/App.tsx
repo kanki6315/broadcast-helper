@@ -21,6 +21,7 @@ import ImportsPage from './pages/ImportsPage'
 import LogosPage from './pages/LogosPage'
 import SeriesPage from './pages/SeriesPage'
 import SheetPage from './pages/SheetPage'
+import TimingPage from './pages/TimingPage'
 import TeamsPage from './pages/TeamsPage'
 import UsersPage from './pages/UsersPage'
 import SessionsPage from './pages/SessionsPage'
@@ -29,6 +30,12 @@ import SessionsPage from './pages/SessionsPage'
 function SheetRoute() {
   const { eventId } = useParams()
   return <SheetPage eventId={Number(eventId)} />
+}
+
+// Live timing, chrome-less like the sheet: it sits on a second screen in the booth.
+function TimingRoute() {
+  const { eventId } = useParams()
+  return <TimingPage eventId={Number(eventId)} />
 }
 
 export default function App() {
@@ -44,6 +51,7 @@ export default function App() {
         <InfoModalProvider>
           <Routes>
             <Route path="/sheet/:eventId" element={<SheetRoute />} />
+            <Route path="/timing/:eventId" element={<TimingRoute />} />
             <Route element={<Layout />}>
               <Route path="/" element={<SeriesDirectoryPage />} />
               <Route path="/seasons/:seasonId" element={<SeasonLayout />}>

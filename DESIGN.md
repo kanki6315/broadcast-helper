@@ -407,6 +407,52 @@ block forces the light token values on the `.sheet` scope, so Print/Save-PDF
 emits the compact US-Letter deliverable from either theme. Manufacturer
 wordmark logos sit on a small white chip in dark mode only.
 
+### Live Timing Page (`frontend/src/pages/TimingPage.tsx`, `timing.css`)
+The timing tower itself (`/timing/:eventId`), chrome-less like the sheet
+because it lives on a second screen in the booth. Two views on a `.seg`
+tablist (URL `?view=drive`): **Tower** and **Drive time**. It only reads:
+connecting the feed stays on the iPad, so there is no connect control here.
+
+- **Tower**: one `.grid-table` with a class band per class (the series'
+  `class_style` colour, computed ink, name always printed). It runs tighter
+  than the standard grid (3px × 8px cells), the way the Stats table earns its
+  density, because a tower is one line per car. Columns: position, car
+  number (a button opening the car panel), current driver with a muted
+  rating letter, team (shortened to 16ch below 1200px, dropped below
+  900px), laps, gap, interval, last, best, and stint (laps plus a time
+  counting up from the stint's start). **Fastest lap in class** sits on the
+  violet `--res-top5` tint in bold ink. Timing screens already read purple as
+  "fastest", and the cell's title and screen-reader text say it. A personal
+  best on the last lap is weight only. A car in the pit carries an amber-tint
+  `Pit` mark; a retired car stays in its place in muted ink with its status
+  in words. Interval and last lap drop below 640px. An **Energy** column
+  (IMSA telemetry) appears only once some car has a reading: the percentage
+  and a muted "~9 L" projection of laps left at the stint's average use.
+  With it the tower runs 6px cell padding and 12ch team names below 1200px,
+  so it still fits 1024px. The stint clock counts on
+  the feed's own clock (`feedClockMs`), so a replay or a finished session
+  stops instead of counting against today.
+- **Car panel** (`LiveCarModal`, `.lc`): a native `<dialog>` like the
+  starting-grid modal, the only thing on the page that scrolls inside
+  itself. Laps are **newest first** (live, the lap that matters is the one
+  just done), with sectors, a dotted amber underline for a sector run under a
+  flag (flag name on hover), pit in/out and track limits as words, and an
+  invalid lap struck through in error red. Stints list driver, type, lap
+  range, start, length and the driver's track-time total. Drivers are named
+  by surname, never the feed's three-letter code.
+- **Drive time**: class bands, then crews as units (one divider per car).
+  Each driver has their time, a 120px meter (share of the maximum; an ink
+  tick at the minimum) and a status **in words**: "Over by 5:00" in error
+  red, "30:00 to go", "OK · 1:00:00 left" in success green, or a muted "No
+  rule". An "In car" tag marks the current driver. The meter is shape only;
+  the words are the fact. Admins edit rules inline in a `--surface` panel.
+  Times are parsed as hours, h:mm or h:mm:ss, and an unreadable one is
+  reported before anything is sent.
+- Feed state is always words ("Live", "Reconnecting · last known", "Off").
+  The dot beside it only repeats them. When the feed is off or following
+  another event, the tower is replaced by an empty state that says which and
+  links there.
+
 ### Buttons
 - **Shape:** `--radius-md` (6px), 6px 14px padding, label type.
 - **Primary:** solid amber, `--on-accent` ink; hover mixes 12% ink into the

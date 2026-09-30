@@ -82,7 +82,7 @@ class LiveClassificationServiceTest {
         entry(other, "500", "GTD PRO", "Somebody Else");
 
         store.request(true, bound, "admin@example.test");
-        var response = new LiveClassificationService(db, liveWith(FEED)).current();
+        var response = new LiveClassificationService(db, liveWith(FEED), new LiveEntryMatcher(db)).current();
 
         assertEquals(bound, response.eventId());
         assertEquals("Bound " + suffix, response.eventName());
@@ -140,7 +140,7 @@ class LiveClassificationServiceTest {
                 """).param("c", champ).param("nasr", "Felipe Nasr " + suffix).param("helm", "Tijmen Helm " + suffix).update();
 
         store.request(true, bound, "admin@example.test");
-        var service = new LiveClassificationService(db, liveWith(FEED));
+        var service = new LiveClassificationService(db, liveWith(FEED), new LiveEntryMatcher(db));
         var response = service.championship(champ);
 
         assertEquals("DRIVERS", response.kind());
@@ -180,7 +180,7 @@ class LiveClassificationServiceTest {
     void withNoEventBoundThereIsNothingToScore() throws Exception {
         // The local row may carry a binding from real use; rolled back with the test.
         db.sql("UPDATE live_timing SET event_id = NULL").update();
-        var response = new LiveClassificationService(db, liveWith(FEED)).current();
+        var response = new LiveClassificationService(db, liveWith(FEED), new LiveEntryMatcher(db)).current();
         assertEquals(null, response.eventId());
         assertTrue(response.classification().classes().isEmpty());
     }

@@ -42,6 +42,7 @@ final class LiveRecorder implements Closeable {
     private final Path directory;
     private final Duration segmentLength;
     private final Sink sink;
+    private final String keyPrefix;
     private final String connectionStamp = STAMP.format(Instant.now());
 
     private OutputStream out;
@@ -52,12 +53,44 @@ final class LiveRecorder implements Closeable {
     private long lastFlushMs;
 
     LiveRecorder(Path directory, Duration segmentLength, Sink sink) {
+        this(directory, segmentLength, sink, "aks-v2/");
+    }
+
+    /** keyPrefix: where segments land in the bucket ("aks-v2/", "imsa-telemetry/"). */
+    LiveRecorder(Path directory, Duration segmentLength, Sink sink, String keyPrefix) {
         this.directory = directory;
         this.segmentLength = segmentLength;
         this.sink = sink;
+        this.keyPrefix = keyPrefix;
     }
 
     synchronized void write(long epochMs, byte[] line) {
+        begin(epochMs);
+        append(line, 0, line.length);
+        end(epochMs);
+    }
+
+    /**
+     * A line written as it streams in, so a 70 MB snapshot line is never held
+     * whole. Only the reader thread writes, one line at a time; a segment
+     * rolls over only between lines.
+     */
+    AksLineReader.Tee line(long epochMs) {
+        begin(epochMs);
+        return new AksLineReader.Tee() {
+            @Override
+            public void write(byte[] bytes, int offset, int length) {
+                append(bytes, offset, length);
+            }
+
+            @Override
+            public void end() {
+                LiveRecorder.this.end(epochMs);
+            }
+        };
+    }
+
+    private synchronized void begin(long epochMs) {
         if (failed) {
             return;
         }
@@ -70,7 +103,27 @@ final class LiveRecorder implements Closeable {
             }
             out.write(Long.toString(epochMs).getBytes(StandardCharsets.US_ASCII));
             out.write('\t');
-            out.write(line);
+        } catch (IOException e) {
+            fail(e);
+        }
+    }
+
+    private synchronized void append(byte[] bytes, int offset, int length) {
+        if (failed || out == null) {
+            return;
+        }
+        try {
+            out.write(bytes, offset, length);
+        } catch (IOException e) {
+            fail(e);
+        }
+    }
+
+    private synchronized void end(long epochMs) {
+        if (failed || out == null) {
+            return;
+        }
+        try {
             out.write('\n');
             // The stream is opened sync-flush; flushing every few seconds is what
             // actually bounds the loss when the process is killed outright.
@@ -79,9 +132,13 @@ final class LiveRecorder implements Closeable {
                 lastFlushMs = epochMs;
             }
         } catch (IOException e) {
-            failed = true;
-            log.warn("Live timing recording stopped for this connection: {}", e.toString());
+            fail(e);
         }
+    }
+
+    private void fail(IOException e) {
+        failed = true;
+        log.warn("Live timing recording stopped for this connection: {}", e.toString());
     }
 
     /**
@@ -112,7 +169,7 @@ final class LiveRecorder implements Closeable {
         }
         OutputStream closing = out;
         Path finished = current;
-        String key = "aks-v2/" + DAY.format(openedAt) + "/" + finished.getFileName();
+        String key = keyPrefix + DAY.format(openedAt) + "/" + finished.getFileName();
         out = null;
         current = null;
         closing.close();

@@ -9,7 +9,6 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,10 +54,12 @@ public class LiveClassificationService {
 
     private final JdbcClient db;
     private final LiveTimingService live;
+    private final LiveEntryMatcher matcher;
 
-    public LiveClassificationService(JdbcClient db, LiveTimingService live) {
+    public LiveClassificationService(JdbcClient db, LiveTimingService live, LiveEntryMatcher matcher) {
         this.db = db;
         this.live = live;
+        this.matcher = matcher;
     }
 
     public Response current() {
@@ -160,63 +161,21 @@ public class LiveClassificationService {
     }
 
     private Map<Long, List<String>> crews(long eventId) {
-        Map<Long, List<String>> crews = new HashMap<>();
-        db.sql("""
-                SELECT da.entry_id, d.first_name || ' ' || d.surname AS name
-                FROM driver_assignment da
-                         JOIN driver d ON d.id = da.driver_id
-                         JOIN entry en ON en.id = da.entry_id
-                WHERE en.event_id = :event
-                ORDER BY da.seat_order
-                """)
-                .param("event", eventId)
-                .query((rs, i) -> Map.entry(rs.getLong("entry_id"), rs.getString("name")))
-                .list()
-                .forEach(e -> crews.computeIfAbsent(e.getKey(), k -> new ArrayList<>()).add(e.getValue()));
-        return crews;
+        Map<Long, List<String>> names = new HashMap<>();
+        matcher.crews(eventId).forEach((entry, crew) ->
+                names.put(entry, crew.stream().map(LiveEntryMatcher.CrewMember::name).toList()));
+        return names;
     }
 
     private List<Entry> entries(long eventId) {
-        return db.sql("""
-                SELECT id, car_number, class_name, team_name, vehicle, manufacturer, is_guest
-                FROM entry WHERE event_id = :event
-                """)
-                .param("event", eventId)
-                .query((rs, i) -> new Entry(rs.getLong("id"), rs.getString("car_number"), rs.getString("class_name"),
-                        rs.getString("team_name"), rs.getString("vehicle"), rs.getString("manufacturer"),
-                        rs.getBoolean("is_guest")))
-                .list();
+        return matcher.entries(eventId);
     }
 
     private Map<String, String> numberAliases(long eventId) {
-        Map<String, String> aliases = new HashMap<>();
-        db.sql("""
-                SELECT a.class_name, a.car_number, a.canonical_number
-                FROM car_number_alias a JOIN event ev ON ev.season_id = a.season_id
-                WHERE ev.id = :event
-                """)
-                .param("event", eventId)
-                .query((rs, i) -> new String[] {
-                        LiveClassification.aliasKey(rs.getString("class_name"), rs.getString("car_number")),
-                        rs.getString("canonical_number")})
-                .list()
-                .forEach(pair -> aliases.put(pair[0], pair[1]));
-        return aliases;
+        return matcher.numberAliases(eventId);
     }
 
     private Map<String, String> classAliases(long eventId) {
-        Map<String, String> aliases = new HashMap<>();
-        db.sql("""
-                SELECT ca.alias, ca.class_name
-                FROM class_alias ca
-                JOIN season se ON se.series_id = ca.series_id
-                JOIN event ev ON ev.season_id = se.id
-                WHERE ev.id = :event
-                """)
-                .param("event", eventId)
-                .query((rs, i) -> new String[] {rs.getString("alias").trim().toLowerCase(), rs.getString("class_name")})
-                .list()
-                .forEach(pair -> aliases.put(pair[0], pair[1]));
-        return aliases;
+        return matcher.classAliases(eventId);
     }
 }

@@ -40,7 +40,7 @@ import java.util.stream.Stream;
  * ALKAMELV2_HOST, no replay file) it starts no thread at all.
  */
 @Component
-@EnableConfigurationProperties(AlKamelV2Properties.class)
+@EnableConfigurationProperties({AlKamelV2Properties.class, ImsaTelemetryProperties.class})
 public class LiveTimingService implements SmartLifecycle {
 
     public enum State { NOT_CONFIGURED, OFF, STANDBY, CONNECTING, LIVE, BACKING_OFF }
@@ -69,7 +69,17 @@ public class LiveTimingService implements SmartLifecycle {
                              String holder, boolean heldHere,
                              Instant connectedSince, Instant lastMessageAt, long messages, long bytes,
                              int attempts, int drops, String lastError, String lastWarning,
-                             Instant nextAttemptAt, Server server, Session session, List<String> channels) {
+                             Instant nextAttemptAt, Server server, Session session, List<String> channels,
+                             Analysis analysis, TelemetryRunner.Status telemetry) {
+    }
+
+    /**
+     * timing.analysis ingest, when enabled. laps/stints count patches read on
+     * this connection; dropped were turned away by a full queue;
+     * withoutSession arrived before timing.session.info named the session.
+     */
+    public record Analysis(boolean enabled, long laps, long stints, long dropped, long withoutSession,
+                           int queued, long written, long failed) {
     }
 
     private static final Logger log = LoggerFactory.getLogger(LiveTimingService.class);
@@ -80,6 +90,10 @@ public class LiveTimingService implements SmartLifecycle {
     private final PublicImageStorage storage;
     private final LiveRecorder.Sink sink;
     private final Pacing pacing;
+    private final AnalysisWriter analysisWriter;
+    private final LiveCarSummaries summaries = new LiveCarSummaries();
+    private final ImsaTelemetryProperties telemetryProps;
+    private final TelemetryRunner telemetry;
     private final String instanceId = instanceName();
     private final AksStateTree tree = new AksStateTree();
     private final Semaphore wake = new Semaphore(0);
@@ -100,6 +114,8 @@ public class LiveTimingService implements SmartLifecycle {
     private volatile int drops;
     private volatile int backoffStep;
     private volatile boolean stopping;
+    private volatile Long boundEventId;
+    private volatile AnalysisRouter router;
 
     private Thread supervisor;
     private Thread connectionThread;
@@ -108,19 +124,46 @@ public class LiveTimingService implements SmartLifecycle {
 
     @Autowired
     public LiveTimingService(AlKamelV2Properties props, LiveTimingStore store, ObjectMapper mapper,
-                             PublicImageStorage storage) {
-        this(props, store, mapper, storage, null, Pacing.PRODUCTION);
+                             PublicImageStorage storage, AnalysisWriter analysisWriter,
+                             LiveDriverResolver driverResolver, ImsaTelemetryProperties telemetryProps) {
+        this(props, store, mapper, storage, null, Pacing.PRODUCTION, analysisWriter, driverResolver, telemetryProps);
     }
 
     /** Tests pass their own sink and pacing; a null sink means the real one. */
     LiveTimingService(AlKamelV2Properties props, LiveTimingStore store, ObjectMapper mapper,
                       PublicImageStorage storage, LiveRecorder.Sink sink, Pacing pacing) {
+        this(props, store, mapper, storage, sink, pacing, null, null, null);
+    }
+
+    /** A null writer leaves timing.analysis off whatever the configuration says. */
+    LiveTimingService(AlKamelV2Properties props, LiveTimingStore store, ObjectMapper mapper,
+                      PublicImageStorage storage, LiveRecorder.Sink sink, Pacing pacing,
+                      AnalysisWriter analysisWriter, AnalysisWriter.DriverResolver driverResolver,
+                      ImsaTelemetryProperties telemetryProps) {
         this.props = props;
         this.store = store;
         this.mapper = mapper;
         this.storage = storage;
         this.sink = sink != null ? sink : this::storeSegment;
         this.pacing = pacing;
+        this.analysisWriter = props.analysisEnabled() ? analysisWriter : null;
+        if (this.analysisWriter != null) {
+            this.analysisWriter.drivers(driverResolver, () -> tree.copyOf("timing.session.entry"), () -> boundEventId);
+        }
+        this.telemetryProps = telemetryProps;
+        this.telemetry = telemetryProps == null || !telemetryProps.configured() ? null : new TelemetryRunner(
+                telemetryProps, mapper,
+                () -> telemetryProps.replaying()
+                        ? new ReplayTelemetrySource(Path.of(telemetryProps.replayFile()), telemetryProps.replaySpeed(), mapper)
+                        : new AppSyncTelemetrySource(telemetryProps, mapper),
+                () -> telemetryProps.recordingEnabled() && !telemetryProps.replaying() && props.recording() != null
+                        ? new LiveRecorder(recordingDirectory().resolve("imsa-telemetry"),
+                                Duration.ofMinutes(Math.max(1, props.recording().segmentMinutes())), this.sink, "imsa-telemetry/")
+                        : null,
+                summaries::sessionDbId, this.analysisWriter,
+                List.of(Duration.ofSeconds(5), Duration.ofSeconds(15), Duration.ofSeconds(30),
+                        Duration.ofSeconds(60), Duration.ofMinutes(5)),
+                Duration.ofMinutes(1));
         this.state = props.configured() ? State.OFF : State.NOT_CONFIGURED;
     }
 
@@ -158,7 +201,42 @@ public class LiveTimingService implements SmartLifecycle {
                 connectedSince, lastMessageAt, messages.get(), bytes.get(),
                 attempts, drops, lastError, lastWarning,
                 state == State.BACKING_OFF ? nextAttemptAt : null,
-                server, session(), props.configured() ? props.channels() : List.of());
+                server, session(), props.configured() ? props.joinedChannels() : List.of(), analysis(),
+                telemetry == null ? null : telemetry.status());
+    }
+
+    /**
+     * IMSA telemetry energy for an Al Kamel car number, or null when telemetry
+     * is off or has never seen the car. stintOpenLap scopes the per-lap average.
+     */
+    public LiveTelemetry.CarEnergy energy(String carNumber, Integer stintOpenLap) {
+        if (telemetry == null) {
+            return null;
+        }
+        return telemetry.telemetry().energy(carNumber, stintOpenLap, System.currentTimeMillis(),
+                Math.max(1, telemetryProps.staleSeconds()) * 1000L);
+    }
+
+    private Analysis analysis() {
+        if (analysisWriter == null) {
+            return new Analysis(false, 0, 0, 0, 0, 0, 0, 0);
+        }
+        AnalysisRouter r = router;
+        AnalysisWriter.Stats w = analysisWriter.stats();
+        return r == null
+                ? new Analysis(true, 0, 0, 0, 0, w.queued(), w.written(), w.failed())
+                : new Analysis(true, r.laps(), r.stints(), r.dropped(), r.withoutSession(),
+                        w.queued(), w.written(), w.failed());
+    }
+
+    /** Per-car last lap, best lap and open stint of the current session. Empty unless analysis is on. */
+    public List<LiveCarSummaries.CarSummary> carSummaries() {
+        return summaries.snapshot();
+    }
+
+    /** The feed session the summaries belong to, or null. */
+    public Long analysisSessionDbId() {
+        return summaries.sessionDbId();
     }
 
     /** A copy of the merged feed at a dotted path, or null. The raw material for every live feature. */
@@ -249,6 +327,7 @@ public class LiveTimingService implements SmartLifecycle {
         // free), the lease goes next (the new process may dial at once), and
         // only then do we wait on the last recording segment's upload.
         closeConnection();
+        ensureTelemetry(false);
         if (leaseHeld) {
             try {
                 store.release(instanceId);
@@ -262,15 +341,18 @@ public class LiveTimingService implements SmartLifecycle {
 
     private void tick() {
         LiveTimingStore.Row row = store.read();
+        boundEventId = row.eventId();
         if (!row.desiredConnected()) {
             stopConnection();
             if (leaseHeld) {
                 store.release(instanceId);
                 leaseHeld = false;
             }
+            ensureTelemetry(false);
             // Off means off: a stale running order must not outlive the connection.
             // (While BACKING_OFF the last-known tree is kept on purpose.)
             tree.clear();
+            summaries.reset(null);
             state = State.OFF;
             backoffStep = 0;
             attempts = 0;
@@ -279,14 +361,17 @@ public class LiveTimingService implements SmartLifecycle {
             return;
         }
         if (!store.acquireOrRenew(instanceId, pacing.lease())) {
+            ensureTelemetry(false);
             stopConnection();
             tree.clear();
+            summaries.reset(null);
             leaseHeld = false;
             state = State.STANDBY;
             return;
         }
         leaseHeld = true;
         leaseGoodUntil = Instant.now().plus(pacing.lease());
+        ensureTelemetry(true);
         if (connectionThread != null && connectionThread.isAlive()) {
             return;
         }
@@ -311,6 +396,10 @@ public class LiveTimingService implements SmartLifecycle {
         String host = replayServer != null ? "127.0.0.1" : props.host();
         int port = replayServer != null ? replayServer.port() : props.port();
         boolean tls = replayServer == null && props.tlsEnabled();
+        summaries.reset(null);
+        AnalysisRouter analysis = analysisWriter == null ? null
+                : new AnalysisRouter(mapper, tree, analysisWriter, summaries, () -> boundEventId);
+        router = analysis;
         AksConnection conn = new AksConnection(props, host, port, tls, tree, mapper, new AksConnection.Listener() {
             @Override
             public void loggedIn(AksConnection.ServerInfo info) {
@@ -322,13 +411,27 @@ public class LiveTimingService implements SmartLifecycle {
             }
 
             @Override
-            public void received(long epochMs, byte[] line) {
+            public AksLineReader.Tee line(long epochMs) {
                 messages.incrementAndGet();
-                bytes.addAndGet(line.length + 2L);
                 lastMessageAt = Instant.ofEpochMilli(epochMs);
-                if (recorder != null) {
-                    recorder.write(epochMs, line);
-                }
+                AksLineReader.Tee recording = recorder != null ? recorder.line(epochMs) : null;
+                return new AksLineReader.Tee() {
+                    @Override
+                    public void write(byte[] line, int offset, int length) {
+                        bytes.addAndGet(length);
+                        if (recording != null) {
+                            recording.write(line, offset, length);
+                        }
+                    }
+
+                    @Override
+                    public void end() {
+                        bytes.addAndGet(2); // the CRLF
+                        if (recording != null) {
+                            recording.end();
+                        }
+                    }
+                };
             }
 
             @Override
@@ -336,7 +439,7 @@ public class LiveTimingService implements SmartLifecycle {
                 lastWarning = message;
                 log.warn("Live timing: {}", message);
             }
-        });
+        }, analysis);
         connection = conn;
         connectionThread = Thread.ofVirtual().name("aks-connection").start(() -> runConnection(conn, recorder));
     }
@@ -377,6 +480,18 @@ public class LiveTimingService implements SmartLifecycle {
             if (recorder != null) {
                 recorder.close();
             }
+        }
+    }
+
+    /** Telemetry never takes the supervisor down with it: it fails soft by design. */
+    private void ensureTelemetry(boolean run) {
+        if (telemetry == null) {
+            return;
+        }
+        try {
+            telemetry.ensure(run);
+        } catch (RuntimeException e) {
+            log.warn("IMSA telemetry: {}", e.toString());
         }
     }
 

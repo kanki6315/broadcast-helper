@@ -128,6 +128,30 @@ pit-pass:
     replay:
       file: ${ALKAMELV2_REPLAY_FILE:}
       speed: ${ALKAMELV2_REPLAY_SPEED:1.0}
+    # timing.analysis (every lap and stint of every car) for the timing page.
+    # When on, those channels are joined too, and JSON frames are stream-parsed
+    # into Postgres (live_lap / live_stint) instead of the in-memory tree. Off
+    # until a practice session has run clean with it. See docs/LIVE_TIMING.md.
+    analysis:
+      enabled: ${ALKAMELV2_ANALYSIS_ENABLED:false}
+      # A sanity cap on one streamed line — counted, never buffered.
+      max-line-bytes: ${ALKAMELV2_ANALYSIS_MAX_LINE_BYTES:536870912}
+  # IMSA's own telemetry (imsa.com/telemetry): an AWS AppSync Events websocket
+  # carrying energy remaining per car. Unofficial and undocumented — off by
+  # default, fails soft, and only ever runs beside the Al Kamel connection in
+  # the process holding its lease. The endpoint and API key are read from the
+  # app's bundle at every connect (AppSync keys expire), never configured.
+  # Raw frames are recorded to ALKAMELV2_RECORDING_BUCKET under imsa-telemetry/.
+  imsa-telemetry:
+    enabled: ${IMSA_TELEMETRY_ENABLED:false}
+    app-url: ${IMSA_TELEMETRY_APP_URL:https://d3aqeo5txo0gzi.cloudfront.net/}
+    channels: ${IMSA_TELEMETRY_CHANNELS:/telemetry/message,/telemetry/session}
+    # A reading older than this shows as no energy rather than a stale one.
+    stale-seconds: ${IMSA_TELEMETRY_STALE_SECONDS:15}
+    recording-enabled: ${IMSA_TELEMETRY_RECORDING_ENABLED:true}
+    # Local dev: replay a telemetry recording instead of connecting.
+    replay-file: ${IMSA_TELEMETRY_REPLAY_FILE:}
+    replay-speed: ${IMSA_TELEMETRY_REPLAY_SPEED:1.0}
   iracing:
     client-id: ${IRACING_CLIENT_ID:}
     client-secret: ${IRACING_CLIENT_SECRET:}

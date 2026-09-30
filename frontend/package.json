@@ -11,7 +11,8 @@
     "test:images": "node tests/carImageUpload.browser.cjs",
     "test:calculator": "node --experimental-strip-types --test tests/championshipCalculator.test.ts",
     "test:calculator:browser": "node tests/championshipCalculator.browser.cjs",
-    "test:calculator:live": "node tests/liveCalculator.browser.cjs"
+    "test:calculator:live": "node tests/liveCalculator.browser.cjs",
+    "test:timing:live": "node tests/liveTiming.browser.cjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",

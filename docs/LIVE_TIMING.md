@@ -4,7 +4,8 @@ The backend can hold a connection to Al Kamel's live timing feed and keep the
 current state of the session in memory. This is the pipeline only: live
 championship points, and later a live timing page, are built on top of it.
 
-Code: `backend/src/main/java/com/pitpass/live/`. Schema: `V54__live_timing.sql`.
+Code: `backend/src/main/java/com/pitpass/live/`. Schema: `V54__live_timing.sql`,
+`V57__live_analysis.sql`.
 Protocol reference: *Timing AKS V2 Protocol (JSON)* 1.0.36.
 
 ## The one rule: a single login
@@ -43,6 +44,11 @@ replica would see `STANDBY` and no data.
 | `GET /api/live/championships/{id}` | member | One class championship's rows against the running order — see *Championship positions*. Poll it. |
 | `POST /api/live/connect` `{ "eventId": n }` | admin | Ask for the connection and bind it to the Pit Pass event it is scored against. |
 | `POST /api/live/disconnect` | admin | Close the socket and free the login. |
+| `GET /api/live/timing` | member | The timing page's tower — see *Timing page API*. Poll it. |
+| `GET /api/live/cars/{car}?session=` | member | One car's laps, stints and drivers. |
+| `GET /api/live/drive-time?session=` | member | Drive time per driver against the event's rules. |
+| `GET /api/live/sessions?eventId=` | member | The sessions recorded for an event, newest first. |
+| `GET` / `PUT /api/events/{id}/drive-time-rules` | member / admin | The event's drive-time rules; PUT replaces the whole set. |
 | `GET /api/live/state?path=timing.session.info` | admin | The merged feed at a dotted path (blank = everything). The licensed feed verbatim, hence admin-only. |
 
 States: `NOT_CONFIGURED` (no host), `OFF`, `CONNECTING`, `LIVE`, `BACKING_OFF`
@@ -164,7 +170,7 @@ All `ALKAMELV2_*`. Set the first three on Railway; the rest have working default
 | `ALKAMELV2_TLS_ENABLED` | `true` | The feed is TLS. Off only for the local replay server. |
 | `ALKAMELV2_TLS_VERIFY_CERTIFICATE` | `false` | The spec says to ignore certificate errors. The trust-all context is scoped to this one socket. Set `true` if the server's certificate proves valid. |
 | `ALKAMELV2_CLIENT_APP_NAME` | `Pit Pass` | Sent in LOGIN. |
-| `ALKAMELV2_CHANNELS` | info, entry, classes, status, standings.byClass.active, startingGrid (all under `timing.session.`) | Comma-separated. Deliberately excludes `timing.analysis` — every lap of every car, the part that reaches ~100 MB over 24 hours. |
+| `ALKAMELV2_CHANNELS` | info, entry, classes, status, standings.byClass.active, startingGrid (all under `timing.session.`) | Comma-separated. Excludes `timing.analysis`, which `ALKAMELV2_ANALYSIS_ENABLED` adds and streams separately. |
 | `ALKAMELV2_MAX_LINE_BYTES` | `33554432` | A longer line is a protocol fault, not buffered. |
 | `ALKAMELV2_CONNECT_TIMEOUT_SECONDS` | `10` | |
 | `ALKAMELV2_LOGIN_TIMEOUT_SECONDS` | `15` | How long the TLS handshake, and then the LOGIN reply, may each take. |
@@ -175,6 +181,22 @@ All `ALKAMELV2_*`. Set the first three on Railway; the rest have working default
 | `ALKAMELV2_RECORDING_MAX_LOCAL_MEGABYTES` | `512` | Oldest local segments pruned past this. |
 | `ALKAMELV2_REPLAY_FILE` | — | Local dev: replay this recording instead of connecting. |
 | `ALKAMELV2_REPLAY_SPEED` | `1.0` | `10` = ten times faster; `0` = no pauses. |
+| `ALKAMELV2_ANALYSIS_ENABLED` | `false` | Also join `timing.analysis.laps` and `.stints` and stream them into Postgres — see *timing.analysis*. Off until a practice session has run clean with it. |
+| `ALKAMELV2_ANALYSIS_MAX_LINE_BYTES` | `536870912` | Sanity cap on one **streamed** line (counted, never buffered). `ALKAMELV2_MAX_LINE_BYTES` then guards only buffered lines. |
+
+### IMSA telemetry settings
+
+`IMSA_TELEMETRY_*`, separate from the Al Kamel variables because it is a
+separate, unofficial source. See *IMSA telemetry (energy)*.
+
+| Variable | Default | |
+|---|---|---|
+| `IMSA_TELEMETRY_ENABLED` | `false` | Connect to IMSA's telemetry websocket whenever the Al Kamel feed is connected. |
+| `IMSA_TELEMETRY_APP_URL` | `https://d3aqeo5txo0gzi.cloudfront.net/` | The telemetry app that imsa.com/telemetry frames. The endpoint and API key are read from its bundle at every connect. |
+| `IMSA_TELEMETRY_CHANNELS` | `/telemetry/message,/telemetry/session` | AppSync Events channels. |
+| `IMSA_TELEMETRY_STALE_SECONDS` | `15` | A reading older than this shows no energy. |
+| `IMSA_TELEMETRY_RECORDING_ENABLED` | `true` | Raw frames go to `ALKAMELV2_RECORDING_BUCKET` under `imsa-telemetry/`. |
+| `IMSA_TELEMETRY_REPLAY_FILE` / `_SPEED` | — / `1.0` | Local dev: replay a telemetry recording instead of connecting. Runs while the (replayed) Al Kamel feed is connected. |
 
 ## Railway settings
 
@@ -193,8 +215,194 @@ Railway's static outbound IP — `lastError` would show a connect timeout or
 refusal rather than a login error.
 
 The container runs with `-Xmx256m` (Dockerfile). The default channels need a
-few MB. Joining `timing.analysis` for a future timing page does **not** fit in
-that heap over a long race; revisit the cap when that work starts.
+few MB. `timing.analysis` is streamed rather than held, so it fits in the same
+heap — measured under *timing.analysis*.
+
+## timing.analysis
+
+Laps and stints for the timing page and drive time. **Off by default**
+(`ALKAMELV2_ANALYSIS_ENABLED`). When on, `timing.analysis.laps` and
+`timing.analysis.stints` are joined too, and every JSON frame takes the
+streaming path below instead of being parsed whole.
+
+Why streaming: a reconnect snapshot of a 24-hour race's laps is one line of
+45–78 MB (over `max-line-bytes`, so the old reader would refuse it and
+reconnect forever), and as a Jackson tree it would take 300–510 MB.
+
+**The path.** `AksLineReader` reads a frame's `CMD:id:channel:` header, and
+for a JSON frame hands the rest of the line to `AnalysisRouter` as a stream
+that ends at `\n` (the CR before it dropped). Every byte is teed to the
+recorder as it passes, so **recordings stay byte-identical** — the replay
+server cannot tell the difference. `AnalysisRouter` walks the JSON with
+Jackson's `JsonParser`:
+
+- `timing.analysis.laps.<car>.laps.<lap>` → one small patch per lap.
+  `loopSectors` and `sections` (most of a lap's bytes) are skipped unread;
+  `sectors.<n>` keeps time and flag.
+- `timing.analysis.stints.<car>.stints.<startTime>` → one patch per stint,
+  with the four driver accumulators.
+- Other analysis sub-channels (`pitIn`, `pitOut`…) are skipped: laps and
+  stints carry what we keep.
+- Everything under `timing.session` is read as a tree and merged into
+  `AksStateTree` as before. **Analysis never enters the tree.**
+
+Patches are partial: a field the diff names is written (a JSON `null` writes
+NULL), a field it does not name keeps its stored value, and a diff that names
+one sector patches just that slot of the arrays (`live_patch_int/_text` in
+V57). A `null` lap or stint deletes the row. A `null` car or channel deletes
+**nothing** — the history is permanent, and a new session has its own key.
+
+`AnalysisWriter` drains a bounded queue (100,000 patches) on one virtual
+thread and upserts in JDBC batches every second or 500 rows. The socket
+thread never waits on the database: a full queue drops the patch and counts
+it (`analysis.dropped` in status); the next reconnect's snapshot rewrites it,
+since every write is an idempotent upsert.
+
+**Keys.** Rows are keyed by Al Kamel's `timing.session.info.sessionDbId`
+(`live_session`), not by our event: the bound event is recorded on the
+session, but the feed never picks it. Car numbers are stored exactly as the
+feed writes them (#04 ≠ #4). Laps or stints that arrive before any
+`info.sessionDbId` has been seen are skipped and counted
+(`analysis.withoutSession`); the JOIN order puts `info` first.
+
+**Drivers.** Whenever `timing.session.entry` changes, `LiveDriverResolver`
+writes `live_driver` for the session: driver order N of each car
+(`drivers."1"`, `"2"`…, what laps and stints call `driver`), matched to the
+bound event's entry by number (exact first, then leading zeros only if
+unambiguous) and to the crew by surname (full name when a crew shares a
+surname; case and accents ignored). `rating` is ours from
+`driver_assignment`, or the first letter of the feed's `license` when
+unmatched. Unmatched drivers are written with `driver_id` null — never
+dropped.
+
+**In memory** is only `LiveCarSummaries`: per car, last lap, best lap, open
+stint and laps in it — reset on a new session or connection. A lap
+invalidated after the fact may have been the best; that car's `bestStale`
+says to read the best lap from `live_lap` instead.
+
+`/api/live/status` carries an `analysis` block: `enabled`, `laps` and
+`stints` (patches read on this connection), `dropped`, `withoutSession`,
+`queued`, `written`, `failed`.
+
+### Heap, measured
+
+`DaytonaSnapshotTest` generates a Rolex-24-size snapshot as it is read — 60
+cars × 650 laps = 39,000 laps, 20 loop sectors each, **one 88 MB line** — and
+streams it through the real reader, router and recorder in a forked JVM with
+production's flags (`-Xmx256m -XX:+UseSerialGC`), into an **undrained** queue
+of the writer's capacity (the worst case: the database has stalled).
+
+| | 2026-09-29 |
+|---|---|
+| Retained after GC, whole snapshot queued | ~28 MB (≈ 760 B per queued lap patch) |
+| Old-gen peak | ~31 MB |
+| Time to stream the line | 0.7 s |
+| Dropped | 0 |
+
+So the 256 MB cap stays; there is no case for 384 MB. With the database
+keeping up (500-row batches) the queue holds far less than this.
+
+### Not yet verified against real bytes
+
+No recording holds analysis data yet; every fixture is synthetic, built from
+the spec (1.0.36, pp. 52–58) against a server that runs 1.0.33. See the plan
+(`docs/LIVE_TIMING_PAGE_PLAN.md`, *Rollout*) for the practice session that
+settles these.
+
+## Timing page API
+
+Everything the web timing page (`#/timing/:eventId`, linked from the event
+page as "Timing →") and the iPad's Timing tab read. All member GETs,
+all gzipped over 1 kB (`server.compression`), and the ETag filter answers
+`If-None-Match` with 304 when nothing changed. The tower carries no timestamps
+for that reason; a stint's running time is sent as `stintStartMs` for the
+client to count up from.
+
+- **`/api/live/timing`** — the classification (above) per class, each car
+  with: `intervalMs`/`intervalLaps` (the feed's `gapPreviousTime`/`Laps`,
+  nothing computed), the current driver (feed `entry.currentDriver`; our name
+  and rating from `live_driver`, else the feed's), `lastLap`/`lastLapMs`,
+  `bestLap`/`bestLapMs` (from memory; re-read from `live_lap` when a best
+  was invalidated), `inPit` (the open stint is a PIT stint), `stintStartMs`,
+  `stintLaps`, and `energyPct` (always null until the IMSA telemetry
+  adapter). Each class carries its series' `class_style` `color`, and the
+  tower carries `feedClockMs` (the newest time the feed reported) for the
+  page's stint clock. `sessionDbId` names the feed session. Needs
+  `ALKAMELV2_ANALYSIS_ENABLED` for the lap and stint fields; without it they
+  are null and the rest still works.
+- **`/api/live/cars/{car}?session=`** — laps (with `sectorMs` /
+  `sectorFlags`, 1-based by sector), stints (with the four accumulators) and
+  drivers. `session` defaults to the session being fed, else the bound
+  event's latest. The car number is exact: `/cars/04` is not `/cars/4`.
+- **`/api/live/drive-time?session=`** — per driver: `driveMs`, `inCar`,
+  the applicable `minMs`/`maxMs`, and `status` `OK` / `UNDER_MIN` (with
+  `owedMs`) / `OVER_MAX` (with `overMs`) / `NO_RULE`, plus `remainingMs`.
+- **`/api/live/sessions?eventId=`** — `sessionDbId`, name, type, date, lap and
+  car counts, and whether it is the one being fed.
+
+### Drive time
+
+Rules are typed in per event (`drive_time_rule`, V58): per class, an
+optional minimum and maximum, either for every rating (`rating` blank) or for
+one (B/S/G/P). A driver gets their rating's rule, with any bound it leaves
+blank taken from the class-wide rule. Our rating comes from
+`driver_assignment`; an unmatched driver uses the feed license's letter.
+
+A driver's time is the latest `driverAccumSessionTrackTime` on their stints:
+track time only, pit lane excluded, as the IMSA rule counts. **Unverified**:
+how that accumulator behaves on an open stint. `DriveTime.driveMs` assumes an
+open TRACK stint with no accumulator of its own adds its elapsed time, and
+that one carrying an accumulator is being updated live. That single method is
+where to change it once real bytes show otherwise.
+
+"Now", for an open stint, is the wall clock only while the session is being
+fed and the feed's newest time is within 10 minutes of it. Otherwise it is
+the newest time the feed reported (the last lap's end or stint's start), so
+a replay or a finished session does not keep counting.
+
+## IMSA telemetry (energy)
+
+Energy remaining per car comes from IMSA, not Al Kamel: imsa.com/telemetry
+frames an app that listens to an **AWS AppSync Events** websocket. It is
+unofficial and undocumented, so it is off by default
+(`IMSA_TELEMETRY_ENABLED`) and **fails soft**: nothing it does can touch the
+Al Kamel connection, and a broken or vanished endpoint costs a log line and a
+retry (5 s → 5 min ladder).
+
+- **When it runs:** only in the process holding the Al Kamel lease, and only
+  while the feed is asked for. The supervisor starts and stops it every tick.
+- **Endpoint and key:** read from the app's JavaScript bundle at every
+  connect (`AppSyncEndpoint`), never configured. AppSync keys expire, so a
+  copied key would silently stop working. The key is never logged whole.
+- **Protocol:** `AppSyncSession`, a pure state machine: `connection_init` →
+  `connection_ack` (its `connectionTimeoutMs` bounds the silence the watchdog
+  allows) → one `subscribe` per channel → `data`, with `ka` keep-alives. The
+  websocket offers the subprotocols `aws-appsync-event-ws` and
+  `header-<base64url {host, x-api-key}>`.
+- **Payload:** every plausible wrapping is decoded (base64 JSON, a `data`
+  field, plain JSON), because none has been seen live. A car is
+  `scoring.number` (exact, #04 ≠ #4), `energy_remaining`, `scoring.lapNumber`
+  and `pit_lane`.
+- **Kept:** only the latest reading per car, plus each car's last 30 lap
+  samples. **Stored:** one row per car per lap in `live_energy_lap` (V59).
+  The first reading after `lapNumber` goes up is the energy at the line for
+  the lap just completed. Missed crossings are not invented. Rows are keyed
+  to the Al Kamel session being fed, so with analysis off energy is shown but
+  not stored.
+- **Shown:** the tower's `energyPct` (null when older than
+  `IMSA_TELEMETRY_STALE_SECONDS`) and `energyLapsLeft` (energy over the
+  stint's average use per lap; refills are left out). The car panel shows
+  energy and energy used per lap, and each stint's average.
+  `/api/live/status` has a `telemetry` block: state, source, last error,
+  message and car counts, laps stored.
+- **Recorded:** raw websocket frames, gzip segments under `imsa-telemetry/`
+  in the private recording bucket. `IMSA_TELEMETRY_REPLAY_FILE` plays one
+  back through the same protocol code.
+
+**Unverified until a live weekend:** the endpoint and handshake themselves,
+the payload wrapping, whether IMSA's `lapNumber` matches Al Kamel's or runs
+one off, which classes carry energy, and the real message rate and size.
+Nothing has connected to IMSA's endpoint yet.
 
 ## When it will not connect
 
