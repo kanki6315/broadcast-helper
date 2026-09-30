@@ -544,17 +544,33 @@ The web's `/timing/:eventId` as a tab in the event workspace
 (`Views/Sheet/TimingSheet.swift`), beside the calculator. `LiveTimingBar`
 sits on top, so connect and disconnect stay where they are on the
 calculator. Everything is a `LiveFeed`, polled and never stored: the tower
-every 2 s, drive time every 10 s while shown, a car every 10 s while its
-sheet is open.
+every 2 s, drive time every 10 s while shown, the analysis views every 15 s
+while their session is live (2 min once it is over), a car every 10 s while
+its sheet is open. Gaps, Sectors, Pits and Drive time share one session
+picker (`RecordedSessions`).
 
 - **Tower:** position, number and driver pinned; gap, interval, last, best
   (class-fastest on the violet tint), stint laps and a time that ticks on the
   feed's clock (`TimingFormat.feedNow`, so a replay stops counting), IMSA
   energy with laps left, and Pit or a status in words. Tap a row for the
   car.
+- **Gaps, Sectors, Pits** (`Views/Sheet/TimingAnalysis.swift`, the web's
+  `pages/TimingAnalysis.tsx`; see docs/LIVE_TIMING.md "Analysis"). Gaps is a
+  Swift Charts line chart, one class at a time: every car in grey, up to
+  three followed in the web's validated slots (`GapSeries`), a direct label
+  at each followed line's end, pit stops as rings, and a Table toggle. Gaps
+  are plotted negated so the leader sits at the top (Charts cannot reverse
+  an explicit domain), and pinned to the axis rather than clipped (clipping
+  the plot clips the labels too). The lap readout is **tap** a lap, tap
+  again to clear: `chartXSelection` never fires inside the tab's ScrollView,
+  which takes the drag first. Sectors and Pits are GridTables; a row opens
+  the car.
 - **Car:** a page-sized sheet (a form sheet cuts the energy and notes off).
-  Laps newest first, stints, crew with ratings. The class tag is in the
-  content, not the toolbar, because iOS 26 truncates leading toolbar items.
+  Laps newest first, stints, crew with ratings. Sector cells mark the car's
+  own best in weight and the class's best on the violet tint (it polls
+  `/sectors` for the class bests), with the theoretical best above the laps.
+  The class tag is in the content, not the toolbar, because iOS 26
+  truncates leading toolbar items.
 - **Drive time:** classes in the tower's order. Status in words sits next to
   the time, so the answer is on screen in portrait, and the meter goes last.
   Rules are read-only here and edited on the website.

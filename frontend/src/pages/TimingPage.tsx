@@ -26,21 +26,32 @@ import {
   type TowerClass,
 } from '../lib/liveTiming'
 import LiveCarModal from '../components/LiveCarModal'
+import { GapsView, PitsView, SectorsView } from './TimingAnalysis'
 
 /**
- * The live timing page (`/timing/:eventId`): the tower, and drive time per
+ * The live timing page (`/timing/:eventId`): the tower; gaps, best sectors
+ * and pit stops over a recorded session (TimingAnalysis); and drive time per
  * driver against the event's rules. Chrome-less like the sheet — it is kept
  * open on a second screen in the booth.
  *
  * Reads, apart from two admin-only controls: the shared connect/disconnect
  * switch (as on the iPad) and the drive-time rules. The tower polls every 2 s
- * (a 304 when nothing moved), drive time every 10 s.
+ * (a 304 when nothing moved), drive time every 10 s, the analysis views every
+ * 15 s while their session is live.
  */
-type View = 'tower' | 'drive'
+type View = 'tower' | 'gaps' | 'sectors' | 'pits' | 'drive'
+
+const VIEWS: { id: View; label: string }[] = [
+  { id: 'tower', label: 'Tower' },
+  { id: 'gaps', label: 'Gaps' },
+  { id: 'sectors', label: 'Sectors' },
+  { id: 'pits', label: 'Pits' },
+  { id: 'drive', label: 'Drive time' },
+]
 
 export default function TimingPage({ eventId }: { eventId: number }) {
   const [params, setParams] = useSearchParams()
-  const view: View = params.get('view') === 'drive' ? 'drive' : 'tower'
+  const view: View = VIEWS.find((v) => v.id === params.get('view'))?.id ?? 'tower'
   // Bumped after an admin connects or disconnects, so the tower follows at once.
   const [feedChanged, setFeedChanged] = useState(0)
   const { value: tower, error: towerError } = useLivePoll<Tower>('/api/live/timing', 2000, feedChanged)
@@ -93,17 +104,14 @@ export default function TimingPage({ eventId }: { eventId: number }) {
       {view === 'tower' ? (
         <TowerView tower={tower} error={towerError} eventId={eventId} followingThis={followingThis} />
       ) : (
-        <DriveTimeView eventId={eventId} sessions={sessions} tower={tower} />
+        <SessionViews view={view} eventId={eventId} sessions={sessions} tower={tower} />
       )}
     </div>
   )
 }
 
 function ViewTabs({ view, onChange }: { view: View; onChange: (v: View) => void }) {
-  const views: { id: View; label: string }[] = [
-    { id: 'tower', label: 'Tower' },
-    { id: 'drive', label: 'Drive time' },
-  ]
+  const views = VIEWS
   const onKey = (e: KeyboardEvent) => {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
     e.preventDefault()
@@ -296,7 +304,9 @@ function TowerView({
       <div className="empty-state">
         Live timing is off. Once an admin connects it, the tower fills in here — no need to reload.
         <br />
-        Recorded sessions stay under <a href={`#/timing/${eventId}?view=drive`}>Drive time</a>.
+        Recorded sessions stay under <a href={`#/timing/${eventId}?view=gaps`}>Gaps</a>,{' '}
+        <a href={`#/timing/${eventId}?view=sectors`}>Sectors</a>, <a href={`#/timing/${eventId}?view=pits`}>Pits</a> and{' '}
+        <a href={`#/timing/${eventId}?view=drive`}>Drive time</a>.
       </div>
     )
   }
@@ -307,7 +317,9 @@ function TowerView({
         {tower.eventId != null ? <a href={`#/timing/${tower.eventId}`}>{tower.eventName ?? 'another event'}</a> : 'no event'}
         , not this one.
         <br />
-        This event's recorded sessions are under <a href={`#/timing/${eventId}?view=drive`}>Drive time</a>.
+        This event's recorded sessions are under <a href={`#/timing/${eventId}?view=gaps`}>Gaps</a>,{' '}
+        <a href={`#/timing/${eventId}?view=sectors`}>Sectors</a>, <a href={`#/timing/${eventId}?view=pits`}>Pits</a> and{' '}
+        <a href={`#/timing/${eventId}?view=drive`}>Drive time</a>.
       </div>
     )
   }
@@ -506,30 +518,31 @@ function TowerRow({
   )
 }
 
-// ---- drive time -----------------------------------------------------------------------
+// ---- recorded sessions ------------------------------------------------------------------
 
-function DriveTimeView({
+/**
+ * The views over one recorded session — gaps, sectors, pits, drive time —
+ * share a session picker: the one asked for in the URL, else the one being
+ * fed, else the newest.
+ */
+function SessionViews({
+  view,
   eventId,
   sessions,
   tower,
 }: {
+  view: Exclude<View, 'tower'>
   eventId: number
   sessions: SessionSummary[] | null
   tower: Tower | null
 }) {
   const [params, setParams] = useSearchParams()
   const asked = params.get('session')
-  const [refresh, setRefresh] = useState(0)
   const chosen = useMemo(() => {
     if (!sessions || sessions.length === 0) return null
     const pick = sessions.find((s) => String(s.sessionDbId) === asked)
     return pick ?? sessions.find((s) => s.current) ?? sessions[0]
   }, [sessions, asked])
-  const { value: drive, error } = useLivePoll<DriveTimeResponse>(
-    chosen ? `/api/live/drive-time?session=${chosen.sessionDbId}` : null,
-    10_000,
-    refresh,
-  )
 
   if (sessions == null) {
     return (
@@ -539,8 +552,6 @@ function DriveTimeView({
       </div>
     )
   }
-
-  const classColors = new Map((tower?.eventId === eventId ? tower.classes : []).map((c) => [c.className.toLowerCase(), c.color]))
 
   return (
     <>
@@ -569,28 +580,52 @@ function DriveTimeView({
         </div>
       )}
 
-      {sessions.length === 0 ? (
+      {!chosen ? (
         <div className="empty-state">
           No timed sessions recorded for this event yet. Laps and stints are recorded while live timing is connected
           to this event.
         </div>
-      ) : !drive ? (
-        error ? (
-          <div className="error-panel">Could not load drive time: {error}</div>
-        ) : (
-          <div className="skeleton-block" aria-label="Loading drive time">
-            <span className="skeleton" />
-            <span className="skeleton" />
-            <span className="skeleton" />
-          </div>
-        )
+      ) : view === 'gaps' ? (
+        <GapsView key={chosen.sessionDbId} session={chosen} />
+      ) : view === 'sectors' ? (
+        <SectorsView key={chosen.sessionDbId} session={chosen} />
+      ) : view === 'pits' ? (
+        <PitsView key={chosen.sessionDbId} session={chosen} />
       ) : (
-        <>
-          {error && <p className="timing-stale">Not updating: {error}</p>}
-          <DriveTable drive={drive} classColors={classColors} />
-          <RulesPanel eventId={eventId} rules={drive.rules} drive={drive} onSaved={() => setRefresh((n) => n + 1)} />
-        </>
+        <DriveTimeView eventId={eventId} session={chosen} tower={tower} />
       )}
+    </>
+  )
+}
+
+// ---- drive time -----------------------------------------------------------------------
+
+function DriveTimeView({ eventId, session, tower }: { eventId: number; session: SessionSummary; tower: Tower | null }) {
+  const [refresh, setRefresh] = useState(0)
+  const { value: drive, error } = useLivePoll<DriveTimeResponse>(
+    `/api/live/drive-time?session=${session.sessionDbId}`,
+    10_000,
+    refresh,
+  )
+
+  const classColors = new Map((tower?.eventId === eventId ? tower.classes : []).map((c) => [c.className.toLowerCase(), c.color]))
+
+  if (!drive) {
+    return error ? (
+      <div className="error-panel">Could not load drive time: {error}</div>
+    ) : (
+      <div className="skeleton-block" aria-label="Loading drive time">
+        <span className="skeleton" />
+        <span className="skeleton" />
+        <span className="skeleton" />
+      </div>
+    )
+  }
+  return (
+    <>
+      {error && <p className="timing-stale">Not updating: {error}</p>}
+      <DriveTable drive={drive} classColors={classColors} />
+      <RulesPanel eventId={eventId} rules={drive.rules} drive={drive} onSaved={() => setRefresh((n) => n + 1)} />
     </>
   )
 }

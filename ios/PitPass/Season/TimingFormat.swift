@@ -76,6 +76,27 @@ enum TimingFormat {
         cars.compactMap(\.bestLapMs).filter { $0 > 0 }.min()
     }
 
+    /// A car's gap on one lap, as the gap chart's readout says it: "Leader",
+    /// "+12.345", or "+1 lap" when lapped; nil where the lap was not timed.
+    static func gapAt(_ car: GapCar, lap: Int) -> String? {
+        guard let down = car.down(at: lap) else { return nil }
+        if down > 0 { return "+\(down) \(down == 1 ? "lap" : "laps")" }
+        guard let ms = car.gap(at: lap) else { return nil }
+        return ms == 0 ? "Leader" : "+" + lapTime(ms)
+    }
+
+    /// A car's best time in each sector over its valid laps (index 0 = S1),
+    /// nil where it has none — the web car panel's personal-best marks.
+    static func bestSectors(_ laps: [LapRow], count: Int) -> [Int?] {
+        var best = [Int?](repeating: nil, count: count)
+        for l in laps where l.valid != false {
+            for (i, ms) in (l.sectorMs ?? []).enumerated() where i < count {
+                if let ms, ms > 0, best[i].map({ ms < $0 }) ?? true { best[i] = ms }
+            }
+        }
+        return best
+    }
+
     /// "62.4%", or empty.
     static func pct(_ value: Double?, digits: Int = 1) -> String {
         guard let value else { return "" }

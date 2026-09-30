@@ -65,4 +65,52 @@ final class TimingFormatTests: XCTestCase {
         XCTAssertEqual(TimingFormat.classBest(tower.classes[0].cars), 97_500)
         XCTAssertTrue(tower.classes[0].cars[0].running)
     }
+
+    // MARK: Analysis (gaps, sectors, pits)
+
+    func testTheGapReadoutSaysLeaderGapOrLapsDown() {
+        let car = GapCar(carNumber: "7", firstLap: 3, gapMs: [0, 4200, nil, nil], lapsDown: [0, 0, 1, nil], pitLaps: [4])
+        XCTAssertEqual(TimingFormat.gapAt(car, lap: 3), "Leader")
+        XCTAssertEqual(TimingFormat.gapAt(car, lap: 4), "+4.200")
+        XCTAssertEqual(TimingFormat.gapAt(car, lap: 5), "+1 lap")
+        XCTAssertNil(TimingFormat.gapAt(car, lap: 6), "untimed")
+        XCTAssertNil(TimingFormat.gapAt(car, lap: 2), "before its first lap")
+        XCTAssertEqual(car.lastLap, 6)
+    }
+
+    func testBestSectorsSkipInvalidLaps() {
+        func lap(_ n: Int, _ valid: Bool?, _ ms: [Int?]) -> LapRow {
+            LapRow(lap: n, driverOrder: 1, driverLap: n, position: nil, startTimeMs: nil, lapTimeMs: 90_000, sectorMs: ms,
+                   sectorFlags: nil, valid: valid, longLap: nil, shortLap: nil, trackLimits: nil, topSpeed: nil,
+                   pitInMs: nil, pitOutMs: nil, energyPct: nil, energyUsedPct: nil)
+        }
+        let best = TimingFormat.bestSectors([lap(1, true, [30_000, 31_000, 29_000]),
+                                             lap(2, false, [20_000, 20_000, 20_000]),
+                                             lap(3, nil, [29_500, nil, 29_200])], count: 3)
+        XCTAssertEqual(best, [29_500, 31_000, 29_000])
+    }
+
+    func testDecodesTheAnalysisAsTheServerWritesIt() throws {
+        let gaps = try JSONDecoder().decode(GapsResponse.self, from: Data("""
+        {"sessionDbId":9,"classes":[{"className":"GTD","color":null,"cars":[{"carNumber":"04","teamName":"Team","className":"GTD"}],
+          "gaps":[{"carNumber":"04","firstLap":1,"gapMs":[0,null],"lapsDown":[0,null],"pitLaps":[]}]}]}
+        """.utf8))
+        XCTAssertEqual(gaps.classes[0].gaps[0].gapMs, [0, nil])
+
+        let sectors = try JSONDecoder().decode(SectorsResponse.self, from: Data("""
+        {"sessionDbId":9,"classes":[{"className":"GTD","color":"#00a","cars":[],"bests":{"sectors":2,"classBestSectorMs":[30000,null],
+          "cars":[{"carNumber":"04","bestSectorMs":[30000,null],"bestSectorLap":[2,null],"bestLap":2,"bestLapMs":91000,"theoreticalMs":null}]}}]}
+        """.utf8))
+        XCTAssertNil(sectors.classes[0].bests.cars[0].theoreticalMs)
+
+        let pits = try JSONDecoder().decode(PitsResponse.self, from: Data("""
+        {"sessionDbId":9,"drivers":{"04":{"1":"One","2":null}},"classes":[{"className":"GTD","color":null,"cars":[],
+          "pits":[{"carNumber":"04","stops":[{"number":1,"startTimeMs":1,"durationMs":65000,"lap":30,"pitType":null,
+            "driverIn":1,"driverOut":2,"driverChange":true}],"totalMs":65000,"averageMs":65000,"inPit":false,"lapsSinceStop":4}]}]}
+        """.utf8))
+        XCTAssertTrue(pits.classes[0].pits[0].stops[0].driverChange)
+        XCTAssertEqual(pits.driverName(car: "04", order: 1), "One")
+        XCTAssertEqual(pits.driverName(car: "04", order: 2), "Driver 2", "a driver with no name on record")
+        XCTAssertNil(pits.driverName(car: "04", order: nil))
+    }
 }

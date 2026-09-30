@@ -365,7 +365,7 @@ public class LiveTimingPageService {
     }
 
     /** The asked-for session, else the one being fed, else the bound event's latest. */
-    private long session(Long asked) {
+    long session(Long asked) {
         if (asked != null) {
             if (db.sql("SELECT 1 FROM live_session WHERE session_db_id = :s").param("s", asked)
                     .query(Integer.class).optional().isEmpty()) {

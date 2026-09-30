@@ -188,3 +188,20 @@ def test_a_points_pdf_yields_no_entries_rather_than_fabricated_ones():
     if not points.exists():
         pytest.skip("PACCA points sample not present")
     assert p.parse(points, series=None)["entries"] == []
+
+
+def test_spelled_out_country_is_normalized_to_its_code():
+    # IWSC 2026 Daytona printed "Spain" where every other row has a code.
+    [d] = p.parse_drivers("(S) Fran Rueda Spain")
+    assert (d["rating"], d["name"], d["nationality"]) == ("S", "Fran Rueda", "ESP")
+    assert "unparsed" not in d
+
+
+def test_multi_word_country_name():
+    [d] = p.parse_drivers("(B) Jane Doe United States")
+    assert (d["name"], d["nationality"]) == ("Jane Doe", "USA")
+
+
+def test_surname_that_is_a_country_is_not_split_off():
+    [d] = p.parse_drivers("(S) Michael Jordan")
+    assert d.get("unparsed") is True

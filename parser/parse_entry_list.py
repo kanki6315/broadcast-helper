@@ -44,6 +44,33 @@ DRIVER_HOMETOWN_RE = re.compile(
 # e.g. "Jim Farley USA" (Mustang Challenge). Checked after the hometown form so
 # a "Name / Hometown" line is never mistaken for a nationality.
 DRIVER_NAT_RE = re.compile(r"^(?P<name>.+?)\s+(?P<nat>[A-Z]{3})$")
+# Pro-series driver line whose nationality is spelled out instead of coded,
+# e.g. "(S) Fran Rueda Spain" (IWSC 2026 Daytona). The trailing words are only
+# accepted when they name a country in COUNTRY_CODES, normalized to its ISO
+# 3166 alpha-3 code — the same convention as the coded lines (NLD, DNK, GBR).
+DRIVER_RATED_RE = re.compile(r"^\((?P<rating>[A-Z?])\)\s+(?P<rest>.+)$")
+COUNTRY_CODES = {
+    "argentina": "ARG", "australia": "AUS", "austria": "AUT", "belgium": "BEL",
+    "brazil": "BRA", "bulgaria": "BGR", "canada": "CAN", "chile": "CHL",
+    "china": "CHN", "colombia": "COL", "costa rica": "CRI", "croatia": "HRV",
+    "czech republic": "CZE", "czechia": "CZE", "denmark": "DNK",
+    "dominican republic": "DOM", "ecuador": "ECU", "estonia": "EST",
+    "finland": "FIN", "france": "FRA", "germany": "DEU", "great britain": "GBR",
+    "united kingdom": "GBR", "greece": "GRC", "guatemala": "GTM",
+    "hong kong": "HKG", "hungary": "HUN", "india": "IND", "indonesia": "IDN",
+    "ireland": "IRL", "israel": "ISR", "italy": "ITA", "japan": "JPN",
+    "latvia": "LVA", "lithuania": "LTU", "luxembourg": "LUX", "malaysia": "MYS",
+    "mexico": "MEX", "monaco": "MCO", "netherlands": "NLD",
+    "the netherlands": "NLD", "new zealand": "NZL", "norway": "NOR",
+    "peru": "PER", "philippines": "PHL", "poland": "POL", "portugal": "PRT",
+    "puerto rico": "PRI", "romania": "ROU", "russia": "RUS",
+    "saudi arabia": "SAU", "singapore": "SGP", "slovakia": "SVK",
+    "slovenia": "SVN", "south africa": "ZAF", "south korea": "KOR",
+    "korea": "KOR", "spain": "ESP", "sweden": "SWE", "switzerland": "CHE",
+    "taiwan": "TWN", "thailand": "THA", "turkey": "TUR", "ukraine": "UKR",
+    "united arab emirates": "ARE", "united states": "USA",
+    "united states of america": "USA", "uruguay": "URY", "venezuela": "VEN",
+}
 # A TBD placeholder seat, with or without a rating prefix: "TBD" / "(?) TBD".
 TBD_RE = re.compile(r"^(?:\([A-Z?]\)\s+)?TBD$", re.IGNORECASE)
 # A bare car number cell (preserve leading zeros: 04, 033, 912)
@@ -123,6 +150,25 @@ def join_wrapped(cell: str | None) -> str | None:
     return out or None
 
 
+def _match_country_name(line: str) -> tuple[str, str, str] | None:
+    """Match "(rating) Name Country Name", longest country suffix first.
+
+    At least two name words must remain, so a surname that is also a country
+    ("(S) Michael Jordan") is never split into a one-word name + nationality.
+    """
+    m = DRIVER_RATED_RE.match(line)
+    if not m:
+        return None
+    words = m.group("rest").split()
+    for n in (4, 3, 2, 1):
+        if len(words) - n < 2:
+            continue
+        code = COUNTRY_CODES.get(" ".join(words[-n:]).lower())
+        if code:
+            return m.group("rating"), " ".join(words[:-n]), code
+    return None
+
+
 def parse_drivers(cell: str | None) -> list[dict]:
     """Split the multi-line driver cell into ordered, structured records.
 
@@ -150,6 +196,19 @@ def parse_drivers(cell: str | None) -> list[dict]:
                 "nationality": None if nat == "?" else nat,
                 "hometown": None,
                 "is_tbd": rating == "?" or name.upper() == "TBD",
+            })
+            continue
+
+        cm = _match_country_name(line)
+        if cm:
+            rating, name, nat = cm
+            drivers.append({
+                "order": order,
+                "rating": rating if rating in VALID_RATINGS else None,
+                "name": name,
+                "nationality": nat,
+                "hometown": None,
+                "is_tbd": rating == "?",
             })
             continue
 
