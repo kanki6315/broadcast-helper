@@ -279,6 +279,46 @@
   width: 3.5ch;
   color: var(--ink);
   font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Places gained since the start, after the position: shape and number, the
+ * colour only repeating them. */
+.tower-gain {
+  display: inline-block;
+  min-width: 3ch;
+  text-align: left;
+  margin-left: 4px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.tower-gain--up {
+  color: var(--success);
+}
+
+.tower-gain--down {
+  color: var(--error);
+}
+
+/* A row that just changed place: an amber wash that fades out. Cells carry
+ * the wash (the sticky ident cells paint their own background). Lap and
+ * sector marks keep their tint. */
+@keyframes tower-moved {
+  from {
+    background-color: color-mix(in oklab, var(--accent) 30%, var(--bg));
+  }
+}
+
+.tower-row--moved td:not(.tower-class-best):not(.tower-pb) {
+  animation: tower-moved 3s var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tower-row--moved td:not(.tower-class-best):not(.tower-pb) {
+    animation: none;
+    background-color: color-mix(in oklab, var(--accent) 20%, var(--bg));
+  }
 }
 
 .tower-car {

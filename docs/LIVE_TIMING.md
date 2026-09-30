@@ -378,6 +378,11 @@ client to count up from.
     channel's own count. **Unverified until a recording holds the channel:**
     that `lastSectors` keeps each sector's newest time rather than clearing at
     the line, and that `currentSector` counts from 1.
+  - `startPosition` is the car's place in its class at the start, in a race
+    only: `timing.session.startingGrid` is overall, so it is ranked among the
+    class's cars on the grid as the tower groups them. The standings'
+    `positionChange` ("position improvement" in the spec) is not used: its
+    meaning is unstated, and it was 0 on every row at Road Atlanta.
   - `laps` is laps completed: the last lap from analysis, else the
     standings' `lapNumber` in a race only. In practice and qualifying the
     standings' `lapNumber` is the lap the car set its best on.

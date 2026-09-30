@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import './season.css'
 import './timing.css'
@@ -13,7 +13,9 @@ import {
   flagTone,
   gap,
   lapTime,
+  fieldCounts,
   lastLapMark,
+  placesGained,
   sectorMark,
   parseRuleTime,
   ratingName,
@@ -274,7 +276,8 @@ function SessionClockView({ tower }: { tower: Tower }) {
   const reading = sessionClock(tower, wall)
   // The time at the track only while the feed is current: a replay's "now" is not today's.
   const local = feedNow(tower, wall) === wall ? trackTime(wall, tower.session?.clock?.utcOffsetHours) : null
-  if (!reading && !local) return null
+  const counts = tower.state === 'LIVE' && tower.classes.length > 0 ? fieldCounts(tower) : null
+  if (!reading && !local && !counts) return null
   return (
     <div className={`timing-clock${reading?.stopped ? ' timing-clock--stopped' : ''}`}>
       {reading && (
@@ -285,6 +288,18 @@ function SessionClockView({ tower }: { tower: Tower }) {
       )}
       {(reading?.laps || local) && (
         <p className="timing-clock-sub">{[reading?.laps, local && `${local} at the track`].filter(Boolean).join(' · ')}</p>
+      )}
+      {counts && (
+        <p className="timing-clock-sub timing-counts">
+          {[
+            `${counts.onTrack} on track`,
+            `${counts.inPit} in pit`,
+            counts.stopped != null && `${counts.stopped} stopped`,
+            `${counts.retired} retired`,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
       )}
     </div>
   )
@@ -317,6 +332,7 @@ function TowerView({
   const [open, setOpen] = useState<{ car: TowerCar; cls: TowerClass } | null>(null)
   const live = tower?.state === 'LIVE'
   const wall = useTick(live && followingThis)
+  const moves = useMoves(tower)
 
   if (!tower) {
     return error ? (
@@ -365,6 +381,7 @@ function TowerView({
   const hasEnergy = tower.classes.some((c) => c.cars.some((car) => car.energyPct != null))
   const hasLaps = tower.classes.some((c) => c.cars.some((car) => car.lastLapMs != null || car.stintStartMs != null))
   const hasPits = tower.classes.some((c) => c.cars.some((car) => car.pitStops != null))
+  const hasStarts = tower.classes.some((c) => c.cars.some((car) => car.startPosition != null))
   const sectorCount = Math.max(0, ...tower.classes.flatMap((c) => c.cars.map((car) => car.sectors?.length ?? 0)))
   const columns = 8 + (hasLaps ? 3 : 0) + sectorCount + (hasPits ? 1 : 0) + (hasEnergy ? 1 : 0)
 
@@ -439,7 +456,9 @@ function TowerView({
               </tr>
               {cls.cars.map((car) => (
                 <TowerRow
-                  key={car.carNumber}
+                  key={`${car.carNumber}-${moves.get(car.carNumber) ?? 0}`}
+                  moved={moves.has(car.carNumber)}
+                  hasStarts={hasStarts}
                   car={car}
                   classBestMs={best}
                   hasLaps={hasLaps}
@@ -473,7 +492,43 @@ function TowerView({
   )
 }
 
+/** How long a row that changed place stays marked. */
+const MOVE_MS = 4000
+
+/**
+ * Cars whose place in the running order changed on the latest poll, each with
+ * a stamp (the row's key includes it, so a second move restarts the flash).
+ * Nothing flashes on the first tower seen: there is nothing to compare with.
+ */
+function useMoves(tower: Tower | null): Map<string, number> {
+  const previous = useRef<Map<string, string> | null>(null)
+  const timers = useRef<number[]>([])
+  const [moves, setMoves] = useState<Map<string, number>>(() => new Map())
+  useEffect(() => {
+    if (!tower) return
+    const now = new Map<string, string>()
+    tower.classes.forEach((c) => c.cars.forEach((car) => now.set(car.carNumber, `${c.className}|${car.position}`)))
+    const before = previous.current
+    previous.current = now
+    if (!before) return
+    const changed = [...now].filter(([car, place]) => before.has(car) && before.get(car) !== place).map(([car]) => car)
+    if (changed.length === 0) return
+    const stamp = Date.now()
+    setMoves((m) => new Map([...m, ...changed.map((car) => [car, stamp] as const)]))
+    timers.current.push(
+      window.setTimeout(
+        () => setMoves((m) => new Map([...m].filter(([car, s]) => !(changed.includes(car) && s === stamp)))),
+        MOVE_MS,
+      ),
+    )
+  }, [tower])
+  useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), [])
+  return moves
+}
+
 function TowerRow({
+  moved,
+  hasStarts,
   car,
   classBestMs,
   hasLaps,
@@ -484,6 +539,8 @@ function TowerRow({
   now,
   onOpen,
 }: {
+  moved: boolean
+  hasStarts: boolean
   car: TowerCar
   classBestMs: number | null
   hasLaps: boolean
@@ -499,8 +556,11 @@ function TowerRow({
   const lastMark = lastLapMark(car, classBestMs)
   const stintTime = car.stintStartMs != null && now != null ? duration(now - car.stintStartMs) : null
   return (
-    <tr className={`tower-row${running ? '' : ' tower-row--out'}`} onClick={onOpen}>
-      <td className="num tower-pos">{car.position}</td>
+    <tr className={`tower-row${running ? '' : ' tower-row--out'}${moved ? ' tower-row--moved' : ''}`} onClick={onOpen}>
+      <td className="num tower-pos">
+        {car.position}
+        {hasStarts && <Gained places={placesGained(car)} />}
+      </td>
       <td className="num tower-car">
         <button
           type="button"
@@ -596,6 +656,19 @@ function TowerRow({
         )}
       </td>
     </tr>
+  )
+}
+
+/** Places gained (▲, success green) or lost (▼, error red) in class since the start; the words are for screen readers. */
+function Gained({ places }: { places: number | null }) {
+  // Always a slot, so positions line up whether or not a car has moved.
+  if (places == null || places === 0) return <span className="tower-gain" aria-hidden="true" />
+  const up = places > 0
+  return (
+    <span className={`tower-gain tower-gain--${up ? 'up' : 'down'}`} title={`${up ? 'Up' : 'Down'} ${Math.abs(places)} in class since the start`}>
+      <span aria-hidden="true">{up ? '▲' : '▼'}{Math.abs(places)}</span>
+      <span className="sr-only"> ({up ? 'up' : 'down'} {Math.abs(places)} since the start)</span>
+    </span>
   )
 }
 

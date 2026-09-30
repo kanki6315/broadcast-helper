@@ -85,6 +85,8 @@ export interface TowerCar {
   bestSectorMs: (number | null)[] | null
   /** The car's own best sectors summed; null until it has one in every sector. */
   idealMs: number | null
+  /** Its place in its class on the starting grid, in a race; null off the grid. */
+  startPosition: number | null
 }
 
 /** A sector's newest time. currentLap false = the previous lap's, until the car runs that sector again. */
@@ -488,6 +490,27 @@ export function sectorMark(ms: number | null | undefined, carBest: number | null
   if (ms == null || ms <= 0) return null
   if (ms === classBest) return 'class'
   return ms === carBest ? 'pb' : null
+}
+
+/** Places gained in class since the start: positive = up. null without a start position. */
+export function placesGained(car: Pick<TowerCar, 'position' | 'startPosition'>): number | null {
+  return car.startPosition == null ? null : car.startPosition - car.position
+}
+
+/**
+ * The field at a glance. stopped is null without participant details (only
+ * they say a car has stopped on track); retired counts RETIRED alone.
+ */
+export function fieldCounts(tower: Pick<Tower, 'classes'>): { onTrack: number; inPit: number; stopped: number | null; retired: number } {
+  const cars = tower.classes.flatMap((c) => c.cars)
+  const running = (c: TowerCar) => !c.status || c.status === 'CLASSIFIED' || c.status === 'RUNNING'
+  const stopped = (c: TowerCar) => c.trackStatus === 'STOPPED'
+  return {
+    onTrack: cars.filter((c) => running(c) && !c.inPit && !stopped(c)).length,
+    inPit: cars.filter((c) => running(c) && c.inPit).length,
+    stopped: cars.some((c) => c.trackStatus != null) ? cars.filter((c) => running(c) && !c.inPit && stopped(c)).length : null,
+    retired: cars.filter((c) => c.status === 'RETIRED').length,
+  }
 }
 
 /** The class's fastest best lap, to mark in the tower. */
