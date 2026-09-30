@@ -34,7 +34,11 @@ struct TimingSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: PP.Space.s3) {
-                Text("Live timing").ppTitle()
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Live timing").ppTitle()
+                    Spacer(minLength: PP.Space.s3)
+                    if followingThis, let value = tower.value { SessionClockView(tower: value) }
+                }
                 LiveTimingBar(eventId: eventId, status: status)
                 HStack(spacing: PP.Space.s3) {
                     Picker("View", selection: $mode) {
@@ -142,6 +146,41 @@ private struct SessionLine: View {
     }
 }
 
+/// The session clock, counted down on the device from the feed's status:
+/// time to go (frozen, in error red and in words while stopped) or the
+/// leader's lap, with the time of day at the track beneath while the feed is
+/// current. The web page's `.timing-clock`.
+private struct SessionClockView: View {
+    let tower: Tower
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let wall = Int(context.date.timeIntervalSince1970 * 1000)
+            let reading = TimingFormat.sessionClock(tower, wallMs: wall)
+            let current = TimingFormat.feedNow(state: tower.state, finished: tower.session?.finished ?? false,
+                                               feedClockMs: tower.feedClockMs, wallMs: wall) == wall
+            let local = current ? TimingFormat.trackTime(wallMs: wall, utcOffsetHours: tower.session?.clock?.utcOffsetHours) : nil
+            let sub = [reading?.laps, local.map { "\($0) at the track" }].compactMap { $0 }.joined(separator: " · ")
+            VStack(alignment: .trailing, spacing: 2) {
+                if let reading {
+                    HStack(alignment: .firstTextBaseline, spacing: PP.Space.s2) {
+                        Text(reading.time)
+                            .font(PP.sans(PP.TextSize.xl, weight: 600).monospacedDigit())
+                            .foregroundStyle(reading.stopped ? PP.error : PP.ink)
+                        if !reading.note.isEmpty {
+                            Text(reading.note).font(.subheadline).foregroundStyle(reading.stopped ? PP.error : PP.textMuted)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+                if !sub.isEmpty {
+                    Text(sub).font(PP.sans(PP.TextSize.xs).monospacedDigit()).foregroundStyle(PP.textMuted)
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Tower
 
 
@@ -183,11 +222,30 @@ private struct TowerGrid: View {
                          lineHeight: 20, cellPadV: 5, cellPadH: 8, headerHeight: 34, separatesIdentity: true, centersCells: true)
     }
 
+    /// A lap time in timing screens' purple (fastest in class: bold ink on the
+    /// violet result tint) or green (the car's own best, on the green tint).
+    /// The words are in the accessible name.
+    private func lapCell(_ ms: Int?, mark: TimingFormat.LapMark?, muted: Bool) -> AnyView {
+        let time = TimingFormat.lapTime(ms)
+        let fill: Color = switch mark {
+        case .classBest: ResultTint.top5
+        case .personalBest: ResultTint.win
+        case nil: .clear
+        }
+        return AnyView(
+            Text(time)
+                .font(PP.mono(PP.TextSize.sm, weight: mark == .classBest ? 700 : mark == .personalBest ? 600 : 400))
+                .foregroundStyle(mark != nil ? PP.ink : muted ? PP.textMuted : PP.text)
+                .padding(.horizontal, mark != nil ? 4 : 0)
+                .background(fill, in: RoundedRectangle(cornerRadius: PP.Radius.xs))
+                .accessibilityLabel(mark == .classBest ? "\(time), fastest in class" : mark == .personalBest ? "\(time), personal best" : time))
+    }
+
     private func row(_ car: TowerCar, cls: TowerClass, best: Int?) -> GridRowItem {
         let muted = !car.running
         let leader = car.position == 1
         let isClassBest = best != nil && car.bestLapMs == best
-        let lastIsBest = car.lastLapMs != nil && car.lastLapMs == car.bestLapMs
+        let lastMark = TimingFormat.lastLapMark(car, classBest: best)
         var cells: [AnyView] = [
             GridCell.text(car.teamName ?? "—", muted: true),
             GridCell.num(car.laps.map(String.init) ?? "", muted: muted),
@@ -195,14 +253,8 @@ private struct TowerGrid: View {
             GridCell.num(leader ? "" : TimingFormat.gap(ms: car.intervalMs, laps: car.intervalLaps), muted: muted),
         ]
         if hasLaps {
-            cells.append(GridCell.num(TimingFormat.lapTime(car.lastLapMs), muted: muted, bold: lastIsBest))
-            cells.append(AnyView(
-                Text(TimingFormat.lapTime(car.bestLapMs))
-                    .font(PP.mono(PP.TextSize.sm, weight: isClassBest ? 700 : 400))
-                    .foregroundStyle(isClassBest ? PP.ink : muted ? PP.textMuted : PP.text)
-                    .padding(.horizontal, isClassBest ? 4 : 0)
-                    .background(isClassBest ? ResultTint.top5 : .clear, in: RoundedRectangle(cornerRadius: PP.Radius.xs))
-                    .accessibilityLabel(isClassBest ? "\(TimingFormat.lapTime(car.bestLapMs)), fastest in class" : TimingFormat.lapTime(car.bestLapMs))))
+            cells.append(lapCell(car.lastLapMs, mark: lastMark, muted: muted))
+            cells.append(lapCell(car.bestLapMs, mark: isClassBest ? .classBest : nil, muted: muted))
             cells.append(AnyView(StintCell(car: car, tower: tower)))
         }
         if hasEnergy {

@@ -33,6 +33,22 @@ struct LiveSession: Codable, Sendable, Equatable {
     let flag: String?
     let running: Bool
     let finished: Bool
+    /// timing.session.status's clock; nil from a server older than it.
+    let clock: SessionClock?
+}
+
+/// The session clock for the app to count down (docs/LIVE_TIMING.md). startMs
+/// is nil before the start; stopMs is set only while the clock is stopped;
+/// stoppedMs is the time stopped so far.
+struct SessionClock: Codable, Sendable, Equatable {
+    let finalType: String?
+    let startMs: Int?
+    let finalMs: Int?
+    let finalLaps: Int?
+    let currentLap: Int?
+    let stopMs: Int?
+    let stoppedMs: Int
+    let utcOffsetHours: Double?
 }
 
 struct LiveConnectRequest: Codable, Sendable {
