@@ -261,6 +261,14 @@ class LiveTimingServiceTest {
         }
 
         @Override
+        public synchronized void connectWithoutEvent(String requestedBy) {
+            desired = true;
+            eventId = null;
+            by = requestedBy;
+            at = Instant.now();
+        }
+
+        @Override
         public synchronized boolean acquireOrRenew(String instance, Duration lease) {
             if (holder == null || holder.equals(instance) || leaseExpires.isBefore(Instant.now())) {
                 holder = instance;
@@ -281,6 +289,11 @@ class LiveTimingServiceTest {
         @Override
         public Optional<String> eventName(long id) {
             return Optional.of("Event " + id);
+        }
+
+        @Override
+        public Optional<Long> filedEvent(long sessionDbId) {
+            return Optional.empty();
         }
     }
 }

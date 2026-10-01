@@ -408,8 +408,9 @@ emits the compact US-Letter deliverable from either theme. Manufacturer
 wordmark logos sit on a small white chip in dark mode only.
 
 ### Live Timing Page (`frontend/src/pages/TimingPage.tsx`, `timing.css`)
-The timing tower itself (`/timing/:eventId`), chrome-less like the sheet
-because it lives on a second screen in the booth. Two views on a `.seg`
+The timing tower itself (`/timing/:eventId`, or `/timing/weekend/:id` for one
+series weekend as the feed has it, filed under an event or not), chrome-less
+like the sheet because it lives on a second screen in the booth. Two views on a `.seg`
 tablist (URL `?view=drive`): **Tower** and **Drive time**. Viewers only
 read. Admins also get the shared switch at the end of the top bar, with the
 iPad's wording and states: **Connect for this event**, **Score this event**
@@ -417,6 +418,15 @@ when the feed is following another event, and **Disconnect**. Disconnecting
 stops timing for every user, so it asks first, **inline** (the question plus
 "Keep connected" and a `.btn-danger` "Disconnect for everyone") rather than
 in a modal.
+
+- **Timing home** (`/timing`, `TimingHomePage.tsx`, "Timing" in the header):
+  the same chrome-less frame. What is on track and where it is filed, the
+  admin's plain **Connect** (no event: every series is filed by
+  championship), then recorded weekends — a heading per track and dates, a
+  `.grid-table` row per series with a "Filed under" select for admins
+  (Automatic / Not in Pit Pass / an event) and its sessions as plain links in
+  schedule order. A session filed nowhere says so once above the tower, not
+  as "not entered" on every row.
 
 - **Tower**: one `.grid-table` with a class band per class (the series'
   `class_style` colour, computed ink, name always printed). It runs tighter

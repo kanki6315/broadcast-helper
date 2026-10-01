@@ -21,7 +21,8 @@ final class AnalysisRows {
      * ({@link LiveEventMatch}), never by whatever happened to be bound.
      */
     record SessionInfo(long sessionDbId, String mongoId, Long feedEventDbId, String name, String type,
-                       Long dateMs) {
+                       Long dateMs, Long champDbId, String champName, String feedEventName,
+                       String feedEventShortName, boolean closed) {
     }
 
     /** Anything the writer is asked to do, in arrival order. */

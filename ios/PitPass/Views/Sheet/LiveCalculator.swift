@@ -3,10 +3,11 @@ import SwiftUI
 /// Where the live timing connection stands, and — for an admin — the switch.
 /// The account behind the feed allows one login, held by the server for
 /// everyone, so connecting and disconnecting are shared acts: disconnecting
-/// asks first.
+/// asks first. On an event's screens the event is the filing hint; with none
+/// (the Timing screen) an admin connects for every series, filed by championship.
 struct LiveTimingBar: View {
     @Environment(AppSession.self) private var session
-    let eventId: Int
+    let eventId: Int?
     let status: LiveFeed<LiveStatus>
     @State private var busy = false
     @State private var actionError: String?
@@ -51,9 +52,9 @@ struct LiveTimingBar: View {
         if busy {
             ProgressView()
         } else if !value.desiredConnected {
-            Button("Connect for this event") { Task { await connect() } }.buttonStyle(.borderedProminent)
+            Button(eventId == nil ? "Connect" : "Connect for this event") { Task { await connect() } }.buttonStyle(.borderedProminent)
         } else {
-            if value.eventId != eventId {
+            if let eventId, value.eventId != eventId {
                 Button("Score this event") { Task { await connect() } }.buttonStyle(.bordered)
             }
             Button("Disconnect") { confirmingDisconnect = true }.buttonStyle(.bordered)
@@ -88,8 +89,17 @@ struct LiveTimingBar: View {
     private func detail(_ value: LiveStatus) -> String? {
         let state = shownState(value)
         if state == "BACKING_OFF" { return value.lastError ?? "Showing the last known order." }
-        if value.desiredConnected, value.eventId != eventId {
+        if value.desiredConnected, let eventId, (value.filedEventId ?? value.eventId) != eventId {
+            if let filed = value.filedEventName { return "The session on track is filed under \(filed), not this event." }
+            if value.filedEventId == nil, value.session != nil {
+                return "The session on track (\(value.session?.championship ?? "another series")) is not filed under a Pit Pass event."
+            }
             return "Scoring against \(value.eventName ?? "another event"), not this one."
+        }
+        if value.desiredConnected, eventId == nil, shownState(value) == "LIVE" {
+            let filed = value.filedEventName.map { "filed under \($0)" } ?? "not filed under a Pit Pass event"
+            return [value.session?.championship, filed].compactMap { $0 }.joined(separator: " · ")
+                + (value.replaying ? " · replay" : "")
         }
         if state == "LIVE" {
             return [value.session?.championship, value.session?.event].compactMap { $0 }.joined(separator: " · ")

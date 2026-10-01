@@ -14,9 +14,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Loads what {@link LiveClassification} needs about the bound event — its
- * entries, the season's car-number aliases, the series' class aliases — and
- * pairs the result with where the connection stands. Three small queries per
+ * Loads what {@link LiveClassification} needs about the event the session on
+ * track is filed under — its entries, the season's car-number aliases, the
+ * series' class aliases — and pairs the result with where the connection
+ * stands. Not the bound event: a binding can outlive its series' session, and
+ * a session filed nowhere (a series Pit Pass does not follow) is shown as the
+ * feed has it. Three small queries per
  * poll against indexed keys; the rows can change under a running session (an
  * admin fixing an entry), so nothing is cached.
  */
@@ -30,7 +33,8 @@ public class LiveClassificationService {
      * last-known (BACKING_OFF) or absent.
      */
     public record Response(LiveTimingService.State state, Long eventId, String eventName,
-                           LiveTimingService.Session session, LiveClassification.Result classification) {
+                           LiveTimingService.Session session, LiveClassification.Result classification,
+                           Long filedEventId, String filedEventName) {
     }
 
     /**
@@ -64,11 +68,14 @@ public class LiveClassificationService {
 
     public Response current() {
         LiveStatus status = live.status();
-        LiveClassification.Result result = status.eventId() == null
-                ? LiveClassification.Result.EMPTY
-                : LiveClassification.build(live.state("timing.session"), entries(status.eventId()),
-                        numberAliases(status.eventId()), classAliases(status.eventId()));
-        return new Response(status.state(), status.eventId(), status.eventName(), status.session(), result);
+        Long filed = status.filedEventId();
+        // Filed nowhere: every car is unmatched, so the order shows the feed's own teams and cars.
+        LiveClassification.Result result = LiveClassification.build(live.state("timing.session"),
+                filed == null ? List.of() : entries(filed),
+                filed == null ? Map.of() : numberAliases(filed),
+                filed == null ? Map.of() : classAliases(filed));
+        return new Response(status.state(), status.eventId(), status.eventName(), status.session(), result,
+                filed, status.filedEventName());
     }
 
     public ChampionshipResponse championship(long championshipId) {
@@ -89,16 +96,18 @@ public class LiveClassificationService {
 
         LiveStatus status = live.status();
         String kind = champ.kind() == null ? "TEAMS" : champ.kind();
-        if (status.eventId() == null) {
+        // Scored only against the event the session on track is filed under;
+        // filed nowhere, nothing is projected (eventId null says why).
+        if (status.filedEventId() == null) {
             return new ChampionshipResponse(status.state(), null, null, status.session(), champ.id(), kind,
                     champ.className(), null, false, List.of(), List.of());
         }
-        long eventId = status.eventId();
+        long eventId = status.filedEventId();
         Long eventSeason = db.sql("SELECT season_id FROM event WHERE id = :id").param("id", eventId)
                 .query(Long.class).optional().orElse(null);
         if (eventSeason == null || eventSeason != champ.seasonId()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Live timing is bound to an event of another season");
+                    "The session on track is filed under an event of another season");
         }
 
         List<Entry> entries = entries(eventId);
@@ -124,7 +133,7 @@ public class LiveClassificationService {
 
         var result = LiveChampionshipPositions.build(kind, champ.className(), standings, liveOrder, qualifying,
                 "DRIVERS".equals(kind) ? crews(eventId) : Map.of(), numberAliases);
-        return new ChampionshipResponse(status.state(), eventId, status.eventName(), status.session(),
+        return new ChampionshipResponse(status.state(), eventId, status.filedEventName(), status.session(),
                 champ.id(), kind, champ.className(), livePhase(status.session()), !qualifying.isEmpty(),
                 result.rows(), result.newcomers());
     }

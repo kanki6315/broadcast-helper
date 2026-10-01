@@ -159,6 +159,24 @@ class AnalysisRouterTest {
     }
 
     @Test
+    void theSessionCarriesTheFeedsOwnLabelsAndItsClosing() throws Exception {
+        feed(info(SESSION, "Race"));
+        var seen = ops(SessionSeen.class).getLast().session();
+        assertEquals(38L, seen.champDbId());
+        assertEquals("Fixture Championship (not a series)", seen.champName());
+        assertEquals("Showcase 120", seen.feedEventName());
+        assertEquals("Road America", seen.feedEventShortName());
+        assertEquals(812L, seen.feedEventDbId());
+        assertFalse(seen.closed());
+
+        // The feed closes a session with a bare {"closed": true} patch.
+        feed("{\"timing\":{\"session\":{\"info\":{\"closed\":true}}}}");
+        var closed = ops(SessionSeen.class).getLast().session();
+        assertTrue(closed.closed());
+        assertEquals("Fixture Championship (not a series)", closed.champName(), "the rest of info is kept");
+    }
+
+    @Test
     void numbersSentAsStringsAndFlagsAsDigitsAreRead() throws Exception {
         feed(info(SESSION, "Race"));
         feed(lapsDiff("4", "\"12\":{\"time\":\"95123\",\"isValid\":0,\"driver\":\"3\",\"topSpeed\":\"301.2\","

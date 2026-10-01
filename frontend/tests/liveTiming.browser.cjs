@@ -18,7 +18,7 @@ const assert = require('node:assert/strict');
   const sec = (ms, currentLap=true, valid=true) => ({ms,valid,currentLap});
   const session = {championship:'IMSA WeatherTech SportsCar Championship',event:'Petit Le Mans',name:'Race',type:'RACE',flag:'FULL_YELLOW',running:true,finished:false,
    clock:{finalType:'BY_TIME',startMs:now-10*60_000,finalMs:2*3_600_000,finalLaps:null,currentLap:null,stopMs:null,stoppedMs:60_000,utcOffsetHours:-4}};
-  let tower = {state:'LIVE',eventId:22,eventName:'Petit Le Mans',session,sessionDbId:3150,feedClockMs:now-20_000,matched:4,total:5,speedUnit:'mph',classes:[
+  let tower = {state:'LIVE',eventId:22,eventName:'Petit Le Mans',filedEventId:22,filedEventName:'Petit Le Mans',session,sessionDbId:3150,feedClockMs:now-20_000,matched:4,total:5,speedUnit:'mph',classes:[
    {className:'GTP',feedClass:'GTP',color:'#1a1a1a',bestSectors:[{ms:31_900,car:'31'},{ms:33_000,car:'7'},{ms:32_700,car:'31'}],idealMs:97_600,cars:[car(1,'7',{startPosition:3,topSpeed:151.3,energyPct:62.4,energyLapsLeft:9.6,pitStops:2,lastPitMs:65_000,
     trackStatus:'TRACK',currentSector:3,sectors:[sec(32_000),sec(33_000),sec(32_900,false)],bestSectorMs:[32_000,33_000,32_800],idealMs:97_800}),car(2,'31',{startPosition:1,topSpeed:150.2,gapToLeaderMs:4200,intervalMs:4200,lastLapMs:97_100,bestLapMs:97_100,inPit:true,trackStatus:'BOX',currentSector:1,
     sectors:[sec(31_900,false),sec(33_100,false,false),null],bestSectorMs:[31_900,33_050,32_700]})]},
@@ -38,7 +38,7 @@ const assert = require('node:assert/strict');
    driveResult('7',1,'Bronze Driver','B',1_800_000,'UNDER_MIN',{minMs:3_600_000,owedMs:1_800_000})]});
   const puts = [], posts = [], errors = [];
   let isAdmin = true;
-  let status = {state:'LIVE',configured:true,desiredConnected:true,eventId:22,eventName:'Petit Le Mans',lastError:null};
+  let status = {state:'LIVE',configured:true,desiredConnected:true,eventId:22,eventName:'Petit Le Mans',filedEventId:22,filedEventName:'Petit Le Mans',lastError:null};
   let carRequests = 0;
   page.on('pageerror', e => errors.push(String(e)));
   await page.route('**/api/**', async route => {
@@ -226,13 +226,19 @@ const assert = require('node:assert/strict');
   assert.match(await page.locator('.rules-list').innerText(), /GTD PRO\s*Bronze\s*min 1:30:00/);
 
   // Feed following another event: this page says so and points there.
-  tower = {...tower, eventId:99, eventName:'Road America'};
+  tower = {...tower, eventId:99, eventName:'Road America', filedEventId:99, filedEventName:'Road America'};
   await page.getByRole('tab',{name:'Tower'}).click();
   await page.getByText('Live timing is following').waitFor({timeout:5000});
   assert.equal(await page.getByRole('link',{name:'Road America'}).getAttribute('href'), '#/timing/99');
   assert.equal(await page.locator('h1').innerText(), 'Petit Le Mans', "this event's own name, not the feed's");
+  // Bound here, but the session on track is another series', filed nowhere: its own teams, said once.
+  tower = {...tower, eventId:22, eventName:'Petit Le Mans', filedEventId:null, filedEventName:null};
+  await page.locator('.timing-unfiled').waitFor({timeout:5000});
+  assert.match(await page.locator('.timing-unfiled').innerText(), /not filed under this event/);
+  assert.equal(await page.locator('.tower-unmatched').count(), 0, 'no per-row "not entered" when nothing is filed');
+  assert.doesNotMatch(await page.locator('.timing-foot').innerText(), /matched to this event/);
   // Switched off from the iPad: the page follows within a poll.
-  tower = {...tower, state:'OFF', eventId:22, eventName:'Petit Le Mans'};
+  tower = {...tower, state:'OFF', eventId:22, eventName:'Petit Le Mans', filedEventId:22, filedEventName:'Petit Le Mans'};
   await page.getByText('Live timing is off.').waitFor({timeout:5000});
   assert.match(await page.locator('.timing-status').innerText(), /Off/);
 

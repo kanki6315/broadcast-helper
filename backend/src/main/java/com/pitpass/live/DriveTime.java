@@ -77,6 +77,11 @@ public final class DriveTime {
             long drive = driveMs(own, nowMs);
             Stint latest = latestByCar.get(d.car());
             boolean inCar = latest != null && latest.open() && Objects.equals(latest.driverOrder(), d.order());
+            // Driver 0 is the feed's "nobody identified yet" (a stint before the
+            // car's driver is known): a row only once it holds some time.
+            if (d.order() == 0 && drive == 0 && !inCar) {
+                continue;
+            }
             Rule rule = rule(rules, d.className(), d.rating());
             Long min = rule == null ? null : rule.minMs();
             Long max = rule == null ? null : rule.maxMs();

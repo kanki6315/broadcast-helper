@@ -187,9 +187,12 @@ export interface LiveStatus {
   configured: boolean
   replaying: boolean
   desiredConnected: boolean
-  /** The event the feed is being scored against. */
+  /** The event the connection is bound to (a filing hint). */
   eventId: number | null
   eventName: string | null
+  /** The event the session on track is filed under — what live standings are scored against. */
+  filedEventId: number | null
+  filedEventName: string | null
   lastError: string | null
   session: LiveSession | null
 }

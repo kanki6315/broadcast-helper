@@ -11,6 +11,8 @@
 // session is gone), and skips /api/me itself (it's public, so it never 401s, but
 // excluding it avoids any chance of a redirect loop).
 
+import { SHARE_HEADER, reportShareRejected, shareToken } from './shareLink'
+
 const nativeFetch = window.fetch.bind(window)
 let redirecting = false
 
@@ -22,8 +24,18 @@ function urlOf(input: RequestInfo | URL): string {
 }
 
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const res = await nativeFetch(input, init)
   const url = urlOf(input)
+  // On a shared timing page (lib/shareLink.ts): our API calls carry the link's token,
+  // and a 401 means the link stopped working — the page says so; no login bounce.
+  const shared = shareToken()
+  if (shared && url.includes('/api/')) {
+    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
+    headers.set(SHARE_HEADER, shared)
+    const res = await nativeFetch(input, { ...init, headers })
+    if (res.status === 401) reportShareRejected(shared)
+    return res
+  }
+  const res = await nativeFetch(input, init)
   if (res.status === 401 && url.includes('/api/') && !url.includes('/api/me') && !redirecting) {
     redirecting = true
     // Back to the app root; Layout re-checks /api/me (now signed out) and shows the

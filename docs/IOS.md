@@ -592,6 +592,30 @@ picker (`RecordedSessions`).
 `Model/TimingModels.swift` mirrors the API. `Season/TimingFormat.swift` is
 the port of the web's `lib/liveTiming.ts`, so change both together.
 
+### Timing for every series (the Timing screen)
+
+A stopwatch button in the home toolbar (series directory and season view)
+pushes **Timing** (`Views/Sheet/TimingHomeView.swift`, the web's `/timing`):
+the shared connection — an admin's **Connect** here names no event, so the
+server files every series by championship — what is on track and where it is
+filed, and every series weekend recorded in the last 60 days
+(`/api/live/weekends`). A series weekend opens as `TimingSheet(scope:
+.weekend(feedEventDbId))`: the same tower, gaps, sectors, pits and drive time
+as an event's Timing tab, filed under a Pit Pass event or not, so the iPad
+works as a timing device for a series Pit Pass does not follow
+(docs/LIVE_TIMING_ALL_SERIES_PLAN.md). Filing a weekend under an event is
+done on the website.
+
+- `TimingSheet` takes a `TimingScope` (`.event` / `.weekend`). An event's
+  tab follows the session **filed** under it (`filedEventId`), not the
+  connection's binding; filed nowhere but bound here, the tower shows with a
+  "not filed" line and the feed's own teams. Following another series, the
+  tab offers that series' weekend screen (`TimingRoute.weekend`).
+- Drive-time rules come from the session's filed event; unfiled, a note
+  replaces them.
+- The calculator projects only from a session filed under its event, and
+  says when the session on track is filed nowhere.
+
 ### The season pages
 
 `SeasonView` is SeasonLayout: series title with the year strip and

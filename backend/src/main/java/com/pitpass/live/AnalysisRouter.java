@@ -227,7 +227,10 @@ final class AnalysisRouter implements AksLineReader.StreamHandler {
                     text(info, "sessionMongoId"),
                     info.hasNonNull("eventDbId") ? info.path("eventDbId").asLong() : null,
                     text(info, "name"), text(info, "type"),
-                    info.hasNonNull("date") ? info.path("date").asLong() : null);
+                    info.hasNonNull("date") ? info.path("date").asLong() : null,
+                    info.hasNonNull("champDbId") ? info.path("champDbId").asLong() : null,
+                    text(info, "champName"), text(info, "eventName"), text(info, "eventShortName"),
+                    info.path("closed").asBoolean(false));
             if (!Objects.equals(now, session)) {
                 if (now == null || session == null || now.sessionDbId() != session.sessionDbId()) {
                     summaries.reset(now == null ? null : now.sessionDbId());

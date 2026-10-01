@@ -16,7 +16,7 @@ export function LiveStatusLine({ status }: { status: LiveStatus }) {
       : state === 'OFF' ? 'Live timing is off' : 'Connecting to live timing…'
   const detail = state === 'OFF' ? 'An admin connects it from the iPad app during a session.'
     : state === 'BACKING_OFF' ? status.lastError ?? 'Showing the last known order.'
-      : [`Scoring ${status.eventName ?? 'an event'}`, status.session?.championship, status.replaying && 'replay'].filter(Boolean).join(' · ')
+      : [status.filedEventId != null ? `Scoring ${status.filedEventName ?? 'an event'}` : 'Not filed under an event', status.session?.championship, status.replaying && 'replay'].filter(Boolean).join(' · ')
   return <p className={`calculator-live-status is-${state.toLowerCase()}`} role="status">
     <i className="calculator-live-dot" aria-hidden="true" /><strong>{headline}</strong><span>{detail}</span>
   </p>
@@ -40,9 +40,12 @@ export function LiveCalculator({ status }: { status: LiveStatus }) {
   const kindLabel = (k: string) => supported.find(c => c.kind?.toUpperCase() === k)?.kindLabel ?? words(k)
 
   if (!status.desiredConnected) return <p className="empty-state">Live timing is off. Once it is connected for an event of this season, the standings are projected here as the field runs.</p>
-  const eventId = status.eventId
-  if (!eventId || !hub.events.some(e => e.id === eventId)) return <p className="empty-state">Live timing is scoring {status.eventName ?? 'another event'}, which is not an event of this season.</p>
   if (status.state !== 'LIVE' && status.state !== 'BACKING_OFF') return <p role="status">Connecting to live timing…</p>
+  // Scored against the event the session on track is filed under — never just the binding,
+  // which can outlive its series' session.
+  const eventId = status.filedEventId
+  if (!eventId) return <p className="empty-state">{status.session?.championship ?? 'The session on track'} is not filed under an event of this season, so nothing is projected. Sessions are filed once their cars match an event's entry list.</p>
+  if (!hub.events.some(e => e.id === eventId)) return <p className="empty-state">Live timing is scoring {status.filedEventName ?? 'another event'}, which is not an event of this season.</p>
   if (!championships.length) return <p className="empty-state">Import IMSA WeatherTech or Michelin Pilot Challenge standings to project them live.</p>
 
   return <>

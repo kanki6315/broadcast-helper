@@ -45,16 +45,21 @@ struct CalculatorSheet: View {
         .task { await liveStatus.run(session.client, path: "/api/live/status", every: .seconds(5)) }
     }
 
-    /// Live needs an order, and one that is being scored against this event.
+    /// Live needs an order, from a session filed under this event — never just
+    /// the connection's binding, which can outlive its series' session.
     @ViewBuilder private func liveContent(_ hub: SeasonHub) -> some View {
-        if let status = liveStatus.value, status.eventId == eventId, status.desiredConnected {
+        if let status = liveStatus.value, status.desiredConnected, status.filedEventId == eventId {
             if status.hasOrder {
                 LiveChampionshipWorkspace(championships: hub.championships.filter(ChampionshipCalculator.supportedLive), eventId: eventId)
             } else {
                 ProgressView("Connecting to live timing…")
             }
-        } else if liveStatus.value?.desiredConnected == true {
-            EmptyState(message: "Live timing is scoring \(liveStatus.value?.eventName ?? "another event"). Open that event's calculator to follow it.")
+        } else if let status = liveStatus.value, status.desiredConnected, !status.hasOrder {
+            ProgressView("Connecting to live timing…")
+        } else if let status = liveStatus.value, status.desiredConnected, status.filedEventId == nil {
+            EmptyState(message: "\(status.session?.championship ?? "The session on track") is not filed under this event, so nothing is projected. Sessions are filed once their cars match an event's entry list.")
+        } else if let status = liveStatus.value, status.desiredConnected {
+            EmptyState(message: "The session on track is filed under \(status.filedEventName ?? "another event"). Open that event's calculator to follow it.")
         } else {
             EmptyState(message: "Live timing is off. Once it is connected for this event, the standings are projected here as the field runs.")
         }

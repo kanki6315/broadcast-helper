@@ -27,6 +27,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -203,6 +204,14 @@ public class AnalysisWriter implements AnalysisRouter.Sink {
         try {
             if (kind == SessionSeen.class) {
                 batch(SESSION_UPSERT, run.stream().map(op -> session((SessionSeen) op)).toList());
+                // Its series weekend, for filing (LiveFiling); a binding already there is kept.
+                List<SqlParameterSource> feedEvents = run.stream()
+                        .map(op -> ((SessionSeen) op).session().feedEventDbId()).filter(Objects::nonNull).distinct()
+                        .map(id -> (SqlParameterSource) new MapSqlParameterSource("f", id)).toList();
+                if (!feedEvents.isEmpty()) {
+                    batch("INSERT INTO live_feed_event (feed_event_db_id) VALUES (:f) ON CONFLICT DO NOTHING",
+                            feedEvents);
+                }
             } else if (kind == LapPatch.class) {
                 batch(LAP_UPSERT, run.stream().map(op -> lap((LapPatch) op)).toList());
             } else if (kind == StintPatch.class) {
@@ -251,17 +260,23 @@ public class AnalysisWriter implements AnalysisRouter.Sink {
 
     // ---- SQL -------------------------------------------------------------------------
 
-    // event_id is never written here: a session is filed under an event only when
-    // that event's entry list matches the cars on track (LiveTimingService.fileSession).
+    // event_id is never written here: filing is LiveFiling's, by series weekend.
     private static final String SESSION_UPSERT = """
-            INSERT INTO live_session (session_db_id, session_mongo_id, feed_event_db_id, name, type, session_date_ms)
-            VALUES (:s, :mongo, :feedEvent, :name, :type, :date)
+            INSERT INTO live_session (session_db_id, session_mongo_id, feed_event_db_id, name, type, session_date_ms,
+                                      champ_db_id, champ_name, feed_event_name, feed_event_short_name, closed)
+            VALUES (:s, :mongo, :feedEvent, :name, :type, :date,
+                    :champ, :champName, :feedEventName, :feedEventShortName, :closed)
             ON CONFLICT (session_db_id) DO UPDATE SET
                 session_mongo_id = EXCLUDED.session_mongo_id,
                 feed_event_db_id = EXCLUDED.feed_event_db_id,
                 name = EXCLUDED.name,
                 type = EXCLUDED.type,
                 session_date_ms = EXCLUDED.session_date_ms,
+                champ_db_id = EXCLUDED.champ_db_id,
+                champ_name = EXCLUDED.champ_name,
+                feed_event_name = EXCLUDED.feed_event_name,
+                feed_event_short_name = EXCLUDED.feed_event_short_name,
+                closed = EXCLUDED.closed,
                 updated_at = clock_timestamp()
             """;
 
@@ -306,7 +321,12 @@ public class AnalysisWriter implements AnalysisRouter.Sink {
                 .addValue("feedEvent", s.feedEventDbId(), Types.BIGINT)
                 .addValue("name", s.name(), Types.VARCHAR)
                 .addValue("type", s.type(), Types.VARCHAR)
-                .addValue("date", s.dateMs(), Types.BIGINT);
+                .addValue("date", s.dateMs(), Types.BIGINT)
+                .addValue("champ", s.champDbId(), Types.BIGINT)
+                .addValue("champName", s.champName(), Types.VARCHAR)
+                .addValue("feedEventName", s.feedEventName(), Types.VARCHAR)
+                .addValue("feedEventShortName", s.feedEventShortName(), Types.VARCHAR)
+                .addValue("closed", s.closed());
     }
 
     private SqlParameterSource lap(LapPatch l) {

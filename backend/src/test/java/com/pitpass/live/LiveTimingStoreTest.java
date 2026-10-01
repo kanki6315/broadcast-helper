@@ -84,7 +84,7 @@ class LiveTimingStoreTest {
     @Test
     void connectingIsRefusedWhereTheFeedIsNotConfigured() {
         // The test context has no ALKAMELV2_HOST — the state of local dev and CI.
-        assertEquals("NOT_CONFIGURED", controller.status().state().name());
+        assertEquals("NOT_CONFIGURED", controller.status(null).state().name());
         var refused = assertThrows(ResponseStatusException.class,
                 () -> controller.connect(new LiveTimingController.ConnectRequest(1L), null));
         assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, refused.getStatusCode());

@@ -11,9 +11,16 @@ struct LiveStatus: Codable, Sendable, Equatable {
     let configured: Bool
     let replaying: Bool
     let desiredConnected: Bool
-    /// The Pit Pass event the feed is being scored against.
+    /// The Pit Pass event the connection is bound to: only a hint for filing
+    /// (docs/LIVE_TIMING.md "Which event a session belongs to"); nil when an
+    /// admin connected for every series.
     let eventId: Int?
     let eventName: String?
+    /// The event the session on track is filed under: where its Pit Pass
+    /// rows (teams, colours, drivers, championships) come from. Nil = filed
+    /// nowhere — a series Pit Pass does not follow, shown as the feed has it.
+    var filedEventId: Int? = nil
+    var filedEventName: String? = nil
     let requestedBy: String?
     let lastError: String?
     let lastWarning: String?
@@ -33,6 +40,8 @@ struct LiveSession: Codable, Sendable, Equatable {
     let flag: String?
     let running: Bool
     let finished: Bool
+    /// Al Kamel's event id: the series weekend this session belongs to.
+    var feedEventDbId: Int? = nil
     /// timing.session.status's clock; nil from a server older than it.
     let clock: SessionClock?
 }
@@ -51,8 +60,10 @@ struct SessionClock: Codable, Sendable, Equatable {
     let utcOffsetHours: Double?
 }
 
+/// `POST /api/live/connect`. A nil event connects for every series: sessions
+/// are filed by championship, and any earlier binding is cleared.
 struct LiveConnectRequest: Codable, Sendable {
-    let eventId: Int
+    let eventId: Int?
 }
 
 /// `GET /api/live/championships/{id}`: one class championship's rows against

@@ -177,11 +177,74 @@ class LiveClassificationServiceTest {
     }
 
     @Test
-    void withNoEventBoundThereIsNothingToScore() throws Exception {
+    void withNoEventTheOrderIsTheFeedsOwn() throws Exception {
         // The local row may carry a binding from real use; rolled back with the test.
         db.sql("UPDATE live_timing SET event_id = NULL").update();
         var response = new LiveClassificationService(db, liveWith(FEED), new LiveEntryMatcher(db)).current();
         assertEquals(null, response.eventId());
-        assertTrue(response.classification().classes().isEmpty());
+        assertEquals(null, response.filedEventId());
+        assertEquals(List.of("GTP", "PRO"), response.classification().classes().stream()
+                .map(c -> c.className()).toList(), "named as the feed names them");
+        assertEquals(0, response.classification().matched());
+        assertEquals(3, response.classification().total());
+    }
+
+    /**
+     * 2026-09-30: bound to an IMPC event, not disconnected, and VP Racing went
+     * out. VP's session is filed nowhere (its cars do not match IMPC's entry
+     * list), so the binding must not put IMPC teams on VP cars that share
+     * their numbers, and no championship is projected from it.
+     */
+    @Test
+    void aBindingThatOutlivesItsSeriesPutsNoTeamsOnTheNextSeriesCars() throws Exception {
+        String suffix = UUID.randomUUID().toString();
+        long seriesId = db.sql("INSERT INTO series (name) VALUES (:n) RETURNING id")
+                .param("n", "Bound series " + suffix).query(Long.class).single();
+        long seasonId = db.sql("INSERT INTO season (series_id, year) VALUES (:s, 2099) RETURNING id")
+                .param("s", seriesId).query(Long.class).single();
+        long bound = event(seasonId, "IMPC " + suffix);
+        entry(bound, "85", "GTP", "An IMPC Team");
+        long champ = championship(seasonId, "TEAMS", "GTP", suffix);
+        store.request(true, bound, "admin@example.test");
+
+        String vp = """
+                {"entry": {"85": {"number": "85", "class": "GTP", "team": "A VP Team", "vehicle": "Ligier JS P320"}},
+                 "standings": {"byClass": {"active": {"GTP": {"class": "GTP", "standings": {
+                   "1": {"participant": "85", "position": 1, "status": "CLASSIFIED"}}}}}}}
+                """;
+        var service = new LiveClassificationService(db, filedUnder(vp, null), new LiveEntryMatcher(db));
+
+        var response = service.current();
+        assertEquals(bound, response.eventId(), "the binding is still there");
+        assertEquals(null, response.filedEventId());
+        var car = response.classification().classes().get(0).cars().get(0);
+        assertEquals("A VP Team", car.teamName(), "the feed's team, not the bound event's #85");
+        assertEquals(null, car.entryId());
+
+        var projected = service.championship(champ);
+        assertEquals(null, projected.eventId(), "filed nowhere: nothing to score against");
+        assertTrue(projected.rows().isEmpty());
+
+        // Filed under the bound event after all (its entry list matched): its rows come back.
+        var filed = new LiveClassificationService(db, filedUnder(vp, bound), new LiveEntryMatcher(db));
+        assertEquals("An IMPC Team", filed.current().classification().classes().get(0).cars().get(0).teamName());
+        assertEquals("IMPC " + suffix, filed.current().filedEventName());
+        assertEquals(bound, filed.championship(champ).eventId());
+    }
+
+    /** Like {@link #liveWith}, with the session on track filed under {@code filed} (null = nowhere). */
+    private LiveTimingService filedUnder(String sessionJson, Long filed) throws Exception {
+        JsonNode session = mapper.readTree(sessionJson);
+        return new LiveTimingService(props, store, mapper, null, null, LiveTimingService.Pacing.PRODUCTION) {
+            @Override
+            public JsonNode state(String path) {
+                return "timing.session".equals(path) ? session : null;
+            }
+
+            @Override
+            Long overlayEventId(Long boundEventId) {
+                return filed;
+            }
+        };
     }
 }

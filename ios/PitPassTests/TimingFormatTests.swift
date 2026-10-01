@@ -206,4 +206,45 @@ final class TimingFormatTests: XCTestCase {
         XCTAssertEqual(pits.driverName(car: "04", order: 2), "Driver 2", "a driver with no name on record")
         XCTAssertNil(pits.driverName(car: "04", order: nil))
     }
+
+    /// A session filed nowhere (2026-09-30: VP Racing under an IMPC binding) and the weekend list.
+    func testDecodesFilingAndSeriesWeekends() throws {
+        let tower = try JSONDecoder.api.decode(Tower.self, from: Data("""
+        {"state":"LIVE","eventId":340,"eventName":"Fox Factory 120","filedEventId":null,"filedEventName":null,
+         "session":{"championship":"IMSA VP Racing SportsCar Challenge","event":"Petit","name":"Practice 2","type":"FREE_PRACTICE",
+          "flag":"GREEN","running":true,"finished":false,"feedEventDbId":612},
+         "sessionDbId":3189,"feedClockMs":null,"classes":[],"matched":0,"total":17}
+        """.utf8))
+        XCTAssertEqual(tower.eventId, 340, "still bound")
+        XCTAssertNil(tower.filedEventId, "but filed nowhere")
+        XCTAssertEqual(tower.session?.feedEventDbId, 612)
+
+        // A server from before filing sends neither field: both stay nil.
+        let old = try JSONDecoder.api.decode(LiveSession.self, from: Data("""
+        {"championship":null,"event":null,"name":"Race","type":"RACE","flag":null,"running":true,"finished":false}
+        """.utf8))
+        XCTAssertNil(old.feedEventDbId)
+
+        let weekends = try JSONDecoder.api.decode([LiveWeekend].self, from: Data("""
+        [{"track":"Road Atlanta","fromMs":1790785500000,"toMs":1790790600000,"championships":[
+          {"feedEventDbId":611,"champDbId":612,"champName":"IMSA Michelin Pilot Challenge","feedEventName":"Fox Factory 120",
+           "track":"Road Atlanta","eventId":340,"eventName":"Fox Factory 120 (Oct 2)","boundBy":"AUTO","boundByEmail":null,
+           "firstSessionMs":1790785500000,"lastSessionMs":1790785500000,"candidates":[],
+           "sessions":[{"sessionDbId":3183,"eventId":340,"name":"Practice 1","type":"FREE_PRACTICE","dateMs":1790785500000,"laps":1126,"cars":45,"current":false}]},
+          {"feedEventDbId":612,"champDbId":613,"champName":null,"feedEventName":null,"track":"Road Atlanta","eventId":null,
+           "eventName":null,"boundBy":"ADMIN_NONE","boundByEmail":"a@b","firstSessionMs":null,"lastSessionMs":null,"candidates":[],
+           "sessions":[]}]}]
+        """.utf8))
+        let impc = weekends[0].championships[0], vp = weekends[0].championships[1]
+        XCTAssertEqual(impc.filedUnder, "Fox Factory 120 (Oct 2)")
+        XCTAssertEqual(impc.sessions.first?.laps, 1126)
+        XCTAssertEqual(vp.title, "Feed event 612", "a session from before the feed's labels were kept")
+        XCTAssertEqual(vp.filedUnder, "Not in Pit Pass")
+    }
+
+    /// Connecting from the Timing screen names no event: the server then files every series by championship.
+    func testConnectingWithoutAnEventSendsNoEvent() throws {
+        XCTAssertEqual(String(decoding: try JSONEncoder().encode(LiveConnectRequest(eventId: nil)), as: UTF8.self), "{}")
+        XCTAssertEqual(String(decoding: try JSONEncoder().encode(LiveConnectRequest(eventId: 340)), as: UTF8.self), "{\"eventId\":340}")
+    }
 }

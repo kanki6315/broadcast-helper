@@ -37,11 +37,14 @@ public class LiveTimingPageService {
      * lap's end): what a stint's running time counts up to when the session is
      * a replay or over. It moves only when a lap completes, as the lap fields
      * do, so it costs the ETag nothing. speedUnit is "mph" or "km/h", from the
-     * feed's unitOfMeasure (US or METRIC), for topSpeed.
+     * feed's unitOfMeasure (US or METRIC), for topSpeed. eventId is the
+     * bound event; filedEventId the event the session on track is filed
+     * under, which is where teams, class colours and driver names come from.
+     * Filed nowhere, the tower shows the feed's own.
      */
     public record Tower(State state, Long eventId, String eventName, LiveTimingService.Session session,
                         Long sessionDbId, Long feedClockMs, List<TowerClass> classes, int matched, int total,
-                        String speedUnit) {
+                        String speedUnit, Long filedEventId, String filedEventName) {
     }
 
     /**
@@ -142,7 +145,7 @@ public class LiveTimingPageService {
         Map<String, int[]> bestFromDb = session == null ? Map.of() : staleBests(session, summaries);
         Map<String, DriverRow> resolved = session == null ? Map.of() : resolvedDrivers(session);
         JsonNode feedEntries = live.state("timing.session.entry");
-        Map<String, String> colors = order.eventId() == null ? Map.of() : classColors(order.eventId());
+        Map<String, String> colors = order.filedEventId() == null ? Map.of() : classColors(order.filedEventId());
         JsonNode details = live.state(AlKamelV2Properties.PARTICIPANT_DETAILS_CHANNEL);
         Map<String, Integer> grid = gridPositions(live.state("timing.session.startingGrid"));
         Map<String, Double> topSpeeds = session == null ? Map.of() : topSpeeds(session);
@@ -206,7 +209,8 @@ public class LiveTimingPageService {
                 : "US".equalsIgnoreCase(info.path("unitOfMeasure").asText()) ? "mph" : "km/h";
         return new Tower(order.state(), order.eventId(), order.eventName(), order.session(), session,
                 session == null ? null : latestFeedTime(session), classes,
-                order.classification().matched(), order.classification().total(), unit);
+                order.classification().matched(), order.classification().total(), unit,
+                order.filedEventId(), order.filedEventName());
     }
 
     /** Each car's best speed trap of the session. A speed is a speed on an invalid lap too. */
@@ -305,15 +309,25 @@ public class LiveTimingPageService {
     // ---- sessions and cars -------------------------------------------------------------
 
     public List<SessionSummary> sessions(long eventId) {
+        return sessions("s.event_id = :e", eventId);
+    }
+
+    /** Every session of one series weekend (Al Kamel's feed event), filed or not. */
+    public List<SessionSummary> sessionsOfFeedEvent(long feedEventDbId) {
+        return sessions("s.feed_event_db_id = :e", feedEventDbId);
+    }
+
+    // Newest first by date: Al Kamel's session ids are not in time order.
+    private List<SessionSummary> sessions(String where, long key) {
         Long current = live.analysisSessionDbId();
         return db.sql("""
                 SELECT s.session_db_id, s.event_id, s.name, s.type, s.session_date_ms,
                        (SELECT count(*) FROM live_lap l WHERE l.session_db_id = s.session_db_id) AS laps,
                        (SELECT count(DISTINCT car_number) FROM live_lap l WHERE l.session_db_id = s.session_db_id) AS cars
-                FROM live_session s WHERE s.event_id = :e
-                ORDER BY s.session_date_ms DESC NULLS LAST, s.session_db_id DESC
-                """)
-                .param("e", eventId)
+                FROM live_session s WHERE %s
+                ORDER BY s.session_date_ms DESC NULLS LAST, s.first_seen_at DESC
+                """.formatted(where))
+                .param("e", key)
                 .query((rs, i) -> new SessionSummary(rs.getLong("session_db_id"), rs.getObject("event_id", Long.class),
                         rs.getString("name"), rs.getString("type"), rs.getObject("session_date_ms", Long.class),
                         rs.getInt("laps"), rs.getInt("cars"),

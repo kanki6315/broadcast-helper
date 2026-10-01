@@ -39,16 +39,22 @@ replica would see `STANDBY` and no data.
 
 | Endpoint | Who | |
 |---|---|---|
-| `GET /api/live/status` | member | State, bound event, what the feed says is running, message counters, last error. Poll it. |
-| `GET /api/live/classification` | member | The running order per class, matched to the bound event's entries — see below. Poll it. |
+| `GET /api/live/status` | member | State, bound event, the event the session on track is filed under (`filedEventId`), what the feed says is running, message counters, last error. Poll it. |
+| `GET /api/live/classification` | member | The running order per class, matched to the filed event's entries — see below. Poll it. |
 | `GET /api/live/championships/{id}` | member | One class championship's rows against the running order — see *Championship positions*. Poll it. |
-| `POST /api/live/connect` `{ "eventId": n }` | admin | Ask for the connection and bind it to the Pit Pass event it is scored against. The iPad's live timing bar and, for admins, the web Timing page's top bar both call it. |
+| `POST /api/live/connect` `{ "eventId": n }` | admin | Ask for the connection. `eventId` is optional: a hint for filing (see *Which event a session belongs to*); without it any earlier binding is cleared. The iPad's live timing bar and, for admins, the web Timing page's top bar both call it. |
+| `GET /api/live/feed-championships` / `POST …/map` | member / admin | Championships the feed has carried and the series each stands for; mapping adds a `series_alias` and files its weekends. |
 | `POST /api/live/disconnect` | admin | Close the socket and free the login. |
 | `GET /api/live/timing` | member | The timing page's tower — see *Timing page API*. Poll it. |
 | `GET /api/live/cars/{car}?session=` | member | One car's laps, stints and drivers. |
 | `GET /api/live/drive-time?session=` | member | Drive time per driver against the event's rules. |
-| `GET /api/live/sessions?eventId=` | member | The sessions recorded for an event, newest first. |
+| `GET /api/live/sessions?eventId=` or `?feedEvent=` | member | The sessions recorded for an event, or for one series weekend (filed or not), newest first by date. |
+| `GET /api/live/weekends?days=60` | member | Recorded series weekends grouped by weekend (same track, first sessions within 5 days), each with its sessions, where it is filed, and the events it could be filed under. |
+| `GET /api/live/feed-events/{id}` | member | One series weekend, the same shape. |
+| `PUT /api/live/feed-events/{id}/event` `{eventId}` / `{none:true}` / `{auto:true}` | admin | File a series weekend under an event, mark it not in Pit Pass, or hand it back to automatic filing. The first two are final for everything automatic. |
+| `PUT /api/live/sessions/{id}/event` `{eventId \| null}` | admin | One session filed somewhere other than its weekend; `null` puts it back. |
 | `GET` / `PUT /api/events/{id}/drive-time-rules` | member / admin | The event's drive-time rules; PUT replaces the whole set. |
+| `GET` / `POST` / `DELETE /api/live/share` | admin | The shareable timing link: whether one works (never the secret), make a new one (the secret is in this answer only; the old link stops working), revoke it. See *Shareable link*. |
 | `GET /api/live/state?path=timing.session.info` | admin | The merged feed at a dotted path (blank = everything). The licensed feed verbatim, hence admin-only. |
 
 States: `NOT_CONFIGURED` (no host), `OFF`, `CONNECTING`, `LIVE`, `BACKING_OFF`
@@ -60,6 +66,20 @@ The feed's own session (`status.session`) is shown next to the bound event so
 a mismatch — connected during the wrong series' session — is visible. The feed
 is never trusted to pick the event.
 
+**Bound vs filed.** `eventId` is the event an admin bound the connection to:
+where the connect control stands, and which event filing tries (see
+*Which event a session belongs to*). `filedEventId` / `filedEventName` is
+the event the session on track is actually filed under, read from
+`live_session`. **Every Pit Pass overlay — entries, teams, class colours,
+driver links, championship positions — comes from the filed event, never
+the binding.** A binding can outlive its series' session: on 2026-09-30 an
+IMPC binding stayed up while VP Racing ran, and matching VP cars against the
+IMPC entry list put IMPC teams on VP cars that share their numbers. Filed
+nowhere, the classification and tower show the feed's own teams and cars,
+and no championship is projected. With `timing.analysis` off there are no
+session rows and nothing is filed, so `filedEventId` falls back to the
+binding, as before.
+
 ## Classification
 
 `GET /api/live/classification` is what the championship calculators score. No
@@ -68,6 +88,7 @@ calculators — it supplies the positions a person would otherwise type in.
 
 ```json
 { "state": "LIVE", "eventId": 8, "eventName": "Rolex 24 at Daytona",
+  "filedEventId": 8, "filedEventName": "Rolex 24 at Daytona",
   "session": { "name": "Race", "type": "RACE", "flag": "GREEN", "running": true, "finished": false, … },
   "classification": {
     "classes": [ { "className": "GTP", "feedClass": "GTP", "cars": [
@@ -78,7 +99,7 @@ calculators — it supplies the positions a person would otherwise type in.
     "unmatched": [ … ], "missing": [ … ], "classMismatches": [ … ] } }
 ```
 
-- **Matching is by car number within the bound event**, exactly as written
+- **Matching is by car number within the filed event**, exactly as written
   first: a grid really does hold #04 and #4, #23 and #023, as different cars.
   Only a number with no exact match falls back to ignoring leading zeros, and
   only when that points at a single entry; otherwise it is left unmatched.
@@ -95,7 +116,8 @@ calculators — it supplies the positions a person would otherwise type in.
   feed class other than the one entered. `matched` of `total` near zero means
   the feed is showing another series' session: check `session` against the
   bound event. In that case `missing` is left empty rather than listing the
-  whole entry list.
+  whole entry list. (With filing, that session is normally filed nowhere, and
+  then every car is unmatched by design.)
 - **Built for polling.** The body carries no timestamps or counters, so it
   changes only when the order (or a gap) does and `If-None-Match` earns a 304.
   Staleness is `state`: `BACKING_OFF` means last-known order, `OFF`/`STANDBY`
@@ -139,7 +161,7 @@ position here is scored by the client exactly as one set by hand.
 
 `livePhase` says which column the live positions fill: `RACE`, `QUALIFYING`,
 or null for a session that pays nothing (practice). `qualifyingPosition` is the
-bound event's **imported** qualifying result, ranked by the same rules:
+filed event's **imported** qualifying result, ranked by the same rules:
 official standings leave a weekend's qualifying points out until after the
 race, so a live race projection adds them itself — and says so when the
 qualifying result has not been imported (`qualifyingImported: false`).
@@ -147,7 +169,8 @@ qualifying result has not been imported (`qualifyingImported: false`).
 `newcomers` are scoring now without a standings row (a late entry, an
 endurance-only driver): named, with a baseline of zero. Overall championships
 answer 422 (positions are per class); a championship of another season than
-the bound event answers 409.
+the filed event answers 409. With the session filed nowhere the response has
+`eventId: null` and no rows.
 
 Assumed, not yet checked against the regulations: that manufacturers score
 qualifying points on the same collapse-and-rerank rule as race points, and
@@ -265,29 +288,60 @@ since every write is an idempotent upsert.
 feed writes them (#04 ≠ #4).
 
 **Which event a session belongs to.** Every session the feed shows is
-recorded, whichever series it is. A session is **filed** under an event
-(`live_session.event_id`) only when that event's entry list matches the cars
-on track, by car number **and** class (`LiveEventMatch`, at least half the
-field). Numbers alone would not do: a weekend's series share them (#7 in
-WeatherTech and in Pilot Challenge), but never their classes. The binding
-only says which event to try:
-- Binding Pilot Challenge while WeatherTech is on track files and moves
-  nothing.
-- A session that loads before you rebind stays unfiled, then is filed the
-  moment the rebind matches it (checked every supervisor tick).
-- A binding that doesn't match is re-checked every 10 s as the running order
-  fills in.
+recorded, whichever series it is. Sessions are **filed by series weekend**
+(`LiveFiling`, V61): Al Kamel's feed event (`info.eventDbId`, one championship
+at one weekend — `live_feed_event`) is bound to a Pit Pass event, and every
+session of it follows (`live_session.event_id`, or the session's own
+`event_override`). An unbound feed event is tried, in order:
+1. **Inherited:** the same championship (`champ_db_id`) at the same track
+   (`feed_event_short_name`) within 7 days already has a bound feed event —
+   covers Al Kamel issuing a new event id midweek.
+2. **By championship:** `champName` → `series.name` (case-insensitive), else a
+   `series_alias` → that series' one event with `event_date` from 1 day before
+   to 6 days after the first session (Pit Pass stores the race day).
+3. **The connection's event**, while live — now only a hint.
+
+2 and 3 must pass the entry-list check (`LiveEventMatch`: at least half the
+field agrees by car number **and** class). Numbers alone would not do: a
+weekend's series share them (#7 in WeatherTech and in Pilot Challenge), but
+never their classes. A binding, once made, is never replaced automatically,
+and an admin's never (`bound_by` ADMIN / ADMIN_NONE, set from the
+`#/timing` page or `PUT /api/live/feed-events/{id}/event`).
+- The live session's feed event is tried every supervisor tick, and every
+  10 s while it doesn't match; once bound, later sessions of it file at once.
+- **Once a minute, connected or not**, feed events seen in the last 14 days
+  that are still unbound are tried again from their stored cars (`live_car`)
+  — entries imported after Wednesday practice, an event or alias added later.
+- Connecting **with no event** (`POST /api/live/connect {}`) clears any
+  earlier binding, so a stale one can't be tried against the next series.
+- Manage → Live timing lists every championship the feed has carried, the
+  series each stands for, and weekends not filed; mapping one writes a
+  `series_alias` and files its weekends
+  (`GET /api/live/feed-championships`, `POST …/map {champName, seriesId}`).
+- Moving a session re-matches its drivers from its stored `live_driver`
+  rows (`LiveDriverResolver.rematch`), so it works after the session is over.
 
 Drivers are matched against the **filed** event's crews, so they follow the
-filing, not the binding. An unfiled session appears on no event's Timing page
-until it is filed. (V57's comment still describes the old "bound when first
+filing, not the binding. An unfiled session appears on no event's Timing page,
+but on its series weekend's (`#/timing/weekend/{feedEventDbId}`), linked from
+`#/timing`; its classes and teams there come from `live_car`.
+
+**The feed's own labels** (V60): each `live_session` row also keeps
+`champ_name`, `champ_db_id`, `feed_event_name`, `feed_event_short_name` and
+`closed` from `timing.session.info`, so a session filed nowhere can still be
+told apart later. On 2026-09-30 `champName` matched our `series.name`
+exactly (IMSA Michelin Pilot Challenge, IMSA VP Racing SportsCar Challenge),
+and the feed event id carried over between one series' sessions — see
+`docs/LIVE_TIMING_ALL_SERIES_PLAN.md`. The feed closes a session with a bare
+`info` patch `{"closed": true}`. (V57's comment still describes the old "bound when first
 seen" rule; a merged migration's text can't change without breaking Flyway's
 checksum.) Laps or stints that arrive before any
 `info.sessionDbId` has been seen are skipped and counted
 (`analysis.withoutSession`); the JOIN order puts `info` first.
 
 **Drivers.** Whenever `timing.session.entry` changes, `LiveDriverResolver`
-writes `live_driver` for the session: driver order N of each car
+writes `live_car` (each car's feed class, team, vehicle) and `live_driver`
+for the session: driver order N of each car
 (`drivers."1"`, `"2"`…, what laps and stints call `driver`), matched to the
 bound event's entry by number (exact first, then leading zeros only if
 unambiguous) and to the crew by surname (full name when a crew shares a
@@ -570,3 +624,29 @@ shortened. The same stand-in drives `LiveTimingServiceTest`.
 ## Verification
 
 `cd backend && ./gradlew test --tests 'com.pitpass.live.*' --tests com.pitpass.auth.SecuredChainTest`
+
+## Shareable link
+
+One link at a time (`live_share_token`, V62), no expiry, made and revoked in
+Manage → Live timing: `https://…/#/live/<token>`. It opens the timing pages —
+the `#/timing` home and each series weekend's page, every series, live and
+recorded — signed-out, and nothing else of Pit Pass.
+
+- The SPA sends the token from the URL fragment as `X-Pit-Pass-Share` on each
+  API call (`lib/shareLink.ts`, via the global fetch wrapper). The fragment
+  never reaches a server, so the token stays out of access logs and Referer.
+- `ShareTokenFilter` turns a working token into a `ShareAuthentication`: not
+  a member (no email), admitted only by `LiveAuthorization.timingReader` on
+  `SecurityConfig.SHARED_TIMING` — GETs of `/api/live/timing`, `status`,
+  `sessions`, `weekends`, `feed-events/*`, `gaps`, `sectors`, `pits`,
+  `cars/*`, `drive-time`. Everything else answers 403; a wrong, replaced or
+  revoked token is anonymous and gets 401, which the shared page shows as
+  "this link no longer works" instead of the sign-in bounce.
+- `status` leaves out `requestedBy` (an email) and `holder` for the link.
+- Only the SHA-256 is stored. The active hash is cached for 30 s; issuing or
+  revoking clears it on the process that did it, so during a redeploy's
+  overlap the other process may honour a revoked link that long.
+- Rate limit: a token bucket per client address (`X-Forwarded-For`'s first
+  entry), 100 burst, 10 requests/s, 429 past it — a booth of a few screens
+  polling the tower stays well under.
+- Shared pages carry "Timing data © Al Kamel Systems".
