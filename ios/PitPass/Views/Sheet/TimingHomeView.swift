@@ -46,7 +46,8 @@ struct TimingHomeView: View {
             .frame(maxWidth: .infinity)
         }
         .background(PP.bg)
-        .navigationTitle("Timing")
+        // "Timing" is the screen's own title; the bar carries only the back button.
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .tint(PP.accentInk)
         .task { await status.run(session.client, path: "/api/live/status", every: .seconds(5)) }

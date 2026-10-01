@@ -52,6 +52,18 @@ class DriveTimeTest {
         assertEquals(H, DriveTime.driveMs(own, T0 + 2 * H));
     }
 
+    /** The feed's driver 0 is "nobody identified yet": listed only once it holds time. */
+    @Test
+    void driverZeroWithNoTimeIsNotListed() {
+        List<Stint> stints = List.of(
+                new Stint("7", T0, "PIT", 0, T0 + 60_000, 0L),
+                new Stint("7", T0 + 60_000, "TRACK", 1, T0 + H, H),
+                new Stint("8", T0, "TRACK", 0, T0 + 10 * 60_000, 10 * 60_000L));
+        List<Result> results = DriveTime.compute(stints, List.of(), List.of(), T0 + 2 * H);
+        assertEquals(List.of("7#1", "8#0"), results.stream().map(r -> r.car() + "#" + r.driverOrder()).toList(),
+                "#7's empty driver 0 dropped; #8's driver 0 drove ten minutes, so it stays");
+    }
+
     @Test
     void statusesAgainstTheRuleForTheDriversRating() {
         List<Rule> rules = List.of(

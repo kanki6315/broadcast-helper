@@ -68,8 +68,9 @@ struct HomeView: View {
                 switch route {
                 case .home: TimingHomeView()
                 case let .weekend(id):
+                    // The screen's own title says which series; the bar carries only the back button.
                     TimingSheet(scope: .weekend(id))
-                        .navigationTitle("Timing")
+                        .navigationTitle("")
                         .navigationBarTitleDisplayMode(.inline)
                 }
             }
