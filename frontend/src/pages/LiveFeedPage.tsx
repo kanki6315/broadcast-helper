@@ -68,7 +68,7 @@ export default function LiveFeedPage() {
 
   return (
     <section className="live-feed-page">
-      <ShareLink />
+      <ShareLinks />
       <h2>Live timing</h2>
       <p>
         Every championship the live feed has carried. Sessions are filed under a Pit Pass event by championship: a
@@ -136,54 +136,66 @@ export default function LiveFeedPage() {
   )
 }
 
-/** `GET /api/live/share`. Never carries the secret. */
-interface ShareState {
-  link: { id: number; createdBy: string | null; createdAt: string; lastUsedAt: string | null } | null
+/** A working link from `GET /api/live/share`. Never carries the secret. label is null for a link made before names. */
+interface ShareLinkRow {
+  id: number
+  label: string | null
+  createdBy: string | null
+  createdAt: string
+  lastUsedAt: string | null
 }
 
 /**
- * The shareable timing link: one at a time, no expiry. Generating a new one
- * stops the old one at once; the URL is shown only right after it is made.
+ * The shareable timing links, one per person, no expiry. Revoking one stops
+ * only that person's link; a link's URL is shown only right after it is made.
  */
-function ShareLink() {
-  const [state, setState] = useState<ShareState | null>(null)
-  const [fresh, setFresh] = useState<string | null>(null)
+function ShareLinks() {
+  const [links, setLinks] = useState<ShareLinkRow[] | null>(null)
+  const [label, setLabel] = useState('')
+  const [fresh, setFresh] = useState<{ label: string; url: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   async function load() {
     const res = await fetch('/api/live/share')
-    if (res.ok) setState(await res.json())
+    if (res.ok) setLinks(((await res.json()) as { links: ShareLinkRow[] }).links)
+    else setProblem(`Could not load the share links (${res.status})`)
   }
 
   useEffect(() => {
     void load()
   }, [])
 
-  async function generate() {
-    if (state?.link && !window.confirm('Make a new link? The current one stops working for everyone who has it.')) return
+  async function make(e: React.FormEvent) {
+    e.preventDefault()
+    if (!label.trim()) return
     setBusy(true)
     setProblem(null)
     setCopied(false)
-    const res = await fetch('/api/live/share', { method: 'POST' })
+    const res = await fetch('/api/live/share', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: label.trim() }),
+    })
+    const body = await res.json().catch(() => null)
     if (res.ok) {
-      const body = await res.json()
-      setFresh(`${window.location.origin}/#/live/${body.token}`)
+      setFresh({ label: body.link.label, url: `${window.location.origin}/#/live/${body.token}` })
+      setLabel('')
     } else {
-      setProblem(`Could not make a link (${res.status})`)
+      setProblem(body?.message ?? `Could not make a link (${res.status})`)
     }
     await load()
     setBusy(false)
   }
 
-  async function revoke() {
-    if (!window.confirm('Revoke the link? It stops working for everyone who has it.')) return
+  async function revoke(link: ShareLinkRow) {
+    const who = link.label ?? 'the unnamed link'
+    if (!window.confirm(`Revoke ${who}? It stops working for everyone who has it.`)) return
     setBusy(true)
     setProblem(null)
-    const res = await fetch('/api/live/share', { method: 'DELETE' })
-    if (!res.ok) setProblem(`Could not revoke the link (${res.status})`)
-    setFresh(null)
+    const res = await fetch(`/api/live/share/${link.id}`, { method: 'DELETE' })
+    if (!res.ok) setProblem(`Could not revoke ${who} (${res.status})`)
     await load()
     setBusy(false)
   }
@@ -191,7 +203,7 @@ function ShareLink() {
   async function copy() {
     if (!fresh) return
     try {
-      await navigator.clipboard.writeText(fresh)
+      await navigator.clipboard.writeText(fresh.url)
       setCopied(true)
     } catch {
       setProblem('Could not copy; select the link and copy it by hand.')
@@ -200,51 +212,76 @@ function ShareLink() {
 
   return (
     <>
-      <h2>Share link</h2>
+      <h2>Share links</h2>
       <p>
-        A link that opens the timing pages — every series, live and recorded — without signing in, and nothing else of
-        Pit Pass. Anyone holding it can watch until it is revoked or replaced.
+        Links that open the timing pages — every series, live and recorded — without signing in, and nothing else of
+        Pit Pass. Make one per person: revoking one stops only that person&apos;s, and each link has its own allowance
+        of requests, so people watching from one network don&apos;t slow each other down.
       </p>
       {problem && (
         <p className="error" role="alert">
           {problem}
         </p>
       )}
-      {state == null ? (
+      <form className="users-form" onSubmit={(e) => void make(e)}>
+        <input
+          value={label}
+          placeholder="Who it's for, e.g. Sam (commentary booth)"
+          aria-label="Who the link is for"
+          maxLength={80}
+          disabled={busy}
+          onChange={(e) => setLabel(e.target.value)}
+        />
+        <button type="submit" className="btn btn-primary" disabled={busy || !label.trim()}>
+          Make a link
+        </button>
+      </form>
+      {fresh && (
+        <p className="share-link-fresh">
+          <span>{fresh.label}&apos;s link:</span>
+          <br />
+          <input aria-label={`${fresh.label}'s link`} readOnly value={fresh.url} onFocus={(e) => e.target.select()} />{' '}
+          <button type="button" onClick={() => void copy()}>
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+          <br />
+          <span className="muted">Copy it now: it is shown only this once.</span>
+        </p>
+      )}
+      {links == null ? (
         <p className="muted" role="status">
           Loading…
         </p>
+      ) : links.length === 0 ? (
+        <p className="muted">No link is working.</p>
       ) : (
-        <>
-          {fresh ? (
-            <p className="share-link-fresh">
-              <input aria-label="Share link" readOnly value={fresh} onFocus={(e) => e.target.select()} />{' '}
-              <button type="button" onClick={() => void copy()}>
-                {copied ? 'Copied' : 'Copy'}
-              </button>
-              <br />
-              <span className="muted">Copy it now: it is shown only this once.</span>
-            </p>
-          ) : state.link ? (
-            <p>
-              A link is working: made {new Date(state.link.createdAt).toLocaleString()}
-              {state.link.createdBy && ` by ${state.link.createdBy}`},{' '}
-              {state.link.lastUsedAt ? `last used ${new Date(state.link.lastUsedAt).toLocaleString()}` : 'not used yet'}.
-            </p>
-          ) : (
-            <p className="muted">No link is working.</p>
-          )}
-          <p>
-            <button type="button" disabled={busy} onClick={() => void generate()}>
-              {state.link ? 'Make a new link' : 'Make a link'}
-            </button>{' '}
-            {state.link && (
-              <button type="button" disabled={busy} onClick={() => void revoke()}>
-                Revoke
-              </button>
-            )}
-          </p>
-        </>
+        <table>
+          <thead>
+            <tr>
+              <th>For</th>
+              <th>Made</th>
+              <th>Last used</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {links.map((l) => (
+              <tr key={l.id}>
+                <td>{l.label ?? <span className="muted">Unnamed (made before links had names)</span>}</td>
+                <td>
+                  {new Date(l.createdAt).toLocaleString()}
+                  {l.createdBy && <span className="muted"> by {l.createdBy}</span>}
+                </td>
+                <td>{l.lastUsedAt ? new Date(l.lastUsedAt).toLocaleString() : <span className="muted">Not yet</span>}</td>
+                <td>
+                  <button type="button" disabled={busy} onClick={() => void revoke(l)}>
+                    Revoke
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </>
   )

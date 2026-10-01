@@ -1,5 +1,6 @@
 package com.pitpass.auth;
 
+import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -8,6 +9,8 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -20,11 +23,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * The shareable timing link through the secured chain: it opens the timing
- * pages' reads and nothing else; a new link kills the old one at once; a
- * revoked one gets the 401 the shared page turns into "this link no longer
- * works". Committed fixtures, like SecuredChainTest; the local database's own
- * working link (if any) is restored afterwards.
+ * The shareable timing links through the secured chain: each opens the
+ * timing pages' reads and nothing else; links work side by side and revoking
+ * one leaves the others working; a revoked one gets the 401 the shared page
+ * turns into "this link no longer works". Committed fixtures, like
+ * SecuredChainTest; the local database's own working links are restored
+ * afterwards.
  */
 @SpringBootTest(properties = {
         "pit-pass.auth.enabled=true",
@@ -44,12 +48,12 @@ class ShareLinkChainTest {
     @Autowired private ShareTokens tokens;
 
     private long firstTestRow;
-    private Long previouslyWorking;
+    private List<Long> previouslyWorking;
 
     @BeforeEach
     void seed() {
         previouslyWorking = db.sql("SELECT id FROM live_share_token WHERE revoked_at IS NULL")
-                .query(Long.class).optional().orElse(null);
+                .query(Long.class).list();
         firstTestRow = db.sql("SELECT COALESCE(max(id), 0) + 1 FROM live_share_token").query(Long.class).single();
         db.sql("DELETE FROM app_user WHERE email IN (:a, :v)").param("a", ADMIN).param("v", VIEWER).update();
         db.sql("INSERT INTO app_user (email, role) VALUES (:e, 'ADMIN')").param("e", ADMIN).update();
@@ -60,8 +64,8 @@ class ShareLinkChainTest {
     @AfterEach
     void restore() {
         db.sql("DELETE FROM live_share_token WHERE id >= :first").param("first", firstTestRow).update();
-        if (previouslyWorking != null) {
-            db.sql("UPDATE live_share_token SET revoked_at = NULL WHERE id = :id").param("id", previouslyWorking).update();
+        if (!previouslyWorking.isEmpty()) {
+            db.sql("UPDATE live_share_token SET revoked_at = NULL WHERE id IN (:ids)").param("ids", previouslyWorking).update();
         }
         tokens.revokeCacheForTests();
         db.sql("DELETE FROM app_user WHERE email IN (:a, :v)").param("a", ADMIN).param("v", VIEWER).update();
@@ -70,7 +74,7 @@ class ShareLinkChainTest {
 
     @Test
     void theLinkOpensTheTimingReadsAndNothingElse() throws Exception {
-        String token = tokens.issue(ADMIN).token();
+        String token = tokens.issue("Sam", ADMIN).token();
 
         for (String path : new String[] {"/api/live/timing", "/api/live/weekends", "/api/live/sessions?feedEvent=1"}) {
             mvc.perform(get(path).header(H, token)).andExpect(status().isOk());
@@ -94,44 +98,57 @@ class ShareLinkChainTest {
     }
 
     @Test
-    void aWrongMissingReplacedOrRevokedLinkIsSignedOut() throws Exception {
+    void linksWorkSideBySideAndRevokingOneLeavesTheRest() throws Exception {
         mvc.perform(get("/api/live/timing")).andExpect(status().isUnauthorized());
-        String first = tokens.issue(ADMIN).token();
-        mvc.perform(get("/api/live/timing").header(H, first + "x")).andExpect(status().isUnauthorized());
+        var sam = tokens.issue("Sam", ADMIN);
+        var alex = tokens.issue("Alex", ADMIN);
+        mvc.perform(get("/api/live/timing").header(H, sam.token() + "x")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/live/timing").header(H, sam.token())).andExpect(status().isOk());
+        mvc.perform(get("/api/live/timing").header(H, alex.token())).andExpect(status().isOk());
 
-        String second = tokens.issue(ADMIN).token();
-        mvc.perform(get("/api/live/timing").header(H, first)).andExpect(status().isUnauthorized());
-        mvc.perform(get("/api/live/timing").header(H, second)).andExpect(status().isOk());
-
-        tokens.revoke();
-        mvc.perform(get("/api/live/timing").header(H, second)).andExpect(status().isUnauthorized());
+        assertTrue(tokens.revoke(sam.link().id()));
+        assertFalse(tokens.revoke(sam.link().id()), "already revoked");
+        mvc.perform(get("/api/live/timing").header(H, sam.token())).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/live/timing").header(H, alex.token())).andExpect(status().isOk());
     }
 
     @Test
-    void onlyAdminsManageTheLinkAndTheSecretIsShownOnce() throws Exception {
+    void onlyAdminsManageTheLinksAndEachSecretIsShownOnce() throws Exception {
+        var admin = oidcLogin().idToken(t -> t.claim("email", ADMIN));
         mvc.perform(get("/api/live/share").with(oidcLogin().idToken(t -> t.claim("email", VIEWER))))
                 .andExpect(status().isForbidden());
-        mvc.perform(post("/api/live/share").with(oidcLogin().idToken(t -> t.claim("email", ADMIN))))
+        mvc.perform(post("/api/live/share").with(oidcLogin().idToken(t -> t.claim("email", VIEWER)))
+                .contentType("application/json").content("{\"label\":\"Sam\"}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/live/share").with(admin).contentType("application/json").content("{\"label\":\"  \"}"))
+                .andExpect(status().isUnprocessableEntity());
+        String body = mvc.perform(post("/api/live/share").with(admin)
+                        .contentType("application/json").content("{\"label\":\" Sam (booth) \"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.token").isString())
-                .andExpect(jsonPath("$.link.createdBy").value(ADMIN));
-        mvc.perform(get("/api/live/share").with(oidcLogin().idToken(t -> t.claim("email", ADMIN))))
-                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.link.label").value("Sam (booth)"))
                 .andExpect(jsonPath("$.link.createdBy").value(ADMIN))
-                .andExpect(jsonPath("$.link.token").doesNotExist());
-        mvc.perform(delete("/api/live/share").with(oidcLogin().idToken(t -> t.claim("email", ADMIN))))
-                .andExpect(status().isOk());
-        mvc.perform(get("/api/live/share").with(oidcLogin().idToken(t -> t.claim("email", ADMIN))))
-                .andExpect(jsonPath("$.link").doesNotExist());
+                .andReturn().getResponse().getContentAsString();
+        long id = ((Number) JsonPath.read(body, "$.link.id")).longValue();
+        mvc.perform(get("/api/live/share").with(admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.links[?(@.id == " + id + ")].label").value("Sam (booth)"))
+                .andExpect(jsonPath("$.links[0].token").doesNotExist());
+        mvc.perform(delete("/api/live/share/" + id).with(oidcLogin().idToken(t -> t.claim("email", VIEWER))))
+                .andExpect(status().isForbidden());
+        mvc.perform(delete("/api/live/share/" + id).with(admin)).andExpect(status().isOk());
+        mvc.perform(delete("/api/live/share/" + id).with(admin)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/live/share").with(admin))
+                .andExpect(jsonPath("$.links[?(@.id == " + id + ")]").isEmpty());
     }
 
     @Test
-    void aViewerFloodingTheLinkIsSlowedDown() {
+    void aLinkFloodingIsSlowedDownWithoutSlowingTheOthers() {
         ShareTokenFilter filter = new ShareTokenFilter(tokens);
         for (int i = 0; i < ShareTokenFilter.CAPACITY; i++) {
-            assertTrue(filter.take("203.0.113.9"));
+            assertTrue(filter.take(1L));
         }
-        assertFalse(filter.take("203.0.113.9"), "past the burst");
-        assertTrue(filter.take("198.51.100.4"), "another viewer is unaffected");
+        assertFalse(filter.take(1L), "past the burst");
+        assertTrue(filter.take(2L), "another link is unaffected");
     }
 }

@@ -2248,7 +2248,7 @@ h2 small {
   }
 }
 
-/* Manage → Live timing: the share link, shown once after it is made. */
+/* Manage → Live timing: a share link, shown once after it is made. */
 .share-link-fresh input {
   width: min(100%, 44rem);
   font-family: var(--font-mono);
