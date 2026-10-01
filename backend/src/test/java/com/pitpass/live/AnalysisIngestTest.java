@@ -254,7 +254,7 @@ class AnalysisIngestTest {
             db.sql("DELETE FROM driver WHERE id = :d").param("d", ann).update();
         });
 
-        // IMSA telemetry for #04 in GTD, lap 1 then lap 2: one lap-crossing sample.
+        // IMSA telemetry for #04 in GTD, 1 lap completed then 2: one lap-crossing sample, after lap 2.
         Path telemetry = recordings.resolve("t.imsa");
         java.nio.file.Files.writeString(telemetry,
                 "1\t" + TelemetryFixtures.data("x", TelemetryFixtures.cars(TelemetryFixtures.car("04", 80, 1, false, "GTD"))) + "\n"
@@ -307,7 +307,7 @@ class AnalysisIngestTest {
         await(() -> Long.valueOf(ann).equals(db.sql("""
                 SELECT driver_id FROM live_driver WHERE session_db_id = :s AND car_number = '04' AND driver_order = 1
                 """).param("s", session).query((rs, i) -> rs.getObject("driver_id", Long.class)).optional().orElse(null)));
-        await(() -> count("live_energy_lap WHERE session_db_id = :s AND car_number = '04' AND lap_number = 1") == 1);
+        await(() -> count("live_energy_lap WHERE session_db_id = :s AND car_number = '04' AND lap_number = 2") == 1);
 
         // Binding the other series again changes nothing about what this session is —
         // and energy follows the series on track, not the binding.

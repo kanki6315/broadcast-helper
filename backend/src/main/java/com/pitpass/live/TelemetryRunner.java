@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
@@ -21,8 +22,8 @@ import java.util.function.Supplier;
  * or vanished endpoint costs a log line and a retry, never an exception
  * upward.
  *
- * Lap-crossing energy samples are written through the analysis writer, keyed
- * to the Al Kamel session being fed; with no such session (analysis off) the
+ * Lap-crossing energy samples (see LiveTelemetry) are written through the
+ * analysis writer, keyed to the Al Kamel session being fed; with no such session (analysis off) the
  * energy is shown live but not stored.
  */
 final class TelemetryRunner {
@@ -58,6 +59,7 @@ final class TelemetryRunner {
     private final Supplier<Long> sessionDbId;
     private final AnalysisRouter.Sink sink;
     private final Function<String, String> feedClassOf;
+    private final Supplier<Map<String, Integer>> feedLaps;
     private final List<Duration> backoff;
     private final Duration stableAfter;
     private final LiveTelemetry telemetry = new LiveTelemetry();
@@ -78,7 +80,8 @@ final class TelemetryRunner {
 
     TelemetryRunner(ImsaTelemetryProperties props, ObjectMapper mapper, SourceFactory sources,
                     RecorderFactory recorders, Supplier<Long> sessionDbId, AnalysisRouter.Sink sink,
-                    Function<String, String> feedClassOf, List<Duration> backoff, Duration stableAfter) {
+                    Function<String, String> feedClassOf, Supplier<Map<String, Integer>> feedLaps,
+                    List<Duration> backoff, Duration stableAfter) {
         this.props = props;
         this.decoder = new TelemetryDecoder(mapper);
         this.sources = sources;
@@ -86,6 +89,7 @@ final class TelemetryRunner {
         this.sessionDbId = sessionDbId;
         this.sink = sink;
         this.feedClassOf = feedClassOf;
+        this.feedLaps = feedLaps;
         this.backoff = backoff;
         this.stableAfter = stableAfter;
     }
@@ -205,7 +209,10 @@ final class TelemetryRunner {
                     telemetry.clear();
                     lastSession = session;
                 }
-                List<LiveTelemetry.LapSample> laps = telemetry.accept(decoder.decode(payload), System.currentTimeMillis());
+                TelemetryDecoder.Decoded decoded = decoder.decode(payload);
+                // Al Kamel's lap counts, for the cars whose logger sends none (most GTD).
+                Map<String, Integer> alKamelLaps = decoded.cars().isEmpty() || feedLaps == null ? Map.of() : feedLaps.get();
+                List<LiveTelemetry.LapSample> laps = telemetry.accept(decoded, System.currentTimeMillis(), alKamelLaps);
                 if (session == null || sink == null) {
                     return;
                 }
