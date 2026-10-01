@@ -71,6 +71,8 @@ struct GridSection: Identifiable {
     /// A class band drawn across the full width, or nil for a bandless table.
     var band: (label: String, color: String)?
     let rows: [GridRowItem]
+    /// Printed on the band's scrolling half (the timing tower's best sectors); the label stays pinned.
+    var bandDetail: String? = nil
 }
 
 struct GridTable: View {
@@ -157,7 +159,7 @@ struct GridTable: View {
             .overlay(alignment: .bottom) { Rectangle().fill(PP.borderStrong).frame(height: 1) }
             ForEach(sections) { section in
                 if let band = section.band {
-                    ClassBand(label: ident ? band.label : " ", color: band.color)
+                    ClassBand(label: ident ? band.label : section.bandDetail ?? " ", color: band.color)
                         .frame(height: bandHeight)
                 }
                 ForEach(section.rows) { row in
