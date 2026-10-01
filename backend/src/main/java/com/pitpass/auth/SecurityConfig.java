@@ -92,8 +92,8 @@ public class SecurityConfig {
                         // The raw live timing tree is the licensed Al Kamel feed
                         // verbatim; members get what is derived from it, not this.
                         .requestMatchers("/api/live/state").access(live.admin())
-                        // The share link itself is admin business, reads included.
-                        .requestMatchers("/api/live/share").access(live.admin())
+                        // The share links themselves are admin business, reads included.
+                        .requestMatchers("/api/live/share", "/api/live/share/*").access(live.admin())
                         .requestMatchers(HttpMethod.GET, SHARED_TIMING).access(live.timingReader())
                         // A viewer's scratchpad is their own writable surface —
                         // the controller pins the row to the caller's email, so

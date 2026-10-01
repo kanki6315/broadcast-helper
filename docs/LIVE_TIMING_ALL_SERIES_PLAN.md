@@ -348,6 +348,20 @@ weekend, including ones not yet run.
   revoke, admin-only management, rate limit) and
   `npm run test:timing:shared`.
 
+### Follow-up: one share link per person — DONE 2026-10-01
+Replaces "one link at a time" above. One shared link meant one viewer could
+not be cut off without resending to everyone, and the per-address rate limit
+let viewers behind one network (a booth's Wi-Fi) throttle each other.
+- V63 drops the one-active-link index and adds `label` (who the link is
+  for). A link made under V62 keeps working, shown as unnamed.
+- `GET /api/live/share` answers `{links: [...]}`; `POST` takes `{label}`
+  (required, ≤ 80 characters) and adds a link without touching the others;
+  `DELETE /api/live/share/{id}` revokes one.
+- The rate limit is per link (100 burst, 10/s), not per address.
+- `last_used_at` is touched at most every 5 minutes per link.
+- Manage → Live timing lists the working links with a name field to make one
+  and Revoke on each row.
+
 ### Slice 5: the share token (backend)
 Modelled on `DeviceTokens` / `DeviceTokenFilter`, simplified by the
 decisions above.
