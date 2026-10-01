@@ -194,7 +194,7 @@ All `ALKAMELV2_*`. Set the first three on Railway; the rest have working default
 | `ALKAMELV2_TLS_ENABLED` | `true` | The feed is TLS. Off only for the local replay server. |
 | `ALKAMELV2_TLS_VERIFY_CERTIFICATE` | `false` | The spec says to ignore certificate errors. The trust-all context is scoped to this one socket. Set `true` if the server's certificate proves valid. |
 | `ALKAMELV2_CLIENT_APP_NAME` | `Pit Pass` | Sent in LOGIN. |
-| `ALKAMELV2_CHANNELS` | info, entry, classes, status, standings.byClass.active, startingGrid (all under `timing.session.`) | Comma-separated. Excludes `timing.analysis`, which `ALKAMELV2_ANALYSIS_ENABLED` adds and streams separately. |
+| `ALKAMELV2_CHANNELS` | info, entry, classes, status, standings.byClass.active, startingGrid (all under `timing.session.`) | Comma-separated. Excludes `timing.analysis`, which `ALKAMELV2_ANALYSIS_ENABLED` adds and streams separately. `timing.session.standings.overall.active` (the tower's overall order) is always joined on top, whatever this says. |
 | `ALKAMELV2_MAX_LINE_BYTES` | `33554432` | A longer line is a protocol fault, not buffered. |
 | `ALKAMELV2_CONNECT_TIMEOUT_SECONDS` | `10` | |
 | `ALKAMELV2_LOGIN_TIMEOUT_SECONDS` | `15` | How long the TLS handshake, and then the LOGIN reply, may each take. |
@@ -438,6 +438,25 @@ client to count up from.
     over its recorded laps, invalid laps included); the tower's `speedUnit`
     is "mph" or "km/h" from `session.info.unitOfMeasure` (US / METRIC).
     Road Atlanta's feed was US: 151.3 is mph.
+  - `overallPosition`, `overallGapMs`/`overallGapLaps` and
+    `overallIntervalMs`/`overallIntervalLaps` come from
+    `timing.session.standings.overall.active` (always joined; null until it
+    arrives), for the page's **Overall** order. Gaps are one or the other,
+    laps when lapped, as in class.
+  - `checkered`: the car has taken the chequered flag. Participant details'
+    `hasSeenCheckered` when sent; otherwise, once the session is finished
+    (the spec's `isFinished`: "checkered flag shown"), any car whose last
+    recorded crossing (`start_time_ms + lap_time_ms`) is at or after the
+    flag — in a race the overall leader's last crossing, else the clock's
+    end (`startMs + finalMs + stoppedMs`). **Unverified:** both against a
+    real finish.
+  - `bestLapDriver` is the full name of the driver of the recorded best lap
+    (`live_lap.driver_order`), else participant details' `bestLap.driver`.
+    Each class `bestSectors` entry carries `driver`, the surname of whoever
+    first ran that time in that sector on a recorded lap; a best set on the
+    lap still being run (not recorded until complete) is the current
+    driver's while the car's newest time there still equals it. Lookups are
+    cached per session (a recorded lap's driver never changes).
   - `startPosition` is the car's place in its class at the start, in a race
     only: `timing.session.startingGrid` is overall, so it is ranked among the
     class's cars on the grid as the tower groups them. The standings'

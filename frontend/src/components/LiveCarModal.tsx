@@ -57,6 +57,7 @@ export default function LiveCarModal({
   }, [])
 
   const drivers = useMemo(() => new Map((car?.drivers ?? []).map((d) => [d.driverOrder, d])), [car])
+  const bests = useMemo(() => bestLaps(car?.laps ?? []), [car])
   const short = (order: number | null) => {
     if (order == null) return '—'
     const d = drivers.get(order)
@@ -89,17 +90,30 @@ export default function LiveCarModal({
           </h2>
           {car && car.drivers.length > 0 && (
             <ol className="lc-drivers" aria-label="Crew">
-              {car.drivers.map((d) => (
-                <li key={d.driverOrder}>
-                  <span className="lc-order">{d.driverOrder}</span>
-                  {driverName(d)}
-                  {d.rating && (
-                    <span className="lc-rating" title={ratingName(d.rating) ?? undefined}>
-                      {d.rating}
-                    </span>
-                  )}
-                </li>
-              ))}
+              {car.drivers.map((d) => {
+                const own = bests.byDriver.get(d.driverOrder)
+                const fastest = own != null && bests.car != null && own.lapTimeMs === bests.car.lapTimeMs
+                return (
+                  <li key={d.driverOrder}>
+                    <span className="lc-order">{d.driverOrder}</span>
+                    {driverName(d)}
+                    {d.rating && (
+                      <span className="lc-rating" title={ratingName(d.rating) ?? undefined}>
+                        {d.rating}
+                      </span>
+                    )}
+                    {own && (
+                      <span
+                        className={`lc-driver-best${fastest ? ' lc-driver-best--car' : ''}`}
+                        title={`${fastest ? "The car's best lap" : 'Best lap'}: lap ${own.lap}`}
+                      >
+                        {lapTime(own.lapTimeMs)}
+                        {fastest && <span className="sr-only"> (the car's best lap)</span>}
+                      </span>
+                    )}
+                  </li>
+                )
+              })}
             </ol>
           )}
         </div>
@@ -139,7 +153,7 @@ export default function LiveCarModal({
             <span className="skeleton" />
           </div>
         ) : view === 'laps' ? (
-          <LapTable laps={car.laps} driverLabel={short} classBest={classBest} />
+          <LapTable laps={car.laps} driverLabel={short} classBest={classBest} bestLap={bests.car} />
         ) : (
           <StintTable car={car} driverLabel={short} />
         )}
@@ -153,22 +167,42 @@ export default function LiveCarModal({
  * class's best on the violet tint — the tower's personal-best / fastest-in-
  * class vocabulary. A sector run under a flag keeps its flag tint.
  */
+/**
+ * The car's best valid lap and each driver's, for the crew list and the
+ * caption: who set the time is the question asked of it on air. The first
+ * lap to a time holds it.
+ */
+function bestLaps(laps: LapRow[]): { car: LapRow | null; byDriver: Map<number, LapRow> } {
+  let car: LapRow | null = null
+  const byDriver = new Map<number, LapRow>()
+  for (const l of laps) {
+    if (l.valid === false || l.lapTimeMs == null || l.lapTimeMs <= 0) continue
+    if (car == null || l.lapTimeMs < car.lapTimeMs!) car = l
+    if (l.driverOrder != null) {
+      const own = byDriver.get(l.driverOrder)
+      if (own == null || l.lapTimeMs < own.lapTimeMs!) byDriver.set(l.driverOrder, l)
+    }
+  }
+  return { car, byDriver }
+}
+
 function LapTable({
   laps,
   driverLabel,
   classBest,
+  bestLap,
 }: {
   laps: LapRow[]
   driverLabel: (order: number | null) => string
   classBest: (number | null)[]
+  bestLap: LapRow | null
 }) {
   if (laps.length === 0) return <div className="empty-state">No laps recorded yet.</div>
   const sectors = Math.max(0, ...laps.map((l) => l.sectorMs?.length ?? 0))
-  let best: number | null = null
+  const best = bestLap?.lapTimeMs ?? null
   const ownBest: (number | null)[] = Array.from({ length: sectors }, () => null)
   for (const l of laps) {
     if (l.valid === false) continue
-    if (l.lapTimeMs != null && l.lapTimeMs > 0 && (best == null || l.lapTimeMs < best)) best = l.lapTimeMs
     l.sectorMs?.forEach((ms, i) => {
       if (ms != null && ms > 0 && (ownBest[i] == null || ms < ownBest[i]!)) ownBest[i] = ms
     })
@@ -178,10 +212,17 @@ function LapTable({
   const hasEnergy = laps.some((l) => l.energyPct != null)
   return (
     <table className="grid-table lc-table">
-      {theoretical != null && best != null && (
+      {bestLap != null && best != null && (
         <caption className="lc-caption">
-          Best lap {lapTime(best)} · theoretical best {lapTime(theoretical)}
-          {best > theoretical && <span className="muted"> ({lapTime(best - theoretical)} in hand)</span>}
+          Best lap {lapTime(best)} by <strong>{driverLabel(bestLap.driverOrder)}</strong>
+          <span className="muted"> (lap {bestLap.lap})</span>
+          {theoretical != null && (
+            <>
+              {' '}
+              · theoretical best {lapTime(theoretical)}
+              {best > theoretical && <span className="muted"> ({lapTime(best - theoretical)} in hand)</span>}
+            </>
+          )}
         </caption>
       )}
       <thead>

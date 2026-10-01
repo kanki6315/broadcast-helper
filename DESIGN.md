@@ -440,13 +440,15 @@ in a modal.
   "fastest", and the cell's title and screen-reader text say it. The last
   lap borrows the same convention: violet when it set the class's fastest
   lap, the green `--res-win` tint in weight when it was the car's own best,
-  plain otherwise. A **Pits** column counts stops as Al Kamel's tower does
-  (and the Pits view), with the last stop's pit-lane time muted beside it.
+  plain otherwise. A **Last pit** column leads with the last stop's
+  pit-lane time — the quick glance; totals live in the Pits view — with the
+  stops so far, counted as Al Kamel's tower does, muted after it ("1:05 ×2").
   With participant details on, **S1–S3** follow Best and fill in as each
   sector is run, in the same purple and green; a time left from the
   previous lap sits in muted ink, an invalid one is struck through in error
   red. The class band carries the class's best sectors and their holders
-  plus the ideal lap. An out lap wears a quiet outlined `Out` mark. With
+  (car and driver's surname) plus the ideal lap; the Best cell's title
+  names who set it. An out lap wears a quiet outlined `Out` mark. With
   sectors, the team column drops below 1100px instead of 900px, so the
   tower still fits 1024px beside Energy. In a race, places gained or lost
   in class since the start follow the position as ▲2 in success green or
@@ -460,7 +462,15 @@ in a modal.
   and turn on **Top** (best speed trap, class-fastest on the violet tint),
   which is off by default so the tower still fits 1024px; only columns the
   feed has data for are offered, and the choice is remembered in that
-  browser only. A car in the pit carries an amber-tint
+  browser only. Beside it, **By class / Overall**: overall drops the bands
+  for one list in the feed's overall order (overall gaps and intervals, for
+  battles on track between classes), each row with its class colour down
+  the leading edge and a class tag with its place in class; purple and green
+  still count against the car's own class. It waits for the feed's overall
+  standings, and below 1100px the Stint column gives way to the class
+  column. A car past the chequered flag carries a small black-and-white
+  check in the status slot (fixed ink in both themes: the flag is black and
+  white), in place of Pit or Out. A car in the pit carries an amber-tint
   `Pit` mark; a retired car stays in its place in muted ink with its status
   in words. Interval and last lap drop below 640px. An **Energy** column
   (IMSA telemetry) appears only once some car has a reading: the percentage
@@ -476,7 +486,9 @@ in a modal.
   flag (flag name on hover), pit in/out and track limits as words, and an
   invalid lap struck through in error red. Stints list driver, type, lap
   range, start, length and the driver's track-time total. Drivers are named
-  by surname, never the feed's three-letter code.
+  by surname, never the feed's three-letter code. Each crew member's own
+  best lap sits muted beside their name, the car's best in weight, and the
+  laps caption says who set it: "Best lap 1:37.800 by **Aitken** (lap 2)".
 - **Drive time**: class bands, then crews as units (one divider per car).
   Each driver has their time, a 120px meter (share of the maximum; an ink
   tick at the minimum) and a status **in words**: "Over by 5:00" in error

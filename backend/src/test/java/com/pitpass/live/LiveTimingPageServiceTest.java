@@ -46,11 +46,14 @@ class LiveTimingPageServiceTest {
                           "2": {"firstName": "Bea", "lastName": "Two", "shortName": "Two", "license": "Gold"}}},
                        "4": {"number": "4", "currentDriver": 1, "drivers": {
                           "1": {"firstName": "Cy", "lastName": "Unresolved", "shortName": "Unr", "license": "Silver"}}}},
-             "standings": {"overall": {"participantDetails": {
+             "standings": {"overall": {
+                "active": {"1": {"participant": "4", "position": 1, "lapNumber": 4},
+                           "2": {"participant": "04", "position": 2, "lapNumber": 3, "gapFirstLaps": -1, "gapPreviousLaps": -1}},
+                "participantDetails": {
                 "04": {"currentSector": 2, "status": "TRACK",
                        "lastSectors": {"1": {"number": 1, "time": 30500, "isValid": true}},
                        "bestSectors": {"1": {"number": 1, "time": 30000}, "2": {"number": 2, "time": 31000}}},
-                "4": {"currentSector": 1, "status": "BOX", "pitStops": 3,
+                "4": {"currentSector": 1, "status": "BOX", "pitStops": 3, "hasSeenCheckered": true,
                       "bestSectors": {"1": {"number": 1, "time": 29000}, "2": {"number": 2, "time": 33000}}}}},
                            "byClass": {"active": {"GTD": {"class": "GTD", "standings": {
                 "1": {"participant": "04", "position": 1, "lapNumber": 3},
@@ -131,6 +134,7 @@ class LiveTimingPageServiceTest {
             public JsonNode state(String path) {
                 return "timing.session".equals(path) ? tree : "timing.session.entry".equals(path) ? tree.get("entry")
                         : AlKamelV2Properties.PARTICIPANT_DETAILS_CHANNEL.equals(path) ? tree.at("/standings/overall/participantDetails")
+                        : AlKamelV2Properties.OVERALL_STANDINGS_CHANNEL.equals(path) ? tree.at("/standings/overall/active")
                         : null;
             }
 
@@ -189,12 +193,34 @@ class LiveTimingPageServiceTest {
         assertTrue(second.inPit(), "BOX marks the car in the pit with no PIT stint");
         assertEquals("BOX", second.trackStatus());
         var gtd = tower.classes().getFirst();
-        assertEquals(List.of(new LiveParticipantDetails.ClassSector(29_000, "4"), new LiveParticipantDetails.ClassSector(31_000, "04")),
-                gtd.bestSectors());
+        assertEquals(List.of(new LiveParticipantDetails.ClassSector(29_000, "4", null),
+                        new LiveParticipantDetails.ClassSector(31_000, "04", "One")),
+                gtd.bestSectors(), "#04's sector 2 best was first run on lap 1, by Ann One; #4 has no laps to say");
+        assertEquals("Ann One", first.bestLapDriver(), "the best lap (lap 2) was Ann's, though Bea is in the car");
+        assertNull(second.bestLapDriver());
+        assertEquals(2, first.overallPosition(), "#4 leads overall, from the overall standings");
+        assertEquals(1, first.overallGapLaps());
+        assertEquals(1, second.overallPosition());
+        assertFalse(first.checkered());
+        assertTrue(second.checkered(), "hasSeenCheckered");
         assertEquals(60_000L, gtd.idealMs());
         assertNull(first.startPosition(), "not a race: no places gained");
         assertEquals(253.0, first.topSpeed(), "the best trap counts on an invalid lap too");
         assertNull(second.topSpeed());
+    }
+
+    @Test
+    void withoutTheFeedsWordTheFlagFallsAtTheLeadersLastCrossingOrTheClockEnd() {
+        var overall = java.util.Map.of("7", new LiveTimingPageService.Overall(1, null, null, null, null),
+                "9", new LiveTimingPageService.Overall(2, 5_000L, null, 5_000L, null));
+        var crossings = java.util.Map.of("7", 1_000L, "9", 1_005L, "3", 990L);
+        assertEquals(java.util.Set.of("7", "9"), LiveTimingPageService.pastTheFlag(true, overall, crossings, null),
+                "#3 has not crossed since the leader took the flag");
+        var clock = new LiveTimingService.Clock("BY_TIME", 0L, 995L, null, null, null, 0, null);
+        assertEquals(java.util.Set.of("7", "9"), LiveTimingPageService.pastTheFlag(false, java.util.Map.of(), crossings, clock),
+                "practice: the flag falls when the clock runs out");
+        assertTrue(LiveTimingPageService.pastTheFlag(true, java.util.Map.of(), crossings, clock).isEmpty(),
+                "a race with no overall leader: nothing to go by");
     }
 
     @Test

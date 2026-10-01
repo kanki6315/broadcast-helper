@@ -59,7 +59,25 @@ struct TowerClass: Codable, Sendable, Equatable, Identifiable {
     /// The series' class_style colour ("#rrggbb"), or nil.
     let color: String?
     let cars: [TowerCar]
+    /// Per sector, the class's fastest time, its car and driver; empty without participant details.
+    var bestSectors: [ClassSector]? = nil
+    /// The class's best sectors summed.
+    var idealMs: Int? = nil
     var id: String { className }
+}
+
+/// A class's fastest time in one sector, the car that holds it and its driver's surname.
+struct ClassSector: Codable, Sendable, Equatable {
+    let ms: Int?
+    let car: String?
+    var driver: String? = nil
+}
+
+/// A sector's newest time. `currentLap` false = the previous lap's, until the car runs that sector again.
+struct SectorTime: Codable, Sendable, Equatable {
+    let ms: Int
+    let valid: Bool?
+    let currentLap: Bool
 }
 
 struct TowerCar: Codable, Sendable, Equatable, Identifiable {
@@ -93,6 +111,23 @@ struct TowerCar: Codable, Sendable, Equatable, Identifiable {
     var trackStatus: String? = nil
     /// Its place in its class on the starting grid, in a race; nil off the grid.
     var startPosition: Int? = nil
+    /// Pit stops so far, as Al Kamel counts them; nil with no session recorded.
+    var pitStops: Int? = nil
+    /// Pit-lane time of the newest finished stop.
+    var lastPitMs: Int? = nil
+    /// Sector 1 first, as they are run; nil where the car has no time yet.
+    var sectors: [SectorTime?]? = nil
+    var bestSectorMs: [Int?]? = nil
+    /// Place and gaps across every class, from the feed's overall standings; nil until they arrive.
+    var overallPosition: Int? = nil
+    var overallGapMs: Int? = nil
+    var overallGapLaps: Int? = nil
+    var overallIntervalMs: Int? = nil
+    var overallIntervalLaps: Int? = nil
+    /// Has taken the chequered flag.
+    var checkered: Bool? = nil
+    /// Full name of the driver who set `bestLapMs`.
+    var bestLapDriver: String? = nil
     var id: String { carNumber }
 
     /// Classified or running; anything else (retired…) stays in place, muted.

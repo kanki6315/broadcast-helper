@@ -22,6 +22,8 @@ struct TimingSheet: View {
     @State private var openCar: OpenCar?
     /// Cars whose place just changed, washed amber for a moment (TowerGrid).
     @State private var moved: Set<String> = []
+    /// By class or overall, remembered on this iPad (a convenience, like the web's column choice).
+    @AppStorage("timing.order") private var order = "class"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     enum Mode: String { case tower, gaps, sectors, pits, drive, control }
@@ -195,7 +197,20 @@ struct TimingSheet: View {
                 RaceControlStrip(now: value.raceControl, utcOffsetHours: value.session?.clock?.utcOffsetHours) {
                     mode = .control
                 }
-                TowerGrid(tower: value, moved: moved) { car, cls in
+                let hasOverall = TimingFormat.overallOrder(value) != nil
+                HStack(spacing: PP.Space.s3) {
+                    if order == "overall" && !hasOverall {
+                        Text("Overall waits for the feed's overall order.").font(.caption).foregroundStyle(PP.textMuted)
+                    }
+                    Spacer(minLength: 0)
+                    Picker("Running order", selection: $order) {
+                        Text("By class").tag("class")
+                        Text("Overall").tag("overall")
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 220)
+                }
+                TowerGrid(tower: value, moved: moved, overall: order == "overall" && hasOverall) { car, cls in
                     openCar = OpenCar(carNumber: car.carNumber, teamName: car.teamName, className: cls.className,
                                       color: cls.color, sessionDbId: value.sessionDbId)
                 }
@@ -313,19 +328,33 @@ private struct SessionClockView: View {
 private struct TowerGrid: View {
     let tower: Tower
     var moved: Set<String> = []
+    /// One list in the feed's overall order rather than a band per class.
+    var overall = false
     let open: (TowerCar, TowerClass) -> Void
 
-    private var hasStarts: Bool { tower.classes.contains { $0.cars.contains { $0.startPosition != nil } } }
+    private var cars: [TowerCar] { tower.classes.flatMap(\.cars) }
+    private var hasStarts: Bool { !overall && cars.contains { $0.startPosition != nil } }
+    private var hasLaps: Bool { cars.contains { $0.lastLapMs != nil || $0.stintStartMs != nil } }
+    private var hasEnergy: Bool { cars.contains { $0.energyPct != nil } }
+    private var hasPits: Bool { cars.contains { $0.pitStops != nil } }
+    private var sectorCount: Int { hasLaps ? cars.map { $0.sectors?.count ?? 0 }.max() ?? 0 : 0 }
 
-    private var hasLaps: Bool { tower.classes.contains { $0.cars.contains { $0.lastLapMs != nil || $0.stintStartMs != nil } } }
-    private var hasEnergy: Bool { tower.classes.contains { $0.cars.contains { $0.energyPct != nil } } }
+    /// Where a row stands in the order shown: in its class, or overall.
+    private struct Place {
+        let position: Int?
+        let gapMs: Int?
+        let gapLaps: Int?
+        let intervalMs: Int?
+        let intervalLaps: Int?
+    }
 
     var body: some View {
-        let ident: [GridColumn] = [
-            .text("pos", "Pos", width: hasStarts ? 76 : 48, align: .trailing),
+        var ident: [GridColumn] = [
+            .text("pos", "Pos", width: hasStarts ? 76 : overall ? 58 : 48, align: .trailing),
             .text("car", "#", width: 56, align: .trailing),
-            .text("driver", "Driver", width: 200),
         ]
+        if overall { ident.append(.text("class", "Class", width: 118)) }
+        ident.append(.text("driver", "Driver", width: 200))
         var data: [GridColumn] = [
             .text("team", "Team", width: 170),
             .text("laps", "Laps", width: 54, align: .trailing),
@@ -334,57 +363,102 @@ private struct TowerGrid: View {
         ]
         if hasLaps {
             data += [.text("last", "Last", width: 92, align: .trailing),
-                     .text("best", "Best", width: 96, align: .trailing),
-                     .text("stint", "Stint", width: 116, align: .trailing)]
+                     .text("best", "Best", width: 96, align: .trailing)]
+            data += (0..<sectorCount).map { .text("s\($0)", "S\($0 + 1)", width: 80, align: .trailing) }
+            data.append(.text("stint", "Stint", width: 116, align: .trailing))
         }
+        if hasPits { data.append(.text("pits", "Last pit", width: 100, align: .trailing)) }
         if hasEnergy { data.append(.text("energy", "Energy", width: 104, align: .trailing)) }
         data.append(GridColumn(id: "state", width: 70, growthWeight: 1) { Text("").accessibilityHidden(true) })
 
-        let sections = tower.classes.map { cls in
-            let best = TimingFormat.classBest(cls.cars)
-            return GridSection(id: cls.className,
-                               band: (label: cls.feedClass == cls.className ? cls.className : "\(cls.className) (\(cls.feedClass))",
-                                      color: cls.color ?? ""),
-                               rows: cls.cars.map { row($0, cls: cls, best: best) })
+        // What each car is marked against is always its own class, in either order.
+        let bests = Dictionary(tower.classes.map { ($0.className, TimingFormat.classBest($0.cars)) }, uniquingKeysWith: { a, _ in a })
+        let sections: [GridSection]
+        if overall, let order = TimingFormat.overallOrder(tower) {
+            sections = [GridSection(id: "overall", band: nil, rows: order.map { row($0.car, cls: $0.cls, best: bests[$0.cls.className] ?? nil) })]
+        } else {
+            sections = tower.classes.map { cls in
+                GridSection(id: cls.className,
+                            band: (label: cls.feedClass == cls.className ? cls.className : "\(cls.className) (\(cls.feedClass))",
+                                   color: cls.color ?? ""),
+                            rows: cls.cars.map { row($0, cls: cls, best: bests[cls.className] ?? nil) },
+                            bandDetail: bandBests(cls))
+            }
         }
         return GridTable(identColumns: ident, dataColumns: data, sections: sections,
                          lineHeight: 20, cellPadV: 5, cellPadH: 8, headerHeight: 34, separatesIdentity: true, centersCells: true)
     }
 
-    /// A lap time in timing screens' purple (fastest in class: bold ink on the
-    /// violet result tint) or green (the car's own best, on the green tint).
-    /// The words are in the accessible name.
-    private func lapCell(_ ms: Int?, mark: TimingFormat.LapMark?, muted: Bool) -> AnyView {
+    /// The class's best sectors, who holds them and the ideal lap, on the band's scrolling half.
+    private func bandBests(_ cls: TowerClass) -> String? {
+        let bests = cls.bestSectors ?? []
+        guard bests.contains(where: { $0.ms != nil }) else { return nil }
+        var parts = bests.enumerated().compactMap { i, s -> String? in
+            guard let ms = s.ms else { return nil }
+            return "S\(i + 1) \(TimingFormat.lapTime(ms)) #\(s.car ?? "?")" + (s.driver.map { " \($0)" } ?? "")
+        }
+        if let ideal = cls.idealMs { parts.append("Ideal \(TimingFormat.lapTime(ideal))") }
+        return parts.joined(separator: "   ")
+    }
+
+    /// A lap or sector time in timing screens' purple (fastest in class: bold
+    /// ink on the violet result tint) or green (the car's own best, on the
+    /// green tint). The words are in the accessible name.
+    private func lapCell(_ ms: Int?, mark: TimingFormat.LapMark?, muted: Bool, invalid: Bool = false, extra: String? = nil) -> AnyView {
         let time = TimingFormat.lapTime(ms)
         let fill: Color = switch mark {
         case .classBest: ResultTint.top5
         case .personalBest: ResultTint.win
         case nil: .clear
         }
+        let words = [mark == .classBest ? "fastest in class" : mark == .personalBest ? "personal best" : nil,
+                     invalid ? "invalid" : nil, extra].compactMap { $0 }
         return AnyView(
             Text(time)
                 .font(PP.mono(PP.TextSize.sm, weight: mark == .classBest ? 700 : mark == .personalBest ? 600 : 400))
                 .foregroundStyle(mark != nil ? PP.ink : muted ? PP.textMuted : PP.text)
+                .strikethrough(invalid, color: PP.error)
                 .padding(.horizontal, mark != nil ? 4 : 0)
                 .background(fill, in: RoundedRectangle(cornerRadius: PP.Radius.xs))
-                .accessibilityLabel(mark == .classBest ? "\(time), fastest in class" : mark == .personalBest ? "\(time), personal best" : time))
+                .accessibilityLabel(([time] + words).joined(separator: ", ")))
     }
 
     private func row(_ car: TowerCar, cls: TowerClass, best: Int?) -> GridRowItem {
         let muted = !car.running
-        let leader = car.position == 1
+        let place = overall
+            ? Place(position: car.overallPosition, gapMs: car.overallGapMs, gapLaps: car.overallGapLaps,
+                    intervalMs: car.overallIntervalMs, intervalLaps: car.overallIntervalLaps)
+            : Place(position: car.position, gapMs: car.gapToLeaderMs, gapLaps: car.gapToLeaderLaps,
+                    intervalMs: car.intervalMs, intervalLaps: car.intervalLaps)
+        let leader = place.position == 1
         let isClassBest = best != nil && car.bestLapMs == best
         let lastMark = TimingFormat.lastLapMark(car, classBest: best)
         var cells: [AnyView] = [
             GridCell.text(car.teamName ?? "—", muted: true),
             GridCell.num(car.laps.map(String.init) ?? "", muted: muted),
-            GridCell.num(leader ? "" : TimingFormat.gap(ms: car.gapToLeaderMs, laps: car.gapToLeaderLaps), muted: muted),
-            GridCell.num(leader ? "" : TimingFormat.gap(ms: car.intervalMs, laps: car.intervalLaps), muted: muted),
+            GridCell.num(leader ? "" : TimingFormat.gap(ms: place.gapMs, laps: place.gapLaps), muted: muted),
+            GridCell.num(leader ? "" : TimingFormat.gap(ms: place.intervalMs, laps: place.intervalLaps), muted: muted),
         ]
         if hasLaps {
             cells.append(lapCell(car.lastLapMs, mark: lastMark, muted: muted))
-            cells.append(lapCell(car.bestLapMs, mark: isClassBest ? .classBest : nil, muted: muted))
+            cells.append(lapCell(car.bestLapMs, mark: isClassBest ? .classBest : nil, muted: muted,
+                                 extra: car.bestLapDriver.map { "set by \($0)" }))
+            for i in 0..<sectorCount {
+                cells.append(sectorCell(car, i, classBest: cls.bestSectors?.indices.contains(i) == true ? cls.bestSectors?[i].ms : nil))
+            }
             cells.append(AnyView(StintCell(car: car, tower: tower)))
+        }
+        if hasPits {
+            cells.append(AnyView(HStack(spacing: 4) {
+                if let last = car.lastPitMs {
+                    Text(TimingFormat.duration(last)).font(PP.mono(PP.TextSize.sm)).foregroundStyle(muted ? PP.textMuted : PP.text)
+                }
+                if let n = car.pitStops, n > 0 {
+                    Text("×\(n)").font(PP.mono(PP.TextSize.xs)).foregroundStyle(PP.textMuted)
+                        .frame(minWidth: 24, alignment: .leading)
+                        .accessibilityLabel("\(n) \(n == 1 ? "stop" : "stops")")
+                }
+            }))
         }
         if hasEnergy {
             cells.append(AnyView(HStack(spacing: PP.Space.s2) {
@@ -404,24 +478,46 @@ private struct TowerGrid: View {
                     .accessibilityLabel(TimingFormat.ratingName(r) ?? r)
             }
         })
-        let gained = TimingFormat.placesGained(car).flatMap { $0 == 0 ? nil : "\($0 > 0 ? "up" : "down") \(abs($0)) since the start" }
-        let label = ["P\(car.position)", gained, "car \(car.carNumber)", car.driverName, car.teamName,
+        var ident = [positionCell(car, place: place, cls: cls, muted: muted), GridCell.car(car.carNumber)]
+        if overall { ident.append(classCell(car, cls: cls)) }
+        ident.append(driver)
+        let gained = hasStarts ? TimingFormat.placesGained(car).flatMap { $0 == 0 ? nil : "\($0 > 0 ? "up" : "down") \(abs($0)) since the start" } : nil
+        let label = [place.position.map { "P\($0)\(overall ? " overall" : "")" }, overall ? "\(cls.className) P\(car.position)" : nil, gained,
+                     "car \(car.carNumber)", car.driverName, car.teamName,
+                     car.checkered == true ? "has taken the chequered flag" : nil,
                      car.inPit ? "in the pit" : nil, car.running ? nil : car.status?.lowercased()]
             .compactMap { $0 }.joined(separator: ", ")
-        return GridRowItem(id: car.carNumber,
-                           ident: [positionCell(car, muted: muted), GridCell.car(car.carNumber), driver],
-                           cells: cells, lines: 1,
+        return GridRowItem(id: car.carNumber, ident: ident, cells: cells, lines: 1,
                            onTap: { open(car, cls) }, tapLabel: label + ". Opens laps and stints.",
                            wash: moved.contains(car.carNumber) ? PP.accent.opacity(0.3) : nil)
     }
 
-    /// The position, then places gained (▲ success green) or lost (▼ error red)
-    /// since the start in a fixed slot, so positions stay in one column.
-    private func positionCell(_ car: TowerCar, muted: Bool) -> AnyView {
-        guard hasStarts else { return GridCell.num(String(car.position), muted: muted, bold: true) }
+    /// One sector's newest time, marked as the lap columns are; the previous
+    /// lap's (the car has not run it again yet) muted, an invalid one struck through.
+    private func sectorCell(_ car: TowerCar, _ i: Int, classBest: Int?) -> AnyView {
+        guard let sectors = car.sectors, sectors.indices.contains(i), let sector = sectors[i] else { return GridCell.empty() }
+        let carBest = car.bestSectorMs.flatMap { $0.indices.contains(i) ? $0[i] : nil }
+        let mark = TimingFormat.sectorMark(sector.ms, carBest: carBest, classBest: classBest)
+        return lapCell(sector.ms, mark: mark, muted: !car.running || (!sector.currentLap && mark == nil),
+                       invalid: sector.valid == false, extra: sector.currentLap ? nil : "previous lap")
+    }
+
+    /// The position — overall, or in class then places gained (▲ success
+    /// green, ▼ error red) since the start in a fixed slot. Overall, the
+    /// class colour runs down the leading edge.
+    private func positionCell(_ car: TowerCar, place: Place, cls: TowerClass, muted: Bool) -> AnyView {
+        let text = place.position.map(String.init) ?? ""
+        if overall {
+            return AnyView(HStack(spacing: 0) {
+                RoundedRectangle(cornerRadius: 1).fill(Color(cssHex: cls.color ?? "") ?? PP.borderStrong).frame(width: 4, height: 20)
+                Spacer(minLength: 4)
+                Text(text).font(PP.mono(PP.TextSize.sm, weight: 600)).foregroundStyle(muted ? PP.textMuted : PP.ink)
+            })
+        }
+        guard hasStarts else { return GridCell.num(text, muted: muted, bold: true) }
         let gained = TimingFormat.placesGained(car) ?? 0
         return AnyView(HStack(spacing: 4) {
-            Text(String(car.position)).font(PP.mono(PP.TextSize.sm, weight: 600))
+            Text(text).font(PP.mono(PP.TextSize.sm, weight: 600))
                 .foregroundStyle(muted ? PP.textMuted : PP.ink)
             Text(gained == 0 ? "" : "\(gained > 0 ? "▲" : "▼")\(abs(gained))")
                 .font(PP.sans(PP.TextSize.xs, weight: 500))
@@ -430,15 +526,56 @@ private struct TowerGrid: View {
         })
     }
 
+    /// Overall: the car's class as a tag and its place in it.
+    private func classCell(_ car: TowerCar, cls: TowerClass) -> AnyView {
+        AnyView(HStack(spacing: 6) {
+            Text(cls.className).font(PP.sans(PP.TextSize.xs, weight: 700)).lineLimit(1)
+                .padding(.horizontal, 6).padding(.vertical, 1)
+                .foregroundStyle(classInk(cls.color ?? ""))
+                .background(Color(cssHex: cls.color ?? "") ?? PP.surface2, in: RoundedRectangle(cornerRadius: PP.Radius.xs))
+                .overlay(RoundedRectangle(cornerRadius: PP.Radius.xs).strokeBorder(PP.borderStrong))
+            Text(String(car.position)).font(PP.mono(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted)
+        })
+    }
+
     private func stateCell(_ car: TowerCar) -> AnyView {
         if !car.running {
             return GridCell.text(car.status?.lowercased().replacingOccurrences(of: "_", with: " ") ?? "", muted: true)
         }
-        guard car.inPit else { return GridCell.empty() }
+        if car.checkered == true { return AnyView(ChequeredMark()) }
+        if !car.inPit {
+            if car.trackStatus == "OUT_LAP" {
+                return AnyView(Text("Out").font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted)
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .overlay(RoundedRectangle(cornerRadius: PP.Radius.xs).strokeBorder(PP.borderStrong))
+                    .accessibilityLabel("Out lap"))
+            }
+            return car.trackStatus == "STOPPED" ? GridCell.text("stopped", muted: true) : GridCell.empty()
+        }
         return AnyView(Text("Pit").font(PP.sans(PP.TextSize.xs, weight: 700)).foregroundStyle(PP.ink)
             .padding(.horizontal, 6).padding(.vertical, 1)
             .background(PP.accentTint, in: RoundedRectangle(cornerRadius: PP.Radius.xs))
             .overlay(RoundedRectangle(cornerRadius: PP.Radius.xs).strokeBorder(PP.accent.opacity(0.45))))
+    }
+}
+
+/// Past the chequered flag: the flag itself, a small black-and-white check.
+/// Fixed black and white in both appearances — the flag is black and white.
+private struct ChequeredMark: View {
+    var body: some View {
+        Canvas { context, size in
+            let square: CGFloat = 4
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+            for row in 0..<Int(size.height / square) {
+                for col in 0..<Int(size.width / square) where (row + col) % 2 == 0 {
+                    context.fill(Path(CGRect(x: CGFloat(col) * square, y: CGFloat(row) * square, width: square, height: square)),
+                                 with: .color(Color(white: 0.07)))
+                }
+            }
+        }
+        .frame(width: 16, height: 12)
+        .overlay(Rectangle().strokeBorder(PP.borderStrong, lineWidth: 1))
+        .accessibilityLabel("Has taken the chequered flag")
     }
 }
 
@@ -497,11 +634,20 @@ private struct LiveCarSheet: View {
                             .background(Color(cssHex: target.color ?? "") ?? PP.surface2, in: RoundedRectangle(cornerRadius: PP.Radius.xs))
                             .overlay(RoundedRectangle(cornerRadius: PP.Radius.xs).strokeBorder(PP.borderStrong))
                         if let value = detail.value {
+                            let bests = TimingFormat.bestLaps(value.laps)
                             ForEach(value.drivers) { d in
                                 HStack(spacing: 6) {
                                     Text(String(d.driverOrder)).font(PP.mono(PP.TextSize.xs)).foregroundStyle(PP.textMuted)
                                     Text(d.name).font(.subheadline).foregroundStyle(PP.ink)
                                     if let r = d.rating { Text(r).font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted) }
+                                    // Each driver's own best; the car's in weight.
+                                    if let own = bests.byDriver[d.driverOrder] {
+                                        let isCar = own.lapTimeMs == bests.car?.lapTimeMs
+                                        Text(TimingFormat.lapTime(own.lapTimeMs))
+                                            .font(PP.mono(PP.TextSize.xs, weight: isCar ? 700 : 400))
+                                            .foregroundStyle(isCar ? PP.ink : PP.textMuted)
+                                            .accessibilityLabel("best lap \(TimingFormat.lapTime(own.lapTimeMs))\(isCar ? ", the car's best" : "")")
+                                    }
                                 }
                             }
                         }
@@ -548,7 +694,8 @@ private struct LiveCarSheet: View {
 
     private func laps(_ value: CarDetail) -> some View {
         let sectors = value.laps.map { $0.sectorMs?.count ?? 0 }.max() ?? 0
-        let best = value.laps.filter { $0.valid != false }.compactMap(\.lapTimeMs).filter { $0 > 0 }.min()
+        let bestLap = TimingFormat.bestLaps(value.laps).car
+        let best = bestLap?.lapTimeMs
         let ownBest = TimingFormat.bestSectors(value.laps, count: sectors)
         let theoretical: Int? = ownBest.isEmpty || ownBest.contains(where: { $0 == nil }) ? nil : ownBest.compactMap { $0 }.reduce(0, +)
         let classBest = self.classBest
@@ -605,12 +752,17 @@ private struct LiveCarSheet: View {
         return Group {
             if rows.isEmpty { EmptyState(message: "No laps recorded yet.") }
             else {
-                if let theoretical, let best {
+                if let bestLap, let best {
+                    // Who set it: the question asked of a best lap on air.
                     HStack(spacing: 4) {
-                        Text("Best lap \(TimingFormat.lapTime(best)) · theoretical best \(TimingFormat.lapTime(theoretical))")
-                            .foregroundStyle(PP.text)
-                        if best > theoretical {
-                            Text("(\(TimingFormat.lapTime(best - theoretical)) in hand)").foregroundStyle(PP.textMuted)
+                        Text("Best lap \(TimingFormat.lapTime(best)) by").foregroundStyle(PP.text)
+                        Text(driverLabel(value, bestLap.driverOrder)).fontWeight(.bold).foregroundStyle(PP.ink)
+                        Text("(lap \(bestLap.lap))").foregroundStyle(PP.textMuted)
+                        if let theoretical {
+                            Text("· theoretical best \(TimingFormat.lapTime(theoretical))").foregroundStyle(PP.text)
+                            if best > theoretical {
+                                Text("(\(TimingFormat.lapTime(best - theoretical)) in hand)").foregroundStyle(PP.textMuted)
+                            }
                         }
                     }
                     .font(.caption)

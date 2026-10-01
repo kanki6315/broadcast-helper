@@ -174,6 +174,53 @@ final class TimingFormatTests: XCTestCase {
         XCTAssertEqual(TimingFormat.moved(from: after, to: after), [])
     }
 
+    // MARK: Overall order, sectors, chequered, who set it
+
+    func testOverallOrderAndTheNewTowerFields() throws {
+        let json = """
+        {"state":"LIVE","matched":3,"total":3,"classes":[
+          {"className":"GTP","feedClass":"GTP","color":"#111111","idealMs":97600,
+           "bestSectors":[{"ms":31900,"car":"31","driver":"Aitken"},{"ms":33000,"car":"7","driver":null}],
+           "cars":[{"position":1,"carNumber":"7","inPit":false,"overallPosition":1,"pitStops":2,"lastPitMs":65000,
+                    "sectors":[{"ms":32000,"valid":true,"currentLap":true},null],"bestSectorMs":[32000,33000],
+                    "bestLapDriver":"Driver Seven"},
+                   {"position":2,"carNumber":"31","inPit":false,"overallPosition":3,"overallGapMs":6100,"checkered":true}]},
+          {"className":"GTD","feedClass":"GTD","cars":[{"position":1,"carNumber":"04","inPit":false,"overallPosition":2}]}]}
+        """
+        let tower = try JSONDecoder().decode(Tower.self, from: Data(json.utf8))
+        XCTAssertEqual(TimingFormat.overallOrder(tower)?.map(\.car.carNumber), ["7", "04", "31"])
+        XCTAssertEqual(TimingFormat.overallOrder(tower)?[1].cls.className, "GTD")
+        let seven = tower.classes[0].cars[0]
+        XCTAssertEqual(seven.lastPitMs, 65_000)
+        XCTAssertEqual(seven.sectors?[0]?.ms, 32_000)
+        XCTAssertNil(seven.sectors?[1] ?? nil)
+        XCTAssertEqual(seven.bestLapDriver, "Driver Seven")
+        XCTAssertEqual(tower.classes[0].cars[1].checkered, true)
+        XCTAssertEqual(tower.classes[0].bestSectors?[0].driver, "Aitken")
+        XCTAssertNil(try towerOf([("7", [:])]).classes[0].cars[0].checkered, "older servers send none of it")
+        XCTAssertNil(TimingFormat.overallOrder(try towerOf([("7", [:])])), "no overall standings yet")
+    }
+
+    func testSectorMarks() {
+        XCTAssertEqual(TimingFormat.sectorMark(31_900, carBest: 31_900, classBest: 31_900), .classBest)
+        XCTAssertEqual(TimingFormat.sectorMark(32_000, carBest: 32_000, classBest: 31_900), .personalBest)
+        XCTAssertNil(TimingFormat.sectorMark(32_500, carBest: 32_000, classBest: 31_900))
+        XCTAssertNil(TimingFormat.sectorMark(nil, carBest: nil, classBest: nil))
+    }
+
+    func testTheBestLapNamesItsDriver() {
+        func lap(_ n: Int, _ driver: Int, _ ms: Int?, valid: Bool? = true) -> LapRow {
+            LapRow(lap: n, driverOrder: driver, driverLap: n, position: nil, startTimeMs: nil, lapTimeMs: ms, sectorMs: nil,
+                   sectorFlags: nil, valid: valid, longLap: nil, shortLap: nil, trackLimits: nil, topSpeed: nil,
+                   pitInMs: nil, pitOutMs: nil, energyPct: nil, energyUsedPct: nil)
+        }
+        let bests = TimingFormat.bestLaps([lap(1, 1, 98_000), lap(2, 1, 97_800), lap(3, 2, 97_000, valid: false),
+                                           lap(4, 2, 97_900), lap(5, 2, 97_800), lap(6, 2, nil)])
+        XCTAssertEqual(bests.car?.lap, 2, "the first lap to the time holds it; an invalid lap never counts")
+        XCTAssertEqual(bests.byDriver[1]?.lap, 2)
+        XCTAssertEqual(bests.byDriver[2]?.lap, 5)
+    }
+
     // MARK: Analysis (gaps, sectors, pits)
 
     func testTheGapReadoutSaysLeaderGapOrLapsDown() {

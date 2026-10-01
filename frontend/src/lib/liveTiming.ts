@@ -96,6 +96,16 @@ export interface TowerCar {
   startPosition: number | null
   /** Best speed trap of the session, in the tower's speedUnit. */
   topSpeed: number | null
+  /** Place and gaps across every class, from the feed's overall standings; null until they arrive. */
+  overallPosition: number | null
+  overallGapMs: number | null
+  overallGapLaps: number | null
+  overallIntervalMs: number | null
+  overallIntervalLaps: number | null
+  /** Has taken the chequered flag. */
+  checkered: boolean
+  /** Full name of the driver who set bestLapMs; null when not known. */
+  bestLapDriver: string | null
 }
 
 /** A sector's newest time. currentLap false = the previous lap's, until the car runs that sector again. */
@@ -105,10 +115,11 @@ export interface SectorTime {
   currentLap: boolean
 }
 
-/** A class's fastest time in one sector, and the car that holds it. */
+/** A class's fastest time in one sector, the car that holds it and its driver's surname. */
 export interface ClassSector {
   ms: number | null
   car: string | null
+  driver: string | null
 }
 
 export interface TowerClass {

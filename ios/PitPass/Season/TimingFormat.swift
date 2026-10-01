@@ -130,6 +130,40 @@ enum TimingFormat {
         return last == classBest ? .classBest : .personalBest
     }
 
+    /// How a sector time reads, as a lap does: the class's fastest there, or the car's own best.
+    static func sectorMark(_ ms: Int?, carBest: Int?, classBest: Int?) -> LapMark? {
+        guard let ms, ms > 0 else { return nil }
+        if ms == classBest { return .classBest }
+        return ms == carBest ? .personalBest : nil
+    }
+
+    /// The car's best valid lap and each driver's (by driver order): who set
+    /// the time is the question asked of it on air. The first lap to a time holds it.
+    static func bestLaps(_ laps: [LapRow]) -> (car: LapRow?, byDriver: [Int: LapRow]) {
+        var car: LapRow?
+        var byDriver: [Int: LapRow] = [:]
+        for l in laps where l.valid != false {
+            guard let ms = l.lapTimeMs, ms > 0 else { continue }
+            if car.map({ ms < $0.lapTimeMs! }) ?? true { car = l }
+            if let order = l.driverOrder, byDriver[order].map({ ms < $0.lapTimeMs! }) ?? true { byDriver[order] = l }
+        }
+        return (car, byDriver)
+    }
+
+    /// The tower overall: every car in the feed's overall order, a car it has
+    /// not placed yet last, in class order. Nil until the overall standings arrive.
+    static func overallOrder(_ tower: Tower) -> [(car: TowerCar, cls: TowerClass)]? {
+        let all = tower.classes.enumerated().flatMap { ci, cls in cls.cars.map { (car: $0, cls: cls, ci: ci) } }
+        guard all.contains(where: { $0.car.overallPosition != nil }) else { return nil }
+        return all.sorted { a, b in
+            let pa = a.car.overallPosition ?? .max, pb = b.car.overallPosition ?? .max
+            if pa != pb { return pa < pb }
+            if a.ci != b.ci { return a.ci < b.ci }
+            return a.car.position < b.car.position
+        }
+        .map { (car: $0.car, cls: $0.cls) }
+    }
+
     /// Places gained in class since the start: positive = up; nil without a start position.
     static func placesGained(_ car: TowerCar) -> Int? {
         car.startPosition.map { $0 - car.position }

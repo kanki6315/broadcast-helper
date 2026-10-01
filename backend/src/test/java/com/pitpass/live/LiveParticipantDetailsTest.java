@@ -19,7 +19,8 @@ class LiveParticipantDetailsTest {
 
     /** #5 is on lap 5, in sector 3: sectors 1–2 are this lap's, 3 is still lap 4's. */
     private static final String DETAILS = """
-            {"5": {"currentLap": 5, "currentSector": 3, "status": "TRACK", "pitStops": 1,
+            {"5": {"currentLap": 5, "currentSector": 3, "status": "TRACK", "pitStops": 1, "hasSeenCheckered": true,
+                   "bestLap": {"driver": 2, "number": 3, "time": 52700},
                    "lastSectors": {"1": {"isValid": false, "number": 1, "time": 27115, "trackLimits": true},
                                    "2": {"isValid": true, "number": 2, "time": 7796},
                                    "3": {"isValid": true, "number": 3, "time": 18062}},
@@ -43,12 +44,16 @@ class LiveParticipantDetailsTest {
         assertEquals(List.of(26900, 7750, 18000), five.bestSectorMs());
         assertEquals(52_650L, five.idealMs());
         assertFalse(five.inBox());
+        assertEquals(Boolean.TRUE, five.checkered());
+        assertEquals(2, five.bestLapDriver(), "bestLap.driver is a driver order");
 
         var seven = LiveParticipantDetails.car(details.get("7"), 3);
         assertTrue(seven.inBox());
         assertNull(seven.sectors().get(1), "no time yet in sector 2");
         assertNull(seven.idealMs(), "no best in sector 3 yet");
         assertNull(seven.pitStops());
+        assertNull(seven.checkered(), "left out by the server: unknown, not false");
+        assertNull(seven.bestLapDriver());
     }
 
     @Test
@@ -58,11 +63,11 @@ class LiveParticipantDetailsTest {
                 "5", LiveParticipantDetails.car(details.get("5"), 3),
                 "7", LiveParticipantDetails.car(details.get("7"), 3));
         var bests = LiveParticipantDetails.classBests(List.of("5", "7"), cars::get, 3);
-        assertEquals(List.of(new LiveParticipantDetails.ClassSector(26800, "7"),
-                new LiveParticipantDetails.ClassSector(7750, "5"),
-                new LiveParticipantDetails.ClassSector(18000, "5")), bests);
+        assertEquals(List.of(new LiveParticipantDetails.ClassSector(26800, "7", null),
+                new LiveParticipantDetails.ClassSector(7750, "5", null),
+                new LiveParticipantDetails.ClassSector(18000, "5", null)), bests);
         assertEquals(52_550L, LiveParticipantDetails.idealLap(bests));
-        assertNull(LiveParticipantDetails.idealLap(List.of(new LiveParticipantDetails.ClassSector(null, null))));
+        assertNull(LiveParticipantDetails.idealLap(List.of(new LiveParticipantDetails.ClassSector(null, null, null))));
     }
 
     @Test
@@ -70,7 +75,10 @@ class LiveParticipantDetailsTest {
         var off = props(false);
         var on = props(true);
         assertFalse(off.joinedChannels().contains(AlKamelV2Properties.PARTICIPANT_DETAILS_CHANNEL));
-        assertEquals(List.of("timing.session.info", AlKamelV2Properties.PARTICIPANT_DETAILS_CHANNEL), on.joinedChannels());
+        assertEquals(List.of("timing.session.info", AlKamelV2Properties.OVERALL_STANDINGS_CHANNEL,
+                AlKamelV2Properties.PARTICIPANT_DETAILS_CHANNEL), on.joinedChannels());
+        assertTrue(off.joinedChannels().contains(AlKamelV2Properties.OVERALL_STANDINGS_CHANNEL),
+                "the overall order is always joined, for the tower's overall view");
     }
 
     private static AlKamelV2Properties props(boolean details) {
