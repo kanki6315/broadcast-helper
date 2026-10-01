@@ -33,6 +33,7 @@ struct HomeView: View {
                                     Label("All series", systemImage: "square.grid.2x2")
                                 }
                             }
+                            ToolbarItem(placement: .topBarTrailing) { timingButton }
                         }
                 } else {
                     ScrollView {
@@ -51,6 +52,7 @@ struct HomeView: View {
                                 .accessibilityLabel("Pit Pass")
                         }
                         .sharedBackgroundVisibility(.hidden)
+                        ToolbarItem(placement: .topBarTrailing) { timingButton }
                         ToolbarItem(placement: .topBarTrailing) {
                             Button { showSettings = true } label: {
                                 Label("Settings", systemImage: "gearshape")
@@ -62,6 +64,15 @@ struct HomeView: View {
             .navigationDestination(for: SheetRoute.self) { route in
                 SheetView(eventId: route.eventId)
             }
+            .navigationDestination(for: TimingRoute.self) { route in
+                switch route {
+                case .home: TimingHomeView()
+                case let .weekend(id):
+                    TimingSheet(scope: .weekend(id))
+                        .navigationTitle("Timing")
+                        .navigationBarTitleDisplayMode(.inline)
+                }
+            }
         }
         // Driver / team profiles open from any name in the stack. On the
         // stack itself, not its root content: pushed screens inherit the
@@ -70,6 +81,13 @@ struct HomeView: View {
         .environment(workspace)
         .tint(PP.accentInk)
         .sheet(isPresented: $showSettings) { SettingsView() }
+    }
+
+    /// Live timing for every series on track, filed under a Pit Pass event or not.
+    private var timingButton: some View {
+        NavigationLink(value: TimingRoute.home) {
+            Label("Timing", systemImage: "stopwatch")
+        }
     }
 
     private func select(_ id: Int) {

@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// The event's Timing tab: the live timing tower; gaps, best sectors and pit
-/// stops over a recorded session (TimingAnalysis.swift); and drive time — the
-/// web's `/timing/:eventId` (TimingPage.tsx) on the iPad. Read-only apart from the
-/// shared connect/disconnect switch, which stays in `LiveTimingBar` exactly as
-/// on the calculator. Rules are edited on the website.
+/// Live timing on the iPad — the web's TimingPage.tsx — for one Pit Pass event
+/// (its Timing tab) or for one series weekend as the feed has it, filed under
+/// an event or not (pushed from the Timing screen): the live timing tower;
+/// gaps, best sectors and pit stops over a recorded session
+/// (TimingAnalysis.swift); and drive time. Read-only apart from the shared
+/// connect/disconnect switch in `LiveTimingBar`. Rules are edited on the website.
 ///
 /// Everything here is polled through `LiveFeed` and never stored: the tower
 /// every 2 s (a 304 when nothing moved), drive time every 10 s while shown, the
@@ -12,8 +13,10 @@ import SwiftUI
 /// 10 s while its sheet is open.
 struct TimingSheet: View {
     @Environment(AppSession.self) private var session
-    let eventId: Int
+    let scope: TimingScope
     @State private var status = LiveFeed<LiveStatus>()
+    /// A weekend's own description: its name, and the event it is filed under (if any).
+    @State private var weekend = LiveFeed<WeekendChampionship>()
     @State private var tower = LiveFeed<Tower>()
     @State private var mode: Mode = .tower
     @State private var openCar: OpenCar?
@@ -29,12 +32,52 @@ struct TimingSheet: View {
         var id: String { carNumber }
     }
 
-    private var followingThis: Bool { tower.value?.eventId == eventId }
+    init(eventId: Int) { scope = .event(eventId) }
+    init(scope: TimingScope) { self.scope = scope }
+
+    /// The session on track belongs here when it is filed under this event or —
+    /// filed nowhere — the connection is bound here (shown as the feed has it);
+    /// on a weekend's screen, when it is one of that weekend's sessions.
+    private var followingThis: Bool {
+        guard let value = tower.value else { return false }
+        switch scope {
+        case let .event(id): return (value.filedEventId ?? value.eventId) == id
+        case let .weekend(id): return value.session?.feedEventDbId == id
+        }
+    }
+
+    /// The event a filing hint, rules and calculators belong to: this event, or the weekend's filed one.
+    private var eventId: Int? {
+        switch scope {
+        case let .event(id): id
+        case .weekend: weekend.value?.eventId
+        }
+    }
+
+    private var title: String {
+        switch scope {
+        case .event: return "Live timing"
+        case .weekend:
+            guard let w = weekend.value else { return "Series weekend" }
+            return [w.champName, w.feedEventName].compactMap { $0 }.joined(separator: " · ").nonEmpty ?? w.title
+        }
+    }
+
+    private var sessionsPath: String {
+        switch scope {
+        case let .event(id): "/api/live/sessions?eventId=\(id)"
+        case let .weekend(id): "/api/live/sessions?feedEvent=\(id)"
+        }
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: PP.Space.s3) {
-                Text("Live timing").ppTitle()
+                Text(title).ppTitle()
+                if case .weekend = scope, let w = weekend.value {
+                    Text(w.filedUnder + (w.track.map { " · \($0)" } ?? ""))
+                        .font(.subheadline).foregroundStyle(PP.textMuted)
+                }
                 LiveTimingBar(eventId: eventId, status: status)
                 HStack(spacing: PP.Space.s3) {
                     Picker("View", selection: $mode) {
@@ -55,15 +98,17 @@ struct TimingSheet: View {
                 if mode == .tower {
                     towerContent
                 } else {
-                    RecordedSessions(eventId: eventId) { chosen in
+                    RecordedSessions(path: sessionsPath, scopeName: scopeName) { chosen in
                         switch mode {
                         case .gaps: GapsSection(chosen: chosen, open: { openAnalysis($0, chosen) })
                         case .sectors: SectorsSection(chosen: chosen, open: { openAnalysis($0, chosen) })
                         case .pits: PitsSection(chosen: chosen, open: { openAnalysis($0, chosen) })
                         default:
+                            // Colours come from the event the session is filed under, when the tower shows it.
+                            let sameEvent = chosen.eventId != nil && tower.value?.filedEventId == chosen.eventId
                             DriveTimeSection(chosen: chosen,
-                                             classColors: followingThis ? Dictionary((tower.value?.classes ?? []).map { ($0.className.lowercased(), $0.color ?? "") },
-                                                                                     uniquingKeysWith: { a, _ in a }) : [:],
+                                             classColors: sameEvent ? Dictionary((tower.value?.classes ?? []).map { ($0.className.lowercased(), $0.color ?? "") },
+                                                                                 uniquingKeysWith: { a, _ in a }) : [:],
                                              classOrder: followingThis ? (tower.value?.classes ?? []).map(\.className) : [])
                         }
                     }
@@ -76,6 +121,11 @@ struct TimingSheet: View {
         .tint(PP.accentInk)
         .task { await status.run(session.client, path: "/api/live/status", every: .seconds(5)) }
         .task { await tower.run(session.client, path: "/api/live/timing", every: .seconds(2)) }
+        .task(id: scope) {
+            if case let .weekend(id) = scope {
+                await weekend.run(session.client, path: "/api/live/feed-events/\(id)", every: .seconds(30))
+            }
+        }
         .sheet(item: $openCar) { target in
             LiveCarSheet(target: target)
         }
@@ -86,6 +136,13 @@ struct TimingSheet: View {
                           color: target.color, sessionDbId: chosen.sessionDbId)
     }
 
+    private var scopeName: String {
+        switch scope {
+        case .event: "this event"
+        case .weekend: "this series weekend"
+        }
+    }
+
     @ViewBuilder private var towerContent: some View {
         if let value = tower.value {
             if value.state == "NOT_CONFIGURED" {
@@ -93,15 +150,29 @@ struct TimingSheet: View {
             } else if value.state == "OFF" || value.state == "STANDBY" {
                 EmptyState(message: "Live timing is off. Once it is connected, the tower fills in here. Recorded sessions stay under Gaps, Sectors, Pits and Drive time.")
             } else if !followingThis {
-                EmptyState(message: "Live timing is following \(value.eventName ?? "another event"), not this one. Open that event's Timing tab to follow it.")
+                VStack(alignment: .leading, spacing: PP.Space.s3) {
+                    EmptyState(message: "Live timing is following \(onTrackName(value)), not \(scopeName).")
+                    // Wherever it is filed — or not — its own weekend screen has its timing.
+                    if let feedEvent = value.session?.feedEventDbId {
+                        NavigationLink(value: TimingRoute.weekend(feedEvent)) {
+                            Label("Open \(value.session?.championship ?? "that series")", systemImage: "stopwatch")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
             } else if value.classes.isEmpty {
                 EmptyState(message: "Connected. Waiting for the feed's first running order.")
             } else {
+                let unfiled = value.filedEventId == nil
+                if unfiled {
+                    Text(unfiledNote(value)).font(.subheadline).foregroundStyle(PP.textMuted)
+                }
                 TowerGrid(tower: value) { car, cls in
                     openCar = OpenCar(carNumber: car.carNumber, teamName: car.teamName, className: cls.className,
                                       color: cls.color, sessionDbId: value.sessionDbId)
                 }
-                Text("\(value.matched) of \(value.total) cars matched to this event's entries. Tap a car for its laps and stints.")
+                Text((unfiled ? "" : "\(value.matched) of \(value.total) cars matched to \(value.filedEventName ?? "the event")'s entries. ")
+                     + "Tap a car for its laps and stints.")
                     .font(.caption).foregroundStyle(PP.textMuted)
             }
         } else if let error = tower.error {
@@ -110,6 +181,33 @@ struct TimingSheet: View {
             SkeletonLines()
         }
     }
+
+    private func onTrackName(_ value: Tower) -> String {
+        if let filed = value.filedEventName { return filed }
+        if let s = value.session { return [s.championship, s.name].compactMap { $0 }.joined(separator: " · ").nonEmpty ?? "another session" }
+        return value.eventName ?? "another event"
+    }
+
+    private func unfiledNote(_ value: Tower) -> String {
+        switch scope {
+        case .event:
+            "\(value.session?.championship ?? "This session") is not filed under this event: its cars do not match the entry list. Teams and drivers are the feed's own."
+        case .weekend:
+            "Not filed under a Pit Pass event. Teams and drivers are the feed's own."
+        }
+    }
+}
+
+/// Which timing a `TimingSheet` shows.
+enum TimingScope: Hashable {
+    /// A Pit Pass event's sessions — its Timing tab.
+    case event(Int)
+    /// One series weekend as the feed has it (Al Kamel's event id), filed or not.
+    case weekend(Int)
+}
+
+private extension String {
+    var nonEmpty: String? { isEmpty ? nil : self }
 }
 
 /// The feed's session and flag, the flag as a tinted chip that always says its name.
@@ -468,7 +566,9 @@ private struct LiveCarSheet: View {
 /// share a session picker: the one chosen, else the one being fed, else the newest.
 private struct RecordedSessions<Content: View>: View {
     @Environment(AppSession.self) private var session
-    let eventId: Int
+    /// `/api/live/sessions?eventId=` or `?feedEvent=`.
+    let path: String
+    let scopeName: String
     @ViewBuilder let content: (LiveSessionSummary) -> Content
     @State private var sessions = LiveFeed<[LiveSessionSummary]>()
     @State private var chosen: Int?
@@ -493,7 +593,7 @@ private struct RecordedSessions<Content: View>: View {
                     }
                     content(shown)
                 } else {
-                    EmptyState(message: "No timed sessions recorded for this event yet. Laps and stints are recorded while live timing is connected to this event.")
+                    EmptyState(message: "No timed sessions recorded for \(scopeName) yet. Laps and stints are recorded while live timing is connected.")
                 }
             } else if let error = sessions.error {
                 ErrorPanel(message: error)
@@ -501,7 +601,7 @@ private struct RecordedSessions<Content: View>: View {
                 SkeletonLines()
             }
         }
-        .task { await sessions.run(session.client, path: "/api/live/sessions?eventId=\(eventId)", every: .seconds(30)) }
+        .task(id: path) { await sessions.run(session.client, path: path, every: .seconds(30)) }
     }
 }
 
@@ -516,7 +616,12 @@ private struct DriveTimeSection: View {
         VStack(alignment: .leading, spacing: PP.Space.s3) {
             if let value = drive.value, value.sessionDbId == chosen.sessionDbId {
                 DriveTable(drive: value, classColors: classColors, classOrder: classOrder)
-                RulesList(rules: value.rules)
+                if chosen.eventId != nil {
+                    RulesList(rules: value.rules)
+                } else {
+                    Text("Drive-time rules belong to a Pit Pass event; this session is not filed under one.")
+                        .font(.subheadline).foregroundStyle(PP.textMuted)
+                }
             } else if let error = drive.error {
                 ErrorPanel(message: "Could not load drive time: \(error)")
             } else {

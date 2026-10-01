@@ -5,11 +5,15 @@ import Foundation
 // every live document they are polled through `LiveFeed`, never stored — a
 // tower that is not current is not a tower.
 
-/// `GET /api/live/timing`.
+/// `GET /api/live/timing`. `eventId` is the connection's binding;
+/// `filedEventId` the event the session on track is filed under — teams,
+/// colours and drivers come from it, and nil means the feed's own.
 struct Tower: Codable, Sendable, Equatable {
     let state: String
     let eventId: Int?
     let eventName: String?
+    var filedEventId: Int? = nil
+    var filedEventName: String? = nil
     let session: LiveSession?
     let sessionDbId: Int?
     /// The newest time the feed itself reported: what a stint counts up to in
@@ -157,7 +161,7 @@ struct DriveTimeResult: Codable, Sendable, Equatable, Identifiable {
     var id: String { "\(car)#\(driverOrder)" }
 }
 
-/// `GET /api/live/sessions?eventId=`.
+/// `GET /api/live/sessions?eventId=` or `?feedEvent=`.
 struct LiveSessionSummary: Codable, Sendable, Equatable, Identifiable {
     let sessionDbId: Int
     let eventId: Int?
@@ -290,4 +294,49 @@ struct PitsResponse: Codable, Sendable, Equatable {
         guard let order else { return nil }
         return (drivers[car]?[String(order)] ?? nil) ?? "Driver \(order)"
     }
+}
+
+// MARK: - Series weekends: /weekends, /feed-events/{id} (backend LiveWeekends)
+
+/// An event an admin could file a series weekend under.
+struct EventOption: Codable, Sendable, Equatable, Identifiable {
+    let id: Int
+    let name: String
+    let seriesName: String
+    let date: String?
+}
+
+/// One series at one weekend: Al Kamel's feed event. `boundBy`: nil = not
+/// filed yet (automatic filing keeps trying), AUTO, ADMIN, ADMIN_NONE (an
+/// admin said it is not in Pit Pass).
+struct WeekendChampionship: Codable, Sendable, Equatable, Identifiable {
+    let feedEventDbId: Int
+    let champDbId: Int?
+    let champName: String?
+    let feedEventName: String?
+    let track: String?
+    let eventId: Int?
+    let eventName: String?
+    let boundBy: String?
+    let firstSessionMs: Int?
+    let lastSessionMs: Int?
+    let sessions: [LiveSessionSummary]
+    var id: Int { feedEventDbId }
+
+    /// What to call it: the feed's championship, else its event id.
+    var title: String { champName ?? "Feed event \(feedEventDbId)" }
+
+    var filedUnder: String {
+        if let eventName { return eventName }
+        return boundBy == "ADMIN_NONE" ? "Not in Pit Pass" : "Not filed under a Pit Pass event"
+    }
+}
+
+/// `GET /api/live/weekends`: every series at one track within a few days.
+struct LiveWeekend: Codable, Sendable, Equatable, Identifiable {
+    let track: String?
+    let fromMs: Int?
+    let toMs: Int?
+    let championships: [WeekendChampionship]
+    var id: String { championships.map { String($0.feedEventDbId) }.joined(separator: "-") }
 }
