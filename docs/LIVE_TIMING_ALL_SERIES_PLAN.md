@@ -1,7 +1,7 @@
 # Live timing for every series on a weekend, and a shareable timing link: plan
 
-Status: **2026-09-30: slices 0–3 done** on the branch below, not yet merged
-to main. Slices 4–6 not started.
+Status: **2026-09-30: slices 0–4 done** on the branch below, not yet merged
+to main. Slices 5–6 (sharing) not started.
 Branch: `claude/alchemel-connection-switchover-686f5e`.
 This document is the handoff. It builds on `docs/LIVE_TIMING.md` (the feed
 pipeline) and `docs/LIVE_TIMING_PAGE_PLAN.md` (the timing page, slices 0–5).
@@ -275,7 +275,35 @@ weekend, including ones not yet run.
   imported. A second feed event ID for the same championship and weekend
   inherits the first one's binding.
 
-### Slice 4: browse sessions by weekend; bind by hand (backend + web)
+### Slice 4: browse sessions by weekend; bind by hand (backend + web) — DONE 2026-09-30
+
+**As built (differences from the plan below):**
+- The weekend listing is its own endpoint, `GET /api/live/weekends`
+  (`LiveWeekends`), not `/api/live/sessions` without a parameter; plus
+  `GET /api/live/feed-events/{id}` for one series weekend. Each carries
+  `candidates`: events of any series dated within 10 days, its own series
+  first, for the admin's picker (the legacy `/api/events` was not reused).
+- `/api/live/sessions` takes `?feedEvent=` as well as `?eventId=`; sessions
+  sort by date, never by `sessionDbId`.
+- Instead of `#/timing/session/:id`, a whole series weekend has a page,
+  `#/timing/weekend/:feedEventDbId` — the same `TimingPage` (now scoped to
+  an event or a weekend), so session switching, gaps/sectors/pits and the
+  tower all work for unfiled weekends. Drive-time rules come from the
+  session's filed event; unfiled, the rules editor is replaced by a note.
+- `#/timing` (`TimingHomePage`, linked as "Timing" in the header): what is
+  on track and where it is filed, the admin's **Connect** with no event, and
+  recent weekends with a per-series "Filed under" select (Automatic /
+  Not in Pit Pass / an event).
+- `LiveSession` (status/tower `session`) gained `feedEventDbId`.
+- Finished **unfiled** sessions take classes and teams from `live_car`
+  (`LiveAnalysisService`); sessions recorded before V61 have no `live_car`
+  rows and still group as "Not entered".
+- The per-session override has an endpoint and is honoured, but no UI yet.
+- iPad: unchanged; it decodes the new optional fields and keeps working
+  from an event.
+- Tests: `LiveFilingTest` (admin binds, override), `LiveWeekendsTest`
+  (grouping, date order, candidates), `npm run test:timing:home`.
+
 - `GET /api/live/sessions` with no `eventId`: every recorded session,
   grouped by weekend (`event_short_name` + date), then by feed event
   (championship), newest first **by date, never by `sessionDbId`**. Each

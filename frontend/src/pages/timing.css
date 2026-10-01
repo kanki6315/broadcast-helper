@@ -857,3 +857,46 @@
   color: var(--text);
   border-bottom-color: transparent;
 }
+
+/* -- /timing: recorded series weekends --------------------------------------------- */
+
+.timing-weekend {
+  margin-top: var(--space-6);
+}
+
+.timing-weekend h2 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+  color: var(--ink);
+}
+
+.timing-weekend-table th[scope='row'] {
+  font-weight: 600;
+  text-align: left;
+}
+
+.timing-weekend-sub {
+  font-weight: 400;
+  font-size: var(--text-xs);
+}
+
+.timing-weekend-sessions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.timing-weekend-session {
+  white-space: nowrap;
+}
+
+.timing-bind {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.timing-bind select {
+  max-width: 28rem;
+}

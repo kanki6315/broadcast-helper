@@ -250,6 +250,51 @@ class LiveFilingTest {
     }
 
     @Test
+    void anAdminFilesAWeekendDeclinesItOrHandsItBack() {
+        String champ = "Admin " + u;
+        long event = event(series(champ), "Race " + u, RACE_DAY);
+        long elsewhere = event(series("Elsewhere " + u), "Elsewhere " + u, RACE_DAY);
+        entry(event, "04", "GTD");
+        long feedEvent = id();
+        long practice = session(feedEvent, 706, champ, RACE_DAY.minusDays(3), "04:GTD");
+
+        // An admin's event, even one the cars do not match: they vouch for it.
+        assertTrue(filing.bindByAdmin(feedEvent, LiveFiling.Binding.EVENT, elsewhere, "admin@example.test"));
+        assertEquals("ADMIN", boundBy(feedEvent));
+        assertEquals(elsewhere, filedUnder(practice));
+        assertEquals(0, filing.sweepChampionship(champ), "automatic filing leaves it alone");
+        assertEquals(elsewhere, filedUnder(practice));
+
+        assertTrue(filing.bindByAdmin(feedEvent, LiveFiling.Binding.NONE, null, "admin@example.test"));
+        assertNull(filedUnder(practice));
+        assertEquals("ADMIN_NONE", boundBy(feedEvent));
+
+        // Handed back: tried at once, and the championship files it where it belongs.
+        assertTrue(filing.bindByAdmin(feedEvent, LiveFiling.Binding.AUTO, null, "admin@example.test"));
+        assertEquals("AUTO", boundBy(feedEvent));
+        assertEquals(event, filedUnder(practice));
+
+        assertFalse(filing.bindByAdmin(-1, LiveFiling.Binding.NONE, null, "admin@example.test"));
+    }
+
+    @Test
+    void anOverrideMovesOneSessionAndClearingItBringsItBack() {
+        String champ = "One session " + u;
+        long event = event(series(champ), "Race " + u, RACE_DAY);
+        long other = event(series(champ + " other"), "Other " + u, RACE_DAY);
+        entry(event, "04", "GTD");
+        long feedEvent = id();
+        long practice = session(feedEvent, 707, champ, RACE_DAY.minusDays(3), "04:GTD");
+        filing.sweepChampionship(champ);
+
+        assertTrue(filing.overrideSession(practice, other));
+        assertEquals(other, filedUnder(practice));
+        assertTrue(filing.overrideSession(practice, null));
+        assertEquals(event, filedUnder(practice));
+        assertFalse(filing.overrideSession(-1, null));
+    }
+
+    @Test
     void mappingAChampionshipToASeriesFilesItsWeekends() {
         String champ = "IMSA Something " + u;
         long series = series("Pit Pass name " + u);

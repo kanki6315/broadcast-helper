@@ -203,15 +203,25 @@ public class LiveTimingPageService {
     // ---- sessions and cars -------------------------------------------------------------
 
     public List<SessionSummary> sessions(long eventId) {
+        return sessions("s.event_id = :e", eventId);
+    }
+
+    /** Every session of one series weekend (Al Kamel's feed event), filed or not. */
+    public List<SessionSummary> sessionsOfFeedEvent(long feedEventDbId) {
+        return sessions("s.feed_event_db_id = :e", feedEventDbId);
+    }
+
+    // Newest first by date: Al Kamel's session ids are not in time order.
+    private List<SessionSummary> sessions(String where, long key) {
         Long current = live.analysisSessionDbId();
         return db.sql("""
                 SELECT s.session_db_id, s.event_id, s.name, s.type, s.session_date_ms,
                        (SELECT count(*) FROM live_lap l WHERE l.session_db_id = s.session_db_id) AS laps,
                        (SELECT count(DISTINCT car_number) FROM live_lap l WHERE l.session_db_id = s.session_db_id) AS cars
-                FROM live_session s WHERE s.event_id = :e
-                ORDER BY s.session_date_ms DESC NULLS LAST, s.session_db_id DESC
-                """)
-                .param("e", eventId)
+                FROM live_session s WHERE %s
+                ORDER BY s.session_date_ms DESC NULLS LAST, s.first_seen_at DESC
+                """.formatted(where))
+                .param("e", key)
                 .query((rs, i) -> new SessionSummary(rs.getLong("session_db_id"), rs.getObject("event_id", Long.class),
                         rs.getString("name"), rs.getString("type"), rs.getObject("session_date_ms", Long.class),
                         rs.getInt("laps"), rs.getInt("cars"),

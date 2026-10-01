@@ -159,6 +159,15 @@ public class LiveAnalysisService {
                 .query((rs, i) -> byCar.put(rs.getString("car_number"),
                         new CarInfo(rs.getString("car_number"), rs.getString("team_name"), rs.getString("class_name"))))
                 .list();
+        // Filed nowhere: no entries to name them, so the feed's own class and team (live_car).
+        db.sql("""
+                SELECT c.car_number, c.team, c.feed_class FROM live_car c JOIN live_session ls USING (session_db_id)
+                WHERE c.session_db_id = :s AND ls.event_id IS NULL AND c.feed_class IS NOT NULL
+                """)
+                .param("s", session)
+                .query((rs, i) -> byCar.putIfAbsent(rs.getString("car_number"),
+                        new CarInfo(rs.getString("car_number"), rs.getString("team"), rs.getString("feed_class"))))
+                .list();
         List<String> towerOrder = new ArrayList<>();
         Long current = live.analysisSessionDbId();
         if (current != null && current == session) {

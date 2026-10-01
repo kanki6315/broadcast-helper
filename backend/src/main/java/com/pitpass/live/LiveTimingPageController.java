@@ -1,10 +1,12 @@
 package com.pitpass.live;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -60,9 +62,13 @@ public class LiveTimingPageController {
         return service.driveTime(session);
     }
 
-    /** Every recorded session of an event, newest first. */
+    /** Every recorded session of an event, or of one series weekend (feedEvent), newest first. */
     @GetMapping("/sessions")
-    public List<LiveTimingPageService.SessionSummary> sessions(@RequestParam long eventId) {
-        return service.sessions(eventId);
+    public List<LiveTimingPageService.SessionSummary> sessions(@RequestParam(required = false) Long eventId,
+                                                               @RequestParam(required = false) Long feedEvent) {
+        if ((eventId == null) == (feedEvent == null)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ask for an eventId or a feedEvent");
+        }
+        return eventId != null ? service.sessions(eventId) : service.sessionsOfFeedEvent(feedEvent);
     }
 }

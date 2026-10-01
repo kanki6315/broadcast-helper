@@ -48,7 +48,11 @@ replica would see `STANDBY` and no data.
 | `GET /api/live/timing` | member | The timing page's tower — see *Timing page API*. Poll it. |
 | `GET /api/live/cars/{car}?session=` | member | One car's laps, stints and drivers. |
 | `GET /api/live/drive-time?session=` | member | Drive time per driver against the event's rules. |
-| `GET /api/live/sessions?eventId=` | member | The sessions recorded for an event, newest first. |
+| `GET /api/live/sessions?eventId=` or `?feedEvent=` | member | The sessions recorded for an event, or for one series weekend (filed or not), newest first by date. |
+| `GET /api/live/weekends?days=60` | member | Recorded series weekends grouped by weekend (same track, first sessions within 5 days), each with its sessions, where it is filed, and the events it could be filed under. |
+| `GET /api/live/feed-events/{id}` | member | One series weekend, the same shape. |
+| `PUT /api/live/feed-events/{id}/event` `{eventId}` / `{none:true}` / `{auto:true}` | admin | File a series weekend under an event, mark it not in Pit Pass, or hand it back to automatic filing. The first two are final for everything automatic. |
+| `PUT /api/live/sessions/{id}/event` `{eventId \| null}` | admin | One session filed somewhere other than its weekend; `null` puts it back. |
 | `GET` / `PUT /api/events/{id}/drive-time-rules` | member / admin | The event's drive-time rules; PUT replaces the whole set. |
 | `GET /api/live/state?path=timing.session.info` | admin | The merged feed at a dotted path (blank = everything). The licensed feed verbatim, hence admin-only. |
 
@@ -299,8 +303,8 @@ session of it follows (`live_session.event_id`, or the session's own
 field agrees by car number **and** class). Numbers alone would not do: a
 weekend's series share them (#7 in WeatherTech and in Pilot Challenge), but
 never their classes. A binding, once made, is never replaced automatically,
-and an admin's never (`bound_by` ADMIN / ADMIN_NONE — set by hand until
-slice 4 adds the control).
+and an admin's never (`bound_by` ADMIN / ADMIN_NONE, set from the
+`#/timing` page or `PUT /api/live/feed-events/{id}/event`).
 - The live session's feed event is tried every supervisor tick, and every
   10 s while it doesn't match; once bound, later sessions of it file at once.
 - **Once a minute, connected or not**, feed events seen in the last 14 days
@@ -316,8 +320,9 @@ slice 4 adds the control).
   rows (`LiveDriverResolver.rematch`), so it works after the session is over.
 
 Drivers are matched against the **filed** event's crews, so they follow the
-filing, not the binding. An unfiled session appears on no event's Timing page
-until it is filed.
+filing, not the binding. An unfiled session appears on no event's Timing page,
+but on its series weekend's (`#/timing/weekend/{feedEventDbId}`), linked from
+`#/timing`; its classes and teams there come from `live_car`.
 
 **The feed's own labels** (V60): each `live_session` row also keeps
 `champ_name`, `champ_db_id`, `feed_event_name`, `feed_event_short_name` and

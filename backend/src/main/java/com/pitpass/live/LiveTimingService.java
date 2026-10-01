@@ -59,8 +59,9 @@ public class LiveTimingService implements SmartLifecycle {
     }
 
     /** What the feed says is running — shown so the admin can see it matches the bound event. */
+    /** feedEventDbId is Al Kamel's event id: the series weekend the session is filed by (LiveFiling). */
     public record Session(String championship, String event, String name, String type,
-                          String flag, boolean running, boolean finished) {
+                          String flag, boolean running, boolean finished, Long feedEventDbId) {
     }
 
     public record LiveStatus(State state, boolean configured, boolean replaying,
@@ -314,7 +315,8 @@ public class LiveTimingService implements SmartLifecycle {
                 info.path("champName").asText(null), info.path("eventName").asText(null),
                 info.path("name").asText(null), info.path("type").asText(null),
                 s.path("currentFlag").asText(null),
-                s.path("isSessionRunning").asBoolean(false), s.path("isFinished").asBoolean(false));
+                s.path("isSessionRunning").asBoolean(false), s.path("isFinished").asBoolean(false),
+                info.hasNonNull("eventDbId") ? info.path("eventDbId").asLong() : null);
     }
 
     // ---- lifecycle -----------------------------------------------------------------

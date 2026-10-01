@@ -22,6 +22,7 @@ import LogosPage from './pages/LogosPage'
 import SeriesPage from './pages/SeriesPage'
 import SheetPage from './pages/SheetPage'
 import TimingPage from './pages/TimingPage'
+import TimingHomePage from './pages/TimingHomePage'
 import TeamsPage from './pages/TeamsPage'
 import UsersPage from './pages/UsersPage'
 import SessionsPage from './pages/SessionsPage'
@@ -36,7 +37,13 @@ function SheetRoute() {
 // Live timing, chrome-less like the sheet: it sits on a second screen in the booth.
 function TimingRoute() {
   const { eventId } = useParams()
-  return <TimingPage eventId={Number(eventId)} />
+  return <TimingPage scope={{ kind: 'event', eventId: Number(eventId) }} />
+}
+
+// One series weekend as the feed has it, filed under a Pit Pass event or not.
+function TimingWeekendRoute() {
+  const { feedEventDbId } = useParams()
+  return <TimingPage scope={{ kind: 'weekend', feedEventDbId: Number(feedEventDbId) }} />
 }
 
 export default function App() {
@@ -52,6 +59,8 @@ export default function App() {
         <InfoModalProvider>
           <Routes>
             <Route path="/sheet/:eventId" element={<SheetRoute />} />
+            <Route path="/timing" element={<TimingHomePage />} />
+            <Route path="/timing/weekend/:feedEventDbId" element={<TimingWeekendRoute />} />
             <Route path="/timing/:eventId" element={<TimingRoute />} />
             <Route element={<Layout />}>
               <Route path="/" element={<SeriesDirectoryPage />} />

@@ -24,14 +24,16 @@ import {
   type Tower,
   type TowerCar,
   type TowerClass,
+  type WeekendChampionship,
 } from '../lib/liveTiming'
 import LiveCarModal from '../components/LiveCarModal'
 import { GapsView, PitsView, SectorsView } from './TimingAnalysis'
 
 /**
- * The live timing page (`/timing/:eventId`): the tower; gaps, best sectors
- * and pit stops over a recorded session (TimingAnalysis); and drive time per
- * driver against the event's rules. Chrome-less like the sheet — it is kept
+ * The live timing page — for a Pit Pass event (`/timing/:eventId`) or for one
+ * series weekend as the feed has it, filed or not (`/timing/weekend/:id`):
+ * the tower; gaps, best sectors and pit stops over a recorded session
+ * (TimingAnalysis); and drive time per driver against the filed event's rules. Chrome-less like the sheet — it is kept
  * open on a second screen in the booth.
  *
  * Reads, apart from two admin-only controls: the shared connect/disconnect
@@ -49,29 +51,62 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'drive', label: 'Drive time' },
 ]
 
-export default function TimingPage({ eventId }: { eventId: number }) {
+/** Either a Pit Pass event's sessions, or one series weekend's (Al Kamel's feed event). */
+export type TimingScope = { kind: 'event'; eventId: number } | { kind: 'weekend'; feedEventDbId: number }
+
+const scopePath = (scope: TimingScope) =>
+  scope.kind === 'event' ? `#/timing/${scope.eventId}` : `#/timing/weekend/${scope.feedEventDbId}`
+
+export default function TimingPage({ scope }: { scope: TimingScope }) {
   const [params, setParams] = useSearchParams()
   const view: View = VIEWS.find((v) => v.id === params.get('view'))?.id ?? 'tower'
   // Bumped after an admin connects or disconnects, so the tower follows at once.
   const [feedChanged, setFeedChanged] = useState(0)
   const { value: tower, error: towerError } = useLivePoll<Tower>('/api/live/timing', 2000, feedChanged)
-  const { value: sessions } = useLivePoll<SessionSummary[]>(`/api/live/sessions?eventId=${eventId}`, 30_000)
-  // The event's own name, for when the feed is following another one.
+  const { value: sessions } = useLivePoll<SessionSummary[]>(
+    scope.kind === 'event' ? `/api/live/sessions?eventId=${scope.eventId}` : `/api/live/sessions?feedEvent=${scope.feedEventDbId}`,
+    30_000,
+  )
+  // The page's own name, for when the feed is following something else.
   // undefined = still asking; null = could not find out.
-  const [eventName, setEventName] = useState<string | null | undefined>(undefined)
+  const [ownName, setOwnName] = useState<string | null | undefined>(undefined)
+  const [weekend, setWeekend] = useState<WeekendChampionship | null>(null)
+  const scopeKey = scope.kind === 'event' ? `e${scope.eventId}` : `w${scope.feedEventDbId}`
   useEffect(() => {
-    setEventName(undefined)
-    void fetch(`/api/events/${eventId}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setEventName(d?.event?.name ?? null))
-      .catch(() => setEventName(null))
-  }, [eventId])
+    setOwnName(undefined)
+    if (scope.kind === 'event') {
+      void fetch(`/api/events/${scope.eventId}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => setOwnName(d?.event?.name ?? null))
+        .catch(() => setOwnName(null))
+    } else {
+      void fetch(`/api/live/feed-events/${scope.feedEventDbId}`)
+        .then((r) => (r.ok ? (r.json() as Promise<WeekendChampionship>) : null))
+        .then((w) => {
+          setWeekend(w)
+          setOwnName(w ? [w.champName, w.feedEventName].filter(Boolean).join(' · ') || 'Series weekend' : null)
+        })
+        .catch(() => setOwnName(null))
+    }
+    // scopeKey stands for scope: an object prop would refetch on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeKey])
 
-  // The session on track belongs to this page when it is filed here or, filed
-  // nowhere, when the connection is bound here (its own teams, flagged below).
-  const followingThis = tower != null && (tower.filedEventId ?? tower.eventId) === eventId
+  // The session on track belongs to an event page when it is filed there or,
+  // filed nowhere, when the connection is bound there (its own teams, flagged
+  // below); to a weekend page when it is one of that weekend's sessions.
+  const followingThis =
+    tower != null &&
+    (scope.kind === 'event'
+      ? (tower.filedEventId ?? tower.eventId) === scope.eventId
+      : tower.session?.feedEventDbId === scope.feedEventDbId)
+  const eventId = scope.kind === 'event' ? scope.eventId : (weekend?.eventId ?? null)
   const title =
-    followingThis && tower.filedEventName ? tower.filedEventName : eventName === undefined ? undefined : (eventName ?? 'Live timing')
+    scope.kind === 'event' && followingThis && tower.filedEventName
+      ? tower.filedEventName
+      : ownName === undefined
+        ? undefined
+        : (ownName ?? 'Live timing')
   useEffect(() => {
     document.title = title ? `Timing · ${title}` : 'Timing'
   }, [title])
@@ -90,9 +125,15 @@ export default function TimingPage({ eventId }: { eventId: number }) {
   return (
     <div className="timing">
       <div className="timing-topbar">
-        <a className="timing-back" href={`#/events/${eventId}`}>
-          ← Event
-        </a>
+        {scope.kind === 'event' ? (
+          <a className="timing-back" href={`#/events/${scope.eventId}`}>
+            ← Event
+          </a>
+        ) : (
+          <a className="timing-back" href="#/timing">
+            ← Timing
+          </a>
+        )}
         <ViewTabs view={view} onChange={setView} />
         {tower && <FeedStatus tower={tower} followingThis={followingThis} />}
         {towerError && tower && <span className="timing-stale">Not updating: {towerError}</span>}
@@ -105,9 +146,9 @@ export default function TimingPage({ eventId }: { eventId: number }) {
       </header>
 
       {view === 'tower' ? (
-        <TowerView tower={tower} error={towerError} eventId={eventId} followingThis={followingThis} />
+        <TowerView tower={tower} error={towerError} scope={scope} followingThis={followingThis} />
       ) : (
-        <SessionViews view={view} eventId={eventId} sessions={sessions} tower={tower} />
+        <SessionViews view={view} scope={scope} sessions={sessions} tower={tower} />
       )}
     </div>
   )
@@ -157,7 +198,7 @@ function FeedStatus({ tower, followingThis }: { tower: Tower; followingThis: boo
     <span className={`timing-status timing-status--${tone}`} role="status">
       <i aria-hidden="true" />
       {STATE_TEXT[tower.state]}
-      {!followingThis && (tower.filedEventId ?? tower.eventId) != null && tower.state !== 'OFF' && (
+      {!followingThis && (tower.filedEventId ?? tower.eventId) != null && tower.state !== 'OFF' && tower.state !== 'NOT_CONFIGURED' && (
         <span className="muted"> · following another event</span>
       )}
     </span>
@@ -170,7 +211,7 @@ function FeedStatus({ tower, followingThis }: { tower: Tower; followingThis: boo
  * asks first. Same wording and states as the iPad's LiveTimingBar; viewers
  * see only the status beside it.
  */
-function LiveConnectControl({ eventId, onChanged }: { eventId: number; onChanged: () => void }) {
+export function LiveConnectControl({ eventId, onChanged }: { eventId: number | null; onChanged: () => void }) {
   const isAdmin = useIsAdmin()
   const [refresh, setRefresh] = useState(0)
   const { value: status } = useLivePoll<LiveStatus>(isAdmin ? '/api/live/status' : null, 5000, refresh)
@@ -203,7 +244,8 @@ function LiveConnectControl({ eventId, onChanged }: { eventId: number; onChanged
       setBusy(false)
     }
   }
-  const connect = () => send('/api/live/connect', { eventId })
+  // An event is only a hint for filing; with none, every series is filed by championship.
+  const connect = () => send('/api/live/connect', eventId == null ? {} : { eventId })
   const disconnect = () => send('/api/live/disconnect')
 
   return (
@@ -229,11 +271,11 @@ function LiveConnectControl({ eventId, onChanged }: { eventId: number; onChanged
         </>
       ) : !status.desiredConnected ? (
         <button className="btn btn-primary" disabled={busy} onClick={connect}>
-          {busy ? 'Connecting…' : 'Connect for this event'}
+          {busy ? 'Connecting…' : eventId == null ? 'Connect' : 'Connect for this event'}
         </button>
       ) : (
         <>
-          {status.eventId !== eventId && (
+          {eventId != null && status.eventId !== eventId && (
             <button className="btn" disabled={busy} onClick={connect} title={`Now scoring ${status.eventName ?? 'another event'}`}>
               {busy ? 'Switching…' : 'Score this event'}
             </button>
@@ -275,14 +317,16 @@ function useTick(active: boolean): number {
 function TowerView({
   tower,
   error,
-  eventId,
+  scope,
   followingThis,
 }: {
   tower: Tower | null
   error: string | null
-  eventId: number
+  scope: TimingScope
   followingThis: boolean
 }) {
+  const base = scopePath(scope)
+  const here = scope.kind === 'event' ? 'this event' : 'this series weekend'
   const [open, setOpen] = useState<{ car: TowerCar; cls: TowerClass } | null>(null)
   const live = tower?.state === 'LIVE'
   const wall = useTick(live && followingThis)
@@ -307,28 +351,29 @@ function TowerView({
       <div className="empty-state">
         Live timing is off. Once an admin connects it, the tower fills in here — no need to reload.
         <br />
-        Recorded sessions stay under <a href={`#/timing/${eventId}?view=gaps`}>Gaps</a>,{' '}
-        <a href={`#/timing/${eventId}?view=sectors`}>Sectors</a>, <a href={`#/timing/${eventId}?view=pits`}>Pits</a> and{' '}
-        <a href={`#/timing/${eventId}?view=drive`}>Drive time</a>.
+        Recorded sessions stay under <a href={`${base}?view=gaps`}>Gaps</a>,{' '}
+        <a href={`${base}?view=sectors`}>Sectors</a>, <a href={`${base}?view=pits`}>Pits</a> and{' '}
+        <a href={`${base}?view=drive`}>Drive time</a>.
       </div>
     )
   }
   if (!followingThis) {
+    const onTrack = tower.session
+    const there =
+      tower.filedEventId != null
+        ? { href: `#/timing/${tower.filedEventId}`, label: tower.filedEventName ?? 'another event' }
+        : onTrack?.feedEventDbId != null
+          ? { href: `#/timing/weekend/${onTrack.feedEventDbId}`, label: onTrack.championship ?? 'another series' }
+          : tower.eventId != null
+            ? { href: `#/timing/${tower.eventId}`, label: tower.eventName ?? 'another event' }
+            : null
     return (
       <div className="empty-state">
-        Live timing is following{' '}
-        {tower.filedEventId != null ? (
-          <a href={`#/timing/${tower.filedEventId}`}>{tower.filedEventName ?? 'another event'}</a>
-        ) : tower.eventId != null ? (
-          <a href={`#/timing/${tower.eventId}`}>{tower.eventName ?? 'another event'}</a>
-        ) : (
-          'no event'
-        )}
-        , not this one.
+        Live timing is following {there ? <a href={there.href}>{there.label}</a> : 'no event'}, not {here}.
         <br />
-        This event's recorded sessions are under <a href={`#/timing/${eventId}?view=gaps`}>Gaps</a>,{' '}
-        <a href={`#/timing/${eventId}?view=sectors`}>Sectors</a>, <a href={`#/timing/${eventId}?view=pits`}>Pits</a> and{' '}
-        <a href={`#/timing/${eventId}?view=drive`}>Drive time</a>.
+        Recorded sessions here are under <a href={`${base}?view=gaps`}>Gaps</a>,{' '}
+        <a href={`${base}?view=sectors`}>Sectors</a>, <a href={`${base}?view=pits`}>Pits</a> and{' '}
+        <a href={`${base}?view=drive`}>Drive time</a>.
       </div>
     )
   }
@@ -347,8 +392,9 @@ function TowerView({
     <>
       {unfiled && (
         <p className="timing-unfiled" role="status">
-          {tower.session?.championship ?? 'This session'} is not filed under this event: its cars do not match the
-          entry list. Teams and drivers are the feed's own.
+          {scope.kind === 'event'
+            ? `${tower.session?.championship ?? 'This session'} is not filed under this event: its cars do not match the entry list. Teams and drivers are the feed's own.`
+            : "Not filed under a Pit Pass event. Teams and drivers are the feed's own."}
         </p>
       )}
       <table className="grid-table tower" aria-label="Running order by class">
@@ -424,7 +470,7 @@ function TowerView({
         })}
       </table>
       <p className="timing-foot">
-        {!unfiled && `${tower.matched} of ${tower.total} cars matched to this event's entries.`}
+        {!unfiled && `${tower.matched} of ${tower.total} cars matched to ${tower.filedEventName ?? 'the event'}'s entries.`}
         {hasLaps ? ' Select a car for its laps and stints.' : ' Lap and stint columns appear once lap data is recorded.'}
       </p>
       {open && (
@@ -547,12 +593,12 @@ function TowerRow({
  */
 function SessionViews({
   view,
-  eventId,
+  scope,
   sessions,
   tower,
 }: {
   view: Exclude<View, 'tower'>
-  eventId: number
+  scope: TimingScope
   sessions: SessionSummary[] | null
   tower: Tower | null
 }) {
@@ -602,8 +648,8 @@ function SessionViews({
 
       {!chosen ? (
         <div className="empty-state">
-          No timed sessions recorded for this event yet. Laps and stints are recorded while live timing is connected
-          to this event.
+          No timed sessions recorded for {scope.kind === 'event' ? 'this event' : 'this series weekend'} yet. Laps
+          and stints are recorded while live timing is connected.
         </div>
       ) : view === 'gaps' ? (
         <GapsView key={chosen.sessionDbId} session={chosen} />
@@ -612,7 +658,7 @@ function SessionViews({
       ) : view === 'pits' ? (
         <PitsView key={chosen.sessionDbId} session={chosen} />
       ) : (
-        <DriveTimeView eventId={eventId} session={chosen} tower={tower} />
+        <DriveTimeView session={chosen} tower={tower} />
       )}
     </>
   )
@@ -620,7 +666,9 @@ function SessionViews({
 
 // ---- drive time -----------------------------------------------------------------------
 
-function DriveTimeView({ eventId, session, tower }: { eventId: number; session: SessionSummary; tower: Tower | null }) {
+function DriveTimeView({ session, tower }: { session: SessionSummary; tower: Tower | null }) {
+  // Rules and class colours belong to the event the session is filed under, if any.
+  const eventId = session.eventId
   const [refresh, setRefresh] = useState(0)
   const { value: drive, error } = useLivePoll<DriveTimeResponse>(
     `/api/live/drive-time?session=${session.sessionDbId}`,
@@ -628,7 +676,9 @@ function DriveTimeView({ eventId, session, tower }: { eventId: number; session: 
     refresh,
   )
 
-  const classColors = new Map((tower?.eventId === eventId ? tower.classes : []).map((c) => [c.className.toLowerCase(), c.color]))
+  const classColors = new Map(
+    (eventId != null && tower?.filedEventId === eventId ? tower.classes : []).map((c) => [c.className.toLowerCase(), c.color]),
+  )
 
   if (!drive) {
     return error ? (
@@ -645,7 +695,11 @@ function DriveTimeView({ eventId, session, tower }: { eventId: number; session: 
     <>
       {error && <p className="timing-stale">Not updating: {error}</p>}
       <DriveTable drive={drive} classColors={classColors} />
-      <RulesPanel eventId={eventId} rules={drive.rules} drive={drive} onSaved={() => setRefresh((n) => n + 1)} />
+      {eventId != null ? (
+        <RulesPanel eventId={eventId} rules={drive.rules} drive={drive} onSaved={() => setRefresh((n) => n + 1)} />
+      ) : (
+        <p className="timing-foot">Drive-time rules belong to a Pit Pass event; this session is not filed under one.</p>
+      )}
     </>
   )
 }

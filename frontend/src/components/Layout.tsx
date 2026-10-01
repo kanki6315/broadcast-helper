@@ -6,6 +6,7 @@ import SearchPalette, { SearchIcon, isMacLike } from './SearchPalette'
 
 const TABS = [
   { to: '/', label: 'Series', end: true },
+  { to: '/timing', label: 'Timing', end: false },
   { to: '/manage', label: 'Manage', end: false, adminOnly: true },
 ]
 

@@ -142,6 +142,73 @@ public class LiveFiling {
         return ids.size() == 1 ? ids.getFirst() : null;
     }
 
+    // ---- an admin's say -----------------------------------------------------------------
+
+    /** What an admin can say about a series weekend. */
+    public enum Binding { EVENT, NONE, AUTO }
+
+    /**
+     * EVENT files the weekend under eventId; NONE says it is not in Pit Pass;
+     * AUTO hands it back to automatic filing, which tries at once. Either of
+     * the first two is final for everything automatic. Returns false when the
+     * feed event is unknown.
+     */
+    public boolean bindByAdmin(long feedEventDbId, Binding binding, Long eventId, String email) {
+        int updated = db.sql("""
+                UPDATE live_feed_event
+                SET event_id = :e, bound_by = :by, bound_by_email = :email,
+                    bound_at = CASE WHEN :by IS NULL THEN NULL ELSE clock_timestamp() END
+                WHERE feed_event_db_id = :f
+                """)
+                .param("f", feedEventDbId)
+                .param("e", binding == Binding.EVENT ? eventId : null, java.sql.Types.BIGINT)
+                .param("by", switch (binding) {
+                    case EVENT -> "ADMIN";
+                    case NONE -> "ADMIN_NONE";
+                    case AUTO -> null;
+                }, java.sql.Types.VARCHAR)
+                .param("email", binding == Binding.AUTO ? null : email, java.sql.Types.VARCHAR)
+                .update();
+        if (updated == 0) {
+            return false;
+        }
+        log.info("Live filing: feed event {} set to {} {} by {}", feedEventDbId, binding,
+                eventId == null ? "" : eventId, email);
+        if (binding == Binding.AUTO) {
+            retry(feedEventDbId);
+        } else {
+            apply(feedEventDbId);
+        }
+        return true;
+    }
+
+    /**
+     * One session filed somewhere other than its weekend (eventId), or back
+     * with its weekend (null). Returns false when the session is unknown.
+     */
+    public boolean overrideSession(long sessionDbId, Long eventId) {
+        record Row(Long feedEvent) {
+        }
+        List<Row> rows = db.sql("""
+                UPDATE live_session SET event_override = :e WHERE session_db_id = :s RETURNING feed_event_db_id
+                """)
+                .param("s", sessionDbId).param("e", eventId, java.sql.Types.BIGINT)
+                .query((rs, i) -> new Row(rs.getObject("feed_event_db_id", Long.class))).list();
+        if (rows.isEmpty()) {
+            return false;
+        }
+        Long feedEvent = rows.getFirst().feedEvent();
+        if (feedEvent != null) {
+            apply(feedEvent);
+        } else if (db.sql("""
+                UPDATE live_session SET event_id = event_override, updated_at = clock_timestamp()
+                WHERE session_db_id = :s AND event_id IS DISTINCT FROM event_override
+                """).param("s", sessionDbId).update() == 1) {
+            drivers.rematch(sessionDbId, eventId);
+        }
+        return true;
+    }
+
     // ---- resolving ---------------------------------------------------------------------
 
     /** Binds an unbound feed event (AUTO) if one of the three ways finds its event. Returns the event, or null. */

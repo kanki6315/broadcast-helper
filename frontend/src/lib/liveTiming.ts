@@ -18,6 +18,8 @@ export interface LiveStatus {
   filedEventId: number | null
   filedEventName: string | null
   lastError: string | null
+  /** What the feed says is running. */
+  session?: FeedSession | null
 }
 
 export interface FeedSession {
@@ -28,6 +30,8 @@ export interface FeedSession {
   flag: string | null
   running: boolean
   finished: boolean
+  /** Al Kamel's event id: the series weekend this session belongs to. */
+  feedEventDbId: number | null
 }
 
 export interface TowerCar {
@@ -394,4 +398,40 @@ export function classBest(cars: TowerCar[]): number | null {
 
 export function driverName(d: Pick<CarDriver, 'firstName' | 'lastName'>): string {
   return [d.firstName, d.lastName].filter(Boolean).join(' ') || '—'
+}
+
+/** An event an admin could file a series weekend under. */
+export interface EventOption {
+  id: number
+  name: string
+  seriesName: string
+  date: string | null
+}
+
+/**
+ * One series at one weekend (Al Kamel's feed event). boundBy: null = not filed
+ * yet (automatic filing keeps trying), AUTO, ADMIN, ADMIN_NONE = not in Pit Pass.
+ */
+export interface WeekendChampionship {
+  feedEventDbId: number
+  champDbId: number | null
+  champName: string | null
+  feedEventName: string | null
+  track: string | null
+  eventId: number | null
+  eventName: string | null
+  boundBy: 'AUTO' | 'ADMIN' | 'ADMIN_NONE' | null
+  boundByEmail: string | null
+  firstSessionMs: number | null
+  lastSessionMs: number | null
+  sessions: SessionSummary[]
+  candidates: EventOption[]
+}
+
+/** `GET /api/live/weekends`: every series at one track within a few days. */
+export interface Weekend {
+  track: string | null
+  fromMs: number | null
+  toMs: number | null
+  championships: WeekendChampionship[]
 }
