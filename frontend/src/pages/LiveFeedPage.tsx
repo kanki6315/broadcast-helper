@@ -68,6 +68,7 @@ export default function LiveFeedPage() {
 
   return (
     <section className="live-feed-page">
+      <ShareLink />
       <h2>Live timing</h2>
       <p>
         Every championship the live feed has carried. Sessions are filed under a Pit Pass event by championship: a
@@ -132,5 +133,119 @@ export default function LiveFeedPage() {
         </table>
       )}
     </section>
+  )
+}
+
+/** `GET /api/live/share`. Never carries the secret. */
+interface ShareState {
+  link: { id: number; createdBy: string | null; createdAt: string; lastUsedAt: string | null } | null
+}
+
+/**
+ * The shareable timing link: one at a time, no expiry. Generating a new one
+ * stops the old one at once; the URL is shown only right after it is made.
+ */
+function ShareLink() {
+  const [state, setState] = useState<ShareState | null>(null)
+  const [fresh, setFresh] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  async function load() {
+    const res = await fetch('/api/live/share')
+    if (res.ok) setState(await res.json())
+  }
+
+  useEffect(() => {
+    void load()
+  }, [])
+
+  async function generate() {
+    if (state?.link && !window.confirm('Make a new link? The current one stops working for everyone who has it.')) return
+    setBusy(true)
+    setProblem(null)
+    setCopied(false)
+    const res = await fetch('/api/live/share', { method: 'POST' })
+    if (res.ok) {
+      const body = await res.json()
+      setFresh(`${window.location.origin}/#/live/${body.token}`)
+    } else {
+      setProblem(`Could not make a link (${res.status})`)
+    }
+    await load()
+    setBusy(false)
+  }
+
+  async function revoke() {
+    if (!window.confirm('Revoke the link? It stops working for everyone who has it.')) return
+    setBusy(true)
+    setProblem(null)
+    const res = await fetch('/api/live/share', { method: 'DELETE' })
+    if (!res.ok) setProblem(`Could not revoke the link (${res.status})`)
+    setFresh(null)
+    await load()
+    setBusy(false)
+  }
+
+  async function copy() {
+    if (!fresh) return
+    try {
+      await navigator.clipboard.writeText(fresh)
+      setCopied(true)
+    } catch {
+      setProblem('Could not copy; select the link and copy it by hand.')
+    }
+  }
+
+  return (
+    <>
+      <h2>Share link</h2>
+      <p>
+        A link that opens the timing pages — every series, live and recorded — without signing in, and nothing else of
+        Pit Pass. Anyone holding it can watch until it is revoked or replaced.
+      </p>
+      {problem && (
+        <p className="error" role="alert">
+          {problem}
+        </p>
+      )}
+      {state == null ? (
+        <p className="muted" role="status">
+          Loading…
+        </p>
+      ) : (
+        <>
+          {fresh ? (
+            <p className="share-link-fresh">
+              <input aria-label="Share link" readOnly value={fresh} onFocus={(e) => e.target.select()} />{' '}
+              <button type="button" onClick={() => void copy()}>
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+              <br />
+              <span className="muted">Copy it now: it is shown only this once.</span>
+            </p>
+          ) : state.link ? (
+            <p>
+              A link is working: made {new Date(state.link.createdAt).toLocaleString()}
+              {state.link.createdBy && ` by ${state.link.createdBy}`},{' '}
+              {state.link.lastUsedAt ? `last used ${new Date(state.link.lastUsedAt).toLocaleString()}` : 'not used yet'}.
+            </p>
+          ) : (
+            <p className="muted">No link is working.</p>
+          )}
+          <p>
+            <button type="button" disabled={busy} onClick={() => void generate()}>
+              {state.link ? 'Make a new link' : 'Make a link'}
+            </button>{' '}
+            {state.link && (
+              <button type="button" disabled={busy} onClick={() => void revoke()}>
+                Revoke
+              </button>
+            )}
+          </p>
+        </>
+      )}
+    </>
   )
 }

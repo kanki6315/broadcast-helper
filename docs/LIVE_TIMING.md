@@ -54,6 +54,7 @@ replica would see `STANDBY` and no data.
 | `PUT /api/live/feed-events/{id}/event` `{eventId}` / `{none:true}` / `{auto:true}` | admin | File a series weekend under an event, mark it not in Pit Pass, or hand it back to automatic filing. The first two are final for everything automatic. |
 | `PUT /api/live/sessions/{id}/event` `{eventId \| null}` | admin | One session filed somewhere other than its weekend; `null` puts it back. |
 | `GET` / `PUT /api/events/{id}/drive-time-rules` | member / admin | The event's drive-time rules; PUT replaces the whole set. |
+| `GET` / `POST` / `DELETE /api/live/share` | admin | The shareable timing link: whether one works (never the secret), make a new one (the secret is in this answer only; the old link stops working), revoke it. See *Shareable link*. |
 | `GET /api/live/state?path=timing.session.info` | admin | The merged feed at a dotted path (blank = everything). The licensed feed verbatim, hence admin-only. |
 
 States: `NOT_CONFIGURED` (no host), `OFF`, `CONNECTING`, `LIVE`, `BACKING_OFF`
@@ -573,3 +574,29 @@ shortened. The same stand-in drives `LiveTimingServiceTest`.
 ## Verification
 
 `cd backend && ./gradlew test --tests 'com.pitpass.live.*' --tests com.pitpass.auth.SecuredChainTest`
+
+## Shareable link
+
+One link at a time (`live_share_token`, V62), no expiry, made and revoked in
+Manage → Live timing: `https://…/#/live/<token>`. It opens the timing pages —
+the `#/timing` home and each series weekend's page, every series, live and
+recorded — signed-out, and nothing else of Pit Pass.
+
+- The SPA sends the token from the URL fragment as `X-Pit-Pass-Share` on each
+  API call (`lib/shareLink.ts`, via the global fetch wrapper). The fragment
+  never reaches a server, so the token stays out of access logs and Referer.
+- `ShareTokenFilter` turns a working token into a `ShareAuthentication`: not
+  a member (no email), admitted only by `LiveAuthorization.timingReader` on
+  `SecurityConfig.SHARED_TIMING` — GETs of `/api/live/timing`, `status`,
+  `sessions`, `weekends`, `feed-events/*`, `gaps`, `sectors`, `pits`,
+  `cars/*`, `drive-time`. Everything else answers 403; a wrong, replaced or
+  revoked token is anonymous and gets 401, which the shared page shows as
+  "this link no longer works" instead of the sign-in bounce.
+- `status` leaves out `requestedBy` (an email) and `holder` for the link.
+- Only the SHA-256 is stored. The active hash is cached for 30 s; issuing or
+  revoking clears it on the process that did it, so during a redeploy's
+  overlap the other process may honour a revoked link that long.
+- Rate limit: a token bucket per client address (`X-Forwarded-For`'s first
+  entry), 100 burst, 10 requests/s, 429 past it — a booth of a few screens
+  polling the tower stays well under.
+- Shared pages carry "Timing data © Al Kamel Systems".

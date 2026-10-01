@@ -4,6 +4,7 @@ import './season.css'
 import './timing.css'
 import { useIsAdmin } from '../lib/auth'
 import { useLivePoll } from '../lib/useLivePoll'
+import { useTimingNav, type TimingNav } from '../lib/timingNav'
 import {
   RATINGS,
   classBest,
@@ -54,10 +55,11 @@ const VIEWS: { id: View; label: string }[] = [
 /** Either a Pit Pass event's sessions, or one series weekend's (Al Kamel's feed event). */
 export type TimingScope = { kind: 'event'; eventId: number } | { kind: 'weekend'; feedEventDbId: number }
 
-const scopePath = (scope: TimingScope) =>
-  scope.kind === 'event' ? `#/timing/${scope.eventId}` : `#/timing/weekend/${scope.feedEventDbId}`
+const scopePath = (scope: TimingScope, nav: TimingNav) =>
+  scope.kind === 'weekend' ? nav.weekend(scope.feedEventDbId) : nav.event ? nav.event(scope.eventId) : nav.home
 
 export default function TimingPage({ scope }: { scope: TimingScope }) {
+  const nav = useTimingNav()
   const [params, setParams] = useSearchParams()
   const view: View = VIEWS.find((v) => v.id === params.get('view'))?.id ?? 'tower'
   // Bumped after an admin connects or disconnects, so the tower follows at once.
@@ -130,7 +132,7 @@ export default function TimingPage({ scope }: { scope: TimingScope }) {
             ← Event
           </a>
         ) : (
-          <a className="timing-back" href="#/timing">
+          <a className="timing-back" href={nav.home}>
             ← Timing
           </a>
         )}
@@ -325,7 +327,8 @@ function TowerView({
   scope: TimingScope
   followingThis: boolean
 }) {
-  const base = scopePath(scope)
+  const nav = useTimingNav()
+  const base = scopePath(scope, nav)
   const here = scope.kind === 'event' ? 'this event' : 'this series weekend'
   const [open, setOpen] = useState<{ car: TowerCar; cls: TowerClass } | null>(null)
   const live = tower?.state === 'LIVE'
@@ -360,12 +363,12 @@ function TowerView({
   if (!followingThis) {
     const onTrack = tower.session
     const there =
-      tower.filedEventId != null
-        ? { href: `#/timing/${tower.filedEventId}`, label: tower.filedEventName ?? 'another event' }
+      tower.filedEventId != null && nav.event
+        ? { href: nav.event(tower.filedEventId), label: tower.filedEventName ?? 'another event' }
         : onTrack?.feedEventDbId != null
-          ? { href: `#/timing/weekend/${onTrack.feedEventDbId}`, label: onTrack.championship ?? 'another series' }
-          : tower.eventId != null
-            ? { href: `#/timing/${tower.eventId}`, label: tower.eventName ?? 'another event' }
+          ? { href: nav.weekend(onTrack.feedEventDbId), label: onTrack.championship ?? 'another series' }
+          : tower.eventId != null && nav.event
+            ? { href: nav.event(tower.eventId), label: tower.eventName ?? 'another event' }
             : null
     return (
       <div className="empty-state">

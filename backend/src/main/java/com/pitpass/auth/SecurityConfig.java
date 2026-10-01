@@ -57,16 +57,27 @@ public class SecurityConfig {
             "/api/auth/device/start", "/api/auth/device/exchange"
     };
 
+    // What the shareable timing link opens: the timing pages' reads and nothing
+    // else (docs/LIVE_TIMING_ALL_SERIES_PLAN.md, slice 5). GET only; the raw
+    // feed (/api/live/state), championships and every write stay closed to it.
+    static final String[] SHARED_TIMING = {
+            "/api/live/timing", "/api/live/status", "/api/live/sessions", "/api/live/weekends",
+            "/api/live/feed-events/*", "/api/live/gaps", "/api/live/sectors", "/api/live/pits",
+            "/api/live/cars/*", "/api/live/drive-time"
+    };
+
     @Bean
     @ConditionalOnProperty(prefix = "pit-pass.auth", name = "enabled", havingValue = "true")
     SecurityFilterChain securedChain(HttpSecurity http, UserDirectory directory,
                                      LiveAuthorization live, DeniedLogins deniedLogins,
-                                     DeviceTokens deviceTokens)
+                                     DeviceTokens deviceTokens, ShareTokens shareTokens)
             throws Exception {
         http
                 // Bearer → DeviceAuthentication, right after the session-based
                 // context is loaded and before anonymous/authorization run.
                 .addFilterAfter(new DeviceTokenFilter(deviceTokens), SecurityContextHolderFilter.class)
+                // X-Pit-Pass-Share → ShareAuthentication, after a bearer could have signed someone in.
+                .addFilterAfter(new ShareTokenFilter(shareTokens), DeviceTokenFilter.class)
                 .authorizeHttpRequests(a -> a
                         // PUBLIC first so /api/me stays reachable signed-out.
                         .requestMatchers(PUBLIC).permitAll()
@@ -81,6 +92,9 @@ public class SecurityConfig {
                         // The raw live timing tree is the licensed Al Kamel feed
                         // verbatim; members get what is derived from it, not this.
                         .requestMatchers("/api/live/state").access(live.admin())
+                        // The share link itself is admin business, reads included.
+                        .requestMatchers("/api/live/share").access(live.admin())
+                        .requestMatchers(HttpMethod.GET, SHARED_TIMING).access(live.timingReader())
                         // A viewer's scratchpad is their own writable surface —
                         // the controller pins the row to the caller's email, so
                         // member() is sufficient here.

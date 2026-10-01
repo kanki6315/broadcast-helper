@@ -2,6 +2,7 @@ package com.pitpass.live;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.pitpass.auth.Principals;
+import com.pitpass.auth.ShareAuthentication;
 import com.pitpass.live.LiveTimingService.LiveStatus;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -42,8 +43,9 @@ public class LiveTimingController {
     }
 
     @GetMapping("/status")
-    public LiveStatus status() {
-        return service.status();
+    public LiveStatus status(Authentication authentication) {
+        LiveStatus status = service.status();
+        return authentication instanceof ShareAuthentication ? status.forSharedLink() : status;
     }
 
     /**

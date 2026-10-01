@@ -73,6 +73,14 @@ public class LiveTimingService implements SmartLifecycle {
                              Instant nextAttemptAt, Server server, Session session, List<String> channels,
                              Analysis analysis, TelemetryRunner.Status telemetry,
                              Long filedEventId, String filedEventName) {
+
+        /** For the shareable timing link: who asked for the connection, and which process holds it, left out. */
+        public LiveStatus forSharedLink() {
+            return new LiveStatus(state, configured, replaying, desiredConnected, eventId, eventName, null, null,
+                    null, false, connectedSince, lastMessageAt, messages, bytes, attempts, drops, lastError,
+                    lastWarning, nextAttemptAt, server, session, channels, analysis, telemetry, filedEventId,
+                    filedEventName);
+        }
     }
 
     /**

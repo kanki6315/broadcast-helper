@@ -2247,3 +2247,10 @@ h2 small {
     padding-block: 11px;
   }
 }
+
+/* Manage → Live timing: the share link, shown once after it is made. */
+.share-link-fresh input {
+  width: min(100%, 44rem);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}

@@ -3,6 +3,7 @@ import './season.css'
 import './timing.css'
 import { useIsAdmin } from '../lib/auth'
 import { useLivePoll } from '../lib/useLivePoll'
+import { useTimingNav, type TimingNav } from '../lib/timingNav'
 import type { LiveStatus, SessionSummary, Weekend, WeekendChampionship } from '../lib/liveTiming'
 import { LiveConnectControl } from './TimingPage'
 
@@ -14,7 +15,8 @@ import { LiveConnectControl } from './TimingPage'
  * by championship) and can say where a series weekend belongs.
  */
 export default function TimingHomePage() {
-  const isAdmin = useIsAdmin()
+  const nav = useTimingNav()
+  const isAdmin = useIsAdmin() && !nav.shared
   const [changed, setChanged] = useState(0)
   const { value: status } = useLivePoll<LiveStatus>('/api/live/status', 5000, changed)
   const { value: weekends, error } = useLivePoll<Weekend[]>('/api/live/weekends', 30_000, changed)
@@ -26,14 +28,16 @@ export default function TimingHomePage() {
   return (
     <div className="timing">
       <div className="timing-topbar">
-        <a className="timing-back" href="#/">
-          ← Pit Pass
-        </a>
-        <LiveConnectControl eventId={null} onChanged={() => setChanged((n) => n + 1)} />
+        {!nav.shared && (
+          <a className="timing-back" href="#/">
+            ← Pit Pass
+          </a>
+        )}
+        {!nav.shared && <LiveConnectControl eventId={null} onChanged={() => setChanged((n) => n + 1)} />}
       </div>
       <header className="timing-head">
         <h1>Timing</h1>
-        {status && <OnTrack status={status} />}
+        {status && <OnTrack status={status} nav={nav} />}
       </header>
 
       {weekends == null ? (
@@ -64,7 +68,13 @@ export default function TimingHomePage() {
               </thead>
               <tbody>
                 {w.championships.map((c) => (
-                  <ChampionshipRow key={c.feedEventDbId} c={c} isAdmin={isAdmin} onChanged={() => setChanged((n) => n + 1)} />
+                  <ChampionshipRow
+                    key={c.feedEventDbId}
+                    c={c}
+                    nav={nav}
+                    isAdmin={isAdmin}
+                    onChanged={() => setChanged((n) => n + 1)}
+                  />
                 ))}
               </tbody>
             </table>
@@ -76,16 +86,16 @@ export default function TimingHomePage() {
 }
 
 /** The session the feed is carrying, and where it is filed. */
-function OnTrack({ status }: { status: LiveStatus }) {
+function OnTrack({ status, nav }: { status: LiveStatus; nav: TimingNav }) {
   const session = status.session
   if (!status.desiredConnected || !session) {
     return <p className="timing-meta">{status.desiredConnected ? 'Connected. Waiting for a session.' : 'Live timing is off.'}</p>
   }
   const href =
-    status.filedEventId != null
-      ? `#/timing/${status.filedEventId}`
+    status.filedEventId != null && nav.event
+      ? nav.event(status.filedEventId)
       : session.feedEventDbId != null
-        ? `#/timing/weekend/${session.feedEventDbId}`
+        ? nav.weekend(session.feedEventDbId)
         : null
   const label = [session.championship, session.name].filter(Boolean).join(' · ') || 'A session'
   return (
@@ -99,18 +109,28 @@ function OnTrack({ status }: { status: LiveStatus }) {
   )
 }
 
-function ChampionshipRow({ c, isAdmin, onChanged }: { c: WeekendChampionship; isAdmin: boolean; onChanged: () => void }) {
-  const base = c.eventId != null ? `#/timing/${c.eventId}` : `#/timing/weekend/${c.feedEventDbId}`
+function ChampionshipRow({
+  c,
+  nav,
+  isAdmin,
+  onChanged,
+}: {
+  c: WeekendChampionship
+  nav: TimingNav
+  isAdmin: boolean
+  onChanged: () => void
+}) {
+  const base = c.eventId != null && nav.event ? nav.event(c.eventId) : nav.weekend(c.feedEventDbId)
   // Oldest first reads like the weekend's schedule; the API lists newest first.
   const sessions = [...c.sessions].reverse()
   return (
     <tr>
       <th scope="row">
-        <a href={`#/timing/weekend/${c.feedEventDbId}`}>{c.champName ?? `Feed event ${c.feedEventDbId}`}</a>
+        <a href={nav.weekend(c.feedEventDbId)}>{c.champName ?? `Feed event ${c.feedEventDbId}`}</a>
         {c.feedEventName && <div className="muted timing-weekend-sub">{c.feedEventName}</div>}
       </th>
       <td>
-        {isAdmin ? <BindControl c={c} onChanged={onChanged} /> : <FiledUnder c={c} />}
+        {isAdmin ? <BindControl c={c} onChanged={onChanged} /> : <FiledUnder c={c} nav={nav} />}
       </td>
       <td>
         <span className="timing-weekend-sessions">
@@ -133,8 +153,10 @@ function SessionLink({ base, s }: { base: string; s: SessionSummary }) {
   )
 }
 
-function FiledUnder({ c }: { c: WeekendChampionship }) {
-  if (c.eventId != null) return <a href={`#/timing/${c.eventId}`}>{c.eventName ?? 'An event'}</a>
+function FiledUnder({ c, nav }: { c: WeekendChampionship; nav: TimingNav }) {
+  if (c.eventId != null) {
+    return nav.event ? <a href={nav.event(c.eventId)}>{c.eventName ?? 'An event'}</a> : <span>{c.eventName ?? 'An event'}</span>
+  }
   return <span className="muted">{c.boundBy === 'ADMIN_NONE' ? 'Not in Pit Pass' : 'Not filed yet'}</span>
 }
 

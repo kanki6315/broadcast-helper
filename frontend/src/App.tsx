@@ -23,6 +23,7 @@ import SeriesPage from './pages/SeriesPage'
 import SheetPage from './pages/SheetPage'
 import TimingPage from './pages/TimingPage'
 import TimingHomePage from './pages/TimingHomePage'
+import SharedTiming from './pages/SharedTiming'
 import TeamsPage from './pages/TeamsPage'
 import UsersPage from './pages/UsersPage'
 import SessionsPage from './pages/SessionsPage'
@@ -38,6 +39,12 @@ function SheetRoute() {
 function TimingRoute() {
   const { eventId } = useParams()
   return <TimingPage scope={{ kind: 'event', eventId: Number(eventId) }} />
+}
+
+// The shareable timing link: signed-out, timing only (pages/SharedTiming).
+function SharedTimingRoute() {
+  const { token, feedEventDbId } = useParams()
+  return <SharedTiming key={token} token={token ?? ''} feedEventDbId={feedEventDbId ? Number(feedEventDbId) : undefined} />
 }
 
 // One series weekend as the feed has it, filed under a Pit Pass event or not.
@@ -59,6 +66,8 @@ export default function App() {
         <InfoModalProvider>
           <Routes>
             <Route path="/sheet/:eventId" element={<SheetRoute />} />
+            <Route path="/live/:token" element={<SharedTimingRoute />} />
+            <Route path="/live/:token/weekend/:feedEventDbId" element={<SharedTimingRoute />} />
             <Route path="/timing" element={<TimingHomePage />} />
             <Route path="/timing/weekend/:feedEventDbId" element={<TimingWeekendRoute />} />
             <Route path="/timing/:eventId" element={<TimingRoute />} />

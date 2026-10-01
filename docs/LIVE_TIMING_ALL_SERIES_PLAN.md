@@ -1,7 +1,7 @@
 # Live timing for every series on a weekend, and a shareable timing link: plan
 
-Status: **2026-09-30: slices 0–4 done** on the branch below, not yet merged
-to main. Slices 5–6 (sharing) not started.
+Status: **2026-09-30: all slices (0–6) done** on the branch below, not yet
+merged to main. Remaining: the production steps under *Rollout*.
 Branch: `claude/alchemel-connection-switchover-686f5e`.
 This document is the handoff. It builds on `docs/LIVE_TIMING.md` (the feed
 pipeline) and `docs/LIVE_TIMING_PAGE_PLAN.md` (the timing page, slices 0–5).
@@ -326,6 +326,27 @@ weekend, including ones not yet run.
   one, and are simply absent otherwise.
 - iPad: the Timing tab keeps working from an event. It needs to tolerate
   `filedEventId` being null; no browse UI in this slice.
+
+### Slices 5–6: the share link — DONE 2026-09-30
+
+**As built (differences from the plan below):**
+- V62 is `live_share_token` (the plan's numbering held). Admin API is
+  `GET/POST/DELETE /api/live/share`; POST answers `{token, link}` once.
+- The share identity reads the timing endpoints the pages actually call —
+  including `/api/live/weekends` and `/feed-events/*` — and not
+  `/api/events/*`: the shared view has no event pages, so it never needs
+  Pit Pass's event. Links on shared pages go to series weekend pages
+  (`lib/timingNav.ts`).
+- The token is read from the URL fragment on each request rather than held
+  in state (`lib/shareLink.ts`); the existing global fetch wrapper adds the
+  header and turns a 401 into the "no longer works" message.
+- Rate limit is per client address, not per token: one token is shared by
+  every viewer, so a per-token limit would throttle them all together.
+- Manage → Live timing has the link controls (make, copy once, replace,
+  revoke) above the championships list.
+- Tests: `ShareLinkChainTest` (what the link opens and doesn't, replace and
+  revoke, admin-only management, rate limit) and
+  `npm run test:timing:shared`.
 
 ### Slice 5: the share token (backend)
 Modelled on `DeviceTokens` / `DeviceTokenFilter`, simplified by the

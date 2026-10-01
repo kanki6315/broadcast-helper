@@ -900,3 +900,12 @@
 .timing-bind select {
   max-width: 28rem;
 }
+
+/* The shareable link's attribution, under every shared page. */
+.timing-credit {
+  max-width: 1320px;
+  margin: calc(-1 * var(--space-5)) auto var(--space-4);
+  padding: 0 var(--space-5);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}

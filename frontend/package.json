@@ -13,7 +13,8 @@
     "test:calculator:browser": "node tests/championshipCalculator.browser.cjs",
     "test:calculator:live": "node tests/liveCalculator.browser.cjs",
     "test:timing:live": "node tests/liveTiming.browser.cjs",
-    "test:timing:home": "node tests/timingHome.browser.cjs"
+    "test:timing:home": "node tests/timingHome.browser.cjs",
+    "test:timing:shared": "node tests/sharedTiming.browser.cjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",

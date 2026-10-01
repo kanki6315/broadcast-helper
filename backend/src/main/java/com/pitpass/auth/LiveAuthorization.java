@@ -39,6 +39,17 @@ public class LiveAuthorization {
                 new AuthorizationDecision(directory.isAdmin(emailOf(authentication.get())));
     }
 
+    /**
+     * The timing pages' reads: any member, or whoever holds the shareable
+     * timing link (a {@link ShareAuthentication}, which no other rule admits).
+     */
+    public AuthorizationManager<RequestAuthorizationContext> timingReader() {
+        return (authentication, context) -> {
+            Authentication a = authentication.get();
+            return new AuthorizationDecision(a instanceof ShareAuthentication || directory.allows(emailOf(a)));
+        };
+    }
+
     private static String emailOf(Authentication authentication) {
         return Principals.emailOf(authentication);
     }
