@@ -3,6 +3,7 @@ package com.pitpass.live;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.pitpass.sheets.SheetController;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -134,10 +135,10 @@ public final class LiveClassification {
                         entry != null && entry.guest(),
                         text(row, "status"),
                         row.has("lapNumber") ? row.path("lapNumber").asInt() : null,
-                        gap(row, "gapFirstTime") == 0 ? null : gap(row, "gapFirstTime"),
+                        gap(row, "gapFirstTime"),
                         row.path("gapFirstLaps").asInt(0) == 0 ? null : Math.abs(row.path("gapFirstLaps").asInt()),
                         // The feed carries the interval already (gapPrevious*): nothing to compute.
-                        gap(row, "gapPreviousTime") == 0 ? null : gap(row, "gapPreviousTime"),
+                        gap(row, "gapPreviousTime"),
                         row.path("gapPreviousLaps").asInt(0) == 0 ? null : Math.abs(row.path("gapPreviousLaps").asInt())));
             }
             classes.add(new ClassOrder(className, feedClass, cars));
@@ -215,8 +216,13 @@ public final class LiveClassification {
         classes.sort(Comparator.comparingInt(c -> rank.getOrDefault(c.feedClass(), Integer.MAX_VALUE)));
     }
 
-    private static long gap(JsonNode row, String field) {
-        return row.path(field).asLong(0);
+    /** No gap in a session runs to a week; past that it is the feed's "no time yet" sentinel. */
+    private static final long LONGEST_GAP_MS = Duration.ofDays(7).toMillis();
+
+    // A car yet to cross the line carries a near-Long.MAX_VALUE gap, not an absent one.
+    private static Long gap(JsonNode row, String field) {
+        long ms = row.path(field).asLong(0);
+        return ms <= 0 || ms > LONGEST_GAP_MS ? null : ms;
     }
 
     private static String text(JsonNode node, String field) {

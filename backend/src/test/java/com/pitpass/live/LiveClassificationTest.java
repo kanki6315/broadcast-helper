@@ -162,6 +162,19 @@ class LiveClassificationTest {
     }
 
     @Test
+    void aCarYetToTakeTheTrackHasNoGapRatherThanTheFeedsSentinel() throws Exception {
+        var pitLane = session("""
+                {"standings": {"byClass": {"active": {"GTD": {"class": "GTD", "standings": {
+                  "1": {"participant": "57", "position": 1},
+                  "2": {"participant": "3", "position": 2,
+                        "gapFirstTime": 9223373548683264, "gapPreviousTime": 9223373548683264}}}}}}}
+                """);
+        var car = LiveClassification.build(pitLane, ENTRIES, Map.of(), Map.of()).classes().get(0).cars().get(1);
+        assertNull(car.gapToLeaderMs());
+        assertNull(car.intervalMs());
+    }
+
+    @Test
     void theWrongSeriesOnTrackReadsAsNothingMatchedNotEverythingMissing() throws Exception {
         var pilotChallenge = session("""
                 {"standings": {"byClass": {"active": {"GS": {"class": "GS", "standings": {
