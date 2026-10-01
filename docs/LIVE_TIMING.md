@@ -541,16 +541,27 @@ retry (5 s → 5 min ladder).
   allows) → one `subscribe` per channel → `data`, with `ka` keep-alives. The
   websocket offers the subprotocols `aws-appsync-event-ws` and
   `header-<base64url {host, x-api-key}>`.
-- **Payload:** every plausible wrapping is decoded (base64 JSON, a `data`
-  field, plain JSON), because none has been seen live. A car is
-  `scoring.number` (exact, #04 ≠ #4), `energy_remaining`, `scoring.lapNumber`
-  and `pit_lane`.
+- **Payload** (seen live at Petit Le Mans, 2026-10-01): each event is
+  `{"data":"<base64 JSON>"}`, about 72 KB, once a second, every car in one
+  array. A car's number and class come from `car_id` (`GTP-10`,
+  `GTD-023`, `GDP-911` where GDP is GTD Pro; the number is exact, #04 ≠
+  #4). Its laps completed come from the top-level `lap_number`, which
+  matched Al Kamel's count on every car that sent it. Most GTD and GTD Pro
+  loggers send 0 there.
+  The `scoring` block is IMSA's own scoring joined on by number, and it is
+  not used. Its `lapNumber` lagged and froze (6 when the car had run 51),
+  and its `class` followed whichever series IMSA was timing (VP Challenge
+  classes on WeatherTech cars). Practice 1 at Petit Le Mans stored only
+  182 energy laps for 43 cars because crossings were keyed on it.
 - **Kept:** only the latest reading per car, plus each car's last 30 lap
   samples. **Stored:** one row per car per lap in `live_energy_lap` (V59).
-  The first reading after `lapNumber` goes up is the energy at the line for
-  the lap just completed. Missed crossings are not invented. Rows are keyed
-  to the Al Kamel session being fed, so with analysis off energy is shown but
-  not stored.
+  A crossing is the car's laps-completed count going up: the logger's own
+  count, else the tower's (analysis' last lap, or the standings' `lapNumber`
+  in a race only). The first reading at the new count is stored as the
+  energy at the line after that lap. Missed crossings are not invented.
+  Rows are keyed to the Al Kamel session being fed, so with analysis off
+  energy is shown but not stored. (V59's comment predates this: it still
+  says `scoring.lapNumber` and the lap before.)
 - **Shown:** the tower's `energyPct` (null when older than
   `IMSA_TELEMETRY_STALE_SECONDS`) and `energyLapsLeft` (energy over the
   stint's average use per lap; refills are left out). The car panel shows
@@ -561,10 +572,12 @@ retry (5 s → 5 min ladder).
   in the private recording bucket. `IMSA_TELEMETRY_REPLAY_FILE` plays one
   back through the same protocol code.
 
-**Unverified until a live weekend:** the endpoint and handshake themselves,
-the payload wrapping, whether IMSA's `lapNumber` matches Al Kamel's or runs
-one off, which classes carry energy, and the real message rate and size.
-Nothing has connected to IMSA's endpoint yet.
+**Verified 2026-10-01:** the endpoint, handshake, payload wrapping, message
+rate and size, and that GTP, GTD and GTD Pro all carry energy. **Still
+unverified:** whether the logger's `lap_number` ticks at the same moment as
+Al Kamel's crossing (it was only compared after the session).
+In practice and qualifying, a GTD car with no logger count crosses only on
+analysis' laps.
 
 ## When it will not connect
 

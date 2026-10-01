@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 
 import static com.pitpass.live.TelemetryFixtures.car;
 import static com.pitpass.live.TelemetryFixtures.cars;
@@ -39,10 +40,32 @@ class ImsaTelemetryTest {
             assertEquals(2, d.cars().size(), event);
             assertEquals("7", d.cars().get(0).number());
             assertEquals(62.5, d.cars().get(0).energyPct());
-            assertEquals(40, d.cars().get(0).lapNumber());
+            assertEquals(40, d.cars().get(0).lapsCompleted());
+            assertEquals("GTP", d.cars().get(0).className());
             assertEquals("04", d.cars().get(1).number(), "the number exactly as sent");
             assertEquals(Boolean.TRUE, d.cars().get(1).pitLane());
         }
+    }
+
+    @Test
+    void numberClassAndLapsComeFromTheLoggerNotImsasScoringBlock() {
+        // As seen live: scoring.lapNumber stuck at 6 and scoring.class from another series.
+        TelemetryDecoder.Decoded d = decoder.decode(cars(
+                "{\"car_id\":\"GTP-10\",\"lap_number\":51.0,\"energy_remaining\":17.3,\"pit_lane\":true,"
+                        + "\"scoring\":{\"number\":\"10\",\"class\":\"ND2\",\"lapNumber\":6.0}}",
+                car("911", 90, 0, false, "GTD PRO"),
+                car("023", 80, 12, false, "GTD"),
+                "{\"car_id\":\"XYZ-5\",\"lap_number\":0,\"energy_remaining\":50}"));
+        var gtp = d.cars().get(0);
+        assertEquals("10", gtp.number());
+        assertEquals("GTP", gtp.className());
+        assertEquals(51, gtp.lapsCompleted());
+        var gtdPro = d.cars().get(1);
+        assertEquals("911", gtdPro.number());
+        assertEquals("GTD PRO", gtdPro.className(), "GDP is GTD Pro");
+        assertNull(gtdPro.lapsCompleted(), "0 is a logger that sends no lap count, not lap 0");
+        assertEquals("023", d.cars().get(2).number(), "leading zeros kept");
+        assertNull(d.cars().get(3).className(), "an unknown prefix is no class rather than a guess");
     }
 
     @Test
@@ -157,30 +180,57 @@ class ImsaTelemetryTest {
         LiveTelemetry t = new LiveTelemetry();
         assertTrue(feed(t, "7", 90.0, 10).isEmpty(), "the first reading has nothing to cross from");
         assertTrue(feed(t, "7", 89.1, 10).isEmpty(), "readings within a lap are not stored");
-        assertEquals(List.of(new LiveTelemetry.LapSample("7", 10, 88.0, false, "GTP")), feed(t, "7", 88.0, 11),
-                "the first reading on lap 11 is the energy at the line after lap 10");
+        assertEquals(List.of(new LiveTelemetry.LapSample("7", 11, 88.0, false, "GTP")), feed(t, "7", 88.0, 11),
+                "the first reading at 11 laps completed is the energy at the line after lap 11");
         assertTrue(feed(t, "7", 87.5, 11).isEmpty());
-        assertEquals(List.of(new LiveTelemetry.LapSample("7", 13, 83.0, false, "GTP")), feed(t, "7", 83.0, 14),
+        assertEquals(List.of(new LiveTelemetry.LapSample("7", 14, 83.0, false, "GTP")), feed(t, "7", 83.0, 14),
                 "missed crossings are not invented: only the lap just completed");
+    }
+
+    @Test
+    void aLoggerWithNoLapCountCrossesOnAlKamelsCount() {
+        LiveTelemetry t = new LiveTelemetry();
+        var gtd = decoder.decode(cars(car("023", 60.0, 0, false, "GTD")));
+        assertTrue(t.accept(gtd, 0, Map.of("023", 20)).isEmpty());
+        assertTrue(t.accept(decoder.decode(cars(car("023", 59.0, 0, false, "GTD"))), 0, Map.of("023", 20)).isEmpty());
+        assertEquals(List.of(new LiveTelemetry.LapSample("023", 21, 57.5, false, "GTD")),
+                t.accept(decoder.decode(cars(car("023", 57.5, 0, false, "GTD"))), 0, Map.of("023", 21)));
+        assertTrue(t.accept(decoder.decode(cars(car("023", 57.0, 0, false, "GTD"))), 0, Map.of()).isEmpty(),
+                "no count from either side is no crossing");
+
+        LiveTelemetry loose = new LiveTelemetry();
+        loose.accept(decoder.decode(cars(car("4", 60.0, 0, false, "GTD"))), 0, Map.of("04", 5));
+        assertEquals(1, loose.accept(decoder.decode(cars(car("4", 58.0, 0, false, "GTD"))), 0, Map.of("04", 6)).size(),
+                "unambiguous without leading zeros");
+        LiveTelemetry ambiguous = new LiveTelemetry();
+        ambiguous.accept(decoder.decode(cars(car("4", 60.0, 0, false, "GTD"))), 0, Map.of("04", 5, "004", 5));
+        assertTrue(ambiguous.accept(decoder.decode(cars(car("4", 58.0, 0, false, "GTD"))), 0, Map.of("04", 6, "004", 6))
+                .isEmpty(), "never a guess between #04 and #004");
+
+        LiveTelemetry own = new LiveTelemetry();
+        own.accept(decoder.decode(cars(car("10", 40.0, 50, false))), 0, Map.of("10", 49));
+        assertEquals(List.of(new LiveTelemetry.LapSample("10", 51, 38.0, false, "GTP")),
+                own.accept(decoder.decode(cars(car("10", 38.0, 51, false))), 0, Map.of("10", 49)),
+                "the logger's own count wins when it sends one");
     }
 
     @Test
     void averageUseAndLapsLeftFollowTheStintAndIgnoreRefills() {
         LiveTelemetry t = new LiveTelemetry();
         feed(t, "04", 100, 1);
-        feed(t, "04", 96, 2);   // at the line after lap 1: 96
-        feed(t, "04", 50, 3);   // after lap 2: 50 (46 used)
-        feed(t, "04", 98, 4);   // after lap 3: 98 — a refill, a rise, not use
-        feed(t, "04", 95, 5);   // after lap 4: 3 used
-        feed(t, "04", 91, 6);   // after lap 5: 4 used
-        LiveTelemetry.CarEnergy stint = t.energy("04", null, 3, 0, 15_000);
+        feed(t, "04", 96, 2);   // at the line after lap 2: 96
+        feed(t, "04", 50, 3);   // after lap 3: 50 (46 used)
+        feed(t, "04", 98, 4);   // after lap 4: 98 — a refill, a rise, not use
+        feed(t, "04", 95, 5);   // after lap 5: 3 used
+        feed(t, "04", 91, 6);   // after lap 6: 4 used
+        LiveTelemetry.CarEnergy stint = t.energy("04", null, 4, 0, 15_000);
         assertEquals(91.0, stint.energyPct());
-        assertEquals(3.5, stint.avgPerLapPct(), 1e-9, "only this stint's laps (from lap 3)");
+        assertEquals(3.5, stint.avgPerLapPct(), 1e-9, "only this stint's laps (from lap 4)");
         assertEquals(26.0, stint.lapsLeft(), 1e-9);
 
         assertEquals((46 + 3 + 4) / 3.0, t.energy("04", null, null, 0, 15_000).avgPerLapPct(), 1e-9,
                 "the refill's rise is left out, not counted as negative use");
-        assertNull(t.energy("04", null, 3, 16_000, 15_000).energyPct(), "stale after 15 s");
+        assertNull(t.energy("04", null, 4, 16_000, 15_000).energyPct(), "stale after 15 s");
     }
 
     @Test

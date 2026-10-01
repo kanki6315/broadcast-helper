@@ -16,17 +16,18 @@ import java.util.concurrent.ConcurrentHashMap;
  * car's last few lap-crossing energy samples. The ~1 Hz stream itself is never
  * kept — only one reading per car per lap goes to the database.
  *
- * A lap crossing is {@code scoring.lapNumber} going up. The first reading on
- * the new lap is the energy at the line for the lap just completed (the
- * reading before it is up to a second older). If messages were missed and the
- * count jumps by several laps, only the lap just completed is sampled — the
- * energy at the earlier crossings was never seen. Whether IMSA's lap numbers
- * match Al Kamel's, or run one off, is unverified until a live weekend.
+ * A lap crossing is the car's completed-lap count going up; the first reading
+ * at the new count is the energy at the line after that lap (up to a second
+ * late). The count is the car's own logger's {@code lap_number} when it sends
+ * one — it matched Al Kamel's count exactly on a live weekend — else the Al
+ * Kamel feed's lap count for the car, since most GTD loggers send none. If
+ * messages were missed and the count jumps by several laps, only the lap just
+ * completed is sampled — the energy at the earlier crossings was never seen.
  */
 final class LiveTelemetry {
 
-    /** A reading as received. */
-    record Reading(CarReading car, long receivedAtMs) {
+    /** A reading as received; laps is the completed-lap count it was taken at, null when unknown. */
+    record Reading(CarReading car, Integer laps, long receivedAtMs) {
     }
 
     /** Energy at the line after {@code lap}: the lap-crossing sample that is stored. className is IMSA's. */
@@ -43,23 +44,32 @@ final class LiveTelemetry {
     private final Map<String, Deque<LapSample>> samples = new ConcurrentHashMap<>();
     private volatile SessionClock clock;
 
-    /** Takes one decoded message; returns the lap samples it completed. */
+    /** Takes one decoded message, with no Al Kamel lap counts; returns the lap samples it completed. */
     List<LapSample> accept(TelemetryDecoder.Decoded decoded, long nowMs) {
+        return accept(decoded, nowMs, Map.of());
+    }
+
+    /**
+     * Takes one decoded message; returns the lap samples it completed.
+     * feedLaps is the Al Kamel feed's completed-lap count by car number, for
+     * cars whose logger sends no lap count.
+     */
+    List<LapSample> accept(TelemetryDecoder.Decoded decoded, long nowMs, Map<String, Integer> feedLaps) {
         if (decoded.session() != null) {
             clock = decoded.session();
         }
         List<LapSample> completed = new ArrayList<>();
         for (CarReading car : decoded.cars()) {
-            Reading previous = latest.put(car.number(), new Reading(car, nowMs));
-            if (previous == null || previous.car().lapNumber() == null || car.lapNumber() == null
-                    || car.lapNumber() <= previous.car().lapNumber()) {
+            Integer laps = car.lapsCompleted() != null ? car.lapsCompleted() : feedLaps(feedLaps, car.number());
+            Reading previous = latest.put(car.number(), new Reading(car, laps, nowMs));
+            if (previous == null || previous.laps() == null || laps == null || laps <= previous.laps()) {
                 continue;
             }
             Double energy = car.energyPct() != null ? car.energyPct() : previous.car().energyPct();
             if (energy == null) {
                 continue;
             }
-            LapSample sample = new LapSample(car.number(), car.lapNumber() - 1, energy, car.pitLane(), car.className());
+            LapSample sample = new LapSample(car.number(), laps, energy, car.pitLane(), car.className());
             completed.add(sample);
             Deque<LapSample> kept = samples.computeIfAbsent(car.number(), k -> new ArrayDeque<>());
             synchronized (kept) {
@@ -70,6 +80,19 @@ final class LiveTelemetry {
             }
         }
         return completed;
+    }
+
+    /** The feed's count for a telemetry number: exactly first (#04 is not #4), then unambiguous without leading zeros. */
+    private static Integer feedLaps(Map<String, Integer> feedLaps, String number) {
+        Integer exact = feedLaps.get(number);
+        if (exact != null || feedLaps.isEmpty()) {
+            return exact;
+        }
+        String normalized = SheetController.normalizeCarNumber(number);
+        List<Integer> loose = feedLaps.entrySet().stream()
+                .filter(e -> SheetController.normalizeCarNumber(e.getKey()).equals(normalized))
+                .map(Map.Entry::getValue).toList();
+        return loose.size() == 1 ? loose.getFirst() : null;
     }
 
     SessionClock clock() {

@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -64,9 +65,15 @@ class TelemetryRunnerTest {
 
     private TelemetryRunner runner(ImsaTelemetryProperties props, TelemetryRunner.SourceFactory sources,
                                    AtomicReference<Long> session, java.util.function.Function<String, String> feedClassOf) {
+        return runner(props, sources, session, feedClassOf, Map::of);
+    }
+
+    private TelemetryRunner runner(ImsaTelemetryProperties props, TelemetryRunner.SourceFactory sources,
+                                   AtomicReference<Long> session, java.util.function.Function<String, String> feedClassOf,
+                                   java.util.function.Supplier<Map<String, Integer>> feedLaps) {
         TelemetryRunner r = new TelemetryRunner(props, mapper, sources,
                 () -> new LiveRecorder(tmp.resolve("rec"), Duration.ofHours(1), (seg, key) -> segments.add(seg), "imsa-telemetry/"),
-                session::get, op -> written.add(op), feedClassOf,
+                session::get, op -> written.add(op), feedClassOf, feedLaps,
                 List.of(Duration.ofMillis(50)), Duration.ofMinutes(1));
         runners.add(r);
         return r;
@@ -96,8 +103,8 @@ class TelemetryRunnerTest {
         await(() -> written.size() == 2);
 
         assertEquals(List.of(
-                new AnalysisRows.EnergyLap(3150, "7", 10, 88.2, false),
-                new AnalysisRows.EnergyLap(3150, "04", 9, 67.5, true)), written);
+                new AnalysisRows.EnergyLap(3150, "7", 11, 88.2, false),
+                new AnalysisRows.EnergyLap(3150, "04", 10, 67.5, true)), written);
         var status = r.status();
         assertEquals(TelemetryRunner.State.LIVE, status.state());
         assertEquals(frames.size(), status.messages());
@@ -112,6 +119,19 @@ class TelemetryRunnerTest {
             String recorded = new String(in.readAllBytes(), StandardCharsets.UTF_8);
             assertTrue(recorded.contains("\t" + frames.get(2) + "\n"), "raw frames, byte for byte");
         }
+    }
+
+    @Test
+    void aGtdLoggerWithNoLapCountIsSampledAtAlKamelsCrossings() throws Exception {
+        Path file = tmp.resolve("gtd.imsa");
+        Files.writeString(file, "1\t" + TelemetryFixtures.data("x", cars(car("023", 60, 0, false, "GTD"))) + "\n"
+                + "2\t" + TelemetryFixtures.data("x", cars(car("023", 58, 0, false, "GTD"))) + "\n");
+        AtomicInteger alKamelLaps = new AtomicInteger(20);
+        TelemetryRunner r = runner(props(file.toString()), () -> new ReplayTelemetrySource(file, 0, mapper),
+                new AtomicReference<>(3150L), car -> "GTD", () -> Map.of("023", alKamelLaps.getAndIncrement()));
+        r.ensure(true);
+        await(() -> written.size() == 1);
+        assertEquals(List.of(new AnalysisRows.EnergyLap(3150, "023", 21, 58.0, false)), written);
     }
 
     @Test
@@ -137,7 +157,7 @@ class TelemetryRunnerTest {
                 new AtomicReference<>(3150L), car -> car.equals("7") ? "GS" : "GTP");
         r.ensure(true);
         await(() -> r.status().messages() == 2);
-        assertEquals(List.of(new AnalysisRows.EnergyLap(3150, "04", 1, 68.0, false)), written, "only the car whose class agrees");
+        assertEquals(List.of(new AnalysisRows.EnergyLap(3150, "04", 2, 68.0, false)), written, "only the car whose class agrees");
         assertEquals(1, r.status().classRejected());
         assertNull(r.telemetry().energy("7", "GS", null, System.currentTimeMillis(), 15_000),
                 "nor is it shown on the GS car");

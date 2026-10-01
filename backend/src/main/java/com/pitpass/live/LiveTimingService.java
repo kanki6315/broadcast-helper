@@ -17,7 +17,9 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -195,7 +197,7 @@ public class LiveTimingService implements SmartLifecycle {
                         ? new LiveRecorder(recordingDirectory().resolve("imsa-telemetry"),
                                 Duration.ofMinutes(Math.max(1, props.recording().segmentMinutes())), this.sink, "imsa-telemetry/")
                         : null,
-                summaries::sessionDbId, this.analysisWriter, this::feedClassOf,
+                summaries::sessionDbId, this.analysisWriter, this::feedClassOf, this::feedLaps,
                 List.of(Duration.ofSeconds(5), Duration.ofSeconds(15), Duration.ofSeconds(30),
                         Duration.ofSeconds(60), Duration.ofMinutes(5)),
                 Duration.ofMinutes(1));
@@ -298,6 +300,40 @@ public class LiveTimingService implements SmartLifecycle {
         JsonNode entry = tree.copyOf("timing.session.entry." + carNumber);
         String cls = entry == null ? null : entry.path("class").asText(null);
         return cls == null || cls.isBlank() ? null : cls;
+    }
+
+    /**
+     * Completed laps per car as the tower counts them, for telemetry cars
+     * whose logger sends no lap count: the last lap from analysis, else the
+     * standings' lapNumber in a race only — in practice and qualifying that
+     * is the number of the car's best lap, not its count.
+     */
+    private Map<String, Integer> feedLaps() {
+        Map<String, Integer> laps = new HashMap<>();
+        JsonNode info = tree.copyOf("timing.session.info");
+        if (info != null && "RACE".equalsIgnoreCase(info.path("type").asText(""))) {
+            JsonNode byClass = tree.copyOf("timing.session.standings.byClass");
+            JsonNode order = byClass == null ? null
+                    : byClass.path("active").isObject() && !byClass.path("active").isEmpty()
+                            ? byClass.path("active") : byClass.path("finishLine");
+            if (order != null) {
+                for (var cls : order.properties()) {
+                    for (var row : cls.getValue().path("standings").properties()) {
+                        String car = row.getValue().path("participant").asText("");
+                        JsonNode lap = row.getValue().path("lapNumber");
+                        if (!car.isBlank() && lap.isNumber()) {
+                            laps.put(car, lap.asInt());
+                        }
+                    }
+                }
+            }
+        }
+        for (LiveCarSummaries.CarSummary s : summaries.snapshot()) {
+            if (s.lastLap() != null) {
+                laps.merge(s.car(), s.lastLap(), Math::max);
+            }
+        }
+        return laps;
     }
 
     private Analysis analysis() {
