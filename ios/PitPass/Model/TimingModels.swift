@@ -22,6 +22,35 @@ struct Tower: Codable, Sendable, Equatable {
     let classes: [TowerClass]
     let matched: Int
     let total: Int
+    /// Race control's screen now and its newest message; nil when the feed sends no race control.
+    var raceControl: RaceControlNow? = nil
+}
+
+/// One race control message. `dayTimeMs` is when it was shown (nil on the
+/// screen's lines); colours are race control's own, "#rrggbb" or nil.
+struct RaceControlMessage: Codable, Sendable, Equatable, Identifiable {
+    let key: String
+    let dayTimeMs: Int?
+    let text: String
+    /// Usually a class name, when race control addresses one.
+    let group: String?
+    let line: Int?
+    let foreground: String?
+    let background: String?
+    let blink: Bool
+    var id: String { key }
+}
+
+struct RaceControlNow: Codable, Sendable, Equatable {
+    /// What race control's screen shows now, in line order. Often empty.
+    let lines: [RaceControlMessage]
+    let latest: RaceControlMessage?
+}
+
+/// `GET /api/live/race-control?session=`, newest first.
+struct RaceControlLog: Codable, Sendable, Equatable {
+    let sessionDbId: Int
+    let messages: [RaceControlMessage]
 }
 
 struct TowerClass: Codable, Sendable, Equatable, Identifiable {

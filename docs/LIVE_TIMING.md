@@ -48,6 +48,7 @@ replica would see `STANDBY` and no data.
 | `GET /api/live/timing` | member | The timing page's tower — see *Timing page API*. Poll it. |
 | `GET /api/live/cars/{car}?session=` | member | One car's laps, stints and drivers. |
 | `GET /api/live/drive-time?session=` | member | Drive time per driver against the event's rules. |
+| `GET /api/live/race-control?session=` | member | Race control's messages for a session, newest first — see *Race control messages*. |
 | `GET /api/live/sessions?eventId=` or `?feedEvent=` | member | The sessions recorded for an event, or for one series weekend (filed or not), newest first by date. |
 | `GET /api/live/weekends?days=60` | member | Recorded series weekends grouped by weekend (same track, first sessions within 5 days), each with its sessions, where it is filed, and the events it could be filed under. |
 | `GET /api/live/feed-events/{id}` | member | One series weekend, the same shape. |
@@ -205,6 +206,7 @@ All `ALKAMELV2_*`. Set the first three on Railway; the rest have working default
 | `ALKAMELV2_REPLAY_FILE` | — | Local dev: replay this recording instead of connecting. |
 | `ALKAMELV2_REPLAY_SPEED` | `1.0` | `10` = ten times faster; `0` = no pauses. |
 | `ALKAMELV2_ANALYSIS_ENABLED` | `false` | Also join `timing.analysis.laps` and `.stints` and stream them into Postgres — see *timing.analysis*. Off until a practice session has run clean with it. |
+| `ALKAMELV2_RACE_CONTROL_ENABLED` | `true` | Also join `raceControl.messages` and `raceControl.currentMessages`: the timing page's race control strip and log. A few lines a session, so on by default. The log is stored only while analysis is on. |
 | `ALKAMELV2_PARTICIPANT_DETAILS_ENABLED` | `false` | Also join `timing.session.standings.overall.participantDetails` into the state tree, for the tower's sector columns, class best sectors and BOX / OUT_LAP marks. It updates at every loop crossing of every car, so it stays off until a practice session has been recorded with it. |
 | `ALKAMELV2_ANALYSIS_MAX_LINE_BYTES` | `536870912` | Sanity cap on one **streamed** line (counted, never buffered). `ALKAMELV2_MAX_LINE_BYTES` then guards only buffered lines. |
 
@@ -493,6 +495,36 @@ no entry are grouped under "Not entered", not dropped.
     **close**: a car sitting in the pit lane after a red flag has no open
     stint, so it has no Pit mark or stint clock, and its stop counts only
     once it leaves. `participantDetails.status` (`BOX`) would close that gap.
+
+### Race control messages
+
+The feed's `raceControl` channel (spec 1.0.36 §4.2), joined unless
+`ALKAMELV2_RACE_CONTROL_ENABLED=false`. Both sub-channels go into the state
+tree like `timing.session`:
+
+- `raceControl.messages` — the session's log, keyed by the feed's
+  `showTime`: `text`, `groupText` (usually a class), `dayTime` (epoch ms when
+  shown), `line`, `foregroundColor` / `backgroundColor` (#rrggbb), `blink`,
+  `id`, `isNull`. With analysis on, the router also hands each message a
+  diff touches to the writer **whole, as the tree now has it** (diffs are
+  partial), into `live_race_control` (V64) keyed by session and that key. A
+  null message deletes its row, as a null lap does; a null channel deletes
+  nothing.
+- `raceControl.currentMessages` — what race control's screen shows now, keyed
+  by line. Live only, never stored.
+
+`LiveRaceControl` reads both: the tower's `raceControl` is the screen's lines
+plus the log's newest message (null when the feed has sent no race control);
+`/api/live/race-control?session=` is the stored log, newest first by
+`dayTime`. Blank and `isNull` messages are left out of both, and any colour
+that is not `#rrggbb` is dropped. The web page and the iPad show race
+control's colours only as a bar beside the text.
+
+**Unverified — no recording has joined this channel yet:** whether
+`messages` is cleared at a session change (the spec says it holds the
+"current session"; if it is not, the reconnect snapshot would file old
+messages under the new session), what `showTime` counts, and what `isNull`
+means in practice. Check all three in the first recording that has it.
 
 ### Drive time
 

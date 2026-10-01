@@ -104,7 +104,7 @@ class AnalysisIngestTest {
                 1 << 10, 2, 1,
                 new AlKamelV2Properties.Recording(true, recordings.toString(), "", 10, 64),
                 new AlKamelV2Properties.Replay("", 1.0),
-                new AlKamelV2Properties.Analysis(true, 1 << 20), null);
+                new AlKamelV2Properties.Analysis(true, 1 << 20), null, null);
         LiveTimingService service = new LiveTimingService(props, new LiveTimingServiceTest.MemoryStore(), mapper,
                 null, (segment, key) -> segments.add(segment),
                 new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
@@ -189,7 +189,7 @@ class AnalysisIngestTest {
         AlKamelV2Properties props = new AlKamelV2Properties("127.0.0.1", server.port(), "u", "p", false, false,
                 "Pit Pass test", List.of("timing.session.info"), 1 << 10, 2, 1,
                 new AlKamelV2Properties.Recording(false, recordings.toString(), "", 10, 64),
-                new AlKamelV2Properties.Replay("", 1.0), new AlKamelV2Properties.Analysis(true, 1 << 20), null);
+                new AlKamelV2Properties.Replay("", 1.0), new AlKamelV2Properties.Analysis(true, 1 << 20), null, null);
         LiveTimingService service = new LiveTimingService(props, new LiveTimingServiceTest.MemoryStore(), mapper,
                 null, (segment, key) -> { },
                 new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
@@ -207,6 +207,75 @@ class AnalysisIngestTest {
 
         assertEquals(4, count("live_lap WHERE session_db_id = :s"), "the same rows, not twice as many");
         assertEquals(0, writer.stats().failed());
+    }
+
+    /**
+     * Race control: the log is stored whole per message though diffs are
+     * partial, a null message deletes its row, and the screen's lines stay
+     * in the tree for the strip.
+     */
+    @Test
+    void raceControlMessagesAreStoredPerSession() throws Exception {
+        String yellow = "{\"dayTime\":" + (RACE_START + 5_000) + ",\"text\":\"FULL COURSE YELLOW\",\"line\":2,"
+                + "\"foregroundColor\":\"#000000\",\"backgroundColor\":\"#ffff00\",\"blink\":true,\"id\":52}";
+        List<String> lines = List.of(
+                "JSON:1::" + info(session, "Race"),
+                "JSON:2::{\"raceControl\":{\"messages\":{"
+                        + "\"3600000\":{\"dayTime\":" + (RACE_START + 1_000) + ",\"text\":\"CAR 04 TRACK LIMITS WARNING\","
+                        + "\"groupText\":\"GTD\",\"line\":1,\"foregroundColor\":\"#FFFFFF\",\"backgroundColor\":\"red\","
+                        + "\"blink\":false,\"id\":51,\"isNull\":false},"
+                        + "\"3700000\":" + yellow + ",\"3800000\":{\"text\":\"   \",\"isNull\":true}},"
+                        + "\"currentMessages\":{\"2\":{\"text\":\"FULL COURSE YELLOW\",\"backgroundColor\":\"#ffff00\"},"
+                        + "\"1\":{\"text\":\"CAR 04 TRACK LIMITS WARNING\"}}}}",
+                // diffs: the warning re-worded (only its text sent), the yellow withdrawn
+                "JSON:3::{\"raceControl\":{\"messages\":{\"3600000\":{\"text\":\"CAR 04 BLACK/WHITE FLAG\"},\"3700000\":null}}}",
+                "JSON:4::{\"timing\":{\"session\":{\"status\":{\"currentFlag\":\"GREEN\"}}}}");
+        List<Recorded> feed = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            feed.add(new Recorded(1_000 + i, lines.get(i)));
+        }
+        AksReplayServer server = new AksReplayServer(feed, 0, 20).start();
+        cleanup.add(server);
+        AnalysisWriter writer = new AnalysisWriter(jdbc, mapper, 1_000, 500, Duration.ofMillis(50));
+        cleanup.add(writer::stop);
+        AlKamelV2Properties props = new AlKamelV2Properties("127.0.0.1", server.port(), "u", "p", false, false,
+                "Pit Pass test", List.of("timing.session.info"), 1 << 10, 2, 1,
+                new AlKamelV2Properties.Recording(false, recordings.toString(), "", 10, 64),
+                new AlKamelV2Properties.Replay("", 1.0), new AlKamelV2Properties.Analysis(true, 1 << 20), null,
+                new AlKamelV2Properties.RaceControl(true));
+        LiveTimingService service = new LiveTimingService(props, new LiveTimingServiceTest.MemoryStore(), mapper,
+                null, (segment, key) -> { },
+                new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
+                        Duration.ofSeconds(5), Duration.ofSeconds(10)),
+                writer, null, null, null);
+        service.start();
+        cleanup.add(service::stop);
+
+        service.request(true, null, "t");
+        await(() -> "GREEN".equals(text(service, "timing.session.status", "currentFlag")));
+        await(() -> count("live_race_control WHERE session_db_id = :s") == 2 && writer.stats().queued() == 0);
+        Thread.sleep(150);
+
+        assertTrue(service.status().channels().containsAll(AlKamelV2Properties.RACE_CONTROL_CHANNELS));
+        assertEquals(0, writer.stats().failed());
+        assertEquals("3600000|51|CAR 04 BLACK/WHITE FLAG|GTD|1|#FFFFFF|red", db.sql("""
+                SELECT concat_ws('|', message_key, feed_id, text, group_text, line, foreground_color, background_color)
+                FROM live_race_control WHERE session_db_id = :s AND day_time_ms = :t
+                """).param("s", session).param("t", RACE_START + 1_000).query(String.class).single(),
+                "written whole from the tree, though the diff carried only the text");
+        assertEquals(0, count("live_race_control WHERE session_db_id = :s AND message_key = '3700000'"),
+                "a null message deletes its row");
+
+        var log = new LiveTimingPageService(db, service, null).raceControl(session);
+        assertEquals(List.of("CAR 04 BLACK/WHITE FLAG"), log.messages().stream().map(LiveRaceControl.Message::text).toList(),
+                "the null message is stored but never shown");
+        assertEquals("#ffffff", log.messages().getFirst().foreground());
+        assertNull(log.messages().getFirst().background(), "not #rrggbb: dropped");
+
+        var now = LiveRaceControl.now(service.state("raceControl.currentMessages"), service.state("raceControl.messages"));
+        assertEquals(List.of("CAR 04 TRACK LIMITS WARNING", "FULL COURSE YELLOW"),
+                now.lines().stream().map(LiveRaceControl.Message::text).toList(), "the screen, in line order");
+        assertEquals("CAR 04 BLACK/WHITE FLAG", now.latest().text());
     }
 
     @Test
@@ -279,7 +348,7 @@ class AnalysisIngestTest {
         AlKamelV2Properties props = new AlKamelV2Properties("127.0.0.1", server.port(), "u", "p", false, false,
                 "Pit Pass test", List.of("timing.session.info", "timing.session.entry"), 1 << 10, 2, 1,
                 new AlKamelV2Properties.Recording(false, recordings.toString(), "", 10, 64),
-                new AlKamelV2Properties.Replay("", 1.0), new AlKamelV2Properties.Analysis(true, 1 << 20), null);
+                new AlKamelV2Properties.Replay("", 1.0), new AlKamelV2Properties.Analysis(true, 1 << 20), null, null);
         ImsaTelemetryProperties telemetryProps = new ImsaTelemetryProperties(false, "https://example.invalid/",
                 List.of(wtName), List.of("telemetry/message"), 15, false, telemetry.toString(), 0);
         LiveTimingService service = new LiveTimingService(props, store, mapper, null, (segment, key) -> { },

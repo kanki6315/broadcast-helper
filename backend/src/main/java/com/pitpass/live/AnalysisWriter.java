@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.pitpass.live.AnalysisRows.EnergyLap;
+import com.pitpass.live.AnalysisRows.RaceControlDeleted;
+import com.pitpass.live.AnalysisRows.RaceControlMessage;
 import com.pitpass.live.AnalysisRows.EntriesChanged;
 import com.pitpass.live.AnalysisRows.LapDeleted;
 import com.pitpass.live.AnalysisRows.LapPatch;
@@ -237,6 +239,37 @@ public class AnalysisWriter implements AnalysisRouter.Sink {
                                     .addValue("car", e.car()).addValue("lap", e.lap())
                                     .addValue("energy", (float) e.energyPct(), Types.REAL)
                                     .addValue("pit", e.pitLane(), Types.BOOLEAN);
+                        }).toList());
+            } else if (kind == RaceControlMessage.class) {
+                batch("""
+                        INSERT INTO live_race_control (session_db_id, message_key, feed_id, day_time_ms, text, group_text,
+                                                       line, foreground_color, background_color, blink, is_null)
+                        VALUES (:s, :key, :id, :day, :text, :group, :line, :fg, :bg, :blink, :isNull)
+                        ON CONFLICT (session_db_id, message_key) DO UPDATE SET
+                            feed_id = EXCLUDED.feed_id, day_time_ms = EXCLUDED.day_time_ms, text = EXCLUDED.text,
+                            group_text = EXCLUDED.group_text, line = EXCLUDED.line,
+                            foreground_color = EXCLUDED.foreground_color, background_color = EXCLUDED.background_color,
+                            blink = EXCLUDED.blink, is_null = EXCLUDED.is_null, recorded_at = clock_timestamp()
+                        """,
+                        run.stream().map(op -> {
+                            RaceControlMessage m = (RaceControlMessage) op;
+                            return (SqlParameterSource) new MapSqlParameterSource("s", m.sessionDbId())
+                                    .addValue("key", m.key()).addValue("id", m.feedId(), Types.BIGINT)
+                                    .addValue("day", m.dayTimeMs(), Types.BIGINT)
+                                    .addValue("text", m.text(), Types.VARCHAR)
+                                    .addValue("group", m.groupText(), Types.VARCHAR)
+                                    .addValue("line", m.line(), Types.INTEGER)
+                                    .addValue("fg", m.foregroundColor(), Types.VARCHAR)
+                                    .addValue("bg", m.backgroundColor(), Types.VARCHAR)
+                                    .addValue("blink", m.blink(), Types.BOOLEAN)
+                                    .addValue("isNull", m.isNull(), Types.BOOLEAN);
+                        }).toList());
+            } else if (kind == RaceControlDeleted.class) {
+                batch("DELETE FROM live_race_control WHERE session_db_id = :s AND message_key = :key",
+                        run.stream().map(op -> {
+                            RaceControlDeleted d = (RaceControlDeleted) op;
+                            return (SqlParameterSource) new MapSqlParameterSource("s", d.sessionDbId())
+                                    .addValue("key", d.key());
                         }).toList());
             } else if (kind == StintDeleted.class) {
                 batch("DELETE FROM live_stint WHERE session_db_id = :s AND car_number = :car AND start_time_ms = :start",

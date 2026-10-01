@@ -23,7 +23,11 @@ const assert = require('node:assert/strict');
     trackStatus:'TRACK',currentSector:3,sectors:[sec(32_000),sec(33_000),sec(32_900,false)],bestSectorMs:[32_000,33_000,32_800],idealMs:97_800}),car(2,'31',{startPosition:1,topSpeed:150.2,gapToLeaderMs:4200,intervalMs:4200,lastLapMs:97_100,bestLapMs:97_100,inPit:true,trackStatus:'BOX',currentSector:1,
     sectors:[sec(31_900,false),sec(33_100,false,false),null],bestSectorMs:[31_900,33_050,32_700]})]},
    {className:'GTD PRO',feedClass:'GTDPRO',color:'#e30d0d',bestSectors:[],idealMs:null,cars:[car(1,'04',{lastLapMs:105_000,bestLapMs:105_000,trackStatus:'OUT_LAP'}),car(2,'4',{gapToLeaderLaps:1,intervalLaps:1,bestLapMs:104_000,entryId:null}),
-    car(3,'23',{status:'RETIRED',stintStartMs:null,stintLaps:null})]}]};
+    car(3,'23',{status:'RETIRED',stintStartMs:null,stintLaps:null})]}],
+   raceControl:{lines:[{key:'1',dayTimeMs:null,text:'FULL COURSE YELLOW',group:null,line:1,foreground:'#000000',background:'#ffff00',blink:true}],
+    latest:{key:'3600000',dayTimeMs:Date.UTC(2026,9,4,18,5,9),text:'CAR 7 DRIVE THROUGH - PIT LANE SPEEDING',group:'GTP',line:2,foreground:null,background:'#ff0000',blink:false}}};
+  const rcLog = {sessionDbId:3150,messages:[tower.raceControl.latest,
+   {key:'3500000',dayTimeMs:Date.UTC(2026,9,4,18,1,0),text:'FULL COURSE YELLOW',group:null,line:1,foreground:'#000000',background:'#ffff00',blink:true}]};
   const laps = [1,2,3].map(n => ({lap:n,driverOrder:n<3?1:2,driverLap:n,position:1,startTimeMs:now-(4-n)*98_000,lapTimeMs:n===3?null:98_000-n*100,
    sectorMs:[32_000,33_000,n===3?null:32_900],sectorFlags:['GREEN',n===2?'YELLOW':'GREEN',null],valid:true,longLap:false,shortLap:false,trackLimits:0,topSpeed:280.5,pitInMs:n===2?1:null,pitOutMs:null,energyPct:n===3?null:100-n*3.5,energyUsedPct:n===2?3.5:null}));
   const carDetail = {sessionDbId:3150,carNumber:'31',drivers:[{driverOrder:1,firstName:'Jack',lastName:'Aitken',shortName:'Ait',license:'Platinum',rating:'P',driverId:1},
@@ -64,6 +68,7 @@ const assert = require('node:assert/strict');
     : path === '/api/live/cars/31' ? carDetail
     : path === '/api/live/drive-time' ? drive()
     : path === '/api/live/sectors' ? {sessionDbId:3150,classes:[]}
+    : path === '/api/live/race-control' ? (url.searchParams.get('session') === '3149' ? {sessionDbId:3149,messages:[]} : rcLog)
     : /^\/api\/events\/\d+$/.test(path) ? {event:{id:Number(path.split('/')[3]),name:path.endsWith('/22') ? 'Petit Le Mans' : 'Road America'}}
     : [];
    return route.fulfill({json:body});
@@ -112,6 +117,13 @@ const assert = require('node:assert/strict');
   assert.equal(await towerTable.locator('thead th', {hasText:'Energy'}).count(), 1);
   assert.match(await towerTable.locator('.tower-row').nth(0).locator('.tower-energy').innerText(), /62%\s+~9 L/);
   assert.equal((await towerTable.locator('.tower-row').nth(1).locator('.tower-energy').innerText()).trim(), '');
+
+  // Race control: the screen's lines, and the newest message when it is not on the screen, timed at the track.
+  const strip = page.getByRole('region',{name:'Race control'});
+  assert.deepEqual(await strip.locator('.rc-msg').allInnerTexts(), ['FULL COURSE YELLOW']);
+  assert.match(await strip.locator('.rc-msg').getAttribute('class'), /rc-msg--blink/);
+  assert.match(await strip.locator('.rc-latest').innerText(), /^14:05:09\s*GTP\s*CAR 7 DRIVE THROUGH - PIT LANE SPEEDING$/);
+  assert.equal(await strip.getByRole('link',{name:'All messages'}).getAttribute('href'), '#/timing/22?view=control');
   // The admin's switch: bound here, so only Disconnect — and it asks first.
   const control = page.getByLabel('Live timing connection');
   await control.getByRole('button',{name:'Disconnect'}).waitFor();
@@ -192,6 +204,18 @@ const assert = require('node:assert/strict');
   const before = carRequests;
   await page.waitForTimeout(2500);
   assert.equal(carRequests, before, 'a closed panel stops polling');
+
+  // The race control log: newest first, track time while live; an older session with none says so.
+  await page.getByRole('tab',{name:'Race control'}).click();
+  assert.match(page.url(), /view=control/);
+  const rcTable = page.getByRole('table',{name:'Race control messages, newest first'});
+  await rcTable.waitFor();
+  assert.deepEqual((await rcTable.locator('tbody tr').allInnerTexts()).map(t => t.replace(/\s+/g,' ').trim()),
+   ['14:05:09 GTP CAR 7 DRIVE THROUGH - PIT LANE SPEEDING', '14:01:00 FULL COURSE YELLOW']);
+  assert.equal(await rcTable.locator('td.rc-log-time').first().evaluate(td => getComputedStyle(td).getPropertyValue('--rc-color').trim()), '#ff0000');
+  await page.getByRole('group',{name:'Session'}).getByRole('button',{name:'Qualifying'}).click();
+  await page.getByText('No race control messages recorded for this session.').waitFor();
+  await page.getByRole('group',{name:'Session'}).getByRole('button',{name:'Race · live'}).click();
 
   // Drive time: statuses in words, the rules beside them.
   await page.getByRole('tab',{name:'Drive time'}).click();

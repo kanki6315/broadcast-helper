@@ -26,13 +26,20 @@ public record AlKamelV2Properties(
         Recording recording,
         Replay replay,
         Analysis analysis,
-        ParticipantDetails participantDetails) {
+        ParticipantDetails participantDetails,
+        RaceControl raceControl) {
 
     /** The lap and stint channels the timing page is built from. */
     public static final List<String> ANALYSIS_CHANNELS = List.of("timing.analysis.laps", "timing.analysis.stints");
 
     /** Per car: sectors as they are run, the sector the car is in, its bests, BOX/OUT_LAP/TRACK/STOPPED. */
     public static final String PARTICIPANT_DETAILS_CHANNEL = "timing.session.standings.overall.participantDetails";
+
+    /**
+     * Race control's messages: the session's log (keyed by showTime) and what
+     * its screen shows now (keyed by line). A few lines a session.
+     */
+    public static final List<String> RACE_CONTROL_CHANNELS = List.of("raceControl.messages", "raceControl.currentMessages");
 
     /** Raw inbound lines kept for replay — the only test data this feed will ever have. */
     public record Recording(boolean enabled, String directory, String bucket,
@@ -61,6 +68,14 @@ public record AlKamelV2Properties(
     public record ParticipantDetails(boolean enabled) {
     }
 
+    /** raceControl.messages and .currentMessages, into the state tree; the log is also stored when analysis is on. */
+    public record RaceControl(boolean enabled) {
+    }
+
+    public boolean raceControlEnabled() {
+        return raceControl != null && raceControl.enabled();
+    }
+
     public boolean participantDetailsEnabled() {
         return participantDetails != null && participantDetails.enabled();
     }
@@ -69,7 +84,7 @@ public record AlKamelV2Properties(
         return analysis != null && analysis.enabled();
     }
 
-    /** The configured channels, plus the analysis and participant-details channels when those are on. */
+    /** The configured channels, plus the analysis, participant-details and race control channels when those are on. */
     public List<String> joinedChannels() {
         List<String> joined = new java.util.ArrayList<>();
         channels.forEach(c -> joined.add(c.trim()));
@@ -78,6 +93,9 @@ public record AlKamelV2Properties(
         }
         if (participantDetailsEnabled() && !joined.contains(PARTICIPANT_DETAILS_CHANNEL)) {
             joined.add(PARTICIPANT_DETAILS_CHANNEL);
+        }
+        if (raceControlEnabled()) {
+            RACE_CONTROL_CHANNELS.stream().filter(c -> !joined.contains(c)).forEach(joined::add);
         }
         return joined;
     }

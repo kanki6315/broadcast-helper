@@ -10,6 +10,8 @@ import com.pitpass.live.AnalysisRows.EntriesChanged;
 import com.pitpass.live.AnalysisRows.LapDeleted;
 import com.pitpass.live.AnalysisRows.LapPatch;
 import com.pitpass.live.AnalysisRows.Op;
+import com.pitpass.live.AnalysisRows.RaceControlDeleted;
+import com.pitpass.live.AnalysisRows.RaceControlMessage;
 import com.pitpass.live.AnalysisRows.Sector;
 import com.pitpass.live.AnalysisRows.SessionInfo;
 import com.pitpass.live.AnalysisRows.SessionSeen;
@@ -35,6 +37,8 @@ import java.util.concurrent.atomic.AtomicLong;
  *   other analysis sub-channel.
  * - Everything else (all of {@code timing.session}) is read as a tree and
  *   merged into {@link AksStateTree} exactly as before.
+ * - {@code raceControl.messages} goes into the tree too, and each message a
+ *   diff touches is also handed to the writer whole, for the session's log.
  *
  * Nulls: a null lap or stint deletes that row. A null above that — a car, a
  * whole channel — clears the in-memory summaries but deletes nothing: the
@@ -108,7 +112,9 @@ final class AnalysisRouter implements AksLineReader.StreamHandler {
             if (t != JsonToken.FIELD_NAME) {
                 return;
             }
-            if (!channel.isBlank() && channel.startsWith("timing.") && !"timing".equals(p.currentName())) {
+            String root = channel.isBlank() ? "" : channel.trim().split("\\.")[0];
+            if ((root.equals("timing") || root.equals("raceControl")) && channel.contains(".")
+                    && !root.equals(p.currentName())) {
                 objectAtField(channel.trim(), p);
             } else {
                 fields("", p);
@@ -131,9 +137,11 @@ final class AnalysisRouter implements AksLineReader.StreamHandler {
                     }
                 } else {
                     JsonNode node = mapper.readTree(p); // Jackson reads an object from its first field on
-                    merge(path, node);
+                    ObjectNode diff = merge(path, node);
                     if (path.startsWith("timing.session")) {
                         sessionChanged(path, node);
+                    } else if (path.startsWith("raceControl")) {
+                        raceControlChanged(diff);
                     }
                 }
             }
@@ -191,9 +199,11 @@ final class AnalysisRouter implements AksLineReader.StreamHandler {
         }
         // Not analysis: into the tree, as every JSON frame went before streaming.
         JsonNode node = mapper.readTree(p);
-        merge(path, node == null ? NullNode.getInstance() : node);
+        ObjectNode diff = merge(path, node == null ? NullNode.getInstance() : node);
         if (path.equals("timing.session") || path.startsWith("timing.session.")) {
             sessionChanged(path, node);
+        } else if (path.equals("raceControl") || path.startsWith("raceControl.")) {
+            raceControlChanged(diff);
         }
     }
 
@@ -203,7 +213,8 @@ final class AnalysisRouter implements AksLineReader.StreamHandler {
         log.debug("Live analysis: {} cleared; stored laps and stints are kept", path);
     }
 
-    private void merge(String path, JsonNode node) {
+    /** Merges node into the tree at path; returns the diff, rooted at the top, as merged. */
+    private ObjectNode merge(String path, JsonNode node) {
         ObjectNode diff = mapper.createObjectNode();
         ObjectNode at = diff;
         String[] keys = path.split("\\.");
@@ -212,6 +223,40 @@ final class AnalysisRouter implements AksLineReader.StreamHandler {
         }
         at.set(keys[keys.length - 1], node);
         tree.merge(diff);
+        return diff;
+    }
+
+    /**
+     * After a raceControl diff: each message it touched goes to the writer as
+     * the tree now has it (diffs are partial; the row is written whole), and a
+     * null message deletes its row. A null channel deletes nothing, as with laps.
+     */
+    private void raceControlChanged(ObjectNode diff) {
+        JsonNode messages = diff.path("raceControl").path("messages");
+        if (!messages.isObject()) {
+            return;
+        }
+        for (var field : messages.properties()) {
+            String key = field.getKey();
+            Long sessionId = sessionId();
+            if (sessionId == null) {
+                continue;
+            }
+            JsonNode m = field.getValue() == null || field.getValue().isNull() ? null
+                    : tree.copyOf("raceControl.messages." + key);
+            if (m == null || !m.isObject()) {
+                offer(new RaceControlDeleted(sessionId, key));
+                continue;
+            }
+            offer(new RaceControlMessage(sessionId, key,
+                    m.hasNonNull("id") ? m.path("id").asLong() : null,
+                    m.hasNonNull("dayTime") ? m.path("dayTime").asLong() : null,
+                    text(m, "text"), text(m, "groupText"),
+                    m.hasNonNull("line") ? m.path("line").asInt() : null,
+                    text(m, "foregroundColor"), text(m, "backgroundColor"),
+                    m.hasNonNull("blink") ? m.path("blink").asBoolean() : null,
+                    m.hasNonNull("isNull") ? m.path("isNull").asBoolean() : null));
+        }
     }
 
     /** After a session diff: a new session id starts fresh summaries; new entry data re-resolves drivers. */

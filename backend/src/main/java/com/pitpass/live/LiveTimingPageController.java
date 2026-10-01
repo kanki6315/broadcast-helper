@@ -57,6 +57,12 @@ public class LiveTimingPageController {
         return service.car(car, session);
     }
 
+    /** Race control's messages for a session, newest first. */
+    @GetMapping("/race-control")
+    public LiveTimingPageService.RaceControlLog raceControl(@RequestParam(required = false) Long session) {
+        return service.raceControl(session);
+    }
+
     @GetMapping("/drive-time")
     public LiveTimingPageService.DriveTimeResponse driveTime(@RequestParam(required = false) Long session) {
         return service.driveTime(session);
