@@ -603,8 +603,12 @@ filed, and every series weekend recorded in the last 60 days
 .weekend(feedEventDbId))`: the same tower, gaps, sectors, pits and drive time
 as an event's Timing tab, filed under a Pit Pass event or not, so the iPad
 works as a timing device for a series Pit Pass does not follow
-(docs/LIVE_TIMING_ALL_SERIES_PLAN.md). Filing a weekend under an event is
-done on the website.
+(docs/LIVE_TIMING_ALL_SERIES_PLAN.md). For an admin, each series row has a
+**Filed under** menu beside its link (not inside it, so choosing does not
+open the weekend): Automatic, Not in Pit Pass, or one of the events dated
+within ten days, its own series first — the website's select, through
+`PUT /api/live/feed-events/{id}/event` (`FeedEventBinding`). Mapping a
+championship name to a series stays on the website (Manage → Live timing).
 
 - `TimingSheet` takes a `TimingScope` (`.event` / `.weekend`). An event's
   tab follows the session **filed** under it (`filedEventId`), not the

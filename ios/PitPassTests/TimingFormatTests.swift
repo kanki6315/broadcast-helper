@@ -247,4 +247,12 @@ final class TimingFormatTests: XCTestCase {
         XCTAssertEqual(String(decoding: try JSONEncoder().encode(LiveConnectRequest(eventId: nil)), as: UTF8.self), "{}")
         XCTAssertEqual(String(decoding: try JSONEncoder().encode(LiveConnectRequest(eventId: 340)), as: UTF8.self), "{\"eventId\":340}")
     }
+
+    /// The admin's "Filed under" choice sends exactly one of the three fields.
+    func testFilingAWeekendSendsOneChoice() throws {
+        func json(_ b: FeedEventBinding) throws -> String { String(decoding: try JSONEncoder().encode(b), as: UTF8.self) }
+        XCTAssertEqual(try json(FeedEventBinding(eventId: 340)), "{\"eventId\":340}")
+        XCTAssertEqual(try json(FeedEventBinding(none: true)), "{\"none\":true}")
+        XCTAssertEqual(try json(FeedEventBinding(auto: true)), "{\"auto\":true}")
+    }
 }

@@ -325,6 +325,8 @@ struct WeekendChampionship: Codable, Sendable, Equatable, Identifiable {
     let firstSessionMs: Int?
     let lastSessionMs: Int?
     let sessions: [LiveSessionSummary]
+    /// Events an admin could file it under: any series, dated near the weekend, its own series first.
+    let candidates: [EventOption]
     var id: Int { feedEventDbId }
 
     /// What to call it: the feed's championship, else its event id.
@@ -334,6 +336,14 @@ struct WeekendChampionship: Codable, Sendable, Equatable, Identifiable {
         if let eventName { return eventName }
         return boundBy == "ADMIN_NONE" ? "Not in Pit Pass" : "Not filed under a Pit Pass event"
     }
+}
+
+/// `PUT /api/live/feed-events/{id}/event`: exactly one of an event, none
+/// ("not in Pit Pass") or auto (back to automatic filing). Admin-only.
+struct FeedEventBinding: Codable, Sendable {
+    var eventId: Int? = nil
+    var none: Bool? = nil
+    var auto: Bool? = nil
 }
 
 /// `GET /api/live/weekends`: every series at one track within a few days.

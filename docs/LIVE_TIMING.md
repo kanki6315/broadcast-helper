@@ -306,7 +306,7 @@ field agrees by car number **and** class). Numbers alone would not do: a
 weekend's series share them (#7 in WeatherTech and in Pilot Challenge), but
 never their classes. A binding, once made, is never replaced automatically,
 and an admin's never (`bound_by` ADMIN / ADMIN_NONE, set from the
-`#/timing` page or `PUT /api/live/feed-events/{id}/event`).
+`#/timing` page, the iPad Timing screen or `PUT /api/live/feed-events/{id}/event`).
 - The live session's feed event is tried every supervisor tick, and every
   10 s while it doesn't match; once bound, later sessions of it file at once.
 - **Once a minute, connected or not**, feed events seen in the last 14 days

@@ -14,8 +14,9 @@ enum TimingRoute: Hashable {
 /// championship), what is on track and where it is filed, and every series
 /// weekend recorded in the last 60 days. Any of them opens as a timing screen
 /// of its own, so a series Pit Pass does not follow still has its tower,
-/// gaps, sectors, pits and drive time. Filing a weekend under an event is
-/// done on the website. Polled, never stored, like all live timing.
+/// gaps, sectors, pits and drive time. An admin can say where a series
+/// weekend is filed — automatic, an event, or not in Pit Pass — as on the
+/// website's Timing page. Polled, never stored, like all live timing.
 struct TimingHomeView: View {
     @Environment(AppSession.self) private var session
     @State private var status = LiveFeed<LiveStatus>()
@@ -33,7 +34,11 @@ struct TimingHomeView: View {
                     if list.isEmpty {
                         EmptyState(message: "No sessions recorded in the last 60 days.")
                     } else {
-                        ForEach(list) { WeekendSection(weekend: $0) }
+                        ForEach(list) { w in
+                            WeekendSection(weekend: w, isAdmin: isAdmin) {
+                                await weekends.poll(session.client, path: "/api/live/weekends")
+                            }
+                        }
                     }
                 } else if let error = weekends.error {
                     ErrorPanel(message: "Could not load recorded sessions: \(error)")
@@ -52,6 +57,11 @@ struct TimingHomeView: View {
         .tint(PP.accentInk)
         .task { await status.run(session.client, path: "/api/live/status", every: .seconds(5)) }
         .task { await weekends.run(session.client, path: "/api/live/weekends", every: .seconds(30)) }
+    }
+
+    private var isAdmin: Bool {
+        if case let .ready(me) = session.phase { return me.isAdmin }
+        return false
     }
 }
 
@@ -82,6 +92,9 @@ private struct OnTrackRow: View {
 /// One weekend: every series at one track within a few days.
 private struct WeekendSection: View {
     let weekend: LiveWeekend
+    let isAdmin: Bool
+    /// Re-reads the weekends after an admin changes where one is filed.
+    let changed: () async -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: PP.Space.s2) {
@@ -92,10 +105,17 @@ private struct WeekendSection: View {
             VStack(spacing: 0) {
                 ForEach(Array(weekend.championships.enumerated()), id: \.element.id) { index, c in
                     if index > 0 { Divider().overlay(PP.border) }
-                    NavigationLink(value: TimingRoute.weekend(c.feedEventDbId)) {
-                        ChampionshipRow(c: c)
+                    // The menu sits beside the link, not in it: a tap on it must not open the weekend.
+                    HStack(spacing: 0) {
+                        NavigationLink(value: TimingRoute.weekend(c.feedEventDbId)) {
+                            ChampionshipRow(c: c)
+                        }
+                        .buttonStyle(.plain)
+                        if isAdmin {
+                            FiledUnderMenu(c: c, changed: changed)
+                                .padding(.trailing, PP.Space.s4)
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .background(PP.surface, in: RoundedRectangle(cornerRadius: PP.Radius.lg))
@@ -141,5 +161,88 @@ private struct ChampionshipRow: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityHint("Opens its timing")
+    }
+}
+
+/// Where an admin files a series weekend — the website's "Filed under"
+/// select: automatic (by championship; the default), an event, or not in
+/// Pit Pass. The latter two hold until changed; automatic tries at once.
+private struct FiledUnderMenu: View {
+    @Environment(AppSession.self) private var session
+    let c: WeekendChampionship
+    let changed: () async -> Void
+    @State private var busy = false
+    @State private var problem: String?
+
+    private var automatic: Bool { c.boundBy == nil || c.boundBy == "AUTO" }
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            if busy {
+                ProgressView().frame(height: 30)
+            } else {
+                Menu {
+                    Button { choose(FeedEventBinding(auto: true)) } label: {
+                        option(c.boundBy == "AUTO" && c.eventId != nil ? "Automatic: \(c.eventName ?? "an event")" : "Automatic",
+                               selected: automatic)
+                    }
+                    Button { choose(FeedEventBinding(none: true)) } label: {
+                        option("Not in Pit Pass", selected: c.boundBy == "ADMIN_NONE")
+                    }
+                    if !c.candidates.isEmpty {
+                        Section("File under") {
+                            ForEach(c.candidates) { e in
+                                // Name as the title, series and date beneath: one line each, not one wrapped run.
+                                Button { choose(FeedEventBinding(eventId: e.id)) } label: {
+                                    option(e.name, detail: [e.seriesName, e.date].compactMap { $0 }.filter { !$0.isEmpty }
+                                               .joined(separator: " · "),
+                                           selected: c.boundBy == "ADMIN" && c.eventId == e.id)
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Filed under").font(.subheadline)
+                        Image(systemName: "chevron.up.chevron.down").font(.caption)
+                    }
+                }
+                .menuStyle(.button)
+                .buttonStyle(.bordered)
+                .accessibilityLabel("Filed under, for \(c.title)")
+                .accessibilityValue(c.filedUnder)
+            }
+            if let problem { Text(problem).font(.caption).foregroundStyle(PP.error).lineLimit(2) }
+        }
+    }
+
+    /// A menu item: two Texts in a label are the title and subtitle; the chosen one is ticked.
+    @ViewBuilder private func option(_ text: String, detail: String? = nil, selected: Bool) -> some View {
+        if selected {
+            Label {
+                Text(text)
+                if let detail { Text(detail) }
+            } icon: {
+                Image(systemName: "checkmark")
+            }
+        } else {
+            Text(text)
+            if let detail { Text(detail) }
+        }
+    }
+
+    private func choose(_ binding: FeedEventBinding) {
+        Task {
+            busy = true
+            defer { busy = false }
+            do {
+                let _: WeekendChampionship = try await session.client.putJSON(
+                    "/api/live/feed-events/\(c.feedEventDbId)/event", body: binding)
+                problem = nil
+                await changed()
+            } catch {
+                problem = error.localizedDescription
+            }
+        }
     }
 }
