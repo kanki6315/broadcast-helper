@@ -136,6 +136,36 @@ export interface Tower {
   filedEventName: string | null
   /** "mph" or "km/h", from the feed's unit of measure; null before the feed says. */
   speedUnit: string | null
+  /** Race control's screen now and its newest message; null when the feed sends no race control. */
+  raceControl?: RaceControlNow | null
+}
+
+/**
+ * One race control message. dayTimeMs is when it was shown (null on the
+ * screen's lines); colours are race control's own, #rrggbb or null.
+ */
+export interface RaceControlMessage {
+  key: string
+  dayTimeMs: number | null
+  text: string
+  /** Usually a class name, when race control addresses one. */
+  group: string | null
+  line: number | null
+  foreground: string | null
+  background: string | null
+  blink: boolean
+}
+
+export interface RaceControlNow {
+  /** What race control's screen shows now, in line order. Often empty. */
+  lines: RaceControlMessage[]
+  latest: RaceControlMessage | null
+}
+
+export interface RaceControlLog {
+  sessionDbId: number
+  /** Newest first. */
+  messages: RaceControlMessage[]
 }
 
 export interface LapRow {
@@ -483,6 +513,18 @@ export function trackTime(wallMs: number, utcOffsetHours: number | null | undefi
   if (utcOffsetHours == null) return null
   const d = new Date(wallMs + utcOffsetHours * 3_600_000)
   return `${d.getUTCHours()}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
+}
+
+/**
+ * When a race control message was shown: the track's time of day when its
+ * offset is known, else the viewer's own clock (24-hour, to the second).
+ */
+export function messageTime(dayTimeMs: number | null, utcOffsetHours: number | null | undefined): string | null {
+  if (dayTimeMs == null) return null
+  const atTrack = trackTime(dayTimeMs, utcOffsetHours)
+  if (atTrack) return atTrack
+  const d = new Date(dayTimeMs)
+  return `${d.getHours()}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
 /**

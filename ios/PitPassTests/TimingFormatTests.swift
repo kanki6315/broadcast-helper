@@ -92,6 +92,21 @@ final class TimingFormatTests: XCTestCase {
         XCTAssertEqual(TimingFormat.trackTime(wallMs: screenshot, utcOffsetHours: -4), "12:50:14")
     }
 
+    func testRaceControlDecodesAndIsTimedAtTheTrack() throws {
+        XCTAssertNil(try tower().raceControl, "a server without race control")
+        let json = """
+        {"lines":[{"key":"1","dayTimeMs":null,"text":"FULL COURSE YELLOW","group":null,"line":1,
+                   "foreground":"#000000","background":"#ffff00","blink":true}],
+         "latest":{"key":"3600000","dayTimeMs":1790787014000,"text":"CAR 7 DRIVE THROUGH","group":"GTP","line":2,
+                   "foreground":null,"background":null,"blink":false}}
+        """
+        let now = try JSONDecoder().decode(RaceControlNow.self, from: Data(json.utf8))
+        XCTAssertEqual(now.lines.map(\.text), ["FULL COURSE YELLOW"])
+        XCTAssertEqual(TimingFormat.messageTime(dayTimeMs: now.latest?.dayTimeMs, utcOffsetHours: -4), "12:50:14")
+        XCTAssertNil(TimingFormat.messageTime(dayTimeMs: nil, utcOffsetHours: -4))
+        XCTAssertNotNil(TimingFormat.messageTime(dayTimeMs: 1_790_787_014_000, utcOffsetHours: nil), "the device's clock")
+    }
+
     func testAStoppedClockFreezesAtTheStop() throws {
         let start = 1_790_785_500_000
         let reading = TimingFormat.sessionClock(try tower(stopMs: start + 300_000, stoppedMs: 60_000), wallMs: start + 3_000_000)

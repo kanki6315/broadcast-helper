@@ -26,11 +26,21 @@ final class AnalysisRows {
     }
 
     /** Anything the writer is asked to do, in arrival order. */
-    sealed interface Op permits LapPatch, StintPatch, LapDeleted, StintDeleted, SessionSeen, EntriesChanged, EnergyLap {
+    sealed interface Op permits LapPatch, StintPatch, LapDeleted, StintDeleted, SessionSeen, EntriesChanged, EnergyLap,
+            RaceControlMessage, RaceControlDeleted {
     }
 
     /** IMSA telemetry: energy at the line after {@code lap} (see TelemetryRunner). */
     record EnergyLap(long sessionDbId, String car, int lap, double energyPct, Boolean pitLane) implements Op {
+    }
+
+    /** One race control message as the tree now has it, whole (raceControl.messages.<key>). */
+    record RaceControlMessage(long sessionDbId, String key, Long feedId, Long dayTimeMs, String text,
+                              String groupText, Integer line, String foregroundColor, String backgroundColor,
+                              Boolean blink, Boolean isNull) implements Op {
+    }
+
+    record RaceControlDeleted(long sessionDbId, String key) implements Op {
     }
 
     record SessionSeen(SessionInfo session) implements Op {

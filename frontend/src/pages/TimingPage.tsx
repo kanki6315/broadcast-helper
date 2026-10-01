@@ -36,12 +36,14 @@ import {
 } from '../lib/liveTiming'
 import LiveCarModal from '../components/LiveCarModal'
 import { GapsView, PitsView, SectorsView } from './TimingAnalysis'
+import { RaceControlStrip, RaceControlView } from './RaceControl'
 
 /**
  * The live timing page — for a Pit Pass event (`/timing/:eventId`) or for one
  * series weekend as the feed has it, filed or not (`/timing/weekend/:id`):
  * the tower; gaps, best sectors and pit stops over a recorded session
- * (TimingAnalysis); and drive time per driver against the filed event's rules. Chrome-less like the sheet — it is kept
+ * (TimingAnalysis); drive time per driver against the filed event's rules; and
+ * race control's messages (RaceControl). Chrome-less like the sheet — it is kept
  * open on a second screen in the booth.
  *
  * Reads, apart from two admin-only controls: the shared connect/disconnect
@@ -49,7 +51,7 @@ import { GapsView, PitsView, SectorsView } from './TimingAnalysis'
  * (a 304 when nothing moved), drive time every 10 s, the analysis views every
  * 15 s while their session is live.
  */
-type View = 'tower' | 'gaps' | 'sectors' | 'pits' | 'drive'
+type View = 'tower' | 'gaps' | 'sectors' | 'pits' | 'drive' | 'control'
 
 const VIEWS: { id: View; label: string }[] = [
   { id: 'tower', label: 'Tower' },
@@ -57,6 +59,7 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'sectors', label: 'Sectors' },
   { id: 'pits', label: 'Pits' },
   { id: 'drive', label: 'Drive time' },
+  { id: 'control', label: 'Race control' },
 ]
 
 /** Either a Pit Pass event's sessions, or one series weekend's (Al Kamel's feed event). */
@@ -463,6 +466,11 @@ function TowerView({
             : "Not filed under a Pit Pass event. Teams and drivers are the feed's own."}
         </p>
       )}
+      <RaceControlStrip
+        now={tower.raceControl}
+        utcOffsetHours={tower.session?.clock?.utcOffsetHours}
+        logHref={`${base}?view=control`}
+      />
       <ColumnChoice available={available} shown={shown} onChange={setShown} />
       <table className={`grid-table tower${sectorCount > 0 ? ' tower--sectors' : ''}`} aria-label="Running order by class">
         <thead>
@@ -953,6 +961,12 @@ function SessionViews({
         <SectorsView key={chosen.sessionDbId} session={chosen} />
       ) : view === 'pits' ? (
         <PitsView key={chosen.sessionDbId} session={chosen} />
+      ) : view === 'control' ? (
+        <RaceControlView
+          key={chosen.sessionDbId}
+          session={chosen}
+          utcOffsetHours={chosen.current && tower?.sessionDbId === chosen.sessionDbId ? tower.session?.clock?.utcOffsetHours : null}
+        />
       ) : (
         <DriveTimeView session={chosen} tower={tower} />
       )}

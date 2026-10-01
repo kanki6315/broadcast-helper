@@ -485,6 +485,17 @@ in a modal.
   the words are the fact. Admins edit rules inline in a `--surface` panel.
   Times are parsed as hours, h:mm or h:mm:ss, and an unreadable one is
   reported before anything is sent.
+- **Race control** (`RaceControl.tsx`, `.rc-*`): above the tower, a
+  `--surface` strip labelled "Race control" in muted caps, with what race
+  control's screen shows now in ink, semibold, and — when it is not already
+  on the screen — the newest message in body ink after its track time in
+  mono. "All messages" opens the **Race control** view: the session's log,
+  newest first, as a `.grid-table` of time (at the track while live, else
+  the viewer's clock, said under the table), class and message. Race
+  control's own colours appear only as a 3px bar beside each message, never
+  as a fill, so text contrast is ours in both themes; a blinking message
+  blinks only its bar, and not at all under reduced motion. Under 640px the
+  label and link share the top line and the messages run below.
 - **Session clock**: the page's one big number, right of the title (below
   it under 640px), in tabular figures: time to go, counted down in the
   browser from the feed's status, or "Lap 12 of 30" for a lap-limited race.

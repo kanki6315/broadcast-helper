@@ -112,6 +112,15 @@ enum TimingFormat {
         return "\(secs / 3600):\(pad((secs % 3600) / 60)):\(pad(secs % 60))"
     }
 
+    /// When a race control message was shown: the track's time of day when its
+    /// offset is known, else the device's own clock (24 h, h:mm:ss).
+    static func messageTime(dayTimeMs: Int?, utcOffsetHours: Double?) -> String? {
+        guard let ms = dayTimeMs else { return nil }
+        if let atTrack = trackTime(wallMs: ms, utcOffsetHours: utcOffsetHours) { return atTrack }
+        let offset = TimeZone.current.secondsFromGMT(for: Date(timeIntervalSince1970: Double(ms) / 1000))
+        return trackTime(wallMs: ms, utcOffsetHours: Double(offset) / 3600)
+    }
+
     enum LapMark { case classBest, personalBest }
 
     /// How a last lap reads: it set the class's fastest lap, or it was the

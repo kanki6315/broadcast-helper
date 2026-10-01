@@ -40,11 +40,18 @@ public class LiveTimingPageService {
      * feed's unitOfMeasure (US or METRIC), for topSpeed. eventId is the
      * bound event; filedEventId the event the session on track is filed
      * under, which is where teams, class colours and driver names come from.
-     * Filed nowhere, the tower shows the feed's own.
+     * Filed nowhere, the tower shows the feed's own. raceControl is race
+     * control's screen now and its newest message, for the strip above the
+     * tower; null when the feed has sent no race control channel.
      */
     public record Tower(State state, Long eventId, String eventName, LiveTimingService.Session session,
                         Long sessionDbId, Long feedClockMs, List<TowerClass> classes, int matched, int total,
-                        String speedUnit, Long filedEventId, String filedEventName) {
+                        String speedUnit, Long filedEventId, String filedEventName,
+                        LiveRaceControl.Now raceControl) {
+    }
+
+    /** A session's race control log, newest first. */
+    public record RaceControlLog(long sessionDbId, List<LiveRaceControl.Message> messages) {
     }
 
     /**
@@ -210,7 +217,27 @@ public class LiveTimingPageService {
         return new Tower(order.state(), order.eventId(), order.eventName(), order.session(), session,
                 session == null ? null : latestFeedTime(session), classes,
                 order.classification().matched(), order.classification().total(), unit,
-                order.filedEventId(), order.filedEventName());
+                order.filedEventId(), order.filedEventName(),
+                LiveRaceControl.now(live.state("raceControl.currentMessages"), live.state("raceControl.messages")));
+    }
+
+    // ---- race control ------------------------------------------------------------------
+
+    public RaceControlLog raceControl(Long sessionParam) {
+        long session = session(sessionParam);
+        List<LiveRaceControl.Message> messages = new ArrayList<>(db.sql("""
+                SELECT message_key, day_time_ms, text, group_text, line, foreground_color, background_color,
+                       blink, is_null
+                FROM live_race_control WHERE session_db_id = :s
+                """)
+                .param("s", session)
+                .query((rs, i) -> java.util.Optional.ofNullable(LiveRaceControl.row(rs.getString("message_key"),
+                        rs.getObject("day_time_ms", Long.class), rs.getString("text"), rs.getString("group_text"),
+                        integer(rs, "line"), rs.getString("foreground_color"), rs.getString("background_color"),
+                        rs.getObject("blink", Boolean.class), rs.getObject("is_null", Boolean.class))))
+                .list().stream().flatMap(java.util.Optional::stream).toList());
+        messages.sort(LiveRaceControl.NEWEST_FIRST);
+        return new RaceControlLog(session, messages);
     }
 
     /** Each car's best speed trap of the session. A speed is a speed on an invalid lap too. */

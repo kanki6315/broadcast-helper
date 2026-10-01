@@ -141,6 +141,11 @@ pit-pass:
     # Off until a practice session has been recorded with it.
     participant-details:
       enabled: ${ALKAMELV2_PARTICIPANT_DETAILS_ENABLED:false}
+    # Race control's messages (raceControl.messages + .currentMessages): the
+    # timing page's strip and log. Tiny, so on by default. The log is stored
+    # per session (live_race_control) only while analysis is on.
+    race-control:
+      enabled: ${ALKAMELV2_RACE_CONTROL_ENABLED:true}
   # IMSA's own telemetry (imsa.com/telemetry): an AWS AppSync Events websocket
   # carrying energy remaining per car. Unofficial and undocumented — off by
   # default, fails soft, and only ever runs beside the Al Kamel connection in
