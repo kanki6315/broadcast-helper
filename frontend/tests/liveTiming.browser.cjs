@@ -14,11 +14,15 @@ const assert = require('node:assert/strict');
   const now = Date.now();
   const car = (position, carNumber, extra={}) => ({position,carNumber,entryId:100+position,teamName:`Team ${carNumber}`,vehicle:null,manufacturer:null,
    status:'CLASSIFIED',laps:50,gapToLeaderMs:null,gapToLeaderLaps:null,intervalMs:null,intervalLaps:null,driverOrder:1,driverName:`Driver ${carNumber}`,
-   driverShortName:null,driverRating:'G',lastLap:50,lastLapMs:98_000,bestLap:12,bestLapMs:97_500,inPit:false,stintStartMs:now-30*60_000,stintLaps:18,energyPct:null,energyLapsLeft:null,...extra});
-  const session = {championship:'IMSA WeatherTech SportsCar Championship',event:'Petit Le Mans',name:'Race',type:'RACE',flag:'FULL_YELLOW',running:true,finished:false};
-  let tower = {state:'LIVE',eventId:22,eventName:'Petit Le Mans',filedEventId:22,filedEventName:'Petit Le Mans',session,sessionDbId:3150,feedClockMs:now-20_000,matched:4,total:5,classes:[
-   {className:'GTP',feedClass:'GTP',color:'#1a1a1a',cars:[car(1,'7',{energyPct:62.4,energyLapsLeft:9.6}),car(2,'31',{gapToLeaderMs:4200,intervalMs:4200,bestLapMs:97_100,inPit:true})]},
-   {className:'GTD PRO',feedClass:'GTDPRO',color:'#e30d0d',cars:[car(1,'04',{bestLapMs:105_000}),car(2,'4',{gapToLeaderLaps:1,intervalLaps:1,bestLapMs:104_000,entryId:null}),
+   driverShortName:null,driverRating:'G',lastLap:50,lastLapMs:98_000,bestLap:12,bestLapMs:97_500,inPit:false,stintStartMs:now-30*60_000,stintLaps:18,energyPct:null,energyLapsLeft:null,pitStops:0,lastPitMs:null,trackStatus:null,currentSector:null,sectors:null,bestSectorMs:null,idealMs:null,startPosition:null,topSpeed:null,...extra});
+  const sec = (ms, currentLap=true, valid=true) => ({ms,valid,currentLap});
+  const session = {championship:'IMSA WeatherTech SportsCar Championship',event:'Petit Le Mans',name:'Race',type:'RACE',flag:'FULL_YELLOW',running:true,finished:false,
+   clock:{finalType:'BY_TIME',startMs:now-10*60_000,finalMs:2*3_600_000,finalLaps:null,currentLap:null,stopMs:null,stoppedMs:60_000,utcOffsetHours:-4}};
+  let tower = {state:'LIVE',eventId:22,eventName:'Petit Le Mans',filedEventId:22,filedEventName:'Petit Le Mans',session,sessionDbId:3150,feedClockMs:now-20_000,matched:4,total:5,speedUnit:'mph',classes:[
+   {className:'GTP',feedClass:'GTP',color:'#1a1a1a',bestSectors:[{ms:31_900,car:'31'},{ms:33_000,car:'7'},{ms:32_700,car:'31'}],idealMs:97_600,cars:[car(1,'7',{startPosition:3,topSpeed:151.3,energyPct:62.4,energyLapsLeft:9.6,pitStops:2,lastPitMs:65_000,
+    trackStatus:'TRACK',currentSector:3,sectors:[sec(32_000),sec(33_000),sec(32_900,false)],bestSectorMs:[32_000,33_000,32_800],idealMs:97_800}),car(2,'31',{startPosition:1,topSpeed:150.2,gapToLeaderMs:4200,intervalMs:4200,lastLapMs:97_100,bestLapMs:97_100,inPit:true,trackStatus:'BOX',currentSector:1,
+    sectors:[sec(31_900,false),sec(33_100,false,false),null],bestSectorMs:[31_900,33_050,32_700]})]},
+   {className:'GTD PRO',feedClass:'GTDPRO',color:'#e30d0d',bestSectors:[],idealMs:null,cars:[car(1,'04',{lastLapMs:105_000,bestLapMs:105_000,trackStatus:'OUT_LAP'}),car(2,'4',{gapToLeaderLaps:1,intervalLaps:1,bestLapMs:104_000,entryId:null}),
     car(3,'23',{status:'RETIRED',stintStartMs:null,stintLaps:null})]}]};
   const laps = [1,2,3].map(n => ({lap:n,driverOrder:n<3?1:2,driverLap:n,position:1,startTimeMs:now-(4-n)*98_000,lapTimeMs:n===3?null:98_000-n*100,
    sectorMs:[32_000,33_000,n===3?null:32_900],sectorFlags:['GREEN',n===2?'YELLOW':'GREEN',null],valid:true,longLap:false,shortLap:false,trackLimits:0,topSpeed:280.5,pitInMs:n===2?1:null,pitOutMs:null,energyPct:n===3?null:100-n*3.5,energyUsedPct:n===2?3.5:null}));
@@ -70,14 +74,36 @@ const assert = require('node:assert/strict');
   // The tower: class bands in the running order, each with its cars.
   const towerTable = page.getByRole('table',{name:'Running order by class'});
   await towerTable.waitFor();
-  assert.deepEqual(await towerTable.locator('.class-band').allInnerTexts(), ['GTP','GTD PRO (GTDPRO)']);
+  assert.deepEqual(await towerTable.locator('.class-band .band-label').allInnerTexts(), ['GTP','GTD PRO (GTDPRO)']);
   assert.deepEqual(await towerTable.locator('.tower-car').allInnerTexts(), ['7','31','04','4','23']);
   assert.match(await page.locator('.timing-head').innerText(), /Race\s*Full yellow/);
   assert.match(await page.locator('.timing-status').innerText(), /^Live$/);
   const row31 = towerTable.locator('.tower-row').nth(1);
   assert.match(await row31.innerText(), /\+4\.200/);
   assert.match(await row31.innerText(), /Pit/);
-  assert.equal(await row31.locator('.tower-class-best').count(), 1, 'the GTP fastest lap is marked');
+  assert.equal(await row31.locator('td.tower-class-best:not(.tower-sector)').count(), 2, 'the GTP fastest lap is marked, on best and on the last lap that set it');
+  assert.equal(await towerTable.locator('.tower-row').nth(2).locator('.tower-last.tower-pb').count(), 1, "#04's last lap was its own best, not the class's");
+  assert.equal(await towerTable.locator('.tower-row').nth(0).locator('.tower-last.tower-pb, .tower-last.tower-class-best').count(), 0, 'a slower last lap is plain');
+  assert.match(await towerTable.locator('.tower-row').nth(0).locator('.tower-pits').innerText(), /2\s+1:05/, 'stops and the last one\'s pit-lane time');
+  assert.equal((await towerTable.locator('.tower-row').nth(1).locator('.tower-pits').innerText()).trim(), '0');
+
+  // Sectors as they are run: purple for the class's fastest, green for the car's own best, the previous lap's muted.
+  assert.deepEqual(await towerTable.locator('thead th.tower-sector').allInnerTexts(), ['S1','S2','S3']);
+  const s7 = towerTable.locator('.tower-row').nth(0).locator('td.tower-sector');
+  assert.match(await s7.nth(0).getAttribute('class'), /tower-pb/);
+  assert.match(await s7.nth(1).getAttribute('class'), /tower-class-best/);
+  assert.match(await s7.nth(2).getAttribute('class'), /tower-sector--old/);
+  const s31 = towerTable.locator('.tower-row').nth(1).locator('td.tower-sector');
+  assert.match(await s31.nth(0).getAttribute('class'), /tower-class-best/, 'a previous-lap time keeps its mark');
+  assert.match(await s31.nth(1).getAttribute('class'), /tower-sector--invalid/);
+  assert.equal((await s31.nth(2).innerText()).trim(), '');
+  assert.match((await towerTable.locator('.band-bests').first().innerText()).replace(/\s+/g,' '), /S1 31\.900 #31\s+S2 33\.000 #7\s+S3 32\.700 #31\s+Ideal 1:37\.600/);
+  assert.equal(await towerTable.locator('.class-band').nth(1).locator('.band-bests').count(), 0, 'no bests, no strip');
+  assert.match(await towerTable.locator('.tower-row').nth(2).locator('.tower-state').innerText(), /Out/);
+
+  // The session clock counts down: 2 h, 10 min since the start, 1 min of it stopped.
+  assert.match(await page.locator('.timing-clock-main').innerText(), /^1:5[01]:\d\d\s*to go$/);
+  assert.match(await page.locator('.timing-clock-sub').first().innerText(), /^\d{1,2}:\d\d:\d\d at the track$/);
   assert.match(await towerTable.locator('.tower-row').nth(3).innerText(), /not entered[\s\S]*\+1 lap/);
   assert.match(await towerTable.locator('.tower-row').nth(4).innerText(), /retired/);
   assert.equal(await towerTable.locator('.tower-row').nth(0).locator('.tower-stint').innerText().then(t => /18 L\s+30:\d\d/.test(t)), true, 'the stint counts up from its start');
@@ -103,6 +129,50 @@ const assert = require('node:assert/strict');
   assert.deepEqual(posts.at(-1), {path:'/api/live/connect', body:{eventId:22}});
   posts.length = 0;
   assert.equal(await page.evaluate(() => document.body.scrollWidth > document.documentElement.clientWidth), false);
+  await page.setViewportSize({width:1024,height:900});
+  assert.equal(await page.evaluate(() => document.body.scrollWidth > document.documentElement.clientWidth), false, 'the tower with sectors, pits and energy fits 1024px');
+  await page.setViewportSize({width:1280,height:900});
+
+  // Optional columns: top speed is opt-in, the rest can be hidden; only columns with data are offered.
+  assert.equal(await towerTable.locator('thead th.tower-speed').count(), 0, 'top speed starts hidden');
+  await page.locator('.tower-columns summary').click();
+  const choice = page.locator('.tower-columns fieldset');
+  assert.deepEqual(await choice.locator('label').allInnerTexts(), ['Sectors','Top speed','Pits','Energy']);
+  await choice.getByLabel('Top speed').check();
+  assert.equal(await towerTable.locator('thead th.tower-speed').innerText(), 'Top');
+  assert.equal(await towerTable.locator('thead th.tower-speed').getAttribute('title'), 'Best speed trap of the session (mph)');
+  assert.match(await towerTable.locator('.tower-row').nth(0).locator('td.tower-speed').getAttribute('class'), /tower-class-best/);
+  assert.match(await towerTable.locator('.tower-row').nth(1).locator('td.tower-speed').innerText(), /^150\.2\s+mph$/);
+  await choice.getByLabel('Sectors').uncheck();
+  assert.equal(await towerTable.locator('thead th.tower-sector').count(), 0);
+  assert.equal(await page.evaluate(() => localStorage.getItem('pitpass.timing.columns')),
+    JSON.stringify({sectors:false,topSpeed:true,pits:true,energy:true}), 'remembered in this browser');
+  await choice.getByLabel('Sectors').check();
+  await choice.getByLabel('Top speed').uncheck();
+  await page.locator('.tower-columns summary').click();
+
+  // Places gained in class since the start, and the field at a glance.
+  assert.match(await towerTable.locator('.tower-row').nth(0).locator('.tower-pos').innerText(), /^1\s*▲2/);
+  assert.match(await towerTable.locator('.tower-row').nth(1).locator('.tower-pos').innerText(), /^2\s*▼1/);
+  assert.equal(await towerTable.locator('.tower-row').nth(2).locator('.tower-gain--up, .tower-gain--down').count(), 0, 'no start position, no mark');
+  assert.equal(await page.locator('.timing-counts').innerText(), '3 on track · 1 in pit · 0 stopped · 1 retired');
+
+  // A car that changes place flashes, then settles; the first tower seen never flashes.
+  assert.equal(await towerTable.locator('.tower-row--moved').count(), 0);
+  const gtd = tower.classes[1].cars;
+  tower = {...tower, classes:[tower.classes[0], {...tower.classes[1], cars:[{...gtd[1], position:1}, {...gtd[0], position:2}, gtd[2]]}]};
+  await towerTable.locator('.tower-row--moved').first().waitFor();
+  assert.deepEqual(await towerTable.locator('.tower-row--moved .tower-car').allInnerTexts(), ['4','04']);
+  await towerTable.locator('.tower-row--moved').first().waitFor({state:'detached', timeout:8000});
+  tower = {...tower, classes:[tower.classes[0], {...tower.classes[1], cars:gtd}]};
+  await towerTable.locator('.tower-row--moved').first().waitFor();
+  await towerTable.locator('.tower-row--moved').first().waitFor({state:'detached', timeout:8000});
+
+  // A red flag stops the clock where it stood, in red and in words.
+  tower = {...tower, session:{...session, flag:'RED', running:false, clock:{...session.clock, stopMs:now-5*60_000}}};
+  await page.locator('.timing-clock--stopped').waitFor();
+  assert.match(await page.locator('.timing-clock-main').innerText(), /^1:56:00\s*Clock stopped$/);
+  tower = {...tower, session};
 
   // A car's laps (newest first) and stints, polled only while open.
   await page.getByRole('button',{name:'#31 Team 31: laps and stints'}).click();

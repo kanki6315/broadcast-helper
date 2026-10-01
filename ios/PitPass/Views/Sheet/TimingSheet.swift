@@ -20,6 +20,9 @@ struct TimingSheet: View {
     @State private var tower = LiveFeed<Tower>()
     @State private var mode: Mode = .tower
     @State private var openCar: OpenCar?
+    /// Cars whose place just changed, washed amber for a moment (TowerGrid).
+    @State private var moved: Set<String> = []
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     enum Mode: String { case tower, gaps, sectors, pits, drive }
 
@@ -73,7 +76,11 @@ struct TimingSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: PP.Space.s3) {
-                Text(title).ppTitle()
+                HStack(alignment: .firstTextBaseline) {
+                    Text(title).ppTitle()
+                    Spacer(minLength: PP.Space.s3)
+                    if followingThis, let value = tower.value { SessionClockView(tower: value) }
+                }
                 if case .weekend = scope, let w = weekend.value {
                     Text(w.filedUnder + (w.track.map { " · \($0)" } ?? ""))
                         .font(.subheadline).foregroundStyle(PP.textMuted)
@@ -126,6 +133,18 @@ struct TimingSheet: View {
                 await weekend.run(session.client, path: "/api/live/feed-events/\(id)", every: .seconds(30))
             }
         }
+        .onChange(of: tower.value) { before, after in
+            guard let after else { return }
+            let changed = TimingFormat.moved(from: before, to: after)
+            guard !changed.isEmpty else { return }
+            moved.formUnion(changed)
+            // The wash holds briefly, then fades over 3 s; with Reduce Motion it
+            // stays steady for 4 s and goes without a fade.
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(reduceMotion ? 4 : 1))
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 3)) { moved.subtract(changed) }
+            }
+        }
         .sheet(item: $openCar) { target in
             LiveCarSheet(target: target)
         }
@@ -167,7 +186,7 @@ struct TimingSheet: View {
                 if unfiled {
                     Text(unfiledNote(value)).font(.subheadline).foregroundStyle(PP.textMuted)
                 }
-                TowerGrid(tower: value) { car, cls in
+                TowerGrid(tower: value, moved: moved) { car, cls in
                     openCar = OpenCar(carNumber: car.carNumber, teamName: car.teamName, className: cls.className,
                                       color: cls.color, sessionDbId: value.sessionDbId)
                 }
@@ -240,19 +259,61 @@ private struct SessionLine: View {
     }
 }
 
+/// The session clock, counted down on the device from the feed's status:
+/// time to go (frozen, in error red and in words while stopped) or the
+/// leader's lap, with the time of day at the track beneath while the feed is
+/// current. The web page's `.timing-clock`.
+private struct SessionClockView: View {
+    let tower: Tower
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let wall = Int(context.date.timeIntervalSince1970 * 1000)
+            let reading = TimingFormat.sessionClock(tower, wallMs: wall)
+            let current = TimingFormat.feedNow(state: tower.state, finished: tower.session?.finished ?? false,
+                                               feedClockMs: tower.feedClockMs, wallMs: wall) == wall
+            let local = current ? TimingFormat.trackTime(wallMs: wall, utcOffsetHours: tower.session?.clock?.utcOffsetHours) : nil
+            let sub = [reading?.laps, local.map { "\($0) at the track" }].compactMap { $0 }.joined(separator: " · ")
+            let counts = tower.state == "LIVE" && !tower.classes.isEmpty ? TimingFormat.fieldCounts(tower).line : nil
+            VStack(alignment: .trailing, spacing: 2) {
+                if let reading {
+                    HStack(alignment: .firstTextBaseline, spacing: PP.Space.s2) {
+                        Text(reading.time)
+                            .font(PP.sans(PP.TextSize.xl, weight: 600).monospacedDigit())
+                            .foregroundStyle(reading.stopped ? PP.error : PP.ink)
+                        if !reading.note.isEmpty {
+                            Text(reading.note).font(.subheadline).foregroundStyle(reading.stopped ? PP.error : PP.textMuted)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+                if !sub.isEmpty {
+                    Text(sub).font(PP.sans(PP.TextSize.xs).monospacedDigit()).foregroundStyle(PP.textMuted)
+                }
+                if let counts {
+                    Text(counts).font(PP.sans(PP.TextSize.xs).monospacedDigit()).foregroundStyle(PP.textMuted)
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Tower
 
 
 private struct TowerGrid: View {
     let tower: Tower
+    var moved: Set<String> = []
     let open: (TowerCar, TowerClass) -> Void
+
+    private var hasStarts: Bool { tower.classes.contains { $0.cars.contains { $0.startPosition != nil } } }
 
     private var hasLaps: Bool { tower.classes.contains { $0.cars.contains { $0.lastLapMs != nil || $0.stintStartMs != nil } } }
     private var hasEnergy: Bool { tower.classes.contains { $0.cars.contains { $0.energyPct != nil } } }
 
     var body: some View {
         let ident: [GridColumn] = [
-            .text("pos", "Pos", width: 48, align: .trailing),
+            .text("pos", "Pos", width: hasStarts ? 76 : 48, align: .trailing),
             .text("car", "#", width: 56, align: .trailing),
             .text("driver", "Driver", width: 200),
         ]
@@ -281,11 +342,30 @@ private struct TowerGrid: View {
                          lineHeight: 20, cellPadV: 5, cellPadH: 8, headerHeight: 34, separatesIdentity: true, centersCells: true)
     }
 
+    /// A lap time in timing screens' purple (fastest in class: bold ink on the
+    /// violet result tint) or green (the car's own best, on the green tint).
+    /// The words are in the accessible name.
+    private func lapCell(_ ms: Int?, mark: TimingFormat.LapMark?, muted: Bool) -> AnyView {
+        let time = TimingFormat.lapTime(ms)
+        let fill: Color = switch mark {
+        case .classBest: ResultTint.top5
+        case .personalBest: ResultTint.win
+        case nil: .clear
+        }
+        return AnyView(
+            Text(time)
+                .font(PP.mono(PP.TextSize.sm, weight: mark == .classBest ? 700 : mark == .personalBest ? 600 : 400))
+                .foregroundStyle(mark != nil ? PP.ink : muted ? PP.textMuted : PP.text)
+                .padding(.horizontal, mark != nil ? 4 : 0)
+                .background(fill, in: RoundedRectangle(cornerRadius: PP.Radius.xs))
+                .accessibilityLabel(mark == .classBest ? "\(time), fastest in class" : mark == .personalBest ? "\(time), personal best" : time))
+    }
+
     private func row(_ car: TowerCar, cls: TowerClass, best: Int?) -> GridRowItem {
         let muted = !car.running
         let leader = car.position == 1
         let isClassBest = best != nil && car.bestLapMs == best
-        let lastIsBest = car.lastLapMs != nil && car.lastLapMs == car.bestLapMs
+        let lastMark = TimingFormat.lastLapMark(car, classBest: best)
         var cells: [AnyView] = [
             GridCell.text(car.teamName ?? "—", muted: true),
             GridCell.num(car.laps.map(String.init) ?? "", muted: muted),
@@ -293,14 +373,8 @@ private struct TowerGrid: View {
             GridCell.num(leader ? "" : TimingFormat.gap(ms: car.intervalMs, laps: car.intervalLaps), muted: muted),
         ]
         if hasLaps {
-            cells.append(GridCell.num(TimingFormat.lapTime(car.lastLapMs), muted: muted, bold: lastIsBest))
-            cells.append(AnyView(
-                Text(TimingFormat.lapTime(car.bestLapMs))
-                    .font(PP.mono(PP.TextSize.sm, weight: isClassBest ? 700 : 400))
-                    .foregroundStyle(isClassBest ? PP.ink : muted ? PP.textMuted : PP.text)
-                    .padding(.horizontal, isClassBest ? 4 : 0)
-                    .background(isClassBest ? ResultTint.top5 : .clear, in: RoundedRectangle(cornerRadius: PP.Radius.xs))
-                    .accessibilityLabel(isClassBest ? "\(TimingFormat.lapTime(car.bestLapMs)), fastest in class" : TimingFormat.lapTime(car.bestLapMs))))
+            cells.append(lapCell(car.lastLapMs, mark: lastMark, muted: muted))
+            cells.append(lapCell(car.bestLapMs, mark: isClassBest ? .classBest : nil, muted: muted))
             cells.append(AnyView(StintCell(car: car, tower: tower)))
         }
         if hasEnergy {
@@ -321,14 +395,30 @@ private struct TowerGrid: View {
                     .accessibilityLabel(TimingFormat.ratingName(r) ?? r)
             }
         })
-        let label = ["P\(car.position)", "car \(car.carNumber)", car.driverName, car.teamName,
+        let gained = TimingFormat.placesGained(car).flatMap { $0 == 0 ? nil : "\($0 > 0 ? "up" : "down") \(abs($0)) since the start" }
+        let label = ["P\(car.position)", gained, "car \(car.carNumber)", car.driverName, car.teamName,
                      car.inPit ? "in the pit" : nil, car.running ? nil : car.status?.lowercased()]
             .compactMap { $0 }.joined(separator: ", ")
         return GridRowItem(id: car.carNumber,
-                           ident: [GridCell.num(String(car.position), muted: muted, bold: true),
-                                   GridCell.car(car.carNumber), driver],
+                           ident: [positionCell(car, muted: muted), GridCell.car(car.carNumber), driver],
                            cells: cells, lines: 1,
-                           onTap: { open(car, cls) }, tapLabel: label + ". Opens laps and stints.")
+                           onTap: { open(car, cls) }, tapLabel: label + ". Opens laps and stints.",
+                           wash: moved.contains(car.carNumber) ? PP.accent.opacity(0.3) : nil)
+    }
+
+    /// The position, then places gained (▲ success green) or lost (▼ error red)
+    /// since the start in a fixed slot, so positions stay in one column.
+    private func positionCell(_ car: TowerCar, muted: Bool) -> AnyView {
+        guard hasStarts else { return GridCell.num(String(car.position), muted: muted, bold: true) }
+        let gained = TimingFormat.placesGained(car) ?? 0
+        return AnyView(HStack(spacing: 4) {
+            Text(String(car.position)).font(PP.mono(PP.TextSize.sm, weight: 600))
+                .foregroundStyle(muted ? PP.textMuted : PP.ink)
+            Text(gained == 0 ? "" : "\(gained > 0 ? "▲" : "▼")\(abs(gained))")
+                .font(PP.sans(PP.TextSize.xs, weight: 500))
+                .foregroundStyle(gained > 0 ? PP.success : PP.error)
+                .frame(width: 28, alignment: .leading)
+        })
     }
 
     private func stateCell(_ car: TowerCar) -> AnyView {

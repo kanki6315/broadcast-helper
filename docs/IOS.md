@@ -549,11 +549,25 @@ while their session is live (2 min once it is over), a car every 10 s while
 its sheet is open. Gaps, Sectors, Pits and Drive time share one session
 picker (`RecordedSessions`).
 
-- **Tower:** position, number and driver pinned; gap, interval, last, best
-  (class-fastest on the violet tint), stint laps and a time that ticks on the
-  feed's clock (`TimingFormat.feedNow`, so a replay stops counting), IMSA
-  energy with laps left, and Pit or a status in words. Tap a row for the
-  car.
+- **Session clock** (`SessionClockView`), right of the "Live timing" title:
+  time to go counted down on the device (`TimingFormat.sessionClock`, the
+  web's `sessionClock`), frozen in error red with "Clock stopped" while the
+  feed says the clock is stopped, or "Lap 12 of 30" for a lap-limited race;
+  the time of day at the track beneath while the feed is current, and the
+  field at a glance beneath that (`TimingFormat.fieldCounts`: on track, in
+  pit, stopped with participant details, retired).
+- **Tower:** position, number and driver pinned; gap, interval, last and best
+  in timing screens' purple and green (`TimingFormat.lastLapMark`: the
+  class's fastest on the violet tint, a last lap that was the car's own best
+  on the green tint), stint laps and a time that ticks on the feed's clock
+  (`TimingFormat.feedNow`, so a replay stops counting), IMSA energy with
+  laps left, and Pit or a status in words. Tap a row for the car.
+  - In a race, places gained or lost in class since the start follow the
+    position (▲ success green / ▼ error red, in a fixed slot).
+  - A row that changes place gets an amber wash (`GridRowItem.wash`, set
+    from `TimingFormat.moved`) that fades over 3 s, or holds 4 s under
+    Reduce Motion; the first tower seen never flashes.
+  - Sectors, Pits and Top speed are web-only until the iPad's layout pass.
 - **Gaps, Sectors, Pits** (`Views/Sheet/TimingAnalysis.swift`, the web's
   `pages/TimingAnalysis.tsx`; see docs/LIVE_TIMING.md "Analysis"). Gaps is a
   Swift Charts line chart, one class at a time: every car in grey, up to

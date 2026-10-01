@@ -60,6 +60,10 @@ struct TowerCar: Codable, Sendable, Equatable, Identifiable {
     /// IMSA telemetry: % remaining, nil when off, unseen or stale.
     let energyPct: Double?
     let energyLapsLeft: Double?
+    /// Participant details' BOX / OUT_LAP / TRACK / STOPPED; nil when that channel is off.
+    var trackStatus: String? = nil
+    /// Its place in its class on the starting grid, in a race; nil off the grid.
+    var startPosition: Int? = nil
     var id: String { carNumber }
 
     /// Classified or running; anything else (retired…) stays in place, muted.

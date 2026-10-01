@@ -149,6 +149,36 @@ class LiveAnalysisTest {
         assertNull(zero4.lapsSinceStop());
     }
 
+    /**
+     * #54's stints at Road Atlanta practice 1 (2026-09-30), where Al Kamel's
+     * tower said 2 stops: the garage start is none, and the stop the red flag
+     * split in two (in at 16:45:48, stint closed by the red at 16:46:39,
+     * reopened at the green at 16:49:12) is one.
+     */
+    @Test
+    void theGarageStartIsNoStopAndARedFlagDoesNotSplitOne() {
+        long redAt = T0 + 1_299_000;
+        long greenAt = redAt + 153_000;
+        var cars = LiveAnalysis.pitStops(List.of(
+                new Stint("54", T0, "PIT", null, 0, 1, 1, T0 + 88_000),
+                new Stint("54", T0 + 88_000, "TRACK", null, 2, 1, 6, T0 + 633_000),
+                new Stint("54", T0 + 633_000, "PIT", null, 0, 6, 7, T0 + 875_000),
+                new Stint("54", T0 + 875_000, "TRACK", null, 1, 7, 10, T0 + 1_248_000),
+                new Stint("54", T0 + 1_248_000, "PIT", null, 1, 10, 11, redAt),
+                new Stint("54", greenAt, "PIT", null, 1, 11, 11, greenAt + 45_000),
+                new Stint("54", greenAt + 45_000, "TRACK", null, 1, 11, null, null)),
+                Map.of("54", 12));
+        var car = cars.getFirst();
+        assertEquals(2, car.stops().size());
+        assertEquals(6, car.stops().get(0).lap());
+        var split = car.stops().get(1);
+        assertEquals(10, split.lap());
+        assertEquals(51_000L + 45_000L, split.durationMs(), "both halves' pit-lane time, not the red flag between");
+        assertEquals(1, split.driverIn());
+        assertEquals(1, split.driverOut());
+        assertEquals(2, car.lapsSinceStop(), "counted from the lap it came in on");
+    }
+
     @Test
     void carNumbersSortByValueThenAsWritten() {
         List<String> numbers = new ArrayList<>(List.of("10", "04", "4", "7", "A1"));

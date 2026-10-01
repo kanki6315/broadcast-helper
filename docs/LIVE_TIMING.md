@@ -205,6 +205,7 @@ All `ALKAMELV2_*`. Set the first three on Railway; the rest have working default
 | `ALKAMELV2_REPLAY_FILE` | — | Local dev: replay this recording instead of connecting. |
 | `ALKAMELV2_REPLAY_SPEED` | `1.0` | `10` = ten times faster; `0` = no pauses. |
 | `ALKAMELV2_ANALYSIS_ENABLED` | `false` | Also join `timing.analysis.laps` and `.stints` and stream them into Postgres — see *timing.analysis*. Off until a practice session has run clean with it. |
+| `ALKAMELV2_PARTICIPANT_DETAILS_ENABLED` | `false` | Also join `timing.session.standings.overall.participantDetails` into the state tree, for the tower's sector columns, class best sectors and BOX / OUT_LAP marks. It updates at every loop crossing of every car, so it stays off until a practice session has been recorded with it. |
 | `ALKAMELV2_ANALYSIS_MAX_LINE_BYTES` | `536870912` | Sanity cap on one **streamed** line (counted, never buffered). `ALKAMELV2_MAX_LINE_BYTES` then guards only buffered lines. |
 
 ### IMSA telemetry settings
@@ -401,9 +402,48 @@ client to count up from.
   `stintLaps`, and `energyPct` (always null until the IMSA telemetry
   adapter). Each class carries its series' `class_style` `color`, and the
   tower carries `feedClockMs` (the newest time the feed reported) for the
-  page's stint clock. `sessionDbId` names the feed session. Needs
-  `ALKAMELV2_ANALYSIS_ENABLED` for the lap and stint fields; without it they
-  are null and the rest still works.
+  page's stint clock. `sessionDbId` names the feed session. `pitStops`
+  counts stops exactly as `/api/live/pits` does (0 when none, null with no
+  session recorded; the rule is under *Analysis*) and `lastPitMs` is the newest finished
+  stop's pit-lane time. Needs `ALKAMELV2_ANALYSIS_ENABLED` for the lap, stint
+  and pit fields; without it they are null and the rest still works.
+  - `session.clock` is `timing.session.status` for the page to count down,
+    nothing ticking server-side: `finalType`, `startMs`
+    (`sessionStartTime`, null before the start), `finalMs` (`finalTime`),
+    `finalLaps`, `currentLap` (the leader's), `stopMs` (`stopTime`, only
+    while `isSessionRunning` is false), `stoppedMs` (`stoppedMilliSeconds`,
+    else `stoppedSeconds`) and `utcOffsetHours` (`session.info.utcOffset`).
+    Time to go = `finalMs − ((stopMs ?? now) − startMs − stoppedMs)`. Epoch
+    fields are read as ms or seconds by size, since the server predates the
+    spec. **Checked against Road Atlanta practice 1 (2026-09-30):** the
+    result matched Al Kamel's own tower to the second (34:46 at 16:50:14Z).
+    A practice red flag does **not** stop the clock: `isSessionRunning`
+    stayed true and `stoppedMilliSeconds` stayed 0. **Unverified:** a real
+    stop (`isSessionRunning` false), so whether `stoppedMilliSeconds` grows
+    during one or only at the restart is still open.
+  - With `ALKAMELV2_PARTICIPANT_DETAILS_ENABLED` (`LiveParticipantDetails`),
+    each car also carries `trackStatus` (BOX / OUT_LAP / TRACK / STOPPED;
+    BOX also sets `inPit`, which covers the red-flag gap where a car's PIT
+    stint arrives only once it has closed), `currentSector`, `sectors`
+    (`lastSectors`: per sector `ms`, `valid`, and `currentLap` = before the
+    sector the car is in), `bestSectorMs` and `idealMs` (its own best
+    sectors summed). Each class carries `bestSectors` (fastest per sector and
+    its car) and `idealMs`. Without analysis, `pitStops` falls back to the
+    channel's own count. **Unverified until a recording holds the channel:**
+    that `lastSectors` keeps each sector's newest time rather than clearing at
+    the line, and that `currentSector` counts from 1.
+  - `topSpeed` is the car's best speed trap of the session (`max(top_speed)`
+    over its recorded laps, invalid laps included); the tower's `speedUnit`
+    is "mph" or "km/h" from `session.info.unitOfMeasure` (US / METRIC).
+    Road Atlanta's feed was US: 151.3 is mph.
+  - `startPosition` is the car's place in its class at the start, in a race
+    only: `timing.session.startingGrid` is overall, so it is ranked among the
+    class's cars on the grid as the tower groups them. The standings'
+    `positionChange` ("position improvement" in the spec) is not used: its
+    meaning is unstated, and it was 0 on every row at Road Atlanta.
+  - `laps` is laps completed: the last lap from analysis, else the
+    standings' `lapNumber` in a race only. In practice and qualifying the
+    standings' `lapNumber` is the lap the car set its best on.
 - **`/api/live/cars/{car}?session=`** — laps (with `sectorMs` /
   `sectorFlags`, 1-based by sector), stints (with the four accumulators) and
   drivers. `session` defaults to the session being fed, else the bound
@@ -440,9 +480,19 @@ no entry are grouped under "Not entered", not dropped.
   invalid keeps none of its sectors; validity unknown counts), the lap it came
   on, and the theoretical best when the car has a best in every sector. The
   car panel marks its own best sectors and the class's.
-- **Pits.** One stop per Al Kamel PIT stint: pit-lane time is the stint's
-  length, the lap is its `open_lap_number`, and the driver in and out are the
-  TRACK stints either side. Penalty / safety-car stops keep `pit_type`.
+- **Pits.** Stops are counted as Al Kamel's own tower counts them, which was
+  checked against it at Road Atlanta practice 1 (2026-09-30), all 28 cars:
+  - A car's opening PIT stint (lap 1, out of the garage) is not a stop.
+  - PIT stints back to back are one stop. A red flag closes every stint, and
+    at the restart a fresh one opens for each car still in the pit lane.
+  - A stop's pit-lane time is the sum of its stints, which leaves the red
+    flag's gap out. The lap is where the stop began, and the driver in and
+    out come from the TRACK stints either side. Penalty and safety-car stops
+    keep `pit_type`.
+  - Stints opened at a red-flag restart reach the feed only when they
+    **close**: a car sitting in the pit lane after a red flag has no open
+    stint, so it has no Pit mark or stint clock, and its stop counts only
+    once it leaves. `participantDetails.status` (`BOX`) would close that gap.
 
 ### Drive time
 

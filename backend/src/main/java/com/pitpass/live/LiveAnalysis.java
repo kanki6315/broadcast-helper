@@ -251,9 +251,16 @@ public final class LiveAnalysis {
     }
 
     /**
-     * Each car's pit stops, from its stints. lastLap is how many laps each
-     * car has completed, for laps since its last stop. Cars come back most
-     * stops first, then by number, so the cars off-sequence stand out.
+     * Each car's pit stops, from its stints, counted as Al Kamel counts them
+     * (checked against its own tower, Road Atlanta practice 2026-09-30):
+     * - a car's opening PIT stint, from the garage at the start, is no stop;
+     * - PIT stints back to back are one stop. A red flag closes every stint
+     *   and opens a fresh one at the restart, so a car in the pit lane
+     *   across it has two.
+     * A stop's time sums its stints' pit-lane time (the red flag's gap is in
+     * none of them). lastLap is how many laps each car has completed, for
+     * laps since its last stop. Cars come back most stops first, then by
+     * number, so the cars off-sequence stand out.
      */
     public static List<PitCar> pitStops(Collection<Stint> stints, Map<String, Integer> lastLap) {
         Map<String, List<Stint>> byCar = new HashMap<>();
@@ -263,32 +270,47 @@ public final class LiveAnalysis {
         List<PitCar> out = new ArrayList<>();
         for (var e : byCar.entrySet()) {
             List<Stint> own = e.getValue().stream().sorted(Comparator.comparingLong(Stint::startTimeMs)).toList();
+            List<List<Integer>> groups = new ArrayList<>();
+            for (int i = 0; i < own.size(); i++) {
+                Stint s = own.get(i);
+                if (!s.pit() || (i == 0 && (s.openLap() == null || s.openLap() <= 1))) {
+                    continue;
+                }
+                if (!groups.isEmpty() && groups.getLast().getLast() == i - 1) {
+                    groups.getLast().add(i);
+                } else {
+                    groups.add(new ArrayList<>(List.of(i)));
+                }
+            }
             List<PitStop> stops = new ArrayList<>();
             long total = 0;
             int finished = 0;
-            for (int i = 0; i < own.size(); i++) {
-                Stint s = own.get(i);
-                if (!s.pit()) {
-                    continue;
-                }
+            for (List<Integer> group : groups) {
+                Stint first = own.get(group.getFirst());
                 Integer before = null;
-                for (int j = i - 1; j >= 0 && before == null; j--) {
+                for (int j = group.getFirst() - 1; j >= 0 && before == null; j--) {
                     if (!own.get(j).pit()) {
                         before = own.get(j).driverOrder();
                     }
                 }
                 Integer after = null;
-                for (int j = i + 1; j < own.size() && after == null; j++) {
+                for (int j = group.getLast() + 1; j < own.size() && after == null; j++) {
                     if (!own.get(j).pit()) {
                         after = own.get(j).driverOrder();
                     }
                 }
-                Long length = s.open() ? null : s.finishTimeMs() - s.startTimeMs();
+                Long length = 0L;
+                String pitType = null;
+                for (int i : group) {
+                    Stint s = own.get(i);
+                    length = length == null || s.open() ? null : length + s.finishTimeMs() - s.startTimeMs();
+                    pitType = pitType != null ? pitType : s.pitType();
+                }
                 if (length != null) {
                     total += length;
                     finished++;
                 }
-                stops.add(new PitStop(stops.size() + 1, s.startTimeMs(), length, s.openLap(), s.pitType(),
+                stops.add(new PitStop(stops.size() + 1, first.startTimeMs(), length, first.openLap(), pitType,
                         before, after, before != null && after != null && !before.equals(after)));
             }
             boolean inPit = !own.isEmpty() && own.getLast().pit() && own.getLast().open();

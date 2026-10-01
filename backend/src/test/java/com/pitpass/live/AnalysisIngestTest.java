@@ -104,7 +104,7 @@ class AnalysisIngestTest {
                 1 << 10, 2, 1,
                 new AlKamelV2Properties.Recording(true, recordings.toString(), "", 10, 64),
                 new AlKamelV2Properties.Replay("", 1.0),
-                new AlKamelV2Properties.Analysis(true, 1 << 20));
+                new AlKamelV2Properties.Analysis(true, 1 << 20), null);
         LiveTimingService service = new LiveTimingService(props, new LiveTimingServiceTest.MemoryStore(), mapper,
                 null, (segment, key) -> segments.add(segment),
                 new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
@@ -189,7 +189,7 @@ class AnalysisIngestTest {
         AlKamelV2Properties props = new AlKamelV2Properties("127.0.0.1", server.port(), "u", "p", false, false,
                 "Pit Pass test", List.of("timing.session.info"), 1 << 10, 2, 1,
                 new AlKamelV2Properties.Recording(false, recordings.toString(), "", 10, 64),
-                new AlKamelV2Properties.Replay("", 1.0), new AlKamelV2Properties.Analysis(true, 1 << 20));
+                new AlKamelV2Properties.Replay("", 1.0), new AlKamelV2Properties.Analysis(true, 1 << 20), null);
         LiveTimingService service = new LiveTimingService(props, new LiveTimingServiceTest.MemoryStore(), mapper,
                 null, (segment, key) -> { },
                 new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
@@ -279,7 +279,7 @@ class AnalysisIngestTest {
         AlKamelV2Properties props = new AlKamelV2Properties("127.0.0.1", server.port(), "u", "p", false, false,
                 "Pit Pass test", List.of("timing.session.info", "timing.session.entry"), 1 << 10, 2, 1,
                 new AlKamelV2Properties.Recording(false, recordings.toString(), "", 10, 64),
-                new AlKamelV2Properties.Replay("", 1.0), new AlKamelV2Properties.Analysis(true, 1 << 20));
+                new AlKamelV2Properties.Replay("", 1.0), new AlKamelV2Properties.Analysis(true, 1 << 20), null);
         ImsaTelemetryProperties telemetryProps = new ImsaTelemetryProperties(false, "https://example.invalid/",
                 List.of(wtName), List.of("telemetry/message"), 15, false, telemetry.toString(), 0);
         LiveTimingService service = new LiveTimingService(props, store, mapper, null, (segment, key) -> { },

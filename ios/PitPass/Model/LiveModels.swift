@@ -42,6 +42,22 @@ struct LiveSession: Codable, Sendable, Equatable {
     let finished: Bool
     /// Al Kamel's event id: the series weekend this session belongs to.
     var feedEventDbId: Int? = nil
+    /// timing.session.status's clock; nil from a server older than it.
+    let clock: SessionClock?
+}
+
+/// The session clock for the app to count down (docs/LIVE_TIMING.md). startMs
+/// is nil before the start; stopMs is set only while the clock is stopped;
+/// stoppedMs is the time stopped so far.
+struct SessionClock: Codable, Sendable, Equatable {
+    let finalType: String?
+    let startMs: Int?
+    let finalMs: Int?
+    let finalLaps: Int?
+    let currentLap: Int?
+    let stopMs: Int?
+    let stoppedMs: Int
+    let utcOffsetHours: Double?
 }
 
 /// `POST /api/live/connect`. A nil event connects for every series: sessions

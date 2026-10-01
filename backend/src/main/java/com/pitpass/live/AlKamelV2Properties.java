@@ -25,10 +25,14 @@ public record AlKamelV2Properties(
         int loginTimeoutSeconds,
         Recording recording,
         Replay replay,
-        Analysis analysis) {
+        Analysis analysis,
+        ParticipantDetails participantDetails) {
 
     /** The lap and stint channels the timing page is built from. */
     public static final List<String> ANALYSIS_CHANNELS = List.of("timing.analysis.laps", "timing.analysis.stints");
+
+    /** Per car: sectors as they are run, the sector the car is in, its bests, BOX/OUT_LAP/TRACK/STOPPED. */
+    public static final String PARTICIPANT_DETAILS_CHANNEL = "timing.session.standings.overall.participantDetails";
 
     /** Raw inbound lines kept for replay — the only test data this feed will ever have. */
     public record Recording(boolean enabled, String directory, String bucket,
@@ -48,16 +52,32 @@ public record AlKamelV2Properties(
     public record Analysis(boolean enabled, long maxLineBytes) {
     }
 
+    /**
+     * timing.session.standings.overall.participantDetails, into the state tree
+     * like the other session channels. Off until a practice session has been
+     * recorded with it: it updates at every loop crossing of every car, and no
+     * recording yet shows its real size.
+     */
+    public record ParticipantDetails(boolean enabled) {
+    }
+
+    public boolean participantDetailsEnabled() {
+        return participantDetails != null && participantDetails.enabled();
+    }
+
     public boolean analysisEnabled() {
         return analysis != null && analysis.enabled();
     }
 
-    /** The configured channels, plus the analysis channels when those are on. */
+    /** The configured channels, plus the analysis and participant-details channels when those are on. */
     public List<String> joinedChannels() {
         List<String> joined = new java.util.ArrayList<>();
         channels.forEach(c -> joined.add(c.trim()));
         if (analysisEnabled()) {
             ANALYSIS_CHANNELS.stream().filter(c -> !joined.contains(c)).forEach(joined::add);
+        }
+        if (participantDetailsEnabled() && !joined.contains(PARTICIPANT_DETAILS_CHANNEL)) {
+            joined.add(PARTICIPANT_DETAILS_CHANNEL);
         }
         return joined;
     }

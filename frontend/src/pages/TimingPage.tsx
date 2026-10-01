@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import './season.css'
 import './timing.css'
@@ -14,9 +14,15 @@ import {
   flagTone,
   gap,
   lapTime,
+  fieldCounts,
+  lastLapMark,
+  placesGained,
+  sectorMark,
   parseRuleTime,
   ratingName,
   ruleTime,
+  sessionClock,
+  trackTime,
   type DriveTimeResponse,
   type LiveStatus,
   type DriveTimeResult,
@@ -25,6 +31,7 @@ import {
   type Tower,
   type TowerCar,
   type TowerClass,
+  type SectorTime,
   type WeekendChampionship,
 } from '../lib/liveTiming'
 import LiveCarModal from '../components/LiveCarModal'
@@ -143,8 +150,11 @@ export default function TimingPage({ scope }: { scope: TimingScope }) {
       </div>
 
       <header className="timing-head">
-        <h1>{title ?? <span className="skeleton timing-title-skeleton" aria-label="Loading" />}</h1>
-        {followingThis && tower.session && <SessionLine session={tower.session} />}
+        <div className="timing-head-text">
+          <h1>{title ?? <span className="skeleton timing-title-skeleton" aria-label="Loading" />}</h1>
+          {followingThis && tower.session && <SessionLine session={tower.session} />}
+        </div>
+        {followingThis && <SessionClockView tower={tower} />}
       </header>
 
       {view === 'tower' ? (
@@ -303,6 +313,45 @@ function SessionLine({ session }: { session: NonNullable<Tower['session']> }) {
   )
 }
 
+/**
+ * The session clock, counted down in the browser from the feed's status: time
+ * to go (frozen and labelled while a red flag stops it), or the leader's lap
+ * of a lap-limited race, with the time of day at the track beneath.
+ */
+function SessionClockView({ tower }: { tower: Tower }) {
+  const wall = useTick(tower.state === 'LIVE')
+  const reading = sessionClock(tower, wall)
+  // The time at the track only while the feed is current: a replay's "now" is not today's.
+  const local = feedNow(tower, wall) === wall ? trackTime(wall, tower.session?.clock?.utcOffsetHours) : null
+  const counts = tower.state === 'LIVE' && tower.classes.length > 0 ? fieldCounts(tower) : null
+  if (!reading && !local && !counts) return null
+  return (
+    <div className={`timing-clock${reading?.stopped ? ' timing-clock--stopped' : ''}`}>
+      {reading && (
+        <p className="timing-clock-main">
+          <span className="timing-clock-time">{reading.time}</span>
+          {reading.note && <span className="timing-clock-note">{reading.note}</span>}
+        </p>
+      )}
+      {(reading?.laps || local) && (
+        <p className="timing-clock-sub">{[reading?.laps, local && `${local} at the track`].filter(Boolean).join(' · ')}</p>
+      )}
+      {counts && (
+        <p className="timing-clock-sub timing-counts">
+          {[
+            `${counts.onTrack} on track`,
+            `${counts.inPit} in pit`,
+            counts.stopped != null && `${counts.stopped} stopped`,
+            `${counts.retired} retired`,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
+      )}
+    </div>
+  )
+}
+
 /** Re-renders once a second while something on screen is counting up. */
 function useTick(active: boolean): number {
   const [now, setNow] = useState(() => Date.now())
@@ -333,6 +382,8 @@ function TowerView({
   const [open, setOpen] = useState<{ car: TowerCar; cls: TowerClass } | null>(null)
   const live = tower?.state === 'LIVE'
   const wall = useTick(live && followingThis)
+  const moves = useMoves(tower)
+  const [shown, setShown] = useColumnChoice()
 
   if (!tower) {
     return error ? (
@@ -389,7 +440,19 @@ function TowerView({
   const unfiled = tower.filedEventId == null
   const hasEnergy = tower.classes.some((c) => c.cars.some((car) => car.energyPct != null))
   const hasLaps = tower.classes.some((c) => c.cars.some((car) => car.lastLapMs != null || car.stintStartMs != null))
-  const columns = 8 + (hasLaps ? 3 : 0) + (hasEnergy ? 1 : 0)
+  const hasPits = tower.classes.some((c) => c.cars.some((car) => car.pitStops != null))
+  const hasStarts = tower.classes.some((c) => c.cars.some((car) => car.startPosition != null))
+  const hasTopSpeed = tower.classes.some((c) => c.cars.some((car) => car.topSpeed != null))
+  const feedSectors = Math.max(0, ...tower.classes.flatMap((c) => c.cars.map((car) => car.sectors?.length ?? 0)))
+  const available: Record<OptionalColumn, boolean> = {
+    sectors: feedSectors > 0,
+    topSpeed: hasTopSpeed,
+    pits: hasPits,
+    energy: hasEnergy,
+  }
+  const show = (c: OptionalColumn) => available[c] && shown[c]
+  const sectorCount = show('sectors') ? feedSectors : 0
+  const columns = 8 + (hasLaps ? 3 : 0) + sectorCount + (show('topSpeed') ? 1 : 0) + (show('pits') ? 1 : 0) + (show('energy') ? 1 : 0)
 
   return (
     <>
@@ -400,7 +463,8 @@ function TowerView({
             : "Not filed under a Pit Pass event. Teams and drivers are the feed's own."}
         </p>
       )}
-      <table className="grid-table tower" aria-label="Running order by class">
+      <ColumnChoice available={available} shown={shown} onChange={setShown} />
+      <table className={`grid-table tower${sectorCount > 0 ? ' tower--sectors' : ''}`} aria-label="Running order by class">
         <thead>
           <tr>
             <th className="num" scope="col">
@@ -428,12 +492,27 @@ function TowerView({
                 <th className="num" scope="col">
                   Best
                 </th>
+                {Array.from({ length: sectorCount }, (_, i) => (
+                  <th key={i} className="num tower-sector" scope="col" title={`Sector ${i + 1}, as it is run`}>
+                    S{i + 1}
+                  </th>
+                ))}
+                {show('topSpeed') && (
+                  <th className="num tower-speed" scope="col" title={`Best speed trap of the session${tower.speedUnit ? ` (${tower.speedUnit})` : ''}`}>
+                    Top
+                  </th>
+                )}
                 <th className="num" scope="col" title="Laps and time in the current stint">
                   Stint
                 </th>
               </>
             )}
-            {hasEnergy && (
+            {show('pits') && (
+              <th className="num" scope="col" title="Pit stops, and the last stop's pit-lane time">
+                Pits
+              </th>
+            )}
+            {show('energy') && (
               <th className="num" scope="col" title="Energy remaining (IMSA telemetry)">
                 Energy
               </th>
@@ -445,6 +524,7 @@ function TowerView({
         </thead>
         {tower.classes.map((cls) => {
           const best = classBest(cls.cars)
+          const fastest = Math.max(0, ...cls.cars.map((c) => c.topSpeed ?? 0)) || null
           const style = { '--class-color': cls.color ?? undefined } as CSSProperties
           return (
             <tbody key={cls.className} style={style}>
@@ -454,15 +534,22 @@ function TowerView({
                     {cls.className}
                     {cls.feedClass !== cls.className && <span className="band-feed"> ({cls.feedClass})</span>}
                   </span>
+                  <BestSectors cls={cls} />
                 </td>
               </tr>
               {cls.cars.map((car) => (
                 <TowerRow
-                  key={car.carNumber}
+                  key={`${car.carNumber}-${moves.get(car.carNumber) ?? 0}`}
+                  moved={moves.has(car.carNumber)}
+                  hasStarts={hasStarts}
                   car={car}
                   classBestMs={best}
                   hasLaps={hasLaps}
-                  hasEnergy={hasEnergy}
+                  sectorCount={sectorCount}
+                  classSectors={cls.bestSectors}
+                  topSpeed={show('topSpeed') ? { fastest, unit: tower.speedUnit } : null}
+                  hasPits={show('pits')}
+                  hasEnergy={show('energy')}
                   now={now}
                   unfiled={unfiled}
                   onOpen={() => setOpen({ car, cls })}
@@ -490,18 +577,128 @@ function TowerView({
   )
 }
 
+/** Columns a viewer may hide or show; the rest are the tower itself. */
+type OptionalColumn = 'sectors' | 'topSpeed' | 'pits' | 'energy'
+
+const OPTIONAL_COLUMNS: { id: OptionalColumn; label: string }[] = [
+  { id: 'sectors', label: 'Sectors' },
+  { id: 'topSpeed', label: 'Top speed' },
+  { id: 'pits', label: 'Pits' },
+  { id: 'energy', label: 'Energy' },
+]
+
+/** Top speed is opt-in: with every other column on it would push the tower past 1024px. */
+const DEFAULT_SHOWN: Record<OptionalColumn, boolean> = { sectors: true, topSpeed: false, pits: true, energy: true }
+const COLUMNS_KEY = 'pitpass.timing.columns'
+
+/** Which optional columns this viewer wants, remembered in this browser only (a convenience, never shared). */
+function useColumnChoice(): [Record<OptionalColumn, boolean>, (next: Record<OptionalColumn, boolean>) => void] {
+  const [shown, setShown] = useState<Record<OptionalColumn, boolean>>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(COLUMNS_KEY) ?? 'null')
+      return saved && typeof saved === 'object' ? { ...DEFAULT_SHOWN, ...saved } : DEFAULT_SHOWN
+    } catch {
+      return DEFAULT_SHOWN
+    }
+  })
+  const save = (next: Record<OptionalColumn, boolean>) => {
+    setShown(next)
+    try {
+      localStorage.setItem(COLUMNS_KEY, JSON.stringify(next))
+    } catch {
+      // Private window or blocked storage: the choice lasts until reload.
+    }
+  }
+  return [shown, save]
+}
+
+/** A small disclosure above the tower listing only the optional columns the feed has data for. */
+function ColumnChoice({
+  available,
+  shown,
+  onChange,
+}: {
+  available: Record<OptionalColumn, boolean>
+  shown: Record<OptionalColumn, boolean>
+  onChange: (next: Record<OptionalColumn, boolean>) => void
+}) {
+  const offered = OPTIONAL_COLUMNS.filter((c) => available[c.id])
+  if (offered.length === 0) return null
+  return (
+    <details className="tower-columns">
+      <summary>Columns</summary>
+      <fieldset>
+        <legend className="sr-only">Optional columns</legend>
+        {offered.map((c) => (
+          <label key={c.id}>
+            <input type="checkbox" checked={shown[c.id]} onChange={(e) => onChange({ ...shown, [c.id]: e.target.checked })} />
+            {c.label}
+          </label>
+        ))}
+      </fieldset>
+    </details>
+  )
+}
+
+/** How long a row that changed place stays marked. */
+const MOVE_MS = 4000
+
+/**
+ * Cars whose place in the running order changed on the latest poll, each with
+ * a stamp (the row's key includes it, so a second move restarts the flash).
+ * Nothing flashes on the first tower seen: there is nothing to compare with.
+ */
+function useMoves(tower: Tower | null): Map<string, number> {
+  const previous = useRef<Map<string, string> | null>(null)
+  const timers = useRef<number[]>([])
+  const [moves, setMoves] = useState<Map<string, number>>(() => new Map())
+  useEffect(() => {
+    if (!tower) return
+    const now = new Map<string, string>()
+    tower.classes.forEach((c) => c.cars.forEach((car) => now.set(car.carNumber, `${c.className}|${car.position}`)))
+    const before = previous.current
+    previous.current = now
+    if (!before) return
+    const changed = [...now].filter(([car, place]) => before.has(car) && before.get(car) !== place).map(([car]) => car)
+    if (changed.length === 0) return
+    const stamp = Date.now()
+    setMoves((m) => new Map([...m, ...changed.map((car) => [car, stamp] as const)]))
+    timers.current.push(
+      window.setTimeout(
+        () => setMoves((m) => new Map([...m].filter(([car, s]) => !(changed.includes(car) && s === stamp)))),
+        MOVE_MS,
+      ),
+    )
+  }, [tower])
+  useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), [])
+  return moves
+}
+
 function TowerRow({
+  moved,
+  hasStarts,
   car,
   classBestMs,
   hasLaps,
+  sectorCount,
+  classSectors,
+  topSpeed,
+  hasPits,
   hasEnergy,
   now,
   unfiled,
   onOpen,
 }: {
+  moved: boolean
+  hasStarts: boolean
   car: TowerCar
   classBestMs: number | null
   hasLaps: boolean
+  sectorCount: number
+  classSectors: TowerClass['bestSectors']
+  /** Shown when set: the class's fastest trap, to mark, and the unit. */
+  topSpeed: { fastest: number | null; unit: string | null } | null
+  hasPits: boolean
   hasEnergy: boolean
   now: number | null
   unfiled: boolean
@@ -509,11 +706,14 @@ function TowerRow({
 }) {
   const running = !car.status || car.status === 'CLASSIFIED' || car.status === 'RUNNING'
   const isClassBest = classBestMs != null && car.bestLapMs === classBestMs
-  const lastIsBest = car.lastLapMs != null && car.lastLapMs === car.bestLapMs
+  const lastMark = lastLapMark(car, classBestMs)
   const stintTime = car.stintStartMs != null && now != null ? duration(now - car.stintStartMs) : null
   return (
-    <tr className={`tower-row${running ? '' : ' tower-row--out'}`} onClick={onOpen}>
-      <td className="num tower-pos">{car.position}</td>
+    <tr className={`tower-row${running ? '' : ' tower-row--out'}${moved ? ' tower-row--moved' : ''}`} onClick={onOpen}>
+      <td className="num tower-pos">
+        {car.position}
+        {hasStarts && <Gained places={placesGained(car)} />}
+      </td>
       <td className="num tower-car">
         <button
           type="button"
@@ -548,14 +748,32 @@ function TowerRow({
       <td className="num tower-int">{car.position === 1 ? '' : gap(car.intervalMs, car.intervalLaps)}</td>
       {hasLaps && (
         <>
-          <td className={`num tower-last${lastIsBest ? ' tower-pb' : ''}`}>
+          <td
+            className={`num tower-last${lastMark === 'class' ? ' tower-class-best' : lastMark === 'pb' ? ' tower-pb' : ''}`}
+            title={lastMark === 'class' ? 'Fastest in class' : lastMark === 'pb' ? 'Personal best' : undefined}
+          >
             {lapTime(car.lastLapMs)}
-            {lastIsBest && <span className="sr-only"> (personal best)</span>}
+            {lastMark && <span className="sr-only">{lastMark === 'class' ? ' (fastest in class)' : ' (personal best)'}</span>}
           </td>
-          <td className={`num${isClassBest ? ' tower-class-best' : ''}`} title={isClassBest ? 'Fastest in class' : undefined}>
+          <td
+            className={`num${isClassBest ? ' tower-class-best' : ''}`}
+            title={[isClassBest && 'Fastest in class', car.idealMs != null && `Ideal ${lapTime(car.idealMs)}`].filter(Boolean).join(' · ') || undefined}
+          >
             {lapTime(car.bestLapMs)}
             {isClassBest && <span className="sr-only"> (fastest in class)</span>}
           </td>
+          {Array.from({ length: sectorCount }, (_, i) => (
+            <SectorCell key={i} sector={car.sectors?.[i] ?? null} carBest={car.bestSectorMs?.[i]} classBest={classSectors[i]?.ms} />
+          ))}
+          {topSpeed && (
+            <td
+              className={`num tower-speed${car.topSpeed != null && car.topSpeed === topSpeed.fastest ? ' tower-class-best' : ''}`}
+              title={car.topSpeed != null && car.topSpeed === topSpeed.fastest ? 'Fastest in class' : undefined}
+            >
+              {car.topSpeed != null ? car.topSpeed.toFixed(1) : ''}
+              {car.topSpeed != null && topSpeed.unit && <span className="sr-only"> {topSpeed.unit}</span>}
+            </td>
+          )}
           <td className="num tower-stint">
             <span className="tower-pair">
               {car.stintLaps != null && !car.inPit && <span>{car.stintLaps} L</span>}
@@ -563,6 +781,18 @@ function TowerRow({
             </span>
           </td>
         </>
+      )}
+      {hasPits && (
+        <td className="num tower-pits">
+          <span className="tower-pair">
+            {car.pitStops != null && <span>{car.pitStops}</span>}
+            {car.lastPitMs != null && (
+              <span className="muted" title="The last stop's pit-lane time">
+                {duration(car.lastPitMs)}
+              </span>
+            )}
+          </span>
+        </td>
       )}
       {hasEnergy && (
         <td className="num tower-energy">
@@ -579,11 +809,74 @@ function TowerRow({
       <td className="tower-state">
         {!running ? (
           <span className="tower-status">{car.status?.toLowerCase().replace(/_/g, ' ')}</span>
+        ) : car.inPit ? (
+          <span className="tower-pit-mark">Pit</span>
+        ) : car.trackStatus === 'OUT_LAP' ? (
+          <span className="tower-out-mark" title="Out lap">Out</span>
         ) : (
-          car.inPit && <span className="tower-pit-mark">Pit</span>
+          car.trackStatus === 'STOPPED' && <span className="tower-status">stopped</span>
         )}
       </td>
     </tr>
+  )
+}
+
+/** Places gained (▲, success green) or lost (▼, error red) in class since the start; the words are for screen readers. */
+function Gained({ places }: { places: number | null }) {
+  // Always a slot, so positions line up whether or not a car has moved.
+  if (places == null || places === 0) return <span className="tower-gain" aria-hidden="true" />
+  const up = places > 0
+  return (
+    <span className={`tower-gain tower-gain--${up ? 'up' : 'down'}`} title={`${up ? 'Up' : 'Down'} ${Math.abs(places)} in class since the start`}>
+      <span aria-hidden="true">{up ? '▲' : '▼'}{Math.abs(places)}</span>
+      <span className="sr-only"> ({up ? 'up' : 'down'} {Math.abs(places)} since the start)</span>
+    </span>
+  )
+}
+
+/**
+ * One sector's newest time: purple for the class's fastest, green for the
+ * car's own best, as the lap columns. A time left from the previous lap (the
+ * car has not run that sector again yet) is muted; an invalid one struck
+ * through.
+ */
+function SectorCell({ sector, carBest, classBest }: { sector: SectorTime | null; carBest: number | null | undefined; classBest: number | null | undefined }) {
+  if (!sector) return <td className="num tower-sector" />
+  const mark = sectorMark(sector.ms, carBest, classBest)
+  const cls = [
+    'num tower-sector',
+    mark === 'class' ? 'tower-class-best' : mark === 'pb' ? 'tower-pb' : '',
+    !sector.currentLap && !mark ? 'tower-sector--old' : '',
+    sector.valid === false ? 'tower-sector--invalid' : '',
+  ].filter(Boolean).join(' ')
+  const words = [mark === 'class' ? 'fastest in class' : mark === 'pb' ? 'personal best' : null,
+    sector.valid === false ? 'invalid' : null, sector.currentLap ? null : 'previous lap'].filter(Boolean)
+  return (
+    <td className={cls} title={words.length ? words.join(', ') : undefined}>
+      {lapTime(sector.ms)}
+      {words.length > 0 && <span className="sr-only"> ({words.join(', ')})</span>}
+    </td>
+  )
+}
+
+/** The class's best sectors and who holds them, and their sum, on the class band. */
+function BestSectors({ cls }: { cls: TowerClass }) {
+  if (!cls.bestSectors?.some((s) => s.ms != null)) return null
+  return (
+    <span className="band-bests">
+      {cls.bestSectors.map((s, i) =>
+        s.ms == null ? null : (
+          <span key={i}>
+            S{i + 1} <span className="band-num">{lapTime(s.ms)}</span> #{s.car}
+          </span>
+        ),
+      )}
+      {cls.idealMs != null && (
+        <span title="The class's best sectors added up">
+          Ideal <span className="band-num">{lapTime(cls.idealMs)}</span>
+        </span>
+      )}
+    </span>
   )
 }
 
