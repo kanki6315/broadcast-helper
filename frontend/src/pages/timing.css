@@ -372,13 +372,32 @@
   font-weight: 700;
 }
 
-/* The optional-columns disclosure: right-aligned above the tower, its
- * checkboxes in a small raised panel. */
-.tower-columns {
-  position: relative;
+.tower .band-driver {
+  font-weight: 600;
+}
+
+/* Above the tower, right-aligned: by class or overall, then the columns. */
+.tower-tools {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-3);
   margin-bottom: var(--space-2);
+}
+
+.tower-order .seg-btn {
+  padding: 1px 10px;
+  font-size: var(--text-xs);
+}
+
+.tower-order .seg-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* The optional-columns disclosure, its checkboxes in a small raised panel. */
+.tower-columns {
+  position: relative;
   font-size: var(--text-xs);
 }
 
@@ -503,6 +522,28 @@
   width: 5ch;
 }
 
+/* Overall, with no bands: the class colour runs down the row's leading edge
+ * and its name and place in class sit in their own column. */
+.tower--overall .tower-pos {
+  box-shadow: inset 4px 0 0 var(--class-color, var(--border-strong));
+}
+
+.tower-class {
+  white-space: nowrap;
+}
+
+.tower-class-pos {
+  display: inline-block;
+  min-width: 2ch;
+  margin-left: 2px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 .tower-carlink {
   padding: 0;
   border: none;
@@ -596,9 +637,16 @@
   text-align: right;
 }
 
+/* The last stop's time, then a narrow slot for the count ("×2"), so times
+ * line up down the column. */
+.tower-pits .tower-pair {
+  gap: var(--space-1);
+}
+
 .tower-pits .muted {
-  min-width: 4ch;
-  text-align: right;
+  min-width: 3ch;
+  text-align: left;
+  font-size: var(--text-xs);
 }
 
 .tower-pit-mark {
@@ -614,6 +662,22 @@
 .tower-status {
   color: var(--text-muted);
   font-size: var(--text-xs);
+}
+
+/* Past the chequered flag: the flag itself, a small black-and-white check —
+ * the one mark every viewer reads without a legend. Fixed ink and paper, not
+ * theme tokens: a chequered flag is black and white in either theme. */
+.tower-flag-mark {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.tower-flag-mark i {
+  width: 16px;
+  height: 12px;
+  border-radius: 1px;
+  background: repeating-conic-gradient(#111 0% 25%, #fff 0% 50%) 0 0 / 8px 8px;
+  box-shadow: 0 0 0 1px var(--border-strong);
 }
 
 /* Retired / not running: stays in its place, reads as out. */
@@ -883,8 +947,13 @@
 /* Sector columns take the room the team name had: with them the team goes a
  * step earlier, so the tower still fits 1024px beside the energy column. */
 @media (max-width: 1100px) {
-  .tower--sectors .tower-team,
-  .tower--sectors thead th:nth-child(4) {
+  .tower--sectors .tower-team {
+    display: none;
+  }
+
+  /* Overall adds the class column; the stint gives way to it, since overall
+   * is for reading battles on track, not strategy. */
+  .tower--overall .tower-stint {
     display: none;
   }
 }
@@ -895,10 +964,6 @@
   }
 
   .tower-team {
-    display: none;
-  }
-
-  .tower thead th:nth-child(4) {
     display: none;
   }
 }

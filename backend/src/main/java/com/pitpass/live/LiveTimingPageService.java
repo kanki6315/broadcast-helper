@@ -84,6 +84,12 @@ public class LiveTimingPageService {
      * startPosition is the car's place in its class on the starting grid, in
      * a race only (the feed's grid is overall; ranked here within the class
      * as the tower has it), for places gained. Null off the grid.
+     * overall* are the car's place and gaps across every class, from the
+     * feed's overall standings (null until that channel has arrived).
+     * checkered: the car has taken the chequered flag — participant details'
+     * hasSeenCheckered, else, once the session is finished, a crossing of the
+     * line at or after the flag (see {@link #pastTheFlag}).
+     * bestLapDriver is the full name of the driver who set bestLapMs.
      */
     public record TowerCar(int position, String carNumber, Long entryId, String teamName, String vehicle,
                            String manufacturer, String status, Integer laps,
@@ -93,7 +99,18 @@ public class LiveTimingPageService {
                            boolean inPit, Long stintStartMs, Integer stintLaps, Double energyPct,
                            Double energyLapsLeft, Integer pitStops, Long lastPitMs,
                            String trackStatus, Integer currentSector, List<LiveParticipantDetails.SectorTime> sectors,
-                           List<Integer> bestSectorMs, Long idealMs, Integer startPosition, Double topSpeed) {
+                           List<Integer> bestSectorMs, Long idealMs, Integer startPosition, Double topSpeed,
+                           Integer overallPosition, Long overallGapMs, Integer overallGapLaps,
+                           Long overallIntervalMs, Integer overallIntervalLaps, boolean checkered,
+                           String bestLapDriver) {
+    }
+
+    /** A car's row in the feed's overall standings. Gaps are one or the other: laps when lapped. */
+    record Overall(int position, Long gapMs, Integer gapLaps, Long intervalMs, Integer intervalLaps) {
+    }
+
+    /** A driver as the tower names them: ours when resolved, else the feed's. */
+    private record Named(String name, String shortName, String lastName, String rating) {
     }
 
     public record SessionSummary(long sessionDbId, Long eventId, String name, String type, Long dateMs,
@@ -135,6 +152,12 @@ public class LiveTimingPageService {
     private final JdbcClient db;
     private final LiveTimingService live;
     private final LiveClassificationService classification;
+    /**
+     * Which driver set a lap or a sector time, once found in live_lap: a
+     * recorded lap's driver does not change, and the tower asks every poll.
+     * Keyed by session, so a new session never reads an old one's.
+     */
+    private final Map<String, Integer> setBy = new java.util.concurrent.ConcurrentHashMap<>();
 
     public LiveTimingPageService(JdbcClient db, LiveTimingService live, LiveClassificationService classification) {
         this.db = db;
@@ -158,6 +181,14 @@ public class LiveTimingPageService {
         Map<String, Double> topSpeeds = session == null ? Map.of() : topSpeeds(session);
         int sectorCount = LiveParticipantDetails.sectorCount(details);
         boolean race = order.session() != null && "RACE".equalsIgnoreCase(order.session().type());
+        Map<String, Overall> overall = overallOrder(live.state(AlKamelV2Properties.OVERALL_STANDINGS_CHANNEL));
+        Map<String, Long> crossings = session != null && order.session() != null && order.session().finished()
+                ? lastCrossings(session) : Map.of();
+        java.util.Set<String> pastFlag = pastTheFlag(race, overall, crossings,
+                order.session() == null ? null : order.session().clock());
+        if (setBy.size() > 20_000) {
+            setBy.clear();
+        }
         Map<String, LiveAnalysis.PitCar> pits = session == null ? Map.of()
                 : LiveAnalysis.pitStops(stints(session), Map.of()).stream()
                         .collect(Collectors.toMap(LiveAnalysis.PitCar::carNumber, Function.identity()));
@@ -166,6 +197,7 @@ public class LiveTimingPageService {
         for (var cls : order.classification().classes()) {
             List<TowerCar> cars = new ArrayList<>();
             Map<String, LiveParticipantDetails.Car> detailByCar = new HashMap<>();
+            Map<String, Integer> driving = new HashMap<>();
             Map<String, Integer> classStart = race ? classStart(cls.cars().stream().map(c -> c.carNumber()).toList(), grid) : Map.of();
             for (var car : cls.cars()) {
                 CarSummary s = summaries.get(car.carNumber());
@@ -177,14 +209,20 @@ public class LiveTimingPageService {
                 JsonNode feedCar = feedEntries == null ? null : feedEntries.get(car.carNumber());
                 Integer order2 = feedCar != null && feedCar.hasNonNull("currentDriver")
                         ? feedCar.path("currentDriver").asInt() : s == null ? null : s.stintDriverOrder();
-                DriverRow driver = order2 == null ? null : resolved.get(car.carNumber() + "#" + order2);
-                JsonNode feedDriver = order2 == null || feedCar == null ? null
-                        : feedCar.path("drivers").get(String.valueOf(order2));
-                String name = driver != null ? join(driver.firstName(), driver.lastName())
-                        : feedDriver == null ? null : join(text(feedDriver, "firstName"), text(feedDriver, "lastName"));
-                String shortName = driver != null ? driver.shortName() : feedDriver == null ? null : text(feedDriver, "shortName");
-                String rating = driver != null ? driver.rating() : feedDriver == null ? null : initial(text(feedDriver, "license"));
+                if (order2 != null) {
+                    driving.put(car.carNumber(), order2);
+                }
+                Named now = named(car.carNumber(), order2, resolved, feedCar);
                 int[] best = bestFromDb.get(car.carNumber());
+                Integer bestLap = best != null ? Integer.valueOf(best[0]) : s == null ? null : s.bestLap();
+                // The lap's own driver, so it names whoever set the time shown; participant details' when not recorded.
+                Integer bestBy = session == null || bestLap == null ? null : lapDriver(session, car.carNumber(), bestLap);
+                if (bestBy == null && d != null) {
+                    bestBy = d.bestLapDriver();
+                }
+                Named bestDriver = named(car.carNumber(), bestBy, resolved, feedCar);
+                Overall o = overall.get(car.carNumber());
+                boolean checkered = d != null && d.checkered() != null ? d.checkered() : pastFlag.contains(car.carNumber());
                 LiveTelemetry.CarEnergy energy = live.energy(car.carNumber(), cls.feedClass(), s == null ? null : s.stintOpenLap());
                 LiveAnalysis.PitCar pit = pits.get(car.carNumber());
                 Long lastPitMs = pit == null ? null : pit.stops().stream().map(LiveAnalysis.PitStop::durationMs)
@@ -194,9 +232,9 @@ public class LiveTimingPageService {
                         s != null && s.lastLap() != null ? Integer.valueOf(Math.max(s.lastLap(), race && car.laps() != null ? car.laps() : 0))
                                 : race ? car.laps() : null,
                         car.gapToLeaderMs(), car.gapToLeaderLaps(), car.intervalMs(), car.intervalLaps(),
-                        order2, name, shortName, rating,
+                        order2, now.name(), now.shortName(), now.rating(),
                         s == null ? null : s.lastLap(), s == null ? null : s.lastLapMs(),
-                        best != null ? Integer.valueOf(best[0]) : s == null ? null : s.bestLap(),
+                        bestLap,
                         best != null ? Integer.valueOf(best[1]) : s == null ? null : s.bestLapMs(),
                         (s != null && "PIT".equalsIgnoreCase(s.stintType())) || (d != null && d.inBox()),
                         s == null ? null : s.stintStartMs(), s == null ? null : s.lapsInStint(),
@@ -204,10 +242,15 @@ public class LiveTimingPageService {
                         session == null ? (d == null ? null : d.pitStops()) : pit == null ? 0 : pit.stops().size(), lastPitMs,
                         d == null ? null : d.trackStatus(), d == null ? null : d.currentSector(),
                         d == null ? null : d.sectors(), d == null ? null : d.bestSectorMs(),
-                        d == null ? null : d.idealMs(), classStart.get(car.carNumber()), topSpeeds.get(car.carNumber())));
+                        d == null ? null : d.idealMs(), classStart.get(car.carNumber()), topSpeeds.get(car.carNumber()),
+                        o == null ? null : o.position(), o == null ? null : o.gapMs(), o == null ? null : o.gapLaps(),
+                        o == null ? null : o.intervalMs(), o == null ? null : o.intervalLaps(), checkered,
+                        bestDriver.name()));
             }
             List<LiveParticipantDetails.ClassSector> bests = detailByCar.isEmpty() ? List.of()
-                    : LiveParticipantDetails.classBests(cars.stream().map(TowerCar::carNumber).toList(), detailByCar::get, sectorCount);
+                    : LiveParticipantDetails.classBests(cars.stream().map(TowerCar::carNumber).toList(), detailByCar::get, sectorCount)
+                            .stream().map(b -> b.withDriver(sectorDriver(session, b, detailByCar, driving, resolved, feedEntries)))
+                            .toList();
             classes.add(new TowerClass(cls.className(), cls.feedClass(),
                     colors.get(cls.className().trim().toLowerCase()), cars, bests, LiveParticipantDetails.idealLap(bests)));
         }
@@ -251,6 +294,156 @@ public class LiveTimingPageService {
                 .query((rs, i) -> out.put(rs.getString("car_number"), rs.getDouble("best")))
                 .list();
         return out;
+    }
+
+    /** The feed's overall standings: car number → its place and gaps across every class. */
+    static Map<String, Overall> overallOrder(JsonNode standings) {
+        Map<String, Overall> out = new HashMap<>();
+        if (standings == null) {
+            return out;
+        }
+        for (JsonNode row : standings) {
+            String car = row.path("participant").asText("");
+            int position = row.path("position").asInt(0);
+            if (car.isBlank() || position <= 0) {
+                continue;
+            }
+            out.put(car, new Overall(position,
+                    LiveClassification.gap(row, "gapFirstTime"), laps(row, "gapFirstLaps"),
+                    LiveClassification.gap(row, "gapPreviousTime"), laps(row, "gapPreviousLaps")));
+        }
+        return out;
+    }
+
+    // The spec's example sends laps behind as a negative number.
+    private static Integer laps(JsonNode row, String field) {
+        int n = row.path(field).asInt(0);
+        return n == 0 ? null : Math.abs(n);
+    }
+
+    /**
+     * The cars that have crossed the line under the chequered flag, for when
+     * the feed does not say (no participant details). Only called with
+     * crossings once the session is finished, which the spec defines as the
+     * flag being shown. In a race the flag is first shown to the overall
+     * leader, so it fell at the leader's last crossing; otherwise it falls
+     * when the clock runs out. Every car that crossed at or after it has seen
+     * it.
+     */
+    static java.util.Set<String> pastTheFlag(boolean race, Map<String, Overall> overall, Map<String, Long> crossings,
+                                             LiveTimingService.Clock clock) {
+        if (crossings.isEmpty()) {
+            return java.util.Set.of();
+        }
+        Long flag = null;
+        if (race) {
+            String leader = overall.entrySet().stream().filter(e -> e.getValue().position() == 1)
+                    .map(Map.Entry::getKey).findFirst().orElse(null);
+            flag = leader == null ? null : crossings.get(leader);
+        } else if (clock != null && clock.startMs() != null && clock.finalMs() != null) {
+            flag = clock.startMs() + clock.finalMs() + clock.stoppedMs();
+        }
+        if (flag == null) {
+            return java.util.Set.of();
+        }
+        long at = flag;
+        return crossings.entrySet().stream().filter(e -> e.getValue() >= at).map(Map.Entry::getKey)
+                .collect(Collectors.toSet());
+    }
+
+    /** Each car's newest crossing of the line: its last recorded lap's end. */
+    private Map<String, Long> lastCrossings(long session) {
+        Map<String, Long> out = new HashMap<>();
+        db.sql("""
+                SELECT car_number, max(start_time_ms + lap_time_ms) AS crossed FROM live_lap
+                WHERE session_db_id = :s AND lap_time_ms > 0 AND start_time_ms > 0 GROUP BY car_number
+                """)
+                .param("s", session)
+                .query((rs, i) -> out.put(rs.getString("car_number"), rs.getLong("crossed")))
+                .list();
+        return out;
+    }
+
+    /** The driver order of a recorded lap, or null while it is not recorded. */
+    private Integer lapDriver(long session, String car, int lap) {
+        String key = session + "|" + car + "|L" + lap;
+        Integer known = setBy.get(key);
+        if (known != null) {
+            return known;
+        }
+        Integer order = db.sql("""
+                SELECT driver_order FROM live_lap WHERE session_db_id = :s AND car_number = :car AND lap_number = :lap
+                """)
+                .param("s", session).param("car", car).param("lap", lap)
+                .query((rs, i) -> integer(rs, "driver_order")).optional().orElse(null);
+        if (order != null) {
+            setBy.put(key, order);
+        }
+        return order;
+    }
+
+    /**
+     * The surname of the driver who set a class's best time in a sector: the
+     * first recorded lap of the holder with that time there. A lap is
+     * recorded only once complete, so a best set on the lap the car is on now
+     * is not there yet — that one is the current driver's, while the car's
+     * newest time in that sector is still the best.
+     */
+    private String sectorDriver(Long session, LiveParticipantDetails.ClassSector best,
+                                Map<String, LiveParticipantDetails.Car> details, Map<String, Integer> driving,
+                                Map<String, DriverRow> resolved, JsonNode feedEntries) {
+        if (best.ms() == null || best.car() == null) {
+            return null;
+        }
+        LiveParticipantDetails.Car car = details.get(best.car());
+        int index = car == null ? -1 : car.bestSectorMs().indexOf(best.ms());
+        if (index < 0) {
+            return null;
+        }
+        Integer order = null;
+        if (session != null) {
+            String key = session + "|" + best.car() + "|S" + (index + 1) + "|" + best.ms();
+            order = setBy.get(key);
+            if (order == null) {
+                order = db.sql("""
+                        SELECT driver_order FROM live_lap
+                        WHERE session_db_id = :s AND car_number = :car AND sector_ms[:n] = :ms AND driver_order IS NOT NULL
+                        ORDER BY lap_number LIMIT 1
+                        """)
+                        .param("s", session).param("car", best.car()).param("n", index + 1).param("ms", best.ms())
+                        .query((rs, i) -> integer(rs, "driver_order")).optional().orElse(null);
+                if (order != null) {
+                    setBy.put(key, order);
+                }
+            }
+        }
+        if (order == null) {
+            LiveParticipantDetails.SectorTime newest = car.sectors().get(index);
+            if (newest != null && best.ms().equals(newest.ms())) {
+                order = driving.get(best.car());
+            }
+        }
+        JsonNode feedCar = feedEntries == null ? null : feedEntries.get(best.car());
+        return order == null ? null : named(best.car(), order, resolved, feedCar).lastName();
+    }
+
+    /** A car's driver by order: our resolved row first, else the feed's entry. All null for no order. */
+    private static Named named(String car, Integer order, Map<String, DriverRow> resolved, JsonNode feedCar) {
+        if (order == null) {
+            return new Named(null, null, null, null);
+        }
+        DriverRow driver = resolved.get(car + "#" + order);
+        if (driver != null) {
+            return new Named(join(driver.firstName(), driver.lastName()), driver.shortName(),
+                    driver.lastName() != null ? driver.lastName() : driver.shortName(), driver.rating());
+        }
+        JsonNode feedDriver = feedCar == null ? null : feedCar.path("drivers").get(String.valueOf(order));
+        if (feedDriver == null) {
+            return new Named(null, null, null, null);
+        }
+        String last = text(feedDriver, "lastName");
+        return new Named(join(text(feedDriver, "firstName"), last), text(feedDriver, "shortName"),
+                last != null ? last : text(feedDriver, "shortName"), initial(text(feedDriver, "license")));
     }
 
     /** The feed's starting grid: car number → overall grid position. */

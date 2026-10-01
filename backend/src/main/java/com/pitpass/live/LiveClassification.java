@@ -220,7 +220,7 @@ public final class LiveClassification {
     private static final long LONGEST_GAP_MS = Duration.ofDays(7).toMillis();
 
     // A car yet to cross the line carries a near-Long.MAX_VALUE gap, not an absent one.
-    private static Long gap(JsonNode row, String field) {
+    static Long gap(JsonNode row, String field) {
         long ms = row.path(field).asLong(0);
         return ms <= 0 || ms > LONGEST_GAP_MS ? null : ms;
     }

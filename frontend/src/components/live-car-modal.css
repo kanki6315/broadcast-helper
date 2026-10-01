@@ -113,6 +113,19 @@
   color: var(--text-muted);
 }
 
+/* Each driver's own best lap beside their name; the car's best in weight. */
+.lc-driver-best {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.lc-driver-best--car {
+  font-weight: 700;
+  color: var(--ink);
+}
+
 .lc-close {
   flex-shrink: 0;
 }

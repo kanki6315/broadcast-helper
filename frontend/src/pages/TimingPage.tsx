@@ -387,6 +387,7 @@ function TowerView({
   const wall = useTick(live && followingThis)
   const moves = useMoves(tower)
   const [shown, setShown] = useColumnChoice()
+  const [order, setOrder] = useOrderChoice()
 
   if (!tower) {
     return error ? (
@@ -456,6 +457,67 @@ function TowerView({
   const show = (c: OptionalColumn) => available[c] && shown[c]
   const sectorCount = show('sectors') ? feedSectors : 0
   const columns = 8 + (hasLaps ? 3 : 0) + sectorCount + (show('topSpeed') ? 1 : 0) + (show('pits') ? 1 : 0) + (show('energy') ? 1 : 0)
+  // Overall needs the feed's overall standings: class gaps cannot be compared across classes.
+  const hasOverall = tower.classes.some((c) => c.cars.some((car) => car.overallPosition != null))
+  const overall = order === 'overall' && hasOverall
+
+  // What each car is marked against is always its own class, in either order.
+  const marks = new Map(
+    tower.classes.map((cls) => [
+      cls.className,
+      { best: classBest(cls.cars), fastest: Math.max(0, ...cls.cars.map((c) => c.topSpeed ?? 0)) || null },
+    ]),
+  )
+  const row = (car: TowerCar, cls: TowerClass) => {
+    const m = marks.get(cls.className)!
+    return (
+      <TowerRow
+        key={`${car.carNumber}-${moves.get(car.carNumber) ?? 0}`}
+        moved={moves.has(car.carNumber)}
+        hasStarts={hasStarts && !overall}
+        car={car}
+        place={
+          overall
+            ? {
+                position: car.overallPosition,
+                gapMs: car.overallGapMs,
+                gapLaps: car.overallGapLaps,
+                intervalMs: car.overallIntervalMs,
+                intervalLaps: car.overallIntervalLaps,
+              }
+            : {
+                position: car.position,
+                gapMs: car.gapToLeaderMs,
+                gapLaps: car.gapToLeaderLaps,
+                intervalMs: car.intervalMs,
+                intervalLaps: car.intervalLaps,
+              }
+        }
+        classTag={overall ? cls : null}
+        classBestMs={m.best}
+        hasLaps={hasLaps}
+        sectorCount={sectorCount}
+        classSectors={cls.bestSectors}
+        topSpeed={show('topSpeed') ? { fastest: m.fastest, unit: tower.speedUnit } : null}
+        hasPits={show('pits')}
+        hasEnergy={show('energy')}
+        now={now}
+        unfiled={unfiled}
+        onOpen={() => setOpen({ car, cls })}
+      />
+    )
+  }
+  // Overall: every car in the feed's overall order; a car it has not placed yet goes last, in class order.
+  const overallRows = overall
+    ? tower.classes
+        .flatMap((cls, ci) => cls.cars.map((car) => ({ car, cls, ci })))
+        .sort(
+          (a, b) =>
+            (a.car.overallPosition ?? Infinity) - (b.car.overallPosition ?? Infinity) ||
+            a.ci - b.ci ||
+            a.car.position - b.car.position,
+        )
+    : []
 
   return (
     <>
@@ -471,18 +533,31 @@ function TowerView({
         utcOffsetHours={tower.session?.clock?.utcOffsetHours}
         logHref={`${base}?view=control`}
       />
-      <ColumnChoice available={available} shown={shown} onChange={setShown} />
-      <table className={`grid-table tower${sectorCount > 0 ? ' tower--sectors' : ''}`} aria-label="Running order by class">
+      <div className="tower-tools">
+        <OrderChoice order={overall ? 'overall' : 'class'} hasOverall={hasOverall} onChange={setOrder} />
+        <ColumnChoice available={available} shown={shown} onChange={setShown} />
+      </div>
+      <table
+        className={`grid-table tower${sectorCount > 0 ? ' tower--sectors' : ''}${overall ? ' tower--overall' : ''}`}
+        aria-label={overall ? 'Running order overall' : 'Running order by class'}
+      >
         <thead>
           <tr>
-            <th className="num" scope="col">
+            <th className="num" scope="col" title={overall ? 'Position overall' : 'Position in class'}>
               Pos
             </th>
             <th className="num" scope="col">
               #
             </th>
+            {overall && (
+              <th scope="col" title="Class, and position in it">
+                Class
+              </th>
+            )}
             <th scope="col">Driver</th>
-            <th scope="col">Team</th>
+            <th scope="col" className="tower-team">
+              Team
+            </th>
             <th className="num" scope="col">
               Laps
             </th>
@@ -510,14 +585,14 @@ function TowerView({
                     Top
                   </th>
                 )}
-                <th className="num" scope="col" title="Laps and time in the current stint">
+                <th className="num tower-stint" scope="col" title="Laps and time in the current stint">
                   Stint
                 </th>
               </>
             )}
             {show('pits') && (
-              <th className="num" scope="col" title="Pit stops, and the last stop's pit-lane time">
-                Pits
+              <th className="num" scope="col" title="The last stop's pit-lane time, then how many stops so far">
+                Last pit
               </th>
             )}
             {show('energy') && (
@@ -530,12 +605,11 @@ function TowerView({
             </th>
           </tr>
         </thead>
-        {tower.classes.map((cls) => {
-          const best = classBest(cls.cars)
-          const fastest = Math.max(0, ...cls.cars.map((c) => c.topSpeed ?? 0)) || null
-          const style = { '--class-color': cls.color ?? undefined } as CSSProperties
-          return (
-            <tbody key={cls.className} style={style}>
+        {overall ? (
+          <tbody>{overallRows.map(({ car, cls }) => row(car, cls))}</tbody>
+        ) : (
+          tower.classes.map((cls) => (
+            <tbody key={cls.className} style={{ '--class-color': cls.color ?? undefined } as CSSProperties}>
               <tr className="class-band">
                 <td colSpan={columns}>
                   <span className="band-label">
@@ -545,27 +619,10 @@ function TowerView({
                   <BestSectors cls={cls} />
                 </td>
               </tr>
-              {cls.cars.map((car) => (
-                <TowerRow
-                  key={`${car.carNumber}-${moves.get(car.carNumber) ?? 0}`}
-                  moved={moves.has(car.carNumber)}
-                  hasStarts={hasStarts}
-                  car={car}
-                  classBestMs={best}
-                  hasLaps={hasLaps}
-                  sectorCount={sectorCount}
-                  classSectors={cls.bestSectors}
-                  topSpeed={show('topSpeed') ? { fastest, unit: tower.speedUnit } : null}
-                  hasPits={show('pits')}
-                  hasEnergy={show('energy')}
-                  now={now}
-                  unfiled={unfiled}
-                  onOpen={() => setOpen({ car, cls })}
-                />
-              ))}
+              {cls.cars.map((car) => row(car, cls))}
             </tbody>
-          )
-        })}
+          ))
+        )}
       </table>
       <p className="timing-foot">
         {!unfiled && `${tower.matched} of ${tower.total} cars matched to ${tower.filedEventName ?? 'the event'}'s entries.`}
@@ -648,6 +705,53 @@ function ColumnChoice({
   )
 }
 
+type Order = 'class' | 'overall'
+const ORDER_KEY = 'pitpass.timing.order'
+
+/** By class or overall, remembered in this browser only, like the column choice. */
+function useOrderChoice(): [Order, (next: Order) => void] {
+  const [order, setOrder] = useState<Order>(() => {
+    try {
+      return localStorage.getItem(ORDER_KEY) === 'overall' ? 'overall' : 'class'
+    } catch {
+      return 'class'
+    }
+  })
+  const save = (next: Order) => {
+    setOrder(next)
+    try {
+      localStorage.setItem(ORDER_KEY, next)
+    } catch {
+      // Private window or blocked storage: the choice lasts until reload.
+    }
+  }
+  return [order, save]
+}
+
+/**
+ * The tower by class (a band per class) or overall (one list in the feed's
+ * overall order, for battles on track between classes). Overall waits for
+ * the feed's overall standings.
+ */
+function OrderChoice({ order, hasOverall, onChange }: { order: Order; hasOverall: boolean; onChange: (next: Order) => void }) {
+  return (
+    <div className="seg tower-order" role="group" aria-label="Running order">
+      {(['class', 'overall'] as const).map((o) => (
+        <button
+          key={o}
+          className={`seg-btn${order === o ? ' active' : ''}`}
+          aria-pressed={order === o}
+          disabled={o === 'overall' && !hasOverall}
+          title={o === 'overall' && !hasOverall ? "The feed's overall order has not arrived yet" : undefined}
+          onClick={() => onChange(o)}
+        >
+          {o === 'class' ? 'By class' : 'Overall'}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 /** How long a row that changed place stays marked. */
 const MOVE_MS = 4000
 
@@ -682,10 +786,21 @@ function useMoves(tower: Tower | null): Map<string, number> {
   return moves
 }
 
+/** Where a row stands in the order shown: in its class, or overall. */
+interface Place {
+  position: number | null
+  gapMs: number | null
+  gapLaps: number | null
+  intervalMs: number | null
+  intervalLaps: number | null
+}
+
 function TowerRow({
   moved,
   hasStarts,
   car,
+  place,
+  classTag,
   classBestMs,
   hasLaps,
   sectorCount,
@@ -700,6 +815,9 @@ function TowerRow({
   moved: boolean
   hasStarts: boolean
   car: TowerCar
+  place: Place
+  /** Overall: the car's class, shown on the row since there is no band. */
+  classTag: TowerClass | null
   classBestMs: number | null
   hasLaps: boolean
   sectorCount: number
@@ -716,10 +834,15 @@ function TowerRow({
   const isClassBest = classBestMs != null && car.bestLapMs === classBestMs
   const lastMark = lastLapMark(car, classBestMs)
   const stintTime = car.stintStartMs != null && now != null ? duration(now - car.stintStartMs) : null
+  const leader = place.position === 1
   return (
-    <tr className={`tower-row${running ? '' : ' tower-row--out'}${moved ? ' tower-row--moved' : ''}`} onClick={onOpen}>
+    <tr
+      className={`tower-row${running ? '' : ' tower-row--out'}${moved ? ' tower-row--moved' : ''}`}
+      style={classTag ? ({ '--class-color': classTag.color ?? undefined } as CSSProperties) : undefined}
+      onClick={onOpen}
+    >
       <td className="num tower-pos">
-        {car.position}
+        {place.position ?? ''}
         {hasStarts && <Gained places={placesGained(car)} />}
       </td>
       <td className="num tower-car">
@@ -735,6 +858,14 @@ function TowerRow({
           {car.carNumber}
         </button>
       </td>
+      {classTag && (
+        <td className="tower-class">
+          <span className="class-tag">{classTag.className}</span>{' '}
+          <span className="tower-class-pos" title={`P${car.position} in ${classTag.className}`}>
+            {car.position}
+          </span>
+        </td>
+      )}
       <td className="tower-driver">
         {car.driverName ?? <span className="muted">—</span>}
         {car.driverRating && (
@@ -752,8 +883,8 @@ function TowerRow({
         )}
       </td>
       <td className="num">{car.laps ?? ''}</td>
-      <td className="num">{car.position === 1 ? '' : gap(car.gapToLeaderMs, car.gapToLeaderLaps)}</td>
-      <td className="num tower-int">{car.position === 1 ? '' : gap(car.intervalMs, car.intervalLaps)}</td>
+      <td className="num">{leader ? '' : gap(place.gapMs, place.gapLaps)}</td>
+      <td className="num tower-int">{leader ? '' : gap(place.intervalMs, place.intervalLaps)}</td>
       {hasLaps && (
         <>
           <td
@@ -765,7 +896,15 @@ function TowerRow({
           </td>
           <td
             className={`num${isClassBest ? ' tower-class-best' : ''}`}
-            title={[isClassBest && 'Fastest in class', car.idealMs != null && `Ideal ${lapTime(car.idealMs)}`].filter(Boolean).join(' · ') || undefined}
+            title={
+              [
+                isClassBest && 'Fastest in class',
+                car.bestLapDriver && `Set by ${car.bestLapDriver}`,
+                car.idealMs != null && `Ideal ${lapTime(car.idealMs)}`,
+              ]
+                .filter(Boolean)
+                .join(' · ') || undefined
+            }
           >
             {lapTime(car.bestLapMs)}
             {isClassBest && <span className="sr-only"> (fastest in class)</span>}
@@ -793,10 +932,11 @@ function TowerRow({
       {hasPits && (
         <td className="num tower-pits">
           <span className="tower-pair">
-            {car.pitStops != null && <span>{car.pitStops}</span>}
-            {car.lastPitMs != null && (
-              <span className="muted" title="The last stop's pit-lane time">
-                {duration(car.lastPitMs)}
+            {car.lastPitMs != null && <span title="The last stop's pit-lane time">{duration(car.lastPitMs)}</span>}
+            {car.pitStops != null && car.pitStops > 0 && (
+              <span className="muted" title={`${car.pitStops} ${car.pitStops === 1 ? 'stop' : 'stops'} so far`}>
+                ×{car.pitStops}
+                <span className="sr-only"> stops</span>
               </span>
             )}
           </span>
@@ -817,6 +957,11 @@ function TowerRow({
       <td className="tower-state">
         {!running ? (
           <span className="tower-status">{car.status?.toLowerCase().replace(/_/g, ' ')}</span>
+        ) : car.checkered ? (
+          <span className="tower-flag-mark" title="Has taken the chequered flag">
+            <i aria-hidden="true" />
+            <span className="sr-only">Has taken the chequered flag</span>
+          </span>
         ) : car.inPit ? (
           <span className="tower-pit-mark">Pit</span>
         ) : car.trackStatus === 'OUT_LAP' ? (
@@ -876,6 +1021,7 @@ function BestSectors({ cls }: { cls: TowerClass }) {
         s.ms == null ? null : (
           <span key={i}>
             S{i + 1} <span className="band-num">{lapTime(s.ms)}</span> #{s.car}
+            {s.driver && <span className="band-driver"> {s.driver}</span>}
           </span>
         ),
       )}

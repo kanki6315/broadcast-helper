@@ -14,16 +14,18 @@ const assert = require('node:assert/strict');
   const now = Date.now();
   const car = (position, carNumber, extra={}) => ({position,carNumber,entryId:100+position,teamName:`Team ${carNumber}`,vehicle:null,manufacturer:null,
    status:'CLASSIFIED',laps:50,gapToLeaderMs:null,gapToLeaderLaps:null,intervalMs:null,intervalLaps:null,driverOrder:1,driverName:`Driver ${carNumber}`,
-   driverShortName:null,driverRating:'G',lastLap:50,lastLapMs:98_000,bestLap:12,bestLapMs:97_500,inPit:false,stintStartMs:now-30*60_000,stintLaps:18,energyPct:null,energyLapsLeft:null,pitStops:0,lastPitMs:null,trackStatus:null,currentSector:null,sectors:null,bestSectorMs:null,idealMs:null,startPosition:null,topSpeed:null,...extra});
+   driverShortName:null,driverRating:'G',lastLap:50,lastLapMs:98_000,bestLap:12,bestLapMs:97_500,inPit:false,stintStartMs:now-30*60_000,stintLaps:18,energyPct:null,energyLapsLeft:null,pitStops:0,lastPitMs:null,trackStatus:null,currentSector:null,sectors:null,bestSectorMs:null,idealMs:null,startPosition:null,topSpeed:null,
+   overallPosition:null,overallGapMs:null,overallGapLaps:null,overallIntervalMs:null,overallIntervalLaps:null,checkered:false,bestLapDriver:null,...extra});
   const sec = (ms, currentLap=true, valid=true) => ({ms,valid,currentLap});
   const session = {championship:'IMSA WeatherTech SportsCar Championship',event:'Petit Le Mans',name:'Race',type:'RACE',flag:'FULL_YELLOW',running:true,finished:false,
    clock:{finalType:'BY_TIME',startMs:now-10*60_000,finalMs:2*3_600_000,finalLaps:null,currentLap:null,stopMs:null,stoppedMs:60_000,utcOffsetHours:-4}};
   let tower = {state:'LIVE',eventId:22,eventName:'Petit Le Mans',filedEventId:22,filedEventName:'Petit Le Mans',session,sessionDbId:3150,feedClockMs:now-20_000,matched:4,total:5,speedUnit:'mph',classes:[
-   {className:'GTP',feedClass:'GTP',color:'#1a1a1a',bestSectors:[{ms:31_900,car:'31'},{ms:33_000,car:'7'},{ms:32_700,car:'31'}],idealMs:97_600,cars:[car(1,'7',{startPosition:3,topSpeed:151.3,energyPct:62.4,energyLapsLeft:9.6,pitStops:2,lastPitMs:65_000,
-    trackStatus:'TRACK',currentSector:3,sectors:[sec(32_000),sec(33_000),sec(32_900,false)],bestSectorMs:[32_000,33_000,32_800],idealMs:97_800}),car(2,'31',{startPosition:1,topSpeed:150.2,gapToLeaderMs:4200,intervalMs:4200,lastLapMs:97_100,bestLapMs:97_100,inPit:true,trackStatus:'BOX',currentSector:1,
+   {className:'GTP',feedClass:'GTP',color:'#1a1a1a',bestSectors:[{ms:31_900,car:'31',driver:'Aitken'},{ms:33_000,car:'7',driver:null},{ms:32_700,car:'31',driver:'Derani'}],idealMs:97_600,cars:[car(1,'7',{overallPosition:1,bestLapDriver:'Driver Seven',startPosition:3,topSpeed:151.3,energyPct:62.4,energyLapsLeft:9.6,pitStops:2,lastPitMs:65_000,
+    trackStatus:'TRACK',currentSector:3,sectors:[sec(32_000),sec(33_000),sec(32_900,false)],bestSectorMs:[32_000,33_000,32_800],idealMs:97_800}),car(2,'31',{overallPosition:3,overallGapMs:6100,overallIntervalMs:1900,startPosition:1,topSpeed:150.2,gapToLeaderMs:4200,intervalMs:4200,lastLapMs:97_100,bestLapMs:97_100,inPit:true,trackStatus:'BOX',currentSector:1,
     sectors:[sec(31_900,false),sec(33_100,false,false),null],bestSectorMs:[31_900,33_050,32_700]})]},
-   {className:'GTD PRO',feedClass:'GTDPRO',color:'#e30d0d',bestSectors:[],idealMs:null,cars:[car(1,'04',{lastLapMs:105_000,bestLapMs:105_000,trackStatus:'OUT_LAP'}),car(2,'4',{gapToLeaderLaps:1,intervalLaps:1,bestLapMs:104_000,entryId:null}),
-    car(3,'23',{status:'RETIRED',stintStartMs:null,stintLaps:null})]}],
+   {className:'GTD PRO',feedClass:'GTDPRO',color:'#e30d0d',bestSectors:[],idealMs:null,cars:[car(1,'04',{overallPosition:2,overallGapMs:4200,overallIntervalMs:4200,lastLapMs:105_000,bestLapMs:105_000,trackStatus:'OUT_LAP'}),
+    car(2,'4',{overallPosition:4,overallGapLaps:1,overallIntervalLaps:1,gapToLeaderLaps:1,intervalLaps:1,bestLapMs:104_000,entryId:null,checkered:true}),
+    car(3,'23',{overallPosition:5,status:'RETIRED',stintStartMs:null,stintLaps:null})]}],
    raceControl:{lines:[{key:'1',dayTimeMs:null,text:'FULL COURSE YELLOW',group:null,line:1,foreground:'#000000',background:'#ffff00',blink:true}],
     latest:{key:'3600000',dayTimeMs:Date.UTC(2026,9,4,18,5,9),text:'CAR 7 DRIVE THROUGH - PIT LANE SPEEDING',group:'GTP',line:2,foreground:null,background:'#ff0000',blink:false}}};
   const rcLog = {sessionDbId:3150,messages:[tower.raceControl.latest,
@@ -89,8 +91,14 @@ const assert = require('node:assert/strict');
   assert.equal(await row31.locator('td.tower-class-best:not(.tower-sector)').count(), 2, 'the GTP fastest lap is marked, on best and on the last lap that set it');
   assert.equal(await towerTable.locator('.tower-row').nth(2).locator('.tower-last.tower-pb').count(), 1, "#04's last lap was its own best, not the class's");
   assert.equal(await towerTable.locator('.tower-row').nth(0).locator('.tower-last.tower-pb, .tower-last.tower-class-best').count(), 0, 'a slower last lap is plain');
-  assert.match(await towerTable.locator('.tower-row').nth(0).locator('.tower-pits').innerText(), /2\s+1:05/, 'stops and the last one\'s pit-lane time');
-  assert.equal((await towerTable.locator('.tower-row').nth(1).locator('.tower-pits').innerText()).trim(), '0');
+  assert.match(await towerTable.locator('.tower-row').nth(0).locator('.tower-pits').innerText(), /^1:05\s+×2/, "the last stop's pit-lane time first, then the stops");
+  assert.equal(await towerTable.locator('thead th', {hasText:'Last pit'}).count(), 1);
+  assert.equal((await towerTable.locator('.tower-row').nth(1).locator('.tower-pits').innerText()).trim(), '', 'no stops yet: nothing to read');
+  assert.match(await towerTable.locator('.tower-row').nth(0).locator('td:not(.tower-last)').filter({hasText:'1:37.500'}).getAttribute('title'), /Set by Driver Seven/);
+  // Past the chequered flag: the flag itself, in place of any other mark.
+  assert.equal(await towerTable.locator('.tower-row').nth(3).locator('.tower-flag-mark').count(), 1);
+  assert.match(await towerTable.locator('.tower-row').nth(3).locator('.tower-state').innerText(), /chequered flag/);
+  assert.equal(await towerTable.locator('.tower-flag-mark').count(), 1);
 
   // Sectors as they are run: purple for the class's fastest, green for the car's own best, the previous lap's muted.
   assert.deepEqual(await towerTable.locator('thead th.tower-sector').allInnerTexts(), ['S1','S2','S3']);
@@ -102,7 +110,7 @@ const assert = require('node:assert/strict');
   assert.match(await s31.nth(0).getAttribute('class'), /tower-class-best/, 'a previous-lap time keeps its mark');
   assert.match(await s31.nth(1).getAttribute('class'), /tower-sector--invalid/);
   assert.equal((await s31.nth(2).innerText()).trim(), '');
-  assert.match((await towerTable.locator('.band-bests').first().innerText()).replace(/\s+/g,' '), /S1 31\.900 #31\s+S2 33\.000 #7\s+S3 32\.700 #31\s+Ideal 1:37\.600/);
+  assert.match((await towerTable.locator('.band-bests').first().innerText()).replace(/\s+/g,' '), /S1 31\.900 #31 Aitken\s+S2 33\.000 #7\s+S3 32\.700 #31 Derani\s+Ideal 1:37\.600/);
   assert.equal(await towerTable.locator('.class-band').nth(1).locator('.band-bests').count(), 0, 'no bests, no strip');
   assert.match(await towerTable.locator('.tower-row').nth(2).locator('.tower-state').innerText(), /Out/);
 
@@ -163,6 +171,25 @@ const assert = require('node:assert/strict');
   await choice.getByLabel('Top speed').uncheck();
   await page.locator('.tower-columns summary').click();
 
+  // Overall: one list in the feed's overall order, each car's class beside it, gaps overall.
+  await page.getByRole('group',{name:'Running order'}).getByRole('button',{name:'Overall'}).click();
+  const overallTable = page.getByRole('table',{name:'Running order overall'});
+  await overallTable.waitFor();
+  assert.equal(await overallTable.locator('.class-band').count(), 0);
+  assert.deepEqual(await overallTable.locator('.tower-car').allInnerTexts(), ['7','04','31','4','23']);
+  assert.deepEqual(await overallTable.locator('.tower-pos').allInnerTexts(), ['1','2','3','4','5'], 'overall places; no class gains');
+  assert.match((await overallTable.locator('.tower-row').nth(1).locator('.tower-class').innerText()).replace(/\s+/g,' '), /^GTD PRO 1$/);
+  assert.match(await overallTable.locator('.tower-row').nth(2).innerText(), /\+6\.100\s+\+1\.900/, "#31's gap and interval overall, not in class");
+  assert.equal(await page.evaluate(() => localStorage.getItem('pitpass.timing.order')), 'overall');
+  assert.equal(await overallTable.locator('.tower-row').nth(1).locator('.tower-last.tower-pb').count(), 1, 'marks still count against the class');
+  await page.setViewportSize({width:1024,height:900});
+  assert.equal(await page.evaluate(() => document.body.scrollWidth > document.documentElement.clientWidth), false, 'overall fits 1024px too');
+  await page.setViewportSize({width:1280,height:900});
+  if (process.env.TIMING_SHOT_DIR) await page.screenshot({path:`${process.env.TIMING_SHOT_DIR}/overall.png`});
+  await page.getByRole('group',{name:'Running order'}).getByRole('button',{name:'By class'}).click();
+  await towerTable.waitFor();
+  if (process.env.TIMING_SHOT_DIR) await page.screenshot({path:`${process.env.TIMING_SHOT_DIR}/by-class.png`});
+
   // Places gained in class since the start, and the field at a glance.
   assert.match(await towerTable.locator('.tower-row').nth(0).locator('.tower-pos').innerText(), /^1\s*▲2/);
   assert.match(await towerTable.locator('.tower-row').nth(1).locator('.tower-pos').innerText(), /^2\s*▼1/);
@@ -195,6 +222,10 @@ const assert = require('node:assert/strict');
   assert.match(await modal.locator('tbody tr').first().innerText(), /Derani[\s\S]*In progress/);
   assert.match(await modal.locator('tbody tr').nth(1).innerText(), /Pit in/);
   assert.equal(await modal.locator('.lc-best').count(), 1);
+  assert.match((await modal.locator('.lc-caption').innerText()).replace(/\s+/g,' '), /^Best lap 1:37\.800 by Aitken \(lap 2\)/, 'who set the fastest lap');
+  assert.match(await modal.locator('.lc-drivers li').nth(0).locator('.lc-driver-best--car').innerText(), /1:37\.800/);
+  assert.equal(await modal.locator('.lc-drivers li').nth(1).locator('.lc-driver-best').count(), 0, 'no completed lap for Derani yet');
+  if (process.env.TIMING_SHOT_DIR) await page.screenshot({path:`${process.env.TIMING_SHOT_DIR}/car.png`});
   assert.match(await modal.locator('tbody tr').nth(1).innerText(), /93\.0%\s+3\.5%/, 'energy at the line and used');
   await modal.getByRole('tab',{name:/Stints/}).click();
   assert.match(await modal.locator('tbody tr').first().innerText(), /Derani[\s\S]*Current/);

@@ -34,18 +34,27 @@ final class LiveParticipantDetails {
      * One car. trackStatus is BOX, OUT_LAP, TRACK or STOPPED. sectors and
      * bestSectorMs are indexed from sector 1 and padded to the tower's sector
      * count; idealMs is the sum of the car's own best sectors, null until it
-     * has one in every sector.
+     * has one in every sector. checkered is hasSeenCheckered (null when the
+     * server leaves it out); bestLapDriver the driver order bestLap.driver
+     * names.
      */
     record Car(String trackStatus, Integer currentSector, Integer pitStops, List<SectorTime> sectors,
-               List<Integer> bestSectorMs, Long idealMs) {
+               List<Integer> bestSectorMs, Long idealMs, Boolean checkered, Integer bestLapDriver) {
 
         boolean inBox() {
             return "BOX".equalsIgnoreCase(trackStatus);
         }
     }
 
-    /** A class's fastest time in one sector and the car that set it. */
-    public record ClassSector(Integer ms, String car) {
+    /**
+     * A class's fastest time in one sector, the car that set it and — filled
+     * in by the tower, from the laps — the surname of the driver who did.
+     */
+    public record ClassSector(Integer ms, String car, String driver) {
+
+        ClassSector withDriver(String name) {
+            return new ClassSector(ms, car, name);
+        }
     }
 
     /** The highest sector number any car reports: the tower's sector count. */
@@ -88,7 +97,9 @@ final class LiveParticipantDetails {
         }
         return new Car(node.hasNonNull("status") ? node.path("status").asText() : null, current,
                 node.hasNonNull("pitStops") ? node.path("pitStops").asInt() : null,
-                last, best, complete ? ideal : null);
+                last, best, complete ? ideal : null,
+                node.hasNonNull("hasSeenCheckered") ? node.path("hasSeenCheckered").asBoolean() : null,
+                positive(node.path("bestLap").path("driver")));
     }
 
     /** Per sector, the class's fastest best and who holds it (the earlier car in the list on a tie). */
@@ -105,7 +116,7 @@ final class LiveParticipantDetails {
                     holder = number;
                 }
             }
-            out.add(new ClassSector(ms, holder));
+            out.add(new ClassSector(ms, holder, null));
         }
         return out;
     }

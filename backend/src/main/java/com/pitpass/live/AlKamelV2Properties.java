@@ -41,6 +41,12 @@ public record AlKamelV2Properties(
      */
     public static final List<String> RACE_CONTROL_CHANNELS = List.of("raceControl.messages", "raceControl.currentMessages");
 
+    /**
+     * The running order across every class, for the tower's overall view. One
+     * row per car, like standings.byClass.active, so it is always joined.
+     */
+    public static final String OVERALL_STANDINGS_CHANNEL = "timing.session.standings.overall.active";
+
     /** Raw inbound lines kept for replay — the only test data this feed will ever have. */
     public record Recording(boolean enabled, String directory, String bucket,
                             int segmentMinutes, int maxLocalMegabytes) {
@@ -84,10 +90,13 @@ public record AlKamelV2Properties(
         return analysis != null && analysis.enabled();
     }
 
-    /** The configured channels, plus the analysis, participant-details and race control channels when those are on. */
+    /** The configured channels and the overall standings, plus the analysis, participant-details and race control channels when those are on. */
     public List<String> joinedChannels() {
         List<String> joined = new java.util.ArrayList<>();
         channels.forEach(c -> joined.add(c.trim()));
+        if (!joined.contains(OVERALL_STANDINGS_CHANNEL)) {
+            joined.add(OVERALL_STANDINGS_CHANNEL);
+        }
         if (analysisEnabled()) {
             ANALYSIS_CHANNELS.stream().filter(c -> !joined.contains(c)).forEach(joined::add);
         }
