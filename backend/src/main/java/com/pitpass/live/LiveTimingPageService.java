@@ -597,13 +597,17 @@ public class LiveTimingPageService {
     /**
      * IMSA telemetry's energy at the line, by lap, for an Al Kamel car. The
      * telemetry's car number exactly first (#04 is not #4), then without
-     * leading zeros only when that names one car.
+     * leading zeros only when that names one car that is not itself another
+     * Al Kamel car in the session — #04 never shows #4's energy.
      */
     private Map<Integer, Float> energyByLap(long session, String carNumber) {
         Map<String, Map<Integer, Float>> byCar = new HashMap<>();
         db.sql("""
-                SELECT car_number, lap_number, energy_pct FROM live_energy_lap
+                SELECT car_number, lap_number, energy_pct FROM live_energy_lap e
                 WHERE session_db_id = :s AND ltrim(car_number, '0') = ltrim(:car, '0')
+                  AND (car_number = :car
+                       OR NOT EXISTS (SELECT 1 FROM live_car c WHERE c.session_db_id = :s AND c.car_number = e.car_number)
+                          AND NOT EXISTS (SELECT 1 FROM live_lap l WHERE l.session_db_id = :s AND l.car_number = e.car_number))
                 """)
                 .param("s", session).param("car", carNumber)
                 .query((rs, i) -> byCar.computeIfAbsent(rs.getString("car_number"), k -> new HashMap<>())

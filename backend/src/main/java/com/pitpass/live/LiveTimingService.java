@@ -286,7 +286,8 @@ public class LiveTimingService implements SmartLifecycle {
             return null;
         }
         return telemetry.telemetry().energy(carNumber, feedClass, stintOpenLap, System.currentTimeMillis(),
-                Math.max(1, telemetryProps.staleSeconds()) * 1000L);
+                Math.max(1, telemetryProps.staleSeconds()) * 1000L,
+                n -> tree.copyOf("timing.session.entry." + n) != null);
     }
 
     /** The event the current session is filed under (live_session), or null. Drivers are matched against it. */

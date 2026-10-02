@@ -206,6 +206,11 @@ class ImsaTelemetryTest {
         ambiguous.accept(decoder.decode(cars(car("4", 60.0, 0, false, "GTD"))), 0, Map.of("04", 5, "004", 5));
         assertTrue(ambiguous.accept(decoder.decode(cars(car("4", 58.0, 0, false, "GTD"))), 0, Map.of("04", 6, "004", 6))
                 .isEmpty(), "never a guess between #04 and #004");
+        LiveTelemetry both = new LiveTelemetry();
+        both.accept(decoder.decode(cars(car("4", 60.0, 0, false, "GTD"), car("04", 70.0, 0, false, "GTD"))), 0, Map.of("04", 5));
+        assertEquals(List.of("04"), both.accept(decoder.decode(cars(car("4", 58.0, 0, false, "GTD"),
+                        car("04", 68.0, 0, false, "GTD"))), 0, Map.of("04", 6)).stream().map(LiveTelemetry.LapSample::car).toList(),
+                "telemetry's 4 never takes #04's count while telemetry also sends 04");
 
         LiveTelemetry own = new LiveTelemetry();
         own.accept(decoder.decode(cars(car("10", 40.0, 50, false))), 0, Map.of("10", 49));
@@ -243,5 +248,17 @@ class ImsaTelemetryTest {
         LiveTelemetry only = new LiveTelemetry();
         feed(only, "023", 55, 1);
         assertEquals(55.0, only.energy("23", null, null, 0, 15_000).energyPct(), "unambiguous without leading zeros");
+    }
+
+    @Test
+    void aLeadingZeroNeverBorrowsAnotherAlKamelCarsEnergy() {
+        // Petit Le Mans 2026: the GTD Pro Corvette #4 sends energy, the LMP2 #04 sends nothing.
+        LiveTelemetry t = new LiveTelemetry();
+        feed(t, "4", 40, 1);
+        java.util.Set<String> grid = java.util.Set.of("4", "04");
+        assertNull(t.energy("04", null, null, 0, 15_000, grid::contains), "#4 is on the grid, so its energy is its own");
+        assertEquals(40.0, t.energy("4", null, null, 0, 15_000, grid::contains).energyPct());
+        assertEquals(40.0, t.energy("04", null, null, 0, 15_000, java.util.Set.of("04")::contains).energyPct(),
+                "with no #4 on the grid, telemetry's 4 is still #04");
     }
 }
