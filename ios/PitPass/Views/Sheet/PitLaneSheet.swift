@@ -247,13 +247,15 @@ struct PitLaneSheet: View {
     }
 
     private enum Item {
-        case row(PitAssignmentRow)
+        /// shared: another car of this series is in the same box.
+        case row(PitAssignmentRow, shared: Bool)
         case mark(PitLandmark)
         case gap(Int)
     }
 
     private func items(_ saved: PitAssignments) -> [Item] {
-        let rowByBox = Dictionary(saved.rows.map { ($0.boxNumber, $0) }, uniquingKeysWith: { a, _ in a })
+        // Rows are per car: a shared box has several, kept in PDF order.
+        let rowsByBox = Dictionary(grouping: saved.rows, by: \.boxNumber)
         let marksAfter = Dictionary(grouping: saved.landmarks, by: \.afterBox)
         let maxBox = max(0, (saved.rows.map(\.boxNumber) + saved.landmarks.map(\.afterBox)).max() ?? 0)
         var out: [Item] = []
@@ -262,7 +264,10 @@ struct PitLaneSheet: View {
         for m in marksAfter[0] ?? [] { out.append(.mark(m)) }
         if maxBox >= 1 {
             for box in 1...maxBox {
-                if let row = rowByBox[box] { flush(); out.append(.row(row)) } else { gap += 1 }
+                if let rows = rowsByBox[box] {
+                    flush()
+                    rows.forEach { out.append(.row($0, shared: rows.count > 1)) }
+                } else { gap += 1 }
                 if let marks = marksAfter[box] { flush(); marks.forEach { out.append(.mark($0)) } }
             }
         }
@@ -279,7 +284,7 @@ struct PitLaneSheet: View {
                 case let .gap(n):
                     Text(n == 1 ? "1 box · other series" : "\(n) boxes · other series")
                         .font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted).padding(.vertical, 2)
-                case let .row(r):
+                case let .row(r, shared):
                     let color = r.className.flatMap { colors[$0] }
                     Button {
                         startGuidance(Target(boxNumber: r.boxNumber, carNumber: r.carNumber, team: r.entryTeam ?? r.teamName ?? ""))
@@ -289,14 +294,15 @@ struct PitLaneSheet: View {
                         Text("#\(r.carNumber)").font(PP.mono(PP.TextSize.sm, weight: 700)).foregroundStyle(PP.ink).frame(width: 44, alignment: .leading)
                         Text(r.entryTeam ?? r.teamName ?? "").font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.text).lineLimit(1)
                         Spacer(minLength: 0)
+                        if shared { Text("shared box").font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted).lineLimit(1) }
                         if let cls = r.className { ClassTag(name: cls, color: color ?? ClassInfo.defaultColor) }
                     }
                     .padding(.vertical, 3).padding(.horizontal, PP.Space.s2)
-                    .background((color.flatMap { Color(cssHex: $0) } ?? PP.textMuted).opacity(target?.boxNumber == r.boxNumber ? 0.18 : 0.08))
+                    .background((color.flatMap { Color(cssHex: $0) } ?? PP.textMuted).opacity(target?.boxNumber == r.boxNumber && target?.carNumber == r.carNumber ? 0.18 : 0.08))
                     .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Guide me to box \(r.boxNumber), #\(r.carNumber) \(r.entryTeam ?? r.teamName ?? "")")
+                    .accessibilityLabel("Guide me to box \(r.boxNumber)\(shared ? " (shared)" : ""), #\(r.carNumber) \(r.entryTeam ?? r.teamName ?? "")")
                 }
             }
         }

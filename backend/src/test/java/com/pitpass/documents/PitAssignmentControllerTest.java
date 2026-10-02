@@ -80,11 +80,11 @@ class PitAssignmentControllerTest {
                 {
                   "series": ["IWSC", "IMPC"],
                   "boxes": [
-                    {"box": 1, "cars": {"IWSC": {"car_number": "31", "team": "Cadillac Whelen"},
-                                        "IMPC": {"car_number": "98", "team": "Bryan Herta Autosport"}}},
-                    {"box": 2, "cars": {"IMPC": {"car_number": "44", "team": "Ibiza Farm Motorsport"}}},
-                    {"box": 3, "cars": {"IWSC": {"car_number": "13", "team": "13 Autosport"}}},
-                    {"box": 4, "cars": {"IWSC": {"car_number": "99", "team": "Unknown Racing"}}}
+                    {"box": 1, "cars": {"IWSC": [{"car_number": "31", "team": "Cadillac Whelen"}],
+                                        "IMPC": [{"car_number": "98", "team": "Bryan Herta Autosport"}]}},
+                    {"box": 2, "cars": {"IMPC": [{"car_number": "44", "team": "Ibiza Farm Motorsport"}]}},
+                    {"box": 3, "cars": {"IWSC": [{"car_number": "13", "team": "13 Autosport"}]}},
+                    {"box": 4, "cars": {"IWSC": [{"car_number": "99", "team": "Unknown Racing"}]}}
                   ],
                   "landmarks": [{"after_box": 0, "label": "PENALTY BOX | MICHELIN"}]
                 }
@@ -112,8 +112,8 @@ class PitAssignmentControllerTest {
         var proposal = propose(event, """
                 {
                   "series": ["IWSC"],
-                  "boxes": [{"box": 5, "cars": {"IWSC": {"car_number": "4",
-                                                          "team": "Corvette Racing by Pratt Miller Motorsports"}}}],
+                  "boxes": [{"box": 5, "cars": {"IWSC": [{"car_number": "4",
+                                                          "team": "Corvette Racing by Pratt Miller Motorsports"}]}}],
                   "landmarks": []
                 }
                 """);
@@ -121,11 +121,37 @@ class PitAssignmentControllerTest {
     }
 
     @Test
+    void proposeSplitsASharedBoxIntoOneRowPerCar() throws Exception {
+        long event = eventId();
+        long lap = entry(event, "6", "GS", "LAP Motorsports");
+        long vgr = entry(event, "99", "GS", "Victor Gonzalez Racing");
+        entry(event, "21", "TCR", "Victor Gonzalez Racing");
+
+        var proposal = propose(event, """
+                {
+                  "series": ["IMPC", "PCCNA"],
+                  "boxes": [
+                    {"box": 1, "cars": {"IMPC": [{"car_number": "6", "team": "LAP Motorsports"},
+                                                 {"car_number": "99", "team": "Victor Gonzalez Racing"}],
+                                        "PCCNA": [{"car_number": "77", "team": "Topp Racing"}]}},
+                    {"box": 2, "cars": {"IMPC": [{"car_number": "21", "team": "Victor Gonzalez Racing"}]}}
+                  ],
+                  "landmarks": []
+                }
+                """);
+
+        assertEquals(Map.of("IMPC", 3, "PCCNA", 0), proposal.matchCounts());
+        assertEquals(List.of(1, 1, 2), proposal.rows().stream().map(r -> r.boxNumber()).toList());
+        assertEquals(List.of(lap, vgr), proposal.rows().subList(0, 2).stream()
+                .map(PitAssignmentController.ProposalRow::entryId).toList());
+    }
+
+    @Test
     void proposeWithNoMatchingColumnIsUnprocessable() {
         long event = eventId();
         entry(event, "31", "GTP", "Cadillac Whelen");
         ResponseStatusException e = assertThrows(ResponseStatusException.class, () -> propose(event, """
-                {"series": ["LST"], "boxes": [{"box": 1, "cars": {"LST": {"car_number": "63", "team": "TR3"}}}],
+                {"series": ["LST"], "boxes": [{"box": 1, "cars": {"LST": [{"car_number": "63", "team": "TR3"}]}}],
                  "landmarks": []}
                 """));
         assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, e.getStatusCode());
@@ -164,6 +190,24 @@ class PitAssignmentControllerTest {
     }
 
     @Test
+    void saveKeepsASharedBoxsCarsInOrder() {
+        long event = eventId();
+        long lap = entry(event, "6", "GS", "LAP Motorsports");
+        document(event, null);
+
+        controller.save(event, new PitAssignmentController.SaveRequest(
+                List.of(new PitAssignmentController.SaveRow(1, "99", "Victor Gonzalez Racing", null),
+                        new PitAssignmentController.SaveRow(2, "21", null, null),
+                        new PitAssignmentController.SaveRow(1, "6", "LAP Motorsports", lap)),
+                List.of()));
+
+        var saved = controller.get(event);
+        assertEquals(List.of("99", "6", "21"),
+                saved.rows().stream().map(PitAssignmentController.AssignmentRow::carNumber).toList());
+        assertEquals("LAP Motorsports", saved.rows().get(1).entryTeam());
+    }
+
+    @Test
     void saveReplacesWholesale() {
         long event = eventId();
         document(event, null);
@@ -189,7 +233,7 @@ class PitAssignmentControllerTest {
         assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, assertThrows(ResponseStatusException.class,
                 () -> controller.save(event, new PitAssignmentController.SaveRequest(
                         List.of(new PitAssignmentController.SaveRow(1, "31", null, null),
-                                new PitAssignmentController.SaveRow(1, "45", null, null)),
+                                new PitAssignmentController.SaveRow(1, "31 ", null, null)),
                         List.of()))).getStatusCode());
 
         assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, assertThrows(ResponseStatusException.class,
