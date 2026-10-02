@@ -355,21 +355,26 @@ private struct TowerGrid: View {
         ]
         if overall { ident.append(.text("class", "Class", width: 118)) }
         ident.append(.text("driver", "Driver", width: 200))
+        // Pit, chequered flag, out lap, retired: pinned at the tower's edge, so
+        // they never sit off-screen past the sectors on an iPad's width.
+        ident.append(GridColumn(id: "state", width: 64) { Text("").accessibilityHidden(true) })
         var data: [GridColumn] = [
             .text("team", "Team", width: 170),
             .text("laps", "Laps", width: 54, align: .trailing),
             .text("gap", "Gap", width: 96, align: .trailing),
             .text("int", "Int", width: 92, align: .trailing),
         ]
+        // Energy beside the gaps rather than after the sectors: the first screen holds it.
+        if hasEnergy { data.append(.text("energy", "Energy", width: 104, align: .trailing)) }
         if hasLaps {
             data += [.text("last", "Last", width: 92, align: .trailing),
                      .text("best", "Best", width: 96, align: .trailing)]
             data += (0..<sectorCount).map { .text("s\($0)", "S\($0 + 1)", width: 80, align: .trailing) }
             data.append(.text("stint", "Stint", width: 116, align: .trailing))
         }
-        if hasPits { data.append(.text("pits", "Last pit", width: 100, align: .trailing)) }
-        if hasEnergy { data.append(.text("energy", "Energy", width: 104, align: .trailing)) }
-        data.append(GridColumn(id: "state", width: 70, growthWeight: 1) { Text("").accessibilityHidden(true) })
+        if hasPits { data.append(GridColumn(id: "pits", width: 100, align: .trailing, growthWeight: 1) {
+            Text("Last pit").font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted)
+        }) }
 
         // What each car is marked against is always its own class, in either order.
         let bests = Dictionary(tower.classes.map { ($0.className, TimingFormat.classBest($0.cars)) }, uniquingKeysWith: { a, _ in a })
@@ -439,6 +444,14 @@ private struct TowerGrid: View {
             GridCell.num(leader ? "" : TimingFormat.gap(ms: place.gapMs, laps: place.gapLaps), muted: muted),
             GridCell.num(leader ? "" : TimingFormat.gap(ms: place.intervalMs, laps: place.intervalLaps), muted: muted),
         ]
+        if hasEnergy {
+            cells.append(AnyView(HStack(spacing: PP.Space.s2) {
+                if let e = car.energyPct { Text("\(Int(e.rounded()))%").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.text) }
+                if let left = car.energyLapsLeft {
+                    Text("~\(Int(left)) L").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.textMuted)
+                }
+            }))
+        }
         if hasLaps {
             cells.append(lapCell(car.lastLapMs, mark: lastMark, muted: muted))
             cells.append(lapCell(car.bestLapMs, mark: isClassBest ? .classBest : nil, muted: muted,
@@ -460,15 +473,6 @@ private struct TowerGrid: View {
                 }
             }))
         }
-        if hasEnergy {
-            cells.append(AnyView(HStack(spacing: PP.Space.s2) {
-                if let e = car.energyPct { Text("\(Int(e.rounded()))%").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.text) }
-                if let left = car.energyLapsLeft {
-                    Text("~\(Int(left)) L").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.textMuted)
-                }
-            }))
-        }
-        cells.append(stateCell(car))
 
         let driver = AnyView(HStack(spacing: 6) {
             Text(car.driverName ?? "—").font(PP.sans(PP.TextSize.sm, weight: 500))
@@ -481,6 +485,7 @@ private struct TowerGrid: View {
         var ident = [positionCell(car, place: place, cls: cls, muted: muted), GridCell.car(car.carNumber)]
         if overall { ident.append(classCell(car, cls: cls)) }
         ident.append(driver)
+        ident.append(stateCell(car))
         let gained = hasStarts ? TimingFormat.placesGained(car).flatMap { $0 == 0 ? nil : "\($0 > 0 ? "up" : "down") \(abs($0)) since the start" } : nil
         let label = [place.position.map { "P\($0)\(overall ? " overall" : "")" }, overall ? "\(cls.className) P\(car.position)" : nil, gained,
                      "car \(car.carNumber)", car.driverName, car.teamName,
@@ -528,19 +533,23 @@ private struct TowerGrid: View {
 
     /// Overall: the car's class as a tag and its place in it.
     private func classCell(_ car: TowerCar, cls: TowerClass) -> AnyView {
+        // Every tag the same width, so the column reads as one stripe whatever the class's name.
         AnyView(HStack(spacing: 6) {
             Text(cls.className).font(PP.sans(PP.TextSize.xs, weight: 700)).lineLimit(1)
                 .padding(.horizontal, 6).padding(.vertical, 1)
+                .frame(maxWidth: .infinity)
                 .foregroundStyle(classInk(cls.color ?? ""))
                 .background(Color(cssHex: cls.color ?? "") ?? PP.surface2, in: RoundedRectangle(cornerRadius: PP.Radius.xs))
                 .overlay(RoundedRectangle(cornerRadius: PP.Radius.xs).strokeBorder(PP.borderStrong))
             Text(String(car.position)).font(PP.mono(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted)
+                .frame(width: 20, alignment: .trailing)
         })
     }
 
     private func stateCell(_ car: TowerCar) -> AnyView {
         if !car.running {
-            return GridCell.text(car.status?.lowercased().replacingOccurrences(of: "_", with: " ") ?? "", muted: true)
+            return AnyView(Text(car.status?.lowercased().replacingOccurrences(of: "_", with: " ") ?? "")
+                .font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted).lineLimit(1))
         }
         if car.checkered == true { return AnyView(ChequeredMark()) }
         if !car.inPit {
@@ -550,7 +559,9 @@ private struct TowerGrid: View {
                     .overlay(RoundedRectangle(cornerRadius: PP.Radius.xs).strokeBorder(PP.borderStrong))
                     .accessibilityLabel("Out lap"))
             }
-            return car.trackStatus == "STOPPED" ? GridCell.text("stopped", muted: true) : GridCell.empty()
+            return car.trackStatus == "STOPPED"
+                ? AnyView(Text("stopped").font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted).lineLimit(1))
+                : GridCell.empty()
         }
         return AnyView(Text("Pit").font(PP.sans(PP.TextSize.xs, weight: 700)).foregroundStyle(PP.ink)
             .padding(.horizontal, 6).padding(.vertical, 1)

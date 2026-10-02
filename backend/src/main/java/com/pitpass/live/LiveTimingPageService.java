@@ -239,7 +239,8 @@ public class LiveTimingPageService {
                         (s != null && "PIT".equalsIgnoreCase(s.stintType())) || (d != null && d.inBox()),
                         s == null ? null : s.stintStartMs(), s == null ? null : s.lapsInStint(),
                         energy == null ? null : energy.energyPct(), energy == null ? null : energy.lapsLeft(),
-                        session == null ? (d == null ? null : d.pitStops()) : pit == null ? 0 : pit.stops().size(), lastPitMs,
+                        // Boxed: an int branch would unbox a null pitStops() and throw.
+                        session == null ? (d == null ? null : d.pitStops()) : Integer.valueOf(pit == null ? 0 : pit.stops().size()), lastPitMs,
                         d == null ? null : d.trackStatus(), d == null ? null : d.currentSector(),
                         d == null ? null : d.sectors(), d == null ? null : d.bestSectorMs(),
                         d == null ? null : d.idealMs(), classStart.get(car.carNumber()), topSpeeds.get(car.carNumber()),
