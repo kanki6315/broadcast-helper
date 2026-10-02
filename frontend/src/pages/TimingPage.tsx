@@ -1162,13 +1162,36 @@ function DriveTimeView({ session, tower }: { session: SessionSummary; tower: Tow
 
 const STATUS_ORDER = ['OVER_MAX', 'UNDER_MIN', 'OK', 'NO_RULE']
 
+/**
+ * The cars a number search keeps: each comma- or space-separated number picks
+ * the car with exactly that number when there is one (#4 is not #04 or #44),
+ * otherwise every car whose number starts with it, so typing narrows as it goes.
+ */
+function carsMatching(query: string, cars: string[]): Set<string> | null {
+  const wanted = query
+    .split(/[\s,]+/)
+    .map((t) => t.replace(/^#/, '').toLowerCase())
+    .filter(Boolean)
+  if (wanted.length === 0) return null
+  const keep = new Set<string>()
+  for (const w of wanted) {
+    const exact = cars.filter((c) => c.toLowerCase() === w)
+    for (const c of exact.length > 0 ? exact : cars.filter((c) => c.toLowerCase().startsWith(w))) keep.add(c)
+  }
+  return keep
+}
+
 function DriveTable({ drive, classColors }: { drive: DriveTimeResponse; classColors: Map<string, string | null> }) {
+  const [query, setQuery] = useState('')
   if (drive.drivers.length === 0) {
     return <div className="empty-state">No drivers recorded for this session yet.</div>
   }
+  const allCars = [...new Set(drive.drivers.map((d) => d.car))]
+  const keep = carsMatching(query, allCars)
   // Class → car → drivers, classes in first-seen order, cars by number.
   const classes = new Map<string, Map<string, DriveTimeResult[]>>()
   for (const d of drive.drivers) {
+    if (keep && !keep.has(d.car)) continue
     const cls = d.className ?? 'Unmatched'
     if (!classes.has(cls)) classes.set(cls, new Map())
     const cars = classes.get(cls)!
@@ -1179,6 +1202,21 @@ function DriveTable({ drive, classColors }: { drive: DriveTimeResponse; classCol
   const hasRules = drive.rules.length > 0
   return (
     <>
+      <div className="drive-search">
+        <input
+          type="search"
+          inputMode="numeric"
+          value={query}
+          placeholder="Car numbers, e.g. 4, 911"
+          aria-label="Filter by car number"
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {keep && (
+          <span className="muted" aria-live="polite">
+            {keep.size === 0 ? 'No car with that number' : `${keep.size} of ${allCars.length} cars`}
+          </span>
+        )}
+      </div>
       {hasRules && (
         <p className="timing-summary" aria-label="Drive time summary">
           {counts
@@ -1190,48 +1228,50 @@ function DriveTable({ drive, classColors }: { drive: DriveTimeResponse; classCol
             ))}
         </p>
       )}
-      <table className="grid-table drive" aria-label="Drive time by driver">
-        <thead>
-          <tr>
-            <th className="num" scope="col">
-              #
-            </th>
-            <th scope="col">Driver</th>
-            <th scope="col">Rating</th>
-            <th className="num" scope="col" title="Track time: pit lane excluded, as the rule counts it">
-              Drive time
-            </th>
-            <th scope="col">
-              <span className="sr-only">Against the rule</span>
-            </th>
-            <th className="num" scope="col">
-              Min
-            </th>
-            <th className="num" scope="col">
-              Max
-            </th>
-            <th scope="col">Status</th>
-          </tr>
-        </thead>
-        {[...classes.entries()].map(([cls, cars]) => (
-          <tbody key={cls} style={{ '--class-color': classColors.get(cls.toLowerCase()) ?? undefined } as CSSProperties}>
-            <tr className="class-band">
-              <td colSpan={8}>
-                <span className="band-label">{cls}</span>
-              </td>
+      {classes.size > 0 && (
+        <table className="grid-table drive" aria-label="Drive time by driver">
+          <thead>
+            <tr>
+              <th className="num" scope="col">
+                #
+              </th>
+              <th scope="col">Driver</th>
+              <th scope="col">Rating</th>
+              <th className="num" scope="col" title="Track time: pit lane excluded, as the rule counts it">
+                Drive time
+              </th>
+              <th scope="col">
+                <span className="sr-only">Against the rule</span>
+              </th>
+              <th className="num" scope="col">
+                Min
+              </th>
+              <th className="num" scope="col">
+                Max
+              </th>
+              <th scope="col">Status</th>
             </tr>
-            {[...cars.entries()]
-              .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
-              .map(([car, drivers]) => (
-                <Fragment key={car}>
-                  {drivers.map((d, i) => (
-                    <DriveRow key={d.driverOrder} d={d} showCar={i === 0} lastOfCar={i === drivers.length - 1} />
-                  ))}
-                </Fragment>
-              ))}
-          </tbody>
-        ))}
-      </table>
+          </thead>
+          {[...classes.entries()].map(([cls, cars]) => (
+            <tbody key={cls} style={{ '--class-color': classColors.get(cls.toLowerCase()) ?? undefined } as CSSProperties}>
+              <tr className="class-band">
+                <td colSpan={8}>
+                  <span className="band-label">{cls}</span>
+                </td>
+              </tr>
+              {[...cars.entries()]
+                .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+                .map(([car, drivers]) => (
+                  <Fragment key={car}>
+                    {drivers.map((d, i) => (
+                      <DriveRow key={d.driverOrder} d={d} showCar={i === 0} lastOfCar={i === drivers.length - 1} />
+                    ))}
+                  </Fragment>
+                ))}
+            </tbody>
+          ))}
+        </table>
+      )}
     </>
   )
 }
