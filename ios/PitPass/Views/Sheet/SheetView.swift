@@ -19,7 +19,7 @@ struct SheetView: View {
     @State private var storylinesOpen = false
     @State private var page: Page = .sheet
 
-    private enum Page: String { case sheet, recap, calculator, timing, pitLane, scratchpad, conversations }
+    private enum Page: String { case sheet, recap, timing, pitLane, scratchpad, conversations }
     @State private var book: ConversationBook
     @State private var conversationAudio = ConversationAudio()
     @State private var conversationPerson: ConversationPerson?
@@ -119,11 +119,8 @@ struct SheetView: View {
                     ConversationsView(book: book, audio: conversationAudio, sheet: value, selectedPerson: $conversationPerson)
                 } else { sheetLoadingState }
             }
-            Tab("Calculator", systemImage: "plus.forwardslash.minus", value: Page.calculator) {
-                calculatorContent
-            }
             Tab("Timing", systemImage: "stopwatch", value: Page.timing) {
-                TimingSheet(eventId: eventId)
+                TimingSheet(eventId: eventId, seasonId: sheet.value?.seasonId)
             }
         }
         // Use the native top tab bar on iPad, adapting to bottom tabs in compact windows.
@@ -144,17 +141,6 @@ struct SheetView: View {
                 RecapSheet(seasonId: seasonId, currentEventId: eventId)
             } else {
                 ContentUnavailableView("No season recap", systemImage: "chart.bar.xaxis",
-                                       description: Text("This event is not linked to a season."))
-            }
-        } else { sheetLoadingState }
-    }
-
-    @ViewBuilder private var calculatorContent: some View {
-        if let value = sheet.value {
-            if let seasonId = value.seasonId {
-                CalculatorSheet(seasonId: seasonId, eventId: eventId)
-            } else {
-                ContentUnavailableView("No championship calculator", systemImage: "trophy",
                                        description: Text("This event is not linked to a season."))
             }
         } else { sheetLoadingState }

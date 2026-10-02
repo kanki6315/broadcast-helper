@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
   NavLink,
   Outlet,
@@ -29,8 +29,14 @@ export interface SeasonContext {
   classColor: (className: string | null | undefined) => string
 }
 
+/** A season context outside the season route — the timing page's live
+ * points reuse the season calculator's panels. */
+export const SeasonContextOverride = createContext<SeasonContext | null>(null)
+
 export function useSeason(): SeasonContext {
-  return useOutletContext<SeasonContext>()
+  const override = useContext(SeasonContextOverride)
+  const outlet = useOutletContext<SeasonContext>()
+  return override ?? outlet
 }
 
 export const DEFAULT_CLASS_COLOR = '#5e626e'
@@ -64,6 +70,43 @@ export function seasonClasses(hub: SeasonHub, styles: ClassStylesResponse | null
   return out
 }
 
+/** A season's hub and its classes in colour. `seasonId` null = load nothing. */
+export function useSeasonHub(seasonId: number | string | null | undefined): {
+  hub: SeasonHub | null
+  classes: ClassInfo[]
+  error: string | null
+} {
+  const [hub, setHub] = useState<SeasonHub | null>(null)
+  const [styles, setStyles] = useState<ClassStylesResponse | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    setHub(null)
+    setStyles(null)
+    setError(null)
+    if (seasonId == null) return
+    getJson<SeasonHub>(`/api/seasons/${seasonId}`)
+      .then((h) => {
+        if (cancelled) return
+        setHub(h)
+        void getJson<ClassStylesResponse>(`/api/series/${h.seriesId}/class-styles`)
+          .then((s) => !cancelled && setStyles(s))
+          .catch(() => !cancelled && setStyles({ styles: [], unconfiguredClasses: [] }))
+      })
+      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : 'Failed to load'))
+    return () => {
+      cancelled = true
+    }
+  }, [seasonId])
+  const classes = useMemo<ClassInfo[]>(() => (hub ? seasonClasses(hub, styles) : []), [hub, styles])
+  return { hub, classes, error }
+}
+
+export function classColorOf(classes: ClassInfo[]) {
+  return (name: string | null | undefined) =>
+    (name && classes.find((c) => c.name === name)?.color) || DEFAULT_CLASS_COLOR
+}
+
 const SUB_PAGES = [
   { to: '', label: 'Overview', end: true },
   { to: 'schedule', label: 'Schedule', end: false },
@@ -80,24 +123,11 @@ export default function SeasonLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [hub, setHub] = useState<SeasonHub | null>(null)
+  const { hub, classes, error } = useSeasonHub(seasonId)
   const [seasons, setSeasons] = useState<SeasonSummary[]>([])
-  const [styles, setStyles] = useState<ClassStylesResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    setHub(null)
-    setError(null)
-    getJson<SeasonHub>(`/api/seasons/${seasonId}`)
-      .then((h) => {
-        if (cancelled) return
-        setHub(h)
-        void getJson<ClassStylesResponse>(`/api/series/${h.seriesId}/class-styles`)
-          .then((s) => !cancelled && setStyles(s))
-          .catch(() => !cancelled && setStyles({ styles: [], unconfiguredClasses: [] }))
-      })
-      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : 'Failed to load'))
     getJson<SeasonSummary[]>('/api/seasons')
       .then((s) => !cancelled && setSeasons(s))
       .catch(() => undefined)
@@ -105,8 +135,6 @@ export default function SeasonLayout() {
       cancelled = true
     }
   }, [seasonId])
-
-  const classes = useMemo<ClassInfo[]>(() => (hub ? seasonClasses(hub, styles) : []), [hub, styles])
 
   // Name the tab. Prepping an event means several seasons open at once, and
   // every tab reading "Pit Pass" means clicking each one to find out which is
@@ -180,8 +208,7 @@ export default function SeasonLayout() {
     hub,
     classes,
     classFilter,
-    classColor: (name) =>
-      (name && classes.find((c) => c.name === name)?.color) || DEFAULT_CLASS_COLOR,
+    classColor: classColorOf(classes),
   }
 
   return (

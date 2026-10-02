@@ -39,13 +39,15 @@ import LiveCarModal from '../components/LiveCarModal'
 import { GapsView, PitsView, SectorsView } from './TimingAnalysis'
 import { RaceControlStrip, RaceControlView } from './RaceControl'
 import { WeatherStrip, WeatherView } from './Weather'
+import { PointsView } from './TimingPoints'
 
 /**
  * The live timing page — for a Pit Pass event (`/timing/:eventId`) or for one
  * series weekend as the feed has it, filed or not (`/timing/weekend/:id`):
  * the tower; gaps, best sectors and pit stops over a recorded session
  * (TimingAnalysis); drive time per driver against the filed event's rules; and
- * race control's messages (RaceControl); and the track's weather (Weather). Chrome-less like the sheet — it is kept
+ * race control's messages (RaceControl); the track's weather (Weather); and the
+ * championships projected live (TimingPoints, members only). Chrome-less like the sheet — it is kept
  * open on a second screen in the booth.
  *
  * Reads, apart from two admin-only controls: the shared connect/disconnect
@@ -53,10 +55,11 @@ import { WeatherStrip, WeatherView } from './Weather'
  * (a 304 when nothing moved), drive time every 10 s, the analysis views every
  * 15 s while their session is live.
  */
-type View = 'tower' | 'gaps' | 'sectors' | 'pits' | 'drive' | 'control' | 'weather'
+type View = 'tower' | 'points' | 'gaps' | 'sectors' | 'pits' | 'drive' | 'control' | 'weather'
 
 const VIEWS: { id: View; label: string }[] = [
   { id: 'tower', label: 'Tower' },
+  { id: 'points', label: 'Points' },
   { id: 'gaps', label: 'Gaps' },
   { id: 'sectors', label: 'Sectors' },
   { id: 'pits', label: 'Pits' },
@@ -74,7 +77,9 @@ const scopePath = (scope: TimingScope, nav: TimingNav) =>
 export default function TimingPage({ scope }: { scope: TimingScope }) {
   const nav = useTimingNav()
   const [params, setParams] = useSearchParams()
-  const view: View = VIEWS.find((v) => v.id === params.get('view'))?.id ?? 'tower'
+  // The shared link opens the timing reads only, not the standings the points need.
+  const views = nav.shared ? VIEWS.filter((v) => v.id !== 'points') : VIEWS
+  const view: View = views.find((v) => v.id === params.get('view'))?.id ?? 'tower'
   // Bumped after an admin connects or disconnects, so the tower follows at once.
   const [feedChanged, setFeedChanged] = useState(0)
   const { value: tower, error: towerError } = useLivePoll<Tower>('/api/live/timing', 2000, feedChanged)
@@ -149,7 +154,7 @@ export default function TimingPage({ scope }: { scope: TimingScope }) {
             ← Timing
           </a>
         )}
-        <ViewTabs view={view} onChange={setView} />
+        <ViewTabs views={views} view={view} onChange={setView} />
         {tower && <FeedStatus tower={tower} followingThis={followingThis} />}
         {towerError && tower && <span className="timing-stale">Not updating: {towerError}</span>}
         <LiveConnectControl eventId={eventId} onChanged={() => setFeedChanged((n) => n + 1)} />
@@ -165,6 +170,8 @@ export default function TimingPage({ scope }: { scope: TimingScope }) {
 
       {view === 'tower' ? (
         <TowerView tower={tower} error={towerError} scope={scope} followingThis={followingThis} />
+      ) : view === 'points' ? (
+        <PointsView tower={tower} followingThis={followingThis} />
       ) : (
         <SessionViews view={view} scope={scope} sessions={sessions} tower={tower} />
       )}
@@ -172,8 +179,7 @@ export default function TimingPage({ scope }: { scope: TimingScope }) {
   )
 }
 
-function ViewTabs({ view, onChange }: { view: View; onChange: (v: View) => void }) {
-  const views = VIEWS
+function ViewTabs({ views, view, onChange }: { views: typeof VIEWS; view: View; onChange: (v: View) => void }) {
   const onKey = (e: KeyboardEvent) => {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
     e.preventDefault()
@@ -1051,7 +1057,7 @@ function SessionViews({
   sessions,
   tower,
 }: {
-  view: Exclude<View, 'tower'>
+  view: Exclude<View, 'tower' | 'points'>
   scope: TimingScope
   sessions: SessionSummary[] | null
   tower: Tower | null

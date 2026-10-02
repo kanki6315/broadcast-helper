@@ -4,7 +4,8 @@ import SwiftUI
 /// (its Timing tab) or for one series weekend as the feed has it, filed under
 /// an event or not (pushed from the Timing screen): the live timing tower;
 /// gaps, best sectors and pit stops over a recorded session
-/// (TimingAnalysis.swift); and drive time. Read-only apart from the shared
+/// (TimingAnalysis.swift); drive time; and the championship calculator, live
+/// or as a scenario (TimingPoints.swift). Read-only apart from the shared
 /// connect/disconnect switch in `LiveTimingBar`. Rules are edited on the website.
 ///
 /// Everything here is polled through `LiveFeed` and never stored: the tower
@@ -14,6 +15,8 @@ import SwiftUI
 struct TimingSheet: View {
     @Environment(AppSession.self) private var session
     let scope: TimingScope
+    /// This event's season, for the Points view's scenario; nil on a series weekend's screen.
+    var seasonId: Int? = nil
     @State private var status = LiveFeed<LiveStatus>()
     /// A weekend's own description: its name, and the event it is filed under (if any).
     @State private var weekend = LiveFeed<WeekendChampionship>()
@@ -26,7 +29,7 @@ struct TimingSheet: View {
     @AppStorage("timing.order") private var order = "class"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    enum Mode: String { case tower, gaps, sectors, pits, drive, control, weather }
+    enum Mode: String { case tower, points, gaps, sectors, pits, drive, control, weather }
 
     struct OpenCar: Identifiable {
         let carNumber: String
@@ -37,7 +40,10 @@ struct TimingSheet: View {
         var id: String { carNumber }
     }
 
-    init(eventId: Int) { scope = .event(eventId) }
+    init(eventId: Int, seasonId: Int? = nil) {
+        scope = .event(eventId)
+        self.seasonId = seasonId
+    }
     init(scope: TimingScope) { self.scope = scope }
 
     /// The session on track belongs here when it is filed under this event or —
@@ -57,6 +63,12 @@ struct TimingSheet: View {
         case let .event(id): id
         case .weekend: weekend.value?.eventId
         }
+    }
+
+    /// This screen's own event: none on a series weekend's screen, filed or not.
+    private var ownEventId: Int? {
+        if case let .event(id) = scope { return id }
+        return nil
     }
 
     private var title: String {
@@ -91,6 +103,7 @@ struct TimingSheet: View {
                 HStack(spacing: PP.Space.s3) {
                     Picker("View", selection: $mode) {
                         Text("Tower").tag(Mode.tower)
+                        Text("Points").tag(Mode.points)
                         Text("Gaps").tag(Mode.gaps)
                         Text("Sectors").tag(Mode.sectors)
                         Text("Pits").tag(Mode.pits)
@@ -99,7 +112,7 @@ struct TimingSheet: View {
                         Text("Weather").tag(Mode.weather)
                     }
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 680)
+                    .frame(maxWidth: 760)
                     if followingThis, let s = tower.value?.session { SessionLine(session: s) }
                     Spacer(minLength: 0)
                     if let error = tower.error, tower.value != nil {
@@ -108,6 +121,8 @@ struct TimingSheet: View {
                 }
                 if mode == .tower {
                     towerContent
+                } else if mode == .points {
+                    TimingPointsSection(scenarioEventId: ownEventId, scenarioSeasonId: seasonId, status: status.value, followingThis: followingThis)
                 } else {
                     RecordedSessions(path: sessionsPath, scopeName: scopeName) { chosen in
                         switch mode {

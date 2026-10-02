@@ -72,7 +72,8 @@ is never trusted to pick the event.
 where the connect control stands, and which event filing tries (see
 *Which event a session belongs to*). `filedEventId` / `filedEventName` is
 the event the session on track is actually filed under, read from
-`live_session`. **Every Pit Pass overlay — entries, teams, class colours,
+`live_session`; `filedSeasonId` is that event's season, whose standings the
+timing page's Points view projects. **Every Pit Pass overlay — entries, teams, class colours,
 driver links, championship positions — comes from the filed event, never
 the binding.** A binding can outlive its series' session: on 2026-09-30 an
 IMPC binding stayed up while VP Racing ran, and matching VP cars against the
