@@ -21,6 +21,8 @@ struct LiveStatus: Codable, Sendable, Equatable {
     /// nowhere — a series Pit Pass does not follow, shown as the feed has it.
     var filedEventId: Int? = nil
     var filedEventName: String? = nil
+    /// The filed event's season: whose standings are projected live.
+    var filedSeasonId: Int? = nil
     let requestedBy: String?
     let lastError: String?
     let lastWarning: String?
