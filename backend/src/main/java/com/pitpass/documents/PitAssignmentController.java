@@ -41,6 +41,10 @@ import java.util.Set;
  * nothing but the PDF bytes is persisted until the admin confirms the
  * reviewed mapping with a PUT. Revised sheets drop mid-weekend; re-uploading
  * repeats the same flow and the confirm replaces the rows wholesale.
+ * <p>
+ * Rows are one per car, not one per box: a box can be shared by two cars of
+ * the same series, which then arrive as consecutive rows with the same box
+ * number, in the PDF's top-to-bottom order.
  */
 @RestController
 @RequestMapping("/api")
@@ -109,7 +113,7 @@ public class PitAssignmentController {
                         FROM pit_box_assignment a
                                  LEFT JOIN entry en ON en.id = a.entry_id
                         WHERE a.event_id = :id
-                        ORDER BY a.box_number
+                        ORDER BY a.box_number, a.slot
                         """)
                 .param("id", eventId)
                 .query((rs, i) -> new AssignmentRow(rs.getInt("box_number"), rs.getString("car_number"),
@@ -189,7 +193,7 @@ public class PitAssignmentController {
 
         Set<Long> entryIds = new java.util.HashSet<>(db.sql("SELECT id FROM entry WHERE event_id = :id")
                 .param("id", eventId).query(Long.class).list());
-        Set<Integer> seenBoxes = new java.util.HashSet<>();
+        Set<String> seenCars = new java.util.HashSet<>();
         for (SaveRow row : rows) {
             if (row.boxNumber() == null || row.boxNumber() < 1) {
                 throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "Box numbers must be positive");
@@ -198,9 +202,9 @@ public class PitAssignmentController {
                 throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                         "Box " + row.boxNumber() + " has no car number");
             }
-            if (!seenBoxes.add(row.boxNumber())) {
+            if (!seenCars.add(row.boxNumber() + "#" + row.carNumber().trim())) {
                 throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                        "Box " + row.boxNumber() + " appears twice");
+                        "Box " + row.boxNumber() + " lists #" + row.carNumber().trim() + " twice");
             }
             if (row.entryId() != null && !entryIds.contains(row.entryId())) {
                 throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
@@ -210,13 +214,16 @@ public class PitAssignmentController {
 
         db.sql("DELETE FROM pit_box_assignment WHERE event_id = :id").param("id", eventId).update();
         db.sql("DELETE FROM pit_lane_landmark WHERE event_id = :id").param("id", eventId).update();
+        // A shared box's cars keep the order they were sent in.
+        Map<Integer, Integer> nextSlot = new HashMap<>();
         for (SaveRow row : rows) {
             db.sql("""
-                            INSERT INTO pit_box_assignment (event_id, box_number, car_number, team_name, entry_id)
-                            VALUES (:eventId, :box, :car, :team, :entryId)
+                            INSERT INTO pit_box_assignment (event_id, box_number, slot, car_number, team_name, entry_id)
+                            VALUES (:eventId, :box, :slot, :car, :team, :entryId)
                             """)
                     .param("eventId", eventId)
                     .param("box", row.boxNumber())
+                    .param("slot", nextSlot.merge(row.boxNumber(), 1, Integer::sum) - 1)
                     .param("car", row.carNumber().trim())
                     .param("team", row.teamName())
                     .param("entryId", row.entryId())
@@ -333,9 +340,11 @@ public class PitAssignmentController {
         }
         for (JsonNode box : parsed.path("boxes")) {
             box.path("cars").properties().forEach(cars -> {
-                String number = cars.getValue().path("car_number").asText(null);
-                if (number != null && entriesByNumber.containsKey(SheetController.normalizeCarNumber(number))) {
-                    matchCounts.merge(cars.getKey(), 1, Integer::sum);
+                for (JsonNode car : cars.getValue()) {
+                    String number = car.path("car_number").asText(null);
+                    if (number != null && entriesByNumber.containsKey(SheetController.normalizeCarNumber(number))) {
+                        matchCounts.merge(cars.getKey(), 1, Integer::sum);
+                    }
                 }
             });
         }
@@ -348,17 +357,19 @@ public class PitAssignmentController {
 
         List<ProposalRow> rows = new ArrayList<>();
         for (JsonNode box : parsed.path("boxes")) {
-            JsonNode car = box.path("cars").path(column);
-            String number = car.path("car_number").asText(null);
-            if (number == null) {
-                continue;
+            // One per car: a shared box lists several in the same series.
+            for (JsonNode car : box.path("cars").path(column)) {
+                String number = car.path("car_number").asText(null);
+                if (number == null) {
+                    continue;
+                }
+                String team = car.path("team").asText(null);
+                Entry matched = match(entriesByNumber.get(SheetController.normalizeCarNumber(number)), team);
+                rows.add(new ProposalRow(box.path("box").asInt(), number, team,
+                        matched != null ? matched.id() : null,
+                        matched != null ? matched.teamName() : null,
+                        matched != null ? matched.className() : null));
             }
-            String team = car.path("team").asText(null);
-            Entry matched = match(entriesByNumber.get(SheetController.normalizeCarNumber(number)), team);
-            rows.add(new ProposalRow(box.path("box").asInt(), number, team,
-                    matched != null ? matched.id() : null,
-                    matched != null ? matched.teamName() : null,
-                    matched != null ? matched.className() : null));
         }
 
         List<Landmark> landmarks = new ArrayList<>();
