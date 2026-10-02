@@ -42,12 +42,18 @@ public class LiveTimingPageService {
      * under, which is where teams, class colours and driver names come from.
      * Filed nowhere, the tower shows the feed's own. raceControl is race
      * control's screen now and its newest message, for the strip above the
-     * tower; null when the feed has sent no race control channel.
+     * tower; null when the feed has sent no race control channel. weather is
+     * the station's latest reading, in both units; null when the feed has
+     * sent no weather.
      */
     public record Tower(State state, Long eventId, String eventName, LiveTimingService.Session session,
                         Long sessionDbId, Long feedClockMs, List<TowerClass> classes, int matched, int total,
                         String speedUnit, Long filedEventId, String filedEventName,
-                        LiveRaceControl.Now raceControl) {
+                        LiveRaceControl.Now raceControl, LiveWeather.Reading weather) {
+    }
+
+    /** A session's weather readings, one a minute, oldest first. */
+    public record WeatherLog(long sessionDbId, List<LiveWeather.Reading> readings) {
     }
 
     /** A session's race control log, newest first. */
@@ -261,7 +267,32 @@ public class LiveTimingPageService {
                 session == null ? null : latestFeedTime(session), classes,
                 order.classification().matched(), order.classification().total(), unit,
                 order.filedEventId(), order.filedEventName(),
-                LiveRaceControl.now(live.state("raceControl.currentMessages"), live.state("raceControl.messages")));
+                LiveRaceControl.now(live.state("raceControl.currentMessages"), live.state("raceControl.messages")),
+                LiveWeather.now(live.state("weather.currentData"), live.state("weather.sessionData")));
+    }
+
+    // ---- weather -----------------------------------------------------------------------
+
+    public WeatherLog weather(Long sessionParam) {
+        long session = session(sessionParam);
+        List<LiveWeather.Reading> readings = db.sql("""
+                SELECT day_time_ms, air_c, air_f, track_c, track_f, humidity_pct, pressure_mbar, pressure_inhg,
+                       wind_direction, wind_kmh, wind_mph
+                FROM live_weather WHERE session_db_id = :s ORDER BY day_time_ms
+                """)
+                .param("s", session)
+                .query((rs, i) -> java.util.Optional.ofNullable(LiveWeather.row(rs.getLong("day_time_ms"),
+                        decimal(rs, "air_c"), decimal(rs, "air_f"), decimal(rs, "track_c"), decimal(rs, "track_f"),
+                        decimal(rs, "humidity_pct"), decimal(rs, "pressure_mbar"), decimal(rs, "pressure_inhg"),
+                        decimal(rs, "wind_direction"), decimal(rs, "wind_kmh"), decimal(rs, "wind_mph"))))
+                .list().stream().flatMap(java.util.Optional::stream).toList();
+        return new WeatherLog(session, readings);
+    }
+
+    /** A REAL column as a Double, null as null. Read through float so 21.3 stays 21.3, not 21.299999. */
+    private static Double decimal(ResultSet rs, String column) throws SQLException {
+        float v = rs.getFloat(column);
+        return rs.wasNull() ? null : Double.valueOf(Float.toString(v));
     }
 
     // ---- race control ------------------------------------------------------------------

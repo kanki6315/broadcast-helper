@@ -67,7 +67,7 @@ class AksConnectionDiagnosticsTest {
         AlKamelV2Properties props = new AlKamelV2Properties("127.0.0.1", port, "feed-user", PASSWORD, tls, false,
                 "Pit Pass test", List.of("timing.session.info"), 1 << 20, 2, 1,
                 new AlKamelV2Properties.Recording(false, "", "", 10, 64), new AlKamelV2Properties.Replay("", 1.0),
-                new AlKamelV2Properties.Analysis(false, 0), null, null);
+                new AlKamelV2Properties.Analysis(false, 0), null, null, null);
         return new AksConnection(props, "127.0.0.1", port, tls, new AksStateTree(), new ObjectMapper(),
                 new AksConnection.Listener() {
                     @Override

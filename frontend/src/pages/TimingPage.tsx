@@ -23,6 +23,7 @@ import {
   ruleTime,
   sessionClock,
   trackTime,
+  usUnits,
   type DriveTimeResponse,
   type LiveStatus,
   type DriveTimeResult,
@@ -37,13 +38,14 @@ import {
 import LiveCarModal from '../components/LiveCarModal'
 import { GapsView, PitsView, SectorsView } from './TimingAnalysis'
 import { RaceControlStrip, RaceControlView } from './RaceControl'
+import { WeatherStrip, WeatherView } from './Weather'
 
 /**
  * The live timing page — for a Pit Pass event (`/timing/:eventId`) or for one
  * series weekend as the feed has it, filed or not (`/timing/weekend/:id`):
  * the tower; gaps, best sectors and pit stops over a recorded session
  * (TimingAnalysis); drive time per driver against the filed event's rules; and
- * race control's messages (RaceControl). Chrome-less like the sheet — it is kept
+ * race control's messages (RaceControl); and the track's weather (Weather). Chrome-less like the sheet — it is kept
  * open on a second screen in the booth.
  *
  * Reads, apart from two admin-only controls: the shared connect/disconnect
@@ -51,7 +53,7 @@ import { RaceControlStrip, RaceControlView } from './RaceControl'
  * (a 304 when nothing moved), drive time every 10 s, the analysis views every
  * 15 s while their session is live.
  */
-type View = 'tower' | 'gaps' | 'sectors' | 'pits' | 'drive' | 'control'
+type View = 'tower' | 'gaps' | 'sectors' | 'pits' | 'drive' | 'control' | 'weather'
 
 const VIEWS: { id: View; label: string }[] = [
   { id: 'tower', label: 'Tower' },
@@ -60,6 +62,7 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'pits', label: 'Pits' },
   { id: 'drive', label: 'Drive time' },
   { id: 'control', label: 'Race control' },
+  { id: 'weather', label: 'Weather' },
 ]
 
 /** Either a Pit Pass event's sessions, or one series weekend's (Al Kamel's feed event). */
@@ -528,6 +531,7 @@ function TowerView({
             : "Not filed under a Pit Pass event. Teams and drivers are the feed's own."}
         </p>
       )}
+      <WeatherStrip now={tower.weather} us={usUnits(tower.speedUnit)} href={`${base}?view=weather`} />
       <RaceControlStrip
         now={tower.raceControl}
         utcOffsetHours={tower.session?.clock?.utcOffsetHours}
@@ -1111,6 +1115,13 @@ function SessionViews({
         <RaceControlView
           key={chosen.sessionDbId}
           session={chosen}
+          utcOffsetHours={chosen.current && tower?.sessionDbId === chosen.sessionDbId ? tower.session?.clock?.utcOffsetHours : null}
+        />
+      ) : view === 'weather' ? (
+        <WeatherView
+          key={chosen.sessionDbId}
+          session={chosen}
+          us={usUnits(tower?.speedUnit)}
           utcOffsetHours={chosen.current && tower?.sessionDbId === chosen.sessionDbId ? tower.session?.clock?.utcOffsetHours : null}
         />
       ) : (

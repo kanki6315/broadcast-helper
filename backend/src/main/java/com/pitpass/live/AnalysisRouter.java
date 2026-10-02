@@ -17,6 +17,8 @@ import com.pitpass.live.AnalysisRows.SessionInfo;
 import com.pitpass.live.AnalysisRows.SessionSeen;
 import com.pitpass.live.AnalysisRows.StintDeleted;
 import com.pitpass.live.AnalysisRows.StintPatch;
+import com.pitpass.live.AnalysisRows.WeatherDeleted;
+import com.pitpass.live.AnalysisRows.WeatherSample;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +41,8 @@ import java.util.concurrent.atomic.AtomicLong;
  *   merged into {@link AksStateTree} exactly as before.
  * - {@code raceControl.messages} goes into the tree too, and each message a
  *   diff touches is also handed to the writer whole, for the session's log.
+ * - {@code weather} goes into the tree too, and each of the session's
+ *   readings ({@code weather.sessionData}) a diff touches to the writer.
  *
  * Nulls: a null lap or stint deletes that row. A null above that — a car, a
  * whole channel — clears the in-memory summaries but deletes nothing: the
@@ -113,7 +117,7 @@ final class AnalysisRouter implements AksLineReader.StreamHandler {
                 return;
             }
             String root = channel.isBlank() ? "" : channel.trim().split("\\.")[0];
-            if ((root.equals("timing") || root.equals("raceControl")) && channel.contains(".")
+            if ((root.equals("timing") || root.equals("raceControl") || root.equals("weather")) && channel.contains(".")
                     && !root.equals(p.currentName())) {
                 objectAtField(channel.trim(), p);
             } else {
@@ -142,6 +146,8 @@ final class AnalysisRouter implements AksLineReader.StreamHandler {
                         sessionChanged(path, node);
                     } else if (path.startsWith("raceControl")) {
                         raceControlChanged(diff);
+                    } else if (path.startsWith("weather")) {
+                        weatherChanged(diff);
                     }
                 }
             }
@@ -204,6 +210,8 @@ final class AnalysisRouter implements AksLineReader.StreamHandler {
             sessionChanged(path, node);
         } else if (path.equals("raceControl") || path.startsWith("raceControl.")) {
             raceControlChanged(diff);
+        } else if (path.equals("weather") || path.startsWith("weather.")) {
+            weatherChanged(diff);
         }
     }
 
@@ -256,6 +264,37 @@ final class AnalysisRouter implements AksLineReader.StreamHandler {
                     text(m, "foregroundColor"), text(m, "backgroundColor"),
                     m.hasNonNull("blink") ? m.path("blink").asBoolean() : null,
                     m.hasNonNull("isNull") ? m.path("isNull").asBoolean() : null));
+        }
+    }
+
+    /**
+     * After a weather diff: each of the session's readings it touched goes to
+     * the writer as the tree now has it, keyed by its dayTime, and a null
+     * reading deletes its row. A null channel deletes nothing, as with laps.
+     * weather.currentData is read live from the tree and never stored.
+     */
+    private void weatherChanged(ObjectNode diff) {
+        JsonNode samples = diff.path("weather").path("sessionData");
+        if (!samples.isObject()) {
+            return;
+        }
+        for (var field : samples.properties()) {
+            String key = field.getKey();
+            Long sessionId = sessionId();
+            if (sessionId == null) {
+                continue;
+            }
+            Long keyTime = LiveWeather.parseLong(key);
+            if (field.getValue() == null || field.getValue().isNull()) {
+                if (keyTime != null) {
+                    offer(new WeatherDeleted(sessionId, keyTime));
+                }
+                continue;
+            }
+            LiveWeather.Reading r = LiveWeather.reading(tree.copyOf("weather.sessionData." + key), keyTime);
+            if (r != null && r.dayTimeMs() != null) {
+                offer(new WeatherSample(sessionId, r.dayTimeMs(), r));
+            }
         }
     }
 
