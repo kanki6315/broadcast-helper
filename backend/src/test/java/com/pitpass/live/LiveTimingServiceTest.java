@@ -295,5 +295,10 @@ class LiveTimingServiceTest {
         public Optional<Long> filedEvent(long sessionDbId) {
             return Optional.empty();
         }
+
+        @Override
+        public Optional<Long> eventSeasonId(long eventId) {
+            return Optional.empty();
+        }
     }
 }

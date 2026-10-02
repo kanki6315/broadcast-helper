@@ -409,6 +409,11 @@ class AnalysisIngestTest {
             public java.util.Optional<Long> filedEvent(long sessionDbId) {
                 return real.filedEvent(sessionDbId);
             }
+
+            @Override
+            public java.util.Optional<Long> eventSeasonId(long eventId) {
+                return real.eventSeasonId(eventId);
+            }
         };
         AlKamelV2Properties props = new AlKamelV2Properties("127.0.0.1", server.port(), "u", "p", false, false,
                 "Pit Pass test", List.of("timing.session.info", "timing.session.entry"), 1 << 10, 2, 1,
@@ -430,6 +435,7 @@ class AnalysisIngestTest {
         assertNull(filedUnder(), "PC's #04 is TCR; the car on track is GTD");
         assertEquals(pcEvent, service.status().eventId(), "still bound to Pilot Challenge");
         assertNull(service.status().filedEventId(), "but Pit Pass rows come only from the filed event: none");
+        assertNull(service.status().filedSeasonId(), "and no season to project");
         assertEquals(TelemetryRunner.State.OFF, service.status().telemetry().state());
         assertEquals("The series on track sends no energy telemetry", service.status().telemetry().idleReason());
 
@@ -438,6 +444,8 @@ class AnalysisIngestTest {
         service.request(true, wtEvent, "t");
         await(() -> Long.valueOf(wtEvent).equals(filedUnder()));
         assertEquals(wtEvent, service.status().filedEventId());
+        assertEquals(db.sql("SELECT season_id FROM event WHERE id = :e").param("e", wtEvent).query(Long.class).single(),
+                service.status().filedSeasonId(), "the live points project the filed event's season");
         await(() -> Long.valueOf(ann).equals(db.sql("""
                 SELECT driver_id FROM live_driver WHERE session_db_id = :s AND car_number = '04' AND driver_order = 1
                 """).param("s", session).query((rs, i) -> rs.getObject("driver_id", Long.class)).optional().orElse(null)));

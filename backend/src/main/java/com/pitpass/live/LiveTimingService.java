@@ -89,14 +89,14 @@ public class LiveTimingService implements SmartLifecycle {
                              int attempts, int drops, String lastError, String lastWarning,
                              Instant nextAttemptAt, Server server, Session session, List<String> channels,
                              Analysis analysis, TelemetryRunner.Status telemetry,
-                             Long filedEventId, String filedEventName) {
+                             Long filedEventId, String filedEventName, Long filedSeasonId) {
 
         /** For the shareable timing link: who asked for the connection, and which process holds it, left out. */
         public LiveStatus forSharedLink() {
             return new LiveStatus(state, configured, replaying, desiredConnected, eventId, eventName, null, null,
                     null, false, connectedSince, lastMessageAt, messages, bytes, attempts, drops, lastError,
                     lastWarning, nextAttemptAt, server, session, channels, analysis, telemetry, filedEventId,
-                    filedEventName);
+                    filedEventName, filedSeasonId);
         }
     }
 
@@ -258,7 +258,8 @@ public class LiveTimingService implements SmartLifecycle {
                 state == State.BACKING_OFF ? nextAttemptAt : null,
                 server, session(), props.configured() ? props.joinedChannels() : List.of(), analysis(),
                 telemetry == null ? null : telemetry.status(), filed,
-                filed == null ? null : filed.equals(row.eventId()) ? bound : store.eventName(filed).orElse(null));
+                filed == null ? null : filed.equals(row.eventId()) ? bound : store.eventName(filed).orElse(null),
+                filed == null ? null : store.eventSeasonId(filed).orElse(null));
     }
 
     /**
