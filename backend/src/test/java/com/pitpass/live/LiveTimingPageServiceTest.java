@@ -290,6 +290,18 @@ class LiveTimingPageServiceTest {
     }
 
     @Test
+    void aCarNeverShowsAnotherCarsEnergyThroughALeadingZero() throws Exception {
+        // Telemetry sent only "4", and #4 is a car of its own here: #04 has no energy, #4 keeps it.
+        seedFour();
+        db.sql("""
+                INSERT INTO live_energy_lap (session_db_id, car_number, lap_number, energy_pct)
+                VALUES (:s, '4', 1, 97), (:s, '4', 2, 93.5)
+                """).param("s", session).update();
+        assertNull(page(false).car("04", session).laps().get(1).energyPct());
+        assertEquals(93.5f, page(false).car("4", session).laps().get(1).energyPct());
+    }
+
+    @Test
     void sessionsOfAnEventNewestFirst() throws Exception {
         var sessions = page(true).sessions(event);
         assertEquals(1, sessions.size());

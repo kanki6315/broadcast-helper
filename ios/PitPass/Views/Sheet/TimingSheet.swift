@@ -898,8 +898,10 @@ private struct DriveTable: View {
     let classColors: [String: String]
     /// The tower's class order, when it is following this event; else first seen.
     let classOrder: [String]
+    @State private var query = ""
 
     var body: some View {
+        let keep = Self.carsMatching(query, cars: allCars)
         let over = drive.drivers.filter { $0.status == "OVER_MAX" }.count
         let under = drive.drivers.filter { $0.status == "UNDER_MIN" }.count
         let ok = drive.drivers.filter { $0.status == "OK" }.count
@@ -907,6 +909,16 @@ private struct DriveTable: View {
             if drive.drivers.isEmpty {
                 EmptyState(message: "No drivers recorded for this session yet.")
             } else {
+                HStack(spacing: PP.Space.s3) {
+                    FilterField(text: $query, placeholder: "Car numbers, e.g. 4, 911")
+                        .keyboardType(.numbersAndPunctuation)
+                        .frame(maxWidth: 260)
+                        .accessibilityLabel("Filter by car number")
+                    if let keep {
+                        Text(keep.isEmpty ? "No car with that number" : "\(keep.count) of \(allCars.count) cars")
+                            .font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.textMuted)
+                    }
+                }
                 if !drive.rules.isEmpty {
                     HStack(spacing: PP.Space.s4) {
                         if over > 0 { Text("\(over) over the maximum").foregroundStyle(PP.error) }
@@ -915,23 +927,47 @@ private struct DriveTable: View {
                     }
                     .font(.subheadline.weight(.semibold))
                 }
-                GridTable(identColumns: [.text("car", "#", width: 56, align: .trailing), .text("driver", "Driver", width: 210)],
-                          // Status beside the time: it is the answer, and it must stay on screen in
-                          // portrait; the meter is only shape, so it goes last.
-                          dataColumns: [.text("rating", "Rating", width: 84), .text("time", "Drive time", width: 96, align: .trailing),
-                                        .text("status", "Status", width: 180),
-                                        .text("min", "Min", width: 80, align: .trailing), .text("max", "Max", width: 80, align: .trailing),
-                                        GridColumn(id: "meter", width: 140, growthWeight: 1) { Text("").accessibilityHidden(true) }],
-                          sections: sections,
-                          cellPadV: 4, cellPadH: 8, headerHeight: 32, separatesIdentity: true, centersCells: true)
+                if keep?.isEmpty != true {
+                    GridTable(identColumns: [.text("car", "#", width: 56, align: .trailing), .text("driver", "Driver", width: 210)],
+                              // Status beside the time: it is the answer, and it must stay on screen in
+                              // portrait; the meter is only shape, so it goes last.
+                              dataColumns: [.text("rating", "Rating", width: 84), .text("time", "Drive time", width: 96, align: .trailing),
+                                            .text("status", "Status", width: 180),
+                                            .text("min", "Min", width: 80, align: .trailing), .text("max", "Max", width: 80, align: .trailing),
+                                            GridColumn(id: "meter", width: 140, growthWeight: 1) { Text("").accessibilityHidden(true) }],
+                              sections: sections(keep: keep),
+                              cellPadV: 4, cellPadH: 8, headerHeight: 32, separatesIdentity: true, centersCells: true)
+                }
             }
         }
     }
 
-    private var sections: [GridSection] {
+    private var allCars: [String] {
+        var seen = Set<String>()
+        return drive.drivers.map(\.car).filter { seen.insert($0).inserted }
+    }
+
+    /// The cars a number search keeps (as on the web): each comma- or
+    /// space-separated number picks the car with exactly that number when there
+    /// is one (#4 is not #04 or #44), otherwise every car whose number starts
+    /// with it, so typing narrows as it goes. Nil when the search is empty.
+    static func carsMatching(_ query: String, cars: [String]) -> Set<String>? {
+        let wanted = query.split(whereSeparator: { $0 == "," || $0.isWhitespace })
+            .map { $0.hasPrefix("#") ? String($0.dropFirst()).lowercased() : $0.lowercased() }
+            .filter { !$0.isEmpty }
+        if wanted.isEmpty { return nil }
+        var keep = Set<String>()
+        for w in wanted {
+            let exact = cars.filter { $0.lowercased() == w }
+            keep.formUnion(exact.isEmpty ? cars.filter { $0.lowercased().hasPrefix(w) } : exact)
+        }
+        return keep
+    }
+
+    private func sections(keep: Set<String>?) -> [GridSection] {
         var order: [String] = []
         var byClass: [String: [DriveTimeResult]] = [:]
-        for d in drive.drivers {
+        for d in drive.drivers where keep?.contains(d.car) ?? true {
             let cls = d.className ?? "Unmatched"
             if byClass[cls] == nil { order.append(cls) }
             byClass[cls, default: []].append(d)

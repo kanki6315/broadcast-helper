@@ -1035,6 +1035,19 @@
   padding: 3px var(--space-2) 3px 0;
 }
 
+.drive-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+}
+
+.drive-search input {
+  width: min(100%, 24ch);
+}
+
+.drive-search input,
 .rules-edit input,
 .rules-edit select {
   font: inherit;
