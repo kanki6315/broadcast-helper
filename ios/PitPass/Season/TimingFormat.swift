@@ -121,6 +121,35 @@ enum TimingFormat {
         return trackTime(wallMs: ms, utcOffsetHours: Double(offset) / 3600)
     }
 
+    /// A temperature in the feed's units, to a tenth: "38.3°". Nil when the station sent none.
+    static func temperature(c: Double?, f: Double?, us: Bool) -> String? {
+        guard let v = us ? f : c else { return nil }
+        return String(format: "%.1f°", v)
+    }
+
+    private static let compassPoints = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+                                        "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+
+    /// Degrees as a 16-point compass direction: 225 → "SW".
+    static func compass(_ degrees: Int?) -> String? {
+        guard let d = degrees else { return nil }
+        let norm = Double(((d % 360) + 360) % 360)
+        return compassPoints[Int((norm / 22.5).rounded()) % 16]
+    }
+
+    /// Wind in the feed's units: "14 km/h SW", or just the speed or direction the station sent.
+    static func wind(_ r: WeatherReading, us: Bool) -> String? {
+        let speed = (us ? r.windMph : r.windKmh).map { "\(Int($0.rounded())) \(us ? "mph" : "km/h")" }
+        let parts = [speed, compass(r.windDirection)].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
+    }
+
+    /// Pressure in the feed's units: "29.90 inHg" or "1012 mbar".
+    static func pressure(_ r: WeatherReading, us: Bool) -> String? {
+        if us { return r.pressureInHg.map { String(format: "%.2f inHg", $0) } }
+        return r.pressureMbar.map { "\(Int($0.rounded())) mbar" }
+    }
+
     enum LapMark { case classBest, personalBest }
 
     /// How a last lap reads: it set the class's fastest lap, or it was the

@@ -83,7 +83,7 @@ class LiveParticipantDetailsTest {
 
     private static AlKamelV2Properties props(boolean details) {
         return new AlKamelV2Properties("h", 1, "u", "p", false, false, "t", List.of("timing.session.info"), 1, 1, 1,
-                null, null, new AlKamelV2Properties.Analysis(false, 0), new AlKamelV2Properties.ParticipantDetails(details), null);
+                null, null, new AlKamelV2Properties.Analysis(false, 0), new AlKamelV2Properties.ParticipantDetails(details), null, null);
     }
 
     @Test

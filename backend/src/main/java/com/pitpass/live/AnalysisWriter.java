@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.pitpass.live.AnalysisRows.EnergyLap;
 import com.pitpass.live.AnalysisRows.RaceControlDeleted;
 import com.pitpass.live.AnalysisRows.RaceControlMessage;
+import com.pitpass.live.AnalysisRows.WeatherDeleted;
+import com.pitpass.live.AnalysisRows.WeatherSample;
 import com.pitpass.live.AnalysisRows.EntriesChanged;
 import com.pitpass.live.AnalysisRows.LapDeleted;
 import com.pitpass.live.AnalysisRows.LapPatch;
@@ -270,6 +272,38 @@ public class AnalysisWriter implements AnalysisRouter.Sink {
                             RaceControlDeleted d = (RaceControlDeleted) op;
                             return (SqlParameterSource) new MapSqlParameterSource("s", d.sessionDbId())
                                     .addValue("key", d.key());
+                        }).toList());
+            } else if (kind == WeatherSample.class) {
+                batch("""
+                        INSERT INTO live_weather (session_db_id, day_time_ms, air_c, air_f, track_c, track_f, humidity_pct,
+                                                  pressure_mbar, pressure_inhg, wind_direction, wind_kmh, wind_mph)
+                        VALUES (:s, :day, :airC, :airF, :trackC, :trackF, :humidity, :mbar, :inHg, :windDir, :kmh, :mph)
+                        ON CONFLICT (session_db_id, day_time_ms) DO UPDATE SET
+                            air_c = EXCLUDED.air_c, air_f = EXCLUDED.air_f, track_c = EXCLUDED.track_c,
+                            track_f = EXCLUDED.track_f, humidity_pct = EXCLUDED.humidity_pct,
+                            pressure_mbar = EXCLUDED.pressure_mbar, pressure_inhg = EXCLUDED.pressure_inhg,
+                            wind_direction = EXCLUDED.wind_direction, wind_kmh = EXCLUDED.wind_kmh,
+                            wind_mph = EXCLUDED.wind_mph, recorded_at = clock_timestamp()
+                        """,
+                        run.stream().map(op -> {
+                            WeatherSample w = (WeatherSample) op;
+                            LiveWeather.Reading r = w.reading();
+                            return (SqlParameterSource) new MapSqlParameterSource("s", w.sessionDbId())
+                                    .addValue("day", w.dayTimeMs())
+                                    .addValue("airC", r.airC(), Types.REAL).addValue("airF", r.airF(), Types.REAL)
+                                    .addValue("trackC", r.trackC(), Types.REAL).addValue("trackF", r.trackF(), Types.REAL)
+                                    .addValue("humidity", r.humidityPct(), Types.REAL)
+                                    .addValue("mbar", r.pressureMbar(), Types.REAL)
+                                    .addValue("inHg", r.pressureInHg(), Types.REAL)
+                                    .addValue("windDir", r.windDirection(), Types.SMALLINT)
+                                    .addValue("kmh", r.windKmh(), Types.REAL).addValue("mph", r.windMph(), Types.REAL);
+                        }).toList());
+            } else if (kind == WeatherDeleted.class) {
+                batch("DELETE FROM live_weather WHERE session_db_id = :s AND day_time_ms = :day",
+                        run.stream().map(op -> {
+                            WeatherDeleted d = (WeatherDeleted) op;
+                            return (SqlParameterSource) new MapSqlParameterSource("s", d.sessionDbId())
+                                    .addValue("day", d.dayTimeMs());
                         }).toList());
             } else if (kind == StintDeleted.class) {
                 batch("DELETE FROM live_stint WHERE session_db_id = :s AND car_number = :car AND start_time_ms = :start",

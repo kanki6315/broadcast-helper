@@ -28,6 +28,10 @@ const assert = require('node:assert/strict');
     car(3,'23',{overallPosition:5,status:'RETIRED',stintStartMs:null,stintLaps:null})]}],
    raceControl:{lines:[{key:'1',dayTimeMs:null,text:'FULL COURSE YELLOW',group:null,line:1,foreground:'#000000',background:'#ffff00',blink:true}],
     latest:{key:'3600000',dayTimeMs:Date.UTC(2026,9,4,18,5,9),text:'CAR 7 DRIVE THROUGH - PIT LANE SPEEDING',group:'GTP',line:2,foreground:null,background:'#ff0000',blink:false}}};
+  const wx = (min, trackF, airF, extra={}) => ({dayTimeMs:Date.UTC(2026,9,4,18,min,0),airC:(airF-32)*5/9,airF,trackC:(trackF-32)*5/9,trackF,humidityPct:61,
+   pressureMbar:1012.4,pressureInHg:29.9,windDirection:225,windKmh:14,windMph:8.7,...extra});
+  tower.weather = wx(3, 100.9, 75.7);
+  const wxLog = {sessionDbId:3150,readings:[wx(0, 98.0, 75.0), wx(1, 99.2, 75.4, {humidityPct:null}), wx(2, 100.6, 75.6, {windDirection:null,windMph:null,windKmh:null})]};
   const rcLog = {sessionDbId:3150,messages:[tower.raceControl.latest,
    {key:'3500000',dayTimeMs:Date.UTC(2026,9,4,18,1,0),text:'FULL COURSE YELLOW',group:null,line:1,foreground:'#000000',background:'#ffff00',blink:true}]};
   const laps = [1,2,3].map(n => ({lap:n,driverOrder:n<3?1:2,driverLap:n,position:1,startTimeMs:now-(4-n)*98_000,lapTimeMs:n===3?null:98_000-n*100,
@@ -70,6 +74,7 @@ const assert = require('node:assert/strict');
     : path === '/api/live/cars/31' ? carDetail
     : path === '/api/live/drive-time' ? drive()
     : path === '/api/live/sectors' ? {sessionDbId:3150,classes:[]}
+    : path === '/api/live/weather' ? (url.searchParams.get('session') === '3149' ? {sessionDbId:3149,readings:[]} : wxLog)
     : path === '/api/live/race-control' ? (url.searchParams.get('session') === '3149' ? {sessionDbId:3149,messages:[]} : rcLog)
     : /^\/api\/events\/\d+$/.test(path) ? {event:{id:Number(path.split('/')[3]),name:path.endsWith('/22') ? 'Petit Le Mans' : 'Road America'}}
     : [];
@@ -132,6 +137,12 @@ const assert = require('node:assert/strict');
   assert.match(await strip.locator('.rc-msg').getAttribute('class'), /rc-msg--blink/);
   assert.match(await strip.locator('.rc-latest').innerText(), /^14:05:09\s*GTP\s*CAR 7 DRIVE THROUGH - PIT LANE SPEEDING$/);
   assert.equal(await strip.getByRole('link',{name:'All messages'}).getAttribute('href'), '#/timing/22?view=control');
+
+  // Weather: the latest reading in the feed's units (it times in mph, so °F, mph and inHg).
+  const wxStrip = page.getByRole('region',{name:'Weather'});
+  assert.equal((await wxStrip.locator('.wx-now').innerText()).replace(/\s+/g,' ').trim(),
+   'Track 100.9° Air 75.7° Humidity 61% Wind 9 mph SW Pressure 29.90 inHg');
+  assert.equal(await wxStrip.getByRole('link',{name:'Over the session'}).getAttribute('href'), '#/timing/22?view=weather');
   // The admin's switch: bound here, so only Disconnect — and it asks first.
   const control = page.getByLabel('Live timing connection');
   await control.getByRole('button',{name:'Disconnect'}).waitFor();
@@ -246,6 +257,22 @@ const assert = require('node:assert/strict');
   assert.equal(await rcTable.locator('td.rc-log-time').first().evaluate(td => getComputedStyle(td).getPropertyValue('--rc-color').trim()), '#ff0000');
   await page.getByRole('group',{name:'Session'}).getByRole('button',{name:'Qualifying'}).click();
   await page.getByText('No race control messages recorded for this session.').waitFor();
+  await page.getByRole('group',{name:'Session'}).getByRole('button',{name:'Race · live'}).click();
+
+  // Weather over the session: where track and air stand and how far they moved; every reading, newest first.
+  await page.getByRole('tab',{name:'Weather'}).click();
+  assert.match(page.url(), /view=weather/);
+  await page.getByRole('img',{name:/Track and air temperature over the session/}).waitFor();
+  assert.deepEqual((await page.locator('.wx-stat').allInnerTexts()).map(t => t.replace(/\s+/g,' ').trim()),
+   ['TRACK 100.6° +2.6° since 98.0° Low 98.0° · high 100.6°', 'AIR 75.6° +0.6° since 75.0° Low 75.0° · high 75.6°']);
+  assert.equal(await page.locator('.wx-chart .an-line').count(), 2);
+  await page.getByText('Every reading (3)').click();
+  const wxTable = page.getByRole('table',{name:'Weather readings, newest first'});
+  assert.deepEqual((await wxTable.locator('tbody tr').allInnerTexts()).map(t => t.replace(/\s+/g,' ').trim()),
+   ['14:02:00 100.6° 75.6° 61% — 29.90 inHg', '14:01:00 99.2° 75.4° — 9 mph SW 29.90 inHg', '14:00:00 98.0° 75.0° 61% 9 mph SW 29.90 inHg']);
+  if (process.env.TIMING_SHOT_DIR) await page.screenshot({path:`${process.env.TIMING_SHOT_DIR}/weather.png`, fullPage:true});
+  await page.getByRole('group',{name:'Session'}).getByRole('button',{name:'Qualifying'}).click();
+  await page.getByText('No weather recorded for this session.').waitFor();
   await page.getByRole('group',{name:'Session'}).getByRole('button',{name:'Race · live'}).click();
 
   // Drive time: statuses in words, the rules beside them.

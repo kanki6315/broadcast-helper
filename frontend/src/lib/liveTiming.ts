@@ -149,6 +149,33 @@ export interface Tower {
   speedUnit: string | null
   /** Race control's screen now and its newest message; null when the feed sends no race control. */
   raceControl?: RaceControlNow | null
+  /** The track's weather station, latest reading; null when the feed sends no weather. */
+  weather?: WeatherReading | null
+}
+
+/**
+ * One weather station reading, in both unit systems (the backend converts
+ * whichever the station did not send). windDirection is degrees as the
+ * station sends it — taken as where the wind comes from, unverified.
+ */
+export interface WeatherReading {
+  dayTimeMs: number | null
+  airC: number | null
+  airF: number | null
+  trackC: number | null
+  trackF: number | null
+  humidityPct: number | null
+  pressureMbar: number | null
+  pressureInHg: number | null
+  windDirection: number | null
+  windKmh: number | null
+  windMph: number | null
+}
+
+export interface WeatherLog {
+  sessionDbId: number
+  /** One a minute, oldest first. */
+  readings: WeatherReading[]
 }
 
 /**
@@ -524,6 +551,37 @@ export function trackTime(wallMs: number, utcOffsetHours: number | null | undefi
   if (utcOffsetHours == null) return null
   const d = new Date(wallMs + utcOffsetHours * 3_600_000)
   return `${d.getUTCHours()}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
+}
+
+/** The feed's units: US when it reports speeds in mph. */
+export const usUnits = (speedUnit: string | null | undefined) => speedUnit === 'mph'
+
+/** A temperature in the feed's units, to a tenth: "38.3°". Null when the station sent none. */
+export function temperature(c: number | null, f: number | null, us: boolean): string | null {
+  const v = us ? f : c
+  return v == null ? null : `${v.toFixed(1)}°`
+}
+
+const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']
+
+/** Degrees as a 16-point compass direction: 225 → "SW". */
+export function compass(degrees: number | null): string | null {
+  if (degrees == null) return null
+  return COMPASS[Math.round((((degrees % 360) + 360) % 360) / 22.5) % 16]
+}
+
+/** Wind in the feed's units: "14 km/h SW", or just the direction or speed the station sent. */
+export function wind(r: Pick<WeatherReading, 'windKmh' | 'windMph' | 'windDirection'>, us: boolean): string | null {
+  const speed = us ? r.windMph : r.windKmh
+  const dir = compass(r.windDirection)
+  const parts = [speed == null ? null : `${Math.round(speed)} ${us ? 'mph' : 'km/h'}`, dir].filter(Boolean)
+  return parts.length ? parts.join(' ') : null
+}
+
+/** Pressure in the feed's units: "29.90 inHg" or "1012 mbar". */
+export function pressure(r: Pick<WeatherReading, 'pressureMbar' | 'pressureInHg'>, us: boolean): string | null {
+  if (us) return r.pressureInHg == null ? null : `${r.pressureInHg.toFixed(2)} inHg`
+  return r.pressureMbar == null ? null : `${Math.round(r.pressureMbar)} mbar`
 }
 
 /**

@@ -26,7 +26,7 @@ struct TimingSheet: View {
     @AppStorage("timing.order") private var order = "class"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    enum Mode: String { case tower, gaps, sectors, pits, drive, control }
+    enum Mode: String { case tower, gaps, sectors, pits, drive, control, weather }
 
     struct OpenCar: Identifiable {
         let carNumber: String
@@ -96,9 +96,10 @@ struct TimingSheet: View {
                         Text("Pits").tag(Mode.pits)
                         Text("Drive time").tag(Mode.drive)
                         Text("Race control").tag(Mode.control)
+                        Text("Weather").tag(Mode.weather)
                     }
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 600)
+                    .frame(maxWidth: 680)
                     if followingThis, let s = tower.value?.session { SessionLine(session: s) }
                     Spacer(minLength: 0)
                     if let error = tower.error, tower.value != nil {
@@ -118,6 +119,10 @@ struct TimingSheet: View {
                             RaceControlSection(chosen: chosen,
                                                utcOffsetHours: chosen.current && tower.value?.sessionDbId == chosen.sessionDbId
                                                    ? tower.value?.session?.clock?.utcOffsetHours : nil)
+                        case .weather:
+                            WeatherSection(chosen: chosen, us: tower.value?.speedUnit == "mph",
+                                           utcOffsetHours: chosen.current && tower.value?.sessionDbId == chosen.sessionDbId
+                                               ? tower.value?.session?.clock?.utcOffsetHours : nil)
                         default:
                             // Colours come from the event the session is filed under, when the tower shows it.
                             let sameEvent = chosen.eventId != nil && tower.value?.filedEventId == chosen.eventId
@@ -193,6 +198,9 @@ struct TimingSheet: View {
                 let unfiled = value.filedEventId == nil
                 if unfiled {
                     Text(unfiledNote(value)).font(.subheadline).foregroundStyle(PP.textMuted)
+                }
+                WeatherStrip(now: value.weather, us: value.speedUnit == "mph") {
+                    mode = .weather
                 }
                 RaceControlStrip(now: value.raceControl, utcOffsetHours: value.session?.clock?.utcOffsetHours) {
                     mode = .control

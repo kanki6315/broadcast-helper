@@ -27,7 +27,8 @@ public record AlKamelV2Properties(
         Replay replay,
         Analysis analysis,
         ParticipantDetails participantDetails,
-        RaceControl raceControl) {
+        RaceControl raceControl,
+        Weather weather) {
 
     /** The lap and stint channels the timing page is built from. */
     public static final List<String> ANALYSIS_CHANNELS = List.of("timing.analysis.laps", "timing.analysis.stints");
@@ -40,6 +41,12 @@ public record AlKamelV2Properties(
      * its screen shows now (keyed by line). A few lines a session.
      */
     public static final List<String> RACE_CONTROL_CHANNELS = List.of("raceControl.messages", "raceControl.currentMessages");
+
+    /**
+     * The weather station: the latest reading (every 5–20 s) and the
+     * session's readings, one a minute, keyed by dayTime. Spec 1.0.36 §4.3.
+     */
+    public static final List<String> WEATHER_CHANNELS = List.of("weather.currentData", "weather.sessionData");
 
     /**
      * The running order across every class, for the tower's overall view. One
@@ -78,6 +85,14 @@ public record AlKamelV2Properties(
     public record RaceControl(boolean enabled) {
     }
 
+    /** weather.currentData and .sessionData, into the state tree; the readings are also stored when analysis is on. */
+    public record Weather(boolean enabled) {
+    }
+
+    public boolean weatherEnabled() {
+        return weather != null && weather.enabled();
+    }
+
     public boolean raceControlEnabled() {
         return raceControl != null && raceControl.enabled();
     }
@@ -90,7 +105,7 @@ public record AlKamelV2Properties(
         return analysis != null && analysis.enabled();
     }
 
-    /** The configured channels and the overall standings, plus the analysis, participant-details and race control channels when those are on. */
+    /** The configured channels and the overall standings, plus the analysis, participant-details, race control and weather channels when those are on. */
     public List<String> joinedChannels() {
         List<String> joined = new java.util.ArrayList<>();
         channels.forEach(c -> joined.add(c.trim()));
@@ -105,6 +120,9 @@ public record AlKamelV2Properties(
         }
         if (raceControlEnabled()) {
             RACE_CONTROL_CHANNELS.stream().filter(c -> !joined.contains(c)).forEach(joined::add);
+        }
+        if (weatherEnabled()) {
+            WEATHER_CHANNELS.stream().filter(c -> !joined.contains(c)).forEach(joined::add);
         }
         return joined;
     }
