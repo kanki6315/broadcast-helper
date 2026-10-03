@@ -110,6 +110,31 @@ final class TimingFormatTests: XCTestCase {
         XCTAssertFalse(TimingFormat.energyLapCounts("REFILL"))
     }
 
+    func testTheFinishScenarioAsksWithItsInputsAndSaysWhatItTakes() throws {
+        XCTAssertEqual(TimingFormat.energyPath(session: 3150, reserve: "", fromStop: false, cautionUse: "", cautionLapSec: ""),
+                       "/api/live/energy?session=3150")
+        XCTAssertEqual(TimingFormat.energyPath(session: 3150, reserve: "2", fromStop: true, cautionUse: "0.9", cautionLapSec: "165"),
+                       "/api/live/energy?session=3150&reserve=2.0&from=stop&cautionUse=0.9&cautionLapMs=165000")
+        XCTAssertEqual(TimingFormat.energyPath(session: 3150, reserve: "x", fromStop: false, cautionUse: "0.9", cautionLapSec: ""),
+                       "/api/live/energy?session=3150", "half a caution figure, or a bad reserve, is not sent")
+
+        let json = """
+        {"sessionDbId":3150,"live":true,
+         "finish":{"type":"TIME","clockLeftMs":3540000,"flagInMs":3600000,"leaderLapsLeft":null,"leader":"31",
+           "inputs":{"reservePct":0,"fromStop":false,"cautionUsePct":null,"cautionLapMs":null},"refillPct":97.6,"refillSource":"OBSERVED"},
+         "classes":[{"className":"GTP","color":null,"cars":[],"caution":null,"energy":[{"carNumber":"31","energyPct":62.4,
+           "greenLapsLeft":27.1,"green":null,"greenShort":null,"caution":null,"cautionSource":null,"lastLap":40,"lapsSinceGreen":0,
+           "laps":{},"finish":{"startPct":62.4,"result":{"lapsToFlag":36.9,"needPct":84.9,"marginPct":-22.5,"cautionLaps":9,"makesIt":true},
+           "cautionSource":"MANUAL"}}]}]}
+        """
+        let energy = try JSONDecoder().decode(EnergyResponse.self, from: Data(json.utf8))
+        XCTAssertEqual(energy.finish?.leader, "31")
+        let f = try XCTUnwrap(energy.classes.first?.energy.first?.finish)
+        XCTAssertEqual(TimingFormat.cautionLapsLabel(f), "9 caution laps")
+        XCTAssertEqual(TimingFormat.marginLabel(f.result.marginPct), "−22.5%")
+        XCTAssertEqual(TimingFormat.marginLabel(1.04), "+1.0%")
+    }
+
     // MARK: Session clock and lap marks
 
     /// Road Atlanta practice 1 (2026-09-30): an hour from 16:25:00Z. At

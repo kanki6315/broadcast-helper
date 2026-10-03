@@ -41,12 +41,16 @@ const assert = require('node:assert/strict');
    stints:[{startTimeMs:now-3_600_000,type:'TRACK',pitType:null,driverOrder:1,openLap:1,closeLap:2,finishTimeMs:now-1_800_000,driverAccumSessionTrackMs:1_780_000,driverAccumSessionMs:1_800_000,driverAccumTrackMs:1_780_000,driverAccumMs:1_800_000,avgEnergyPerLapPct:3.5},
     {startTimeMs:now-1_800_000,type:'TRACK',pitType:null,driverOrder:2,openLap:3,closeLap:null,finishTimeMs:null,driverAccumSessionTrackMs:null,driverAccumSessionMs:null,driverAccumTrackMs:null,driverAccumMs:null,avgEnergyPerLapPct:null}]};
   const avg = (perLapPct, laps, extra={}) => ({perLapPct,lapTimeMs:98_000,laps,driverChange:false,lastLap:40,...extra});
-  const energyView = {sessionDbId:3150,live:true,classes:[{className:'GTP',color:'#1a1a1a',
+  const energyAsks = [];
+  const scenario = (lapsToFlag, marginPct, cautionLaps, makesIt, cautionSource) => ({startPct:31.4,result:{lapsToFlag,needPct:40,marginPct,cautionLaps,makesIt},cautionSource});
+  const energyView = {sessionDbId:3150,live:true,
+   finish:{type:'TIME',clockLeftMs:3_540_000,flagInMs:3_600_000,leaderLapsLeft:null,leader:'31',inputs:{reservePct:0,fromStop:false,cautionUsePct:null,cautionLapMs:null},refillPct:97.6,refillSource:'OBSERVED'},
+   classes:[{className:'GTP',color:'#1a1a1a',
    cars:[{carNumber:'31',teamName:'Team 31',className:'GTP'},{carNumber:'7',teamName:'Team 7',className:'GTP'}],caution:avg(0.85,4),
    energy:[{carNumber:'7',energyPct:31.4,greenLapsLeft:13.1,green:avg(2.4,6,{driverChange:true}),greenShort:avg(2.5,5),caution:avg(0.85,4),cautionSource:'CLASS',
-     lastLap:42,lapsSinceGreen:2,laps:{GREEN:30,PIT:6,OUT_LAP:2,NO_READING:1}},
+     lastLap:42,lapsSinceGreen:2,laps:{GREEN:30,PIT:6,OUT_LAP:2,NO_READING:1},finish:scenario(36.4,-56.0,null,false,'CLASS')},
     {carNumber:'31',energyPct:62.4,greenLapsLeft:27.1,green:avg(2.3,10),greenShort:avg(2.28,5),caution:null,cautionSource:null,
-     lastLap:40,lapsSinceGreen:0,laps:{GREEN:36,PIT:4}}]}]};
+     lastLap:40,lapsSinceGreen:0,laps:{GREEN:36,PIT:4},finish:scenario(36.9,-22.5,9,true,'MANUAL')}]}]};
   let rules = [{className:'GTP',rating:null,minMs:null,maxMs:4*3_600_000,note:'4h max'}];
   const driveResult = (car, driverOrder, name, rating, driveMs, status, extra={}) => ({car,driverOrder,name,rating,driverId:null,className:'GTP',driveMs,inCar:false,minMs:null,maxMs:4*3_600_000,status,owedMs:null,remainingMs:4*3_600_000-driveMs,overMs:null,...extra});
   const drive = () => ({sessionDbId:3150,eventId:22,rules,drivers:[
@@ -81,7 +85,7 @@ const assert = require('node:assert/strict');
     : path === '/api/live/cars/31' ? carDetail
     : path === '/api/live/drive-time' ? drive()
     : path === '/api/live/sectors' ? {sessionDbId:3150,classes:[]}
-    : path === '/api/live/energy' ? (url.searchParams.get('session') === '3149' ? {sessionDbId:3149,live:false,classes:[]} : energyView)
+    : path === '/api/live/energy' ? (url.searchParams.get('session') === '3149' ? {sessionDbId:3149,live:false,finish:null,classes:[]} : (energyAsks.push(url.search), energyView))
     : path === '/api/live/weather' ? (url.searchParams.get('session') === '3149' ? {sessionDbId:3149,readings:[]} : wxLog)
     : path === '/api/live/race-control' ? (url.searchParams.get('session') === '3149' ? {sessionDbId:3149,messages:[]} : rcLog)
     : /^\/api\/events\/\d+$/.test(path) ? {event:{id:Number(path.split('/')[3]),name:path.endsWith('/22') ? 'Petit Le Mans' : 'Road America'}}
@@ -276,6 +280,23 @@ const assert = require('node:assert/strict');
     /31% 2\.40% 2\.50% 6 laps · 2\+ drivers 13 L 0\.85% class 2 L 6 pit laps, 2 out laps, 1 lap unread/);
   assert.equal(await seven.locator('.tower-energy-thin').count(), 1, 'six green laps: marked as thin');
   assert.match((await enTable.locator('.tower-row').nth(1).innerText()).replace(/\s+/g,' '), /62% 2\.30% 2\.28% 10 laps 27 L 0 L 4 pit laps/);
+  // In a live race, each car against the flag, and the scenario's inputs ask again.
+  const scen = page.getByRole('group',{name:'Finish scenario'});
+  assert.match((await scen.innerText()).replace(/\s+/g,' '), /Clock: 59:00 left · leader #31 takes the flag in about 1:00:00/);
+  assert.match((await enTable.locator('.tower-row').nth(0).innerText()).replace(/\s+/g,' '), /36\.4 −56\.0% Won't make it$/);
+  assert.match((await enTable.locator('.tower-row').nth(1).innerText()).replace(/\s+/g,' '), /36\.9 −22\.5% 9 caution laps · your caution figure$/);
+  assert.equal(await enTable.locator('.an-energy-short').count(), 2);
+  await scen.getByLabel(/Reserve/).fill('2');
+  await scen.getByRole('radio',{name:'A stop now'}).click();
+  await scen.getByLabel('% a lap').fill('0.9');
+  await scen.getByLabel('s a lap').fill('165');
+  await page.waitForTimeout(700);
+  const lastAsk = new URLSearchParams(energyAsks.at(-1));
+  assert.deepEqual([lastAsk.get('reserve'), lastAsk.get('from'), lastAsk.get('cautionUse'), lastAsk.get('cautionLapMs')], ['2','stop','0.9','165000'],
+    'the inputs reach the request, once typing settles');
+  assert.equal(await enTable.count(), 1, 'the table stays on screen while it asks again');
+  energyView.finish.inputs = {reservePct:2,fromStop:true,cautionUsePct:0.9,cautionLapMs:165_000};
+  await page.waitForFunction(() => /from a stop now, at 97\.6%, where refills have landed/.test(document.body.innerText), null, {timeout:20_000});
   await enTable.getByRole('button',{name:'#31 Team 31: laps and stints'}).click();
   await page.getByRole('dialog',{name:'Car 31 laps and stints'}).locator('tbody tr').first().waitFor();
   await page.keyboard.press('Escape');

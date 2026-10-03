@@ -1443,6 +1443,58 @@
   white-space: normal;
 }
 
+/* The finish scenario: the flag it runs to, then its inputs, above the table. */
+.an-finish {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.an-finish-flag {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.an-finish label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.an-finish input {
+  width: 6ch;
+  font: inherit;
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.an-finish-caution {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.an-finish-caution legend {
+  float: left;
+  color: var(--text-muted);
+  margin-right: var(--space-2);
+}
+
+.an-energy-ok {
+  color: var(--success);
+}
+
+.an-energy-short {
+  color: var(--error);
+}
+
 .an-foot {
   margin-top: var(--space-3);
 }

@@ -597,6 +597,16 @@ struct EnergySection: View {
     let chosen: LiveSessionSummary
     let open: (AnalysisOpen) -> Void
     @State private var feed = LiveFeed<EnergyResponse>()
+    // The finish scenario's inputs, as typed; blank is "not given".
+    @State private var reserve = ""
+    @State private var fromStop = false
+    @State private var cautionUse = ""
+    @State private var cautionLapSec = ""
+
+    private var path: String {
+        TimingFormat.energyPath(session: chosen.sessionDbId, reserve: reserve, fromStop: fromStop,
+                                cautionUse: cautionUse, cautionLapSec: cautionLapSec)
+    }
 
     var body: some View {
         Group {
@@ -606,7 +616,14 @@ struct EnergySection: View {
                 } else {
                     VStack(alignment: .leading, spacing: PP.Space.s3) {
                         if let error = feed.error { StaleLine(error: error) }
+                        if let finish = value.finish { controls(finish) }
                         table(value)
+                        if let finish = value.finish {
+                            Text(finish.type == "TIME"
+                                 ? "The flag falls on the overall leader's first crossing after the clock runs out, projected at its green pace; each car finishes on its next crossing. A caution lap uses less energy and more of the clock, so fewer laps fit before the flag. Not counted: the time a stop takes, so a stop now is given the laps as if it had not — the cautious side."
+                                 : "The leader's laps left, less the laps a car is down. A caution lap replaces a green one and uses less. Not counted: the time a stop takes — the cautious side.")
+                                .font(.caption).foregroundStyle(PP.textMuted)
+                        }
                         Text("A lap counts when it is run under one flag — green, or full-course yellow for caution — clear of the pits, with IMSA's energy reading seen at the line before and after it. Green use averages the last 10 green laps of the session across pit stops; under 10 it is underlined, under 3 there is none. A car with fewer than 3 caution laps of its own uses its class's. Tap a car for every lap and why it counted.")
                             .font(.caption).foregroundStyle(PP.textMuted)
                     }
@@ -617,8 +634,58 @@ struct EnergySection: View {
                 SkeletonLines()
             }
         }
-        .task(id: chosen.sessionDbId) {
-            await feed.run(session.client, path: "/api/live/energy?session=\(chosen.sessionDbId)", every: pollEvery(chosen))
+        .task(id: path) {
+            // Typing settles before it asks: a new keystroke cancels this wait.
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            await feed.run(session.client, path: path, every: pollEvery(chosen))
+        }
+    }
+
+    private func controls(_ finish: EnergyFinishInfo) -> some View {
+        let refill = String(format: "%.1f%%", finish.refillPct)
+            + (finish.refillSource == "ASSUMED" ? ", assumed: no refill seen yet" : ", where refills have landed")
+        return VStack(alignment: .leading, spacing: PP.Space.s2) {
+            Group {
+                if finish.type == "TIME" {
+                    Text("Clock: **\(TimingFormat.duration(finish.clockLeftMs ?? 0))** left · leader #\(finish.leader) takes the flag in about **\(TimingFormat.duration(finish.flagInMs ?? 0))**")
+                } else {
+                    Text("Leader #\(finish.leader): **\(finish.leaderLapsLeft ?? 0)** laps left")
+                }
+            }
+            .font(.subheadline)
+            if finish.inputs.fromStop {
+                Text("Every car from a stop now, at \(refill)").font(.caption).foregroundStyle(PP.textMuted)
+            }
+            HStack(spacing: PP.Space.s4) {
+                HStack(spacing: 4) {
+                    Text("Reserve")
+                    TextField("0", text: $reserve).keyboardType(.decimalPad).frame(width: 56)
+                        .textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing)
+                    Text("%")
+                }
+                Picker("Start from", selection: $fromStop) {
+                    Text("Energy now").tag(false)
+                    Text("A stop now").tag(true)
+                }
+                .pickerStyle(.segmented).frame(width: 240)
+            }
+            .font(.subheadline)
+            // A row of its own: beside the reserve and start it overflows a portrait iPad.
+            HStack(spacing: PP.Space.s4) {
+                Text("Caution, where a car and its class have none:").foregroundStyle(PP.textMuted)
+                HStack(spacing: 4) {
+                    TextField("—", text: $cautionUse).keyboardType(.decimalPad).frame(width: 56)
+                        .textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing)
+                    Text("% a lap")
+                }
+                HStack(spacing: 4) {
+                    TextField("—", text: $cautionLapSec).keyboardType(.numberPad).frame(width: 56)
+                        .textFieldStyle(.roundedBorder).multilineTextAlignment(.trailing)
+                    Text("s a lap")
+                }
+            }
+            .font(.subheadline)
         }
     }
 
@@ -640,6 +707,13 @@ struct EnergySection: View {
                 Text("Left out").font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted)
             },
         ]
+        if value.finish != nil {
+            data += [
+                .text("toflag", "To flag", width: 72, align: .trailing),
+                .text("margin", "Green margin", width: 110, align: .trailing),
+                .text("make", "To make it", width: 230),
+            ]
+        }
         let sections = value.classes.map { cls in
             let info = Dictionary(cls.cars.map { ($0.carNumber, $0) }, uniquingKeysWith: { a, _ in a })
             let rows = cls.energy.map { e -> GridRowItem in
@@ -659,6 +733,23 @@ struct EnergySection: View {
                 cells.append(GridCell.num(perLap(e.caution) + (e.cautionSource == "CLASS" ? " class" : "")))
                 cells.append(GridCell.num(e.lapsSinceGreen.map { "\($0) L" } ?? ""))
                 cells.append(GridCell.text(TimingFormat.energyLeftOut(e.laps), muted: true))
+                if value.finish != nil {
+                    if let f = e.finish {
+                        cells.append(GridCell.num(String(format: "%.1f", f.result.lapsToFlag)))
+                        cells.append(AnyView(Text(TimingFormat.marginLabel(f.result.marginPct)).font(PP.mono(PP.TextSize.sm))
+                            .foregroundStyle(f.result.marginPct >= 0 ? PP.success : PP.error)))
+                        let source: String? = switch f.cautionSource {
+                        case "CAR": "own caution use"
+                        case "CLASS": "class caution use"
+                        case "MANUAL": "your caution figure"
+                        default: nil
+                        }
+                        let showSource = (f.result.cautionLaps ?? 0) > 0 && source != nil
+                        cells.append(GridCell.text(TimingFormat.cautionLapsLabel(f) + (showSource ? " · \(source!)" : "")))
+                    } else {
+                        cells += [GridCell.empty(), GridCell.empty(), GridCell.text(e.green == nil ? "Needs 3 green laps" : "", muted: true)]
+                    }
+                }
                 return GridRowItem(id: e.carNumber, ident: [GridCell.car(e.carNumber)], cells: cells, lines: 1,
                                    onTap: { open(AnalysisOpen(car: car, color: cls.color)) },
                                    tapLabel: "Car \(e.carNumber), green use \(perLap(e.green)) a lap. Opens laps and stints.")

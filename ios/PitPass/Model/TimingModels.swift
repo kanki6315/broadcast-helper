@@ -412,7 +412,49 @@ struct EnergyCar: Codable, Sendable, Equatable, Identifiable {
     let lapsSinceGreen: Int?
     /// How many laps of each kind (GREEN, PIT, REFILL…).
     let laps: [String: Int]
+    /// Against the flag, in a race being fed; nil otherwise.
+    var finish: EnergyScenario? = nil
     var id: String { carNumber }
+}
+
+/// One car against the flag (backend EnergyFinish.Result).
+struct EnergyScenario: Codable, Sendable, Equatable {
+    struct Result: Codable, Sendable, Equatable {
+        /// Laps still to run from now at green pace.
+        let lapsToFlag: Double
+        let needPct: Double
+        /// Start less reserve less need: over 0 it makes it green.
+        let marginPct: Double
+        /// Fewest caution laps that get it there; 0 = green; nil = no caution figure, or none would do.
+        let cautionLaps: Int?
+        /// False only when no number of caution laps would do.
+        let makesIt: Bool
+    }
+    let startPct: Double
+    let result: Result
+    /// CAR, CLASS or MANUAL; nil when none.
+    let cautionSource: String?
+}
+
+struct EnergyInputs: Codable, Sendable, Equatable {
+    let reservePct: Double
+    let fromStop: Bool
+    let cautionUsePct: Double?
+    let cautionLapMs: Double?
+}
+
+/// The flag the scenarios run to (a race being fed only).
+struct EnergyFinishInfo: Codable, Sendable, Equatable {
+    /// TIME or LAPS.
+    let type: String
+    let clockLeftMs: Int?
+    let flagInMs: Int?
+    let leaderLapsLeft: Int?
+    let leader: String
+    let inputs: EnergyInputs
+    let refillPct: Double
+    /// OBSERVED (median of this session's refills) or ASSUMED (100, none seen).
+    let refillSource: String
 }
 
 struct EnergyClass: Codable, Sendable, Equatable, Identifiable {
@@ -431,6 +473,8 @@ struct EnergyResponse: Codable, Sendable, Equatable {
     let sessionDbId: Int
     /// The session is the one being fed, so energyPct is now.
     let live: Bool
+    /// In a race being fed, the flag the scenarios run to.
+    var finish: EnergyFinishInfo? = nil
     let classes: [EnergyClass]
 }
 

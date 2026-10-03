@@ -441,6 +441,49 @@ export interface EnergyCar {
   lapsSinceGreen: number | null
   /** How many laps of each kind. */
   laps: Partial<Record<EnergyLapKind, number>>
+  /** Against the flag, in a race being fed; null otherwise or without a green figure and a crossing. */
+  finish: EnergyScenario | null
+}
+
+/** One car against the flag (backend EnergyFinish.Result). */
+export interface EnergyScenario {
+  /** Energy it starts from: now, or the refill level when starting from a stop. */
+  startPct: number
+  result: {
+    /** Laps still to run from now at green pace. */
+    lapsToFlag: number
+    needPct: number
+    /** Start less reserve less need: over 0 it makes it green. */
+    marginPct: number
+    /** Fewest caution laps that get it there; 0 = makes it green; null = no caution figure, or none would do. */
+    cautionLaps: number | null
+    /** False only when no number of caution laps would do. */
+    makesIt: boolean
+  }
+  /** Whose caution figures: CAR, CLASS or MANUAL; null when none. */
+  cautionSource: 'CAR' | 'CLASS' | 'MANUAL' | null
+}
+
+export interface EnergyInputs {
+  reservePct: number
+  fromStop: boolean
+  cautionUsePct: number | null
+  cautionLapMs: number | null
+}
+
+/** The flag the scenarios run to (a race being fed only). */
+export interface EnergyFinishInfo {
+  type: 'TIME' | 'LAPS'
+  /** TIME: until the clock runs out, and until the leader is projected to take the flag (from the newest feed time). */
+  clockLeftMs: number | null
+  flagInMs: number | null
+  /** LAPS: the leader's laps left. */
+  leaderLapsLeft: number | null
+  leader: string
+  inputs: EnergyInputs
+  /** Where refills landed this session (OBSERVED median), or 100 (ASSUMED). */
+  refillPct: number
+  refillSource: 'OBSERVED' | 'ASSUMED'
 }
 
 export interface EnergyClass {
@@ -457,7 +500,22 @@ export interface EnergyResponse {
   sessionDbId: number
   /** The session is the one being fed, so energyPct is now. */
   live: boolean
+  /** In a race being fed, the flag the scenarios run to; else null. */
+  finish: EnergyFinishInfo | null
   classes: EnergyClass[]
+}
+
+/** The scenario as one cell's words: "Makes it", "8 caution laps", "Won't make it", "Needs a caution figure". */
+export function cautionLapsLabel(s: EnergyScenario): string {
+  const r = s.result
+  if (r.cautionLaps === 0) return 'Makes it green'
+  if (r.cautionLaps != null) return `${r.cautionLaps} caution ${r.cautionLaps === 1 ? 'lap' : 'laps'}`
+  return r.makesIt ? 'Needs a caution figure' : "Won't make it"
+}
+
+/** "+3.2%" / "−5.1%": energy left over at the flag, or short of it. */
+export function marginLabel(pct: number): string {
+  return `${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}%`
 }
 
 /** What a lap's energy figure was made of, in words: why it counts or why not. */

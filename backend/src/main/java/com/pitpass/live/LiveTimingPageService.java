@@ -401,7 +401,7 @@ public class LiveTimingPageService {
     }
 
     /** Each car's newest crossing of the line: its last recorded lap's end. */
-    private Map<String, Long> lastCrossings(long session) {
+    Map<String, Long> lastCrossings(long session) {
         Map<String, Long> out = new HashMap<>();
         db.sql("""
                 SELECT car_number, max(start_time_ms + lap_time_ms) AS crossed FROM live_lap
@@ -713,7 +713,7 @@ public class LiveTimingPageService {
     }
 
     /** The newest time the feed reported for a session: the last lap's end or stint's start/finish. 0 = none. */
-    private long latestFeedTime(long session) {
+    long latestFeedTime(long session) {
         return db.sql("""
                 SELECT COALESCE(GREATEST(
                     (SELECT max(start_time_ms + COALESCE(lap_time_ms, 0)) FROM live_lap WHERE session_db_id = :s),

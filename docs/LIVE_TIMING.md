@@ -679,6 +679,24 @@ retry (5 s → 5 min ladder).
   class's pooled, said which), laps since the newest green lap, and a count
   of each kind of lap left out. The class band carries the class's pooled
   caution use. A car opens the car panel, whose laps say how each counted.
+- **Finish scenarios** (`EnergyFinish`, in the Energy view, a race being fed
+  only, not while the clock is stopped). Timed race (`BY_TIME`): the flag
+  falls on the overall leader's (most laps, first across) first crossing
+  after the clock runs out (start + final time + time stopped), projected at
+  its green lap time; each car finishes on its first crossing after that,
+  counted from its last crossing at its green lap time, the part-run lap as
+  its remainder. A caution lap uses less energy and more of the clock, so x
+  caution laps leave room for fewer green ones. Lap race (`BY_LAPS`): the
+  leader's laps left, less the laps a car is down. Per car: laps to the
+  flag, the green margin (start − reserve − need) and the fewest caution
+  laps that make it ("Won't make it" when none would; "Needs a caution
+  figure" when neither the car, its class nor the user gives one).
+  `/api/live/energy` takes `reserve` (%), `from=stop` (start every car from
+  the session's refill level: the median landing after a rise of over 10
+  points, else 100, labelled assumed) and `cautionUse` + `cautionLapMs` (the
+  caution figure where a car and its class have none). Times are against
+  the newest feed time, so a replay works too. Not modelled, on the cautious
+  side: a stop's time, and pit-lane laps under caution using less.
   `/api/live/status` has a `telemetry` block: state, source, last error,
   message and car counts, laps stored.
 - **Recorded:** raw websocket frames, gzip segments under `imsa-telemetry/`
