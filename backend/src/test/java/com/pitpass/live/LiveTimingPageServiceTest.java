@@ -384,6 +384,15 @@ class LiveTimingPageServiceTest {
     }
 
     @Test
+    void withNoSessionRecordedPitStopsAreTheFeedsOrUnknown() throws Exception {
+        // No analysis session: the counts fall back to participant details, which
+        // give #4's but not #04's. A blank count must stay blank, not fail the tower.
+        var cars = page(false).tower().classes().getFirst().cars();
+        assertNull(cars.get(0).pitStops(), "#04's details carry no pitStops");
+        assertEquals(3, cars.get(1).pitStops(), "#4's, as the feed counts them");
+    }
+
+    @Test
     void theTowerCountsAnOpenStopButTimesOnlyFinishedOnes() throws Exception {
         db.sql("""
                 INSERT INTO live_stint (session_db_id, car_number, start_time_ms, type, driver_order, open_lap_number,
