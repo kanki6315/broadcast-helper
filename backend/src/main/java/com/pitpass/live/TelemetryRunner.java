@@ -210,7 +210,7 @@ final class TelemetryRunner {
                     lastSession = session;
                 }
                 TelemetryDecoder.Decoded decoded = decoder.decode(payload);
-                // Al Kamel's lap counts, for the cars whose logger sends none (most GTD).
+                // Al Kamel's lap counts time the crossings; a car's logger count stands in where the feed has none.
                 Map<String, Integer> alKamelLaps = decoded.cars().isEmpty() || feedLaps == null ? Map.of() : feedLaps.get();
                 List<LiveTelemetry.LapSample> laps = telemetry.accept(decoded, System.currentTimeMillis(), alKamelLaps);
                 if (session == null || sink == null) {

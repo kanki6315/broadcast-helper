@@ -604,19 +604,37 @@ retry (5 s → 5 min ladder).
   and its `class` followed whichever series IMSA was timing (VP Challenge
   classes on WeatherTech cars). Practice 1 at Petit Le Mans stored only
   182 energy laps for 43 cars because crossings were keyed on it.
-- **Kept:** only the latest reading per car, plus each car's last 30 lap
-  samples. **Stored:** one row per car per lap in `live_energy_lap` (V59).
-  A crossing is the car's laps-completed count going up: the logger's own
-  count, else the tower's (analysis' last lap, or the standings' `lapNumber`
-  in a race only). The first reading at the new count is stored as the
-  energy at the line after that lap. Missed crossings are not invented.
+- **Kept:** only the latest reading per car. **Stored:** one row per car
+  per lap in `live_energy_lap` (V59). A crossing is the car's
+  laps-completed count going up: the tower's (analysis' last lap, or the
+  standings' `lapNumber` in a race only), else the logger's own. The tower's
+  count moves within half a second of the official line; the logger's
+  ticks about 6.6 s after it, which would sample ~0.2% late and blur the
+  lap's edges. The first reading at the new count is stored as the energy
+  at the line after that lap. Missed crossings are not invented.
   Rows are keyed to the Al Kamel session being fed, so with analysis off
   energy is shown but not stored. (V59's comment predates this: it still
   says `scoring.lapNumber` and the lap before.)
+- **Use per lap** (`EnergyModel`, loaded by `LiveEnergy` from `live_lap`
+  and `live_energy_lap`, cached 2 s): a lap's use is the drop between the
+  readings at the line before and after it. It counts only as **GREEN**
+  (all three sectors' Al Kamel flag GREEN — a local yellow reads GREEN) or
+  **CAUTION** (all FULL_YELLOW). Left out, with the reason kept: no reading
+  at either end, a pit lap (pit in or out marked, or the pit lane at either
+  line), the lap after a pit-in, a refill (a rise; refills land at ~96–98%,
+  and a red flag's pit-lane laps can come without pit marks), a lap ending
+  at 0% (the meter floors there and the car keeps lapping at full pace), a
+  red flag, a flag change within the lap, any other flag value.
+  Green use is the average of the car's **last 10 green laps of the
+  session, across pit stops**; under 3 there is no figure. Caution use is
+  the same over caution laps, and when a car has fewer than 3 of its own,
+  its class's caution laps pooled stand in.
 - **Shown:** the tower's `energyPct` (null when older than
-  `IMSA_TELEMETRY_STALE_SECONDS`) and `energyLapsLeft` (energy over the
-  stint's average use per lap; refills are left out). The car panel shows
-  energy and energy used per lap, and each stint's average.
+  `IMSA_TELEMETRY_STALE_SECONDS`), `energyUsePerLapPct` and
+  `energyUseLaps` (green use and how many laps it rests on) and
+  `energyLapsLeft` (energy over green use: green laps left). The car panel
+  shows energy, energy used and `energyLap` (GREEN, CAUTION or why it is
+  left out) per lap, and each stint's green average.
   `/api/live/status` has a `telemetry` block: state, source, last error,
   message and car counts, laps stored.
 - **Recorded:** raw websocket frames, gzip segments under `imsa-telemetry/`
@@ -624,11 +642,14 @@ retry (5 s → 5 min ladder).
   back through the same protocol code.
 
 **Verified 2026-10-01:** the endpoint, handshake, payload wrapping, message
-rate and size, and that GTP, GTD and GTD Pro all carry energy. **Still
-unverified:** whether the logger's `lap_number` ticks at the same moment as
-Al Kamel's crossing (it was only compared after the session).
-In practice and qualifying, a GTD car with no logger count crosses only on
-analysis' laps.
+rate and size, and that GTP, GTD and GTD Pro all carry energy.
+**Verified 2026-10-02** against the Petit Le Mans practice recordings (both
+feeds joined offline, ~6,000 laps): the logger's `lap_number` ticks 5.7–8.7
+s after Al Kamel's line (the stream itself runs ~0.9 s behind the car's
+clock); green use is steady at ~2.2% a lap (GTD, GTD Pro) and ~2.3% (GTP),
+and 5-lap, 10-lap and whole-stint averages all predict the next 10 green
+laps within ~0.5%. **Still unverified:** use under a full-course yellow —
+the practices had red flags only.
 
 ## When it will not connect
 

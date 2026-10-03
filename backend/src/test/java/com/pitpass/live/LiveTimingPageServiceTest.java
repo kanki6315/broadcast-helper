@@ -149,13 +149,13 @@ class LiveTimingPageServiceTest {
             }
 
             @Override
-            public LiveTelemetry.CarEnergy energy(String carNumber, String feedClass, Integer stintOpenLap) {
-                return "04".equals(carNumber) ? new LiveTelemetry.CarEnergy(42.0, 3.5, 12.0) : null;
+            public Double energyNow(String carNumber, String feedClass) {
+                return "04".equals(carNumber) ? 42.0 : null;
             }
         };
         LiveEntryMatcher matcher = new LiveEntryMatcher(db);
         LiveClassificationService classification = new LiveClassificationService(db, live, matcher);
-        LiveTimingPageService page = new LiveTimingPageService(db, live, classification);
+        LiveTimingPageService page = new LiveTimingPageService(db, live, classification, new LiveEnergy(db));
         return new Pages(page, new LiveAnalysisService(db, live, classification, page));
     }
 
@@ -176,7 +176,7 @@ class LiveTimingPageServiceTest {
         assertEquals(2, first.bestLap(), "lap 3 was invalidated after the fact, so the best comes from live_lap");
         assertEquals(99_998, first.bestLapMs());
         assertEquals(42.0, first.energyPct(), "IMSA telemetry, matched to the Al Kamel car");
-        assertEquals(12.0, first.energyLapsLeft());
+        assertNull(first.energyLapsLeft(), "no energy laps recorded, so no green figure to project with");
         assertNull(cars.get(1).energyPct(), "no telemetry for #4");
 
         var second = cars.get(1);
@@ -274,19 +274,55 @@ class LiveTimingPageServiceTest {
     }
 
     @Test
-    void aCarsLapsCarryEnergyUsedAndItsStintsTheAverage() throws Exception {
-        // Telemetry numbered the car "4"… no: exactly "04". Laps 1-3 at the line: 97, 93.5, 90.
+    void theTowerProjectsGreenLapsLeftFromTheLastGreenLaps() throws Exception {
+        db.sql("UPDATE live_lap SET sector_flags = '{GREEN,GREEN,GREEN}' WHERE session_db_id = :s AND car_number = '04'")
+                .param("s", session).update();
+        // At the line before lap 1 (lap 0 has no live_lap row) and after laps 1-3: 3% a lap.
         db.sql("""
                 INSERT INTO live_energy_lap (session_db_id, car_number, lap_number, energy_pct)
-                VALUES (:s, '04', 1, 97), (:s, '04', 2, 93.5), (:s, '04', 3, 90), (:s, '4', 2, 10)
+                VALUES (:s, '04', 0, 100), (:s, '04', 1, 97), (:s, '04', 2, 94), (:s, '04', 3, 91)
                 """).param("s", session).update();
-        var car = page(false).car("04", session);
-        assertEquals(97f, car.laps().get(0).energyPct());
-        assertNull(car.laps().get(0).energyUsedPct(), "lap 1 has no reading before it");
-        assertEquals(3.5f, car.laps().get(1).energyUsedPct());
-        assertEquals(3.5f, car.laps().get(2).energyUsedPct());
-        assertEquals(3.5f, car.stints().get(0).avgEnergyPerLapPct(), "laps 2 of stint 1-2");
-        assertEquals(3.5f, car.stints().get(1).avgEnergyPerLapPct(), "the open stint runs to the newest lap");
+        var first = page(true).tower().classes().getFirst().cars().getFirst();
+        assertEquals(3.0, first.energyUsePerLapPct(), 1e-4);
+        assertEquals(3, first.energyUseLaps());
+        assertEquals(14.0, first.energyLapsLeft(), 1e-3, "42% now over 3% a lap");
+    }
+
+    @Test
+    void aCarsLapsSayWhetherTheyCountAndItsStintsAverageTheGreenOnes() throws Exception {
+        // #77: green 1-4, pits on 5 and refills, out lap 6, green 7-9, then a caution lap and a lap the flag changed on.
+        for (int lap = 1; lap <= 11; lap++) {
+            String f = lap <= 9 ? "GREEN,GREEN,GREEN" : lap == 10 ? "FULL_YELLOW,FULL_YELLOW,FULL_YELLOW"
+                    : "GREEN,FULL_YELLOW,FULL_YELLOW";
+            db.sql("""
+                    INSERT INTO live_lap (session_db_id, car_number, lap_number, driver_order, start_time_ms, lap_time_ms,
+                                          sector_flags, pit_in_time_ms, pit_out_time_ms)
+                    VALUES (:s, '77', :lap, 1, :start, 100000, CAST(:flags AS text[]), :pin, :pout)
+                    """)
+                    .param("s", session).param("lap", lap).param("start", T0 + lap * 100_000L)
+                    .param("flags", "{" + f + "}")
+                    .param("pin", lap == 5 ? T0 + 590_000L : null)
+                    .param("pout", lap == 6 ? T0 + 610_000L : null).update();
+        }
+        db.sql("""
+                INSERT INTO live_stint (session_db_id, car_number, start_time_ms, type, driver_order, open_lap_number,
+                                        close_lap_number)
+                VALUES (:s, '77', :a, 'TRACK', 1, 1, 5), (:s, '77', :b, 'TRACK', 1, 6, NULL)
+                """).param("s", session).param("a", T0 + 100_000L).param("b", T0 + 600_000L).update();
+        // Telemetry numbered it "077": matched without leading zeros, since no car is exactly 077.
+        float[] at = {100, 98, 96, 94, 92, 97, 95, 93, 91, 89, 88.5f, 87.5f};
+        for (int lap = 0; lap < at.length; lap++) {
+            db.sql("INSERT INTO live_energy_lap (session_db_id, car_number, lap_number, energy_pct) VALUES (:s, '077', :l, :e)")
+                    .param("s", session).param("l", lap).param("e", at[lap]).update();
+        }
+        var car = page(false).car("77", session);
+        List<String> kinds = car.laps().stream().map(LiveTimingPageService.LapRow::energyLap).toList();
+        assertEquals(List.of("GREEN", "GREEN", "GREEN", "GREEN", "PIT", "PIT", "GREEN", "GREEN", "GREEN",
+                "CAUTION", "FLAG_CHANGE"), kinds);
+        assertEquals(98f, car.laps().getFirst().energyPct());
+        assertEquals(2f, car.laps().getFirst().energyUsedPct(), "from the reading at the line before lap 1");
+        assertEquals(2f, car.stints().get(0).avgEnergyPerLapPct(), "green laps 1-4; the pit lap is left out");
+        assertEquals(2f, car.stints().get(1).avgEnergyPerLapPct(), "green laps 7-9 of the open stint");
     }
 
     @Test

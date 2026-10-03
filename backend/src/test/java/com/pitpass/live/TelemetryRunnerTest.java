@@ -109,7 +109,7 @@ class TelemetryRunnerTest {
         assertEquals(TelemetryRunner.State.LIVE, status.state());
         assertEquals(frames.size(), status.messages());
         assertEquals(2, status.cars());
-        assertEquals(87.0, r.telemetry().energy("7", null, null, System.currentTimeMillis(), 15_000).energyPct());
+        assertEquals(87.0, r.telemetry().energyNow("7", null, System.currentTimeMillis(), 15_000));
 
         r.ensure(false);
         assertEquals(TelemetryRunner.State.OFF, r.status().state());
@@ -144,7 +144,7 @@ class TelemetryRunnerTest {
         r.ensure(true);
         await(() -> r.status().messages() == 2);
         assertTrue(written.isEmpty());
-        assertEquals(88.0, r.telemetry().energy("7", null, null, System.currentTimeMillis(), 15_000).energyPct());
+        assertEquals(88.0, r.telemetry().energyNow("7", null, System.currentTimeMillis(), 15_000));
     }
 
     @Test
@@ -159,9 +159,9 @@ class TelemetryRunnerTest {
         await(() -> r.status().messages() == 2);
         assertEquals(List.of(new AnalysisRows.EnergyLap(3150, "04", 2, 68.0, false)), written, "only the car whose class agrees");
         assertEquals(1, r.status().classRejected());
-        assertNull(r.telemetry().energy("7", "GS", null, System.currentTimeMillis(), 15_000),
+        assertNull(r.telemetry().energyNow("7", "GS", System.currentTimeMillis(), 15_000),
                 "nor is it shown on the GS car");
-        assertEquals(88.0, r.telemetry().energy("7", "GTP", null, System.currentTimeMillis(), 15_000).energyPct());
+        assertEquals(88.0, r.telemetry().energyNow("7", "GTP", System.currentTimeMillis(), 15_000));
     }
 
     @Test

@@ -278,14 +278,14 @@ public class LiveTimingService implements SmartLifecycle {
     }
 
     /**
-     * IMSA telemetry energy for an Al Kamel car number, or null when telemetry
-     * is off or has never seen the car. stintOpenLap scopes the per-lap average.
+     * IMSA telemetry's energy remaining now for an Al Kamel car number, or
+     * null when telemetry is off, has never seen the car or has gone stale.
      */
-    public LiveTelemetry.CarEnergy energy(String carNumber, String feedClass, Integer stintOpenLap) {
+    public Double energyNow(String carNumber, String feedClass) {
         if (telemetry == null) {
             return null;
         }
-        return telemetry.telemetry().energy(carNumber, feedClass, stintOpenLap, System.currentTimeMillis(),
+        return telemetry.telemetry().energyNow(carNumber, feedClass, System.currentTimeMillis(),
                 Math.max(1, telemetryProps.staleSeconds()) * 1000L);
     }
 
@@ -303,8 +303,8 @@ public class LiveTimingService implements SmartLifecycle {
     }
 
     /**
-     * Completed laps per car as the tower counts them, for telemetry cars
-     * whose logger sends no lap count: the last lap from analysis, else the
+     * Completed laps per car as the tower counts them, which time telemetry's
+     * lap crossings (see LiveTelemetry): the last lap from analysis, else the
      * standings' lapNumber in a race only — in practice and qualifying that
      * is the number of the car's best lap, not its count.
      */

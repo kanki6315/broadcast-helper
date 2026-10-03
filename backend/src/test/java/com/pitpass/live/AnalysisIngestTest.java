@@ -266,7 +266,7 @@ class AnalysisIngestTest {
         assertEquals(0, count("live_race_control WHERE session_db_id = :s AND message_key = '3700000'"),
                 "a null message deletes its row");
 
-        var log = new LiveTimingPageService(db, service, null).raceControl(session);
+        var log = new LiveTimingPageService(db, service, null, null).raceControl(session);
         assertEquals(List.of("CAR 04 BLACK/WHITE FLAG"), log.messages().stream().map(LiveRaceControl.Message::text).toList(),
                 "the null message is stored but never shown");
         assertEquals("#ffffff", log.messages().getFirst().foreground());
@@ -323,11 +323,12 @@ class AnalysisIngestTest {
             db.sql("DELETE FROM driver WHERE id = :d").param("d", ann).update();
         });
 
-        // IMSA telemetry for #04 in GTD, 1 lap completed then 2: one lap-crossing sample, after lap 2.
+        // IMSA telemetry for #23 in GTD, 1 lap completed then 2: one lap-crossing sample, after lap 2. The
+        // feed counts no laps for #23, so its logger's count times the crossing (the feed's would win: #04's is static here).
         Path telemetry = recordings.resolve("t.imsa");
         java.nio.file.Files.writeString(telemetry,
-                "1\t" + TelemetryFixtures.data("x", TelemetryFixtures.cars(TelemetryFixtures.car("04", 80, 1, false, "GTD"))) + "\n"
-                + "2\t" + TelemetryFixtures.data("x", TelemetryFixtures.cars(TelemetryFixtures.car("04", 77, 2, false, "GTD"))) + "\n");
+                "1\t" + TelemetryFixtures.data("x", TelemetryFixtures.cars(TelemetryFixtures.car("23", 80, 1, false, "GTD"))) + "\n"
+                + "2\t" + TelemetryFixtures.data("x", TelemetryFixtures.cars(TelemetryFixtures.car("23", 77, 2, false, "GTD"))) + "\n");
 
         AksReplayServer server = new AksReplayServer(feed(), 0, 20).start();
         cleanup.add(server);
@@ -376,7 +377,7 @@ class AnalysisIngestTest {
         await(() -> Long.valueOf(ann).equals(db.sql("""
                 SELECT driver_id FROM live_driver WHERE session_db_id = :s AND car_number = '04' AND driver_order = 1
                 """).param("s", session).query((rs, i) -> rs.getObject("driver_id", Long.class)).optional().orElse(null)));
-        await(() -> count("live_energy_lap WHERE session_db_id = :s AND car_number = '04' AND lap_number = 2") == 1);
+        await(() -> count("live_energy_lap WHERE session_db_id = :s AND car_number = '23' AND lap_number = 2") == 1);
 
         // Binding the other series again changes nothing about what this session is —
         // and energy follows the series on track, not the binding.
