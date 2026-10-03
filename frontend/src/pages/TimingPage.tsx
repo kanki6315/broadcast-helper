@@ -24,6 +24,8 @@ import {
   sessionClock,
   trackTime,
   usUnits,
+  energySummary,
+  ENERGY_FULL_LAPS,
   type DriveTimeResponse,
   type LiveStatus,
   type DriveTimeResult,
@@ -606,7 +608,11 @@ function TowerView({
               </th>
             )}
             {show('energy') && (
-              <th className="num" scope="col" title="Energy remaining (IMSA telemetry)">
+              <th
+                className="num"
+                scope="col"
+                title="Energy remaining, average use per green lap, and green laps left at that use (IMSA telemetry)"
+              >
                 Energy
               </th>
             )}
@@ -953,15 +959,27 @@ function TowerRow({
         </td>
       )}
       {hasEnergy && (
-        <td className="num tower-energy">
-          <span className="tower-pair">
-            {car.energyPct != null && <span>{Math.round(car.energyPct)}%</span>}
-            {car.energyLapsLeft != null && (
-              <span className="muted" title="Laps left at this stint's average use per lap">
-                ~{Math.floor(car.energyLapsLeft)} L
-              </span>
-            )}
+        <td
+          className="num tower-energy"
+          title={car.energyPct != null || car.energyUsePerLapPct != null ? energySummary(car) : undefined}
+        >
+          <span className="tower-pair" aria-hidden="true">
+            <span className="tower-energy-now">{car.energyPct != null ? `${Math.round(car.energyPct)}%` : ''}</span>
+            <span
+              className={
+                'muted tower-energy-use' +
+                (car.energyUseLaps != null && car.energyUseLaps < ENERGY_FULL_LAPS ? ' tower-energy-thin' : '')
+              }
+            >
+              {car.energyUsePerLapPct != null ? car.energyUsePerLapPct.toFixed(1) : ''}
+            </span>
+            <span className="muted tower-energy-left">
+              {car.energyLapsLeft != null ? `${Math.floor(car.energyLapsLeft)} L` : ''}
+            </span>
           </span>
+          {(car.energyPct != null || car.energyUsePerLapPct != null) && (
+            <span className="sr-only">{energySummary(car)}</span>
+          )}
         </td>
       )}
       <td className="tower-state">

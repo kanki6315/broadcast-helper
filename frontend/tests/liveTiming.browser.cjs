@@ -14,14 +14,14 @@ const assert = require('node:assert/strict');
   const now = Date.now();
   const car = (position, carNumber, extra={}) => ({position,carNumber,entryId:100+position,teamName:`Team ${carNumber}`,vehicle:null,manufacturer:null,
    status:'CLASSIFIED',laps:50,gapToLeaderMs:null,gapToLeaderLaps:null,intervalMs:null,intervalLaps:null,driverOrder:1,driverName:`Driver ${carNumber}`,
-   driverShortName:null,driverRating:'G',lastLap:50,lastLapMs:98_000,bestLap:12,bestLapMs:97_500,inPit:false,stintStartMs:now-30*60_000,stintLaps:18,energyPct:null,energyLapsLeft:null,pitStops:0,lastPitMs:null,trackStatus:null,currentSector:null,sectors:null,bestSectorMs:null,idealMs:null,startPosition:null,topSpeed:null,
+   driverShortName:null,driverRating:'G',lastLap:50,lastLapMs:98_000,bestLap:12,bestLapMs:97_500,inPit:false,stintStartMs:now-30*60_000,stintLaps:18,energyPct:null,energyLapsLeft:null,energyUsePerLapPct:null,energyUseLaps:null,pitStops:0,lastPitMs:null,trackStatus:null,currentSector:null,sectors:null,bestSectorMs:null,idealMs:null,startPosition:null,topSpeed:null,
    overallPosition:null,overallGapMs:null,overallGapLaps:null,overallIntervalMs:null,overallIntervalLaps:null,checkered:false,bestLapDriver:null,...extra});
   const sec = (ms, currentLap=true, valid=true) => ({ms,valid,currentLap});
   const session = {championship:'IMSA WeatherTech SportsCar Championship',event:'Petit Le Mans',name:'Race',type:'RACE',flag:'FULL_YELLOW',running:true,finished:false,
    clock:{finalType:'BY_TIME',startMs:now-10*60_000,finalMs:2*3_600_000,finalLaps:null,currentLap:null,stopMs:null,stoppedMs:60_000,utcOffsetHours:-4}};
   let tower = {state:'LIVE',eventId:22,eventName:'Petit Le Mans',filedEventId:22,filedEventName:'Petit Le Mans',session,sessionDbId:3150,feedClockMs:now-20_000,matched:4,total:5,speedUnit:'mph',classes:[
-   {className:'GTP',feedClass:'GTP',color:'#1a1a1a',bestSectors:[{ms:31_900,car:'31',driver:'Aitken'},{ms:33_000,car:'7',driver:null},{ms:32_700,car:'31',driver:'Derani'}],idealMs:97_600,cars:[car(1,'7',{overallPosition:1,bestLapDriver:'Driver Seven',startPosition:3,topSpeed:151.3,energyPct:62.4,energyLapsLeft:9.6,pitStops:2,lastPitMs:65_000,
-    trackStatus:'TRACK',currentSector:3,sectors:[sec(32_000),sec(33_000),sec(32_900,false)],bestSectorMs:[32_000,33_000,32_800],idealMs:97_800}),car(2,'31',{overallPosition:3,overallGapMs:6100,overallIntervalMs:1900,startPosition:1,topSpeed:150.2,gapToLeaderMs:4200,intervalMs:4200,lastLapMs:97_100,bestLapMs:97_100,inPit:true,trackStatus:'BOX',currentSector:1,
+   {className:'GTP',feedClass:'GTP',color:'#1a1a1a',bestSectors:[{ms:31_900,car:'31',driver:'Aitken'},{ms:33_000,car:'7',driver:null},{ms:32_700,car:'31',driver:'Derani'}],idealMs:97_600,cars:[car(1,'7',{overallPosition:1,bestLapDriver:'Driver Seven',startPosition:3,topSpeed:151.3,energyPct:62.4,energyLapsLeft:27.1,energyUsePerLapPct:2.3,energyUseLaps:10,pitStops:2,lastPitMs:65_000,
+    trackStatus:'TRACK',currentSector:3,sectors:[sec(32_000),sec(33_000),sec(32_900,false)],bestSectorMs:[32_000,33_000,32_800],idealMs:97_800}),car(2,'31',{overallPosition:3,overallGapMs:6100,overallIntervalMs:1900,startPosition:1,topSpeed:150.2,gapToLeaderMs:4200,intervalMs:4200,lastLapMs:97_100,bestLapMs:97_100,inPit:true,energyPct:40.2,energyLapsLeft:16.75,energyUsePerLapPct:2.4,energyUseLaps:6,trackStatus:'BOX',currentSector:1,
     sectors:[sec(31_900,false),sec(33_100,false,false),null],bestSectorMs:[31_900,33_050,32_700]})]},
    {className:'GTD PRO',feedClass:'GTDPRO',color:'#e30d0d',bestSectors:[],idealMs:null,cars:[car(1,'04',{overallPosition:2,overallGapMs:4200,overallIntervalMs:4200,lastLapMs:105_000,bestLapMs:105_000,trackStatus:'OUT_LAP'}),
     car(2,'4',{overallPosition:4,overallGapLaps:1,overallIntervalLaps:1,gapToLeaderLaps:1,intervalLaps:1,bestLapMs:104_000,entryId:null,checkered:true}),
@@ -128,8 +128,14 @@ const assert = require('node:assert/strict');
   assert.match(await page.locator('.timing-foot').innerText(), /4 of 5 cars matched/);
   // IMSA telemetry: the Energy column appears once any car has a reading.
   assert.equal(await towerTable.locator('thead th', {hasText:'Energy'}).count(), 1);
-  assert.match(await towerTable.locator('.tower-row').nth(0).locator('.tower-energy').innerText(), /62%\s+~9 L/);
-  assert.equal((await towerTable.locator('.tower-row').nth(1).locator('.tower-energy').innerText()).trim(), '');
+  const energy = n => towerTable.locator('.tower-row').nth(n).locator('.tower-energy');
+  assert.match(await energy(0).locator('.tower-pair').innerText(), /62%\s+2\.3\s+27 L/, 'energy, green use per lap, green laps left');
+  assert.match(await energy(0).getAttribute('title'), /Using 2\.3% a lap over the last 10 green laps\. About 27 green laps left\./);
+  assert.equal(await energy(0).locator('.tower-energy-thin').count(), 0);
+  assert.equal(await energy(1).locator('.tower-energy-thin').count(), 1, 'six green laps: marked as a thin average');
+  assert.match(await energy(1).getAttribute('title'), /only 6 green laps so far \(a full average uses 10\)/);
+  assert.match(await energy(1).locator('.sr-only').innerText(), /40% energy left\./, 'spelled out for screen readers');
+  assert.equal((await energy(2).innerText()).trim(), '', 'no telemetry, no figures');
 
   // Race control: the screen's lines, and the newest message when it is not on the screen, timed at the track.
   const strip = page.getByRole('region',{name:'Race control'});
@@ -162,6 +168,8 @@ const assert = require('node:assert/strict');
   assert.equal(await page.evaluate(() => document.body.scrollWidth > document.documentElement.clientWidth), false);
   await page.setViewportSize({width:1024,height:900});
   assert.equal(await page.evaluate(() => document.body.scrollWidth > document.documentElement.clientWidth), false, 'the tower with sectors, pits and energy fits 1024px');
+  assert.equal(await towerTable.locator('.tower-row').nth(0).locator('.tower-energy-use').isVisible(), false, 'green use per lap gives way beside sectors');
+  assert.match(await towerTable.locator('.tower-row').nth(0).locator('.tower-energy').getAttribute('title'), /Using 2\.3% a lap/, 'and is still in the tooltip');
   await page.setViewportSize({width:1280,height:900});
 
   // Optional columns: top speed is opt-in, the rest can be hidden; only columns with data are offered.

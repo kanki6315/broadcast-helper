@@ -57,13 +57,34 @@ final class TimingFormatTests: XCTestCase {
           "teamName":"Team","vehicle":null,"manufacturer":null,"status":"CLASSIFIED","laps":50,"gapToLeaderMs":null,"gapToLeaderLaps":null,
           "intervalMs":null,"intervalLaps":null,"driverOrder":1,"driverName":"Ann One","driverShortName":"One","driverRating":"G",
           "lastLap":50,"lastLapMs":98000,"bestLap":12,"bestLapMs":97500,"inPit":false,"stintStartMs":1768999000000,"stintLaps":18,
-          "energyPct":62.4,"energyLapsLeft":9.6}]}],"matched":1,"total":1}
+          "energyPct":62.4,"energyLapsLeft":27.1,"energyUsePerLapPct":2.3,"energyUseLaps":10}]}],"matched":1,"total":1}
         """
         let tower = try JSONDecoder().decode(Tower.self, from: Data(json.utf8))
         XCTAssertEqual(tower.classes.first?.cars.first?.carNumber, "04")
         XCTAssertEqual(tower.classes.first?.cars.first?.energyPct, 62.4)
+        XCTAssertEqual(tower.classes.first?.cars.first?.energyUsePerLapPct, 2.3)
+        XCTAssertEqual(tower.classes.first?.cars.first?.energyUseLaps, 10)
         XCTAssertEqual(TimingFormat.classBest(tower.classes[0].cars), 97_500)
         XCTAssertTrue(tower.classes[0].cars[0].running)
+    }
+
+    func testEnergySummarySaysWhatTheAverageRestsOn() throws {
+        func car(_ fields: String) throws -> TowerCar {
+            let json = """
+            {"position":1,"carNumber":"7","entryId":null,"teamName":null,"vehicle":null,"manufacturer":null,"status":null,"laps":null,
+             "gapToLeaderMs":null,"gapToLeaderLaps":null,"intervalMs":null,"intervalLaps":null,"driverOrder":null,"driverName":null,
+             "driverShortName":null,"driverRating":null,"lastLap":null,"lastLapMs":null,"bestLap":null,"bestLapMs":null,"inPit":false,
+             "stintStartMs":null,"stintLaps":null,\(fields)}
+            """
+            return try JSONDecoder().decode(TowerCar.self, from: Data(json.utf8))
+        }
+        XCTAssertEqual(TimingFormat.energySummary(try car(#""energyPct":62.4,"energyLapsLeft":27.1,"energyUsePerLapPct":2.3,"energyUseLaps":10"#)),
+                       "62% energy left. Using 2.3% a lap over the last 10 green laps. About 27 green laps left.")
+        XCTAssertEqual(TimingFormat.energySummary(try car(#""energyPct":40.2,"energyLapsLeft":16.7,"energyUsePerLapPct":2.4,"energyUseLaps":6"#)),
+                       "40% energy left. Using 2.4% a lap over only 6 green laps so far (a full average uses 10). About 16 green laps left.")
+        XCTAssertEqual(TimingFormat.energySummary(try car(#""energyPct":97.0,"energyLapsLeft":null"#)),
+                       "97% energy left. No green-lap average yet: it needs 3 clean green laps.",
+                       "a server from before the green average sends neither field")
     }
 
     // MARK: Session clock and lap marks

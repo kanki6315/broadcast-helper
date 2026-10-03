@@ -259,6 +259,24 @@ enum TimingFormat {
         return best
     }
 
+    /// A full green-use average rests on this many laps; fewer is marked on the tower.
+    static let energyFullLaps = 10
+
+    /// The tower's energy cell spelled out, for VoiceOver (as the web tower's tooltip).
+    static func energySummary(_ car: TowerCar) -> String {
+        var parts: [String] = []
+        if let e = car.energyPct { parts.append("\(Int(e.rounded()))% energy left.") }
+        if let use = car.energyUsePerLapPct, let n = car.energyUseLaps {
+            let over = n >= energyFullLaps ? "the last \(n) green laps"
+                : "only \(n) green laps so far (a full average uses \(energyFullLaps))"
+            parts.append("Using \(String(format: "%.1f", use))% a lap over \(over).")
+            if let left = car.energyLapsLeft { parts.append("About \(Int(left)) green laps left.") }
+        } else {
+            parts.append("No green-lap average yet: it needs 3 clean green laps.")
+        }
+        return parts.joined(separator: " ")
+    }
+
     /// "62.4%", or empty.
     static func pct(_ value: Double?, digits: Int = 1) -> String {
         guard let value else { return "" }

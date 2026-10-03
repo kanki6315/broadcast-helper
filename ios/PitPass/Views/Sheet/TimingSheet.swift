@@ -394,7 +394,8 @@ private struct TowerGrid: View {
             .text("int", "Int", width: 72, align: .trailing),
         ]
         // Energy beside the gaps rather than after the sectors: the first screen holds it.
-        if hasEnergy { data.append(.text("energy", "Energy", width: 86, align: .trailing)) }
+        // Energy now, green use per lap, green laps left: "100%  2.3  27 L" is 11 characters and two gaps.
+        if hasEnergy { data.append(.text("energy", "Energy", width: 106, align: .trailing)) }
         if hasLaps {
             data += [.text("last", "Last", width: 80, align: .trailing),
                      .text("best", "Best", width: 80, align: .trailing)]
@@ -484,12 +485,24 @@ private struct TowerGrid: View {
             gapCell(leader ? "" : TimingFormat.gap(ms: place.intervalMs, laps: place.intervalLaps), muted: muted),
         ]
         if hasEnergy {
-            cells.append(AnyView(HStack(spacing: PP.Space.s1) {
+            let thin = (car.energyUseLaps ?? TimingFormat.energyFullLaps) < TimingFormat.energyFullLaps
+            let cell = HStack(spacing: PP.Space.s1) {
                 if let e = car.energyPct { Text("\(Int(e.rounded()))%").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.text).fixedSize() }
-                if let left = car.energyLapsLeft {
-                    Text("~\(Int(left))L").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.textMuted).fixedSize()
+                if let use = car.energyUsePerLapPct {
+                    // Dotted: fewer than 10 green laps behind it.
+                    Text(String(format: "%.1f", use)).font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.textMuted)
+                        .underline(thin, pattern: .dot).fixedSize()
                 }
-            }))
+                if let left = car.energyLapsLeft {
+                    Text("\(Int(left)) L").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.textMuted).fixedSize()
+                }
+            }
+            if car.energyPct != nil || car.energyUsePerLapPct != nil {
+                cells.append(AnyView(cell.accessibilityElement(children: .ignore)
+                    .accessibilityLabel(TimingFormat.energySummary(car))))
+            } else {
+                cells.append(AnyView(cell))
+            }
         }
         if hasLaps {
             cells.append(lapCell(car.lastLapMs, mark: lastMark, muted: muted))

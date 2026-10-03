@@ -768,9 +768,31 @@
   min-width: 4ch;
 }
 
-.tower-energy .muted {
-  min-width: 5ch;
+/* Energy now, green use per lap, green laps left: fixed slots so each
+ * figure lines up down the column even when a car has only some of them. */
+.tower-energy .tower-pair {
+  gap: var(--space-1);
+}
+
+.tower-energy-now {
+  min-width: 4ch;
   text-align: right;
+}
+
+.tower-energy-use {
+  min-width: 3ch;
+  text-align: right;
+}
+
+.tower-energy-left {
+  min-width: 4ch;
+  text-align: right;
+}
+
+/* Fewer than 10 green laps behind the average: still a figure, marked as thin. */
+.tower-energy-thin {
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
 }
 
 /* The last stop's time, then a narrow slot for the count ("×2"), so times
@@ -1093,10 +1115,29 @@
   }
 }
 
+/* Sectors and energy beside real team names ("Acura Meyer Shank Racing
+ * w/Curb Agajanian") overflow the page's 1320px column, and a 1280px laptop
+ * further still: with sectors the team is cut shorter, enough to place the car. */
+.tower--sectors .tower-team {
+  max-width: 18ch;
+}
+
+@media (max-width: 1440px) {
+  .tower--sectors .tower-team {
+    max-width: 10ch;
+  }
+}
+
 /* Sector columns take the room the team name had: with them the team goes a
  * step earlier, so the tower still fits 1024px beside the energy column. */
 @media (max-width: 1100px) {
   .tower--sectors .tower-team {
+    display: none;
+  }
+
+  /* Then green use per lap: energy and laps left are what a glance needs, and
+   * the cell's tooltip still says the use. */
+  .tower--sectors .tower-energy-use {
     display: none;
   }
 

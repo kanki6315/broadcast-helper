@@ -78,8 +78,15 @@ export interface TowerCar {
   stintLaps: number | null
   /** IMSA telemetry, % remaining; null when off, unseen or stale. */
   energyPct: number | null
-  /** energyPct over this stint's average use per lap; null until two laps are sampled. */
+  /** energyPct over energyUsePerLapPct: green laps left. Null when either is. */
   energyLapsLeft: number | null
+  /**
+   * Average energy used per lap over the car's last green laps of the session,
+   * across pit stops (pit, out, refill, caution and mixed-flag laps left out).
+   */
+  energyUsePerLapPct: number | null
+  /** How many green laps that rests on: 3 to 10, null below 3. */
+  energyUseLaps: number | null
   /** Al Kamel PIT stints so far, as the Pits view counts them; null with no session recorded. */
   pitStops: number | null
   /** Pit-lane time of the newest finished stop. */
@@ -222,9 +229,15 @@ export interface LapRow {
   topSpeed: number | null
   pitInMs: number | null
   pitOutMs: number | null
-  /** IMSA telemetry at the line after this lap, and the drop from the lap before (null over a refill). */
+  /** IMSA telemetry at the line after this lap, and the drop from the lap before. */
   energyPct: number | null
   energyUsedPct: number | null
+  /**
+   * What the energy figures made of the lap: GREEN or CAUTION when it counts,
+   * else why not (NO_READING, PIT, OUT_LAP, REFILL, EMPTY, RED, FLAG_CHANGE,
+   * FLAG_UNKNOWN). Null without telemetry for the car.
+   */
+  energyLap: string | null
 }
 
 export interface StintRow {
@@ -473,6 +486,26 @@ export function parseRuleTime(text: string): number | null | undefined {
 /** An energy percentage to one decimal ("62.4%"), or nothing. */
 export function pct(value: number | null | undefined, digits = 1): string {
   return value == null ? '' : `${value.toFixed(digits)}%`
+}
+
+/** A full green-use average rests on this many laps; fewer is marked on the tower. */
+export const ENERGY_FULL_LAPS = 10
+
+/** The tower's energy cell spelled out, for its tooltip and screen readers. */
+export function energySummary(car: Pick<TowerCar, 'energyPct' | 'energyUsePerLapPct' | 'energyUseLaps' | 'energyLapsLeft'>): string {
+  const parts: string[] = []
+  if (car.energyPct != null) parts.push(`${Math.round(car.energyPct)}% energy left.`)
+  if (car.energyUsePerLapPct != null && car.energyUseLaps != null) {
+    const over =
+      car.energyUseLaps >= ENERGY_FULL_LAPS
+        ? `the last ${car.energyUseLaps} green laps`
+        : `only ${car.energyUseLaps} green laps so far (a full average uses ${ENERGY_FULL_LAPS})`
+    parts.push(`Using ${car.energyUsePerLapPct.toFixed(1)}% a lap over ${over}.`)
+    if (car.energyLapsLeft != null) parts.push(`About ${Math.floor(car.energyLapsLeft)} green laps left.`)
+  } else {
+    parts.push('No green-lap average yet: it needs 3 clean green laps.')
+  }
+  return parts.join(' ')
 }
 
 /** GREEN → "Green", FULL_YELLOW → "Full yellow". */

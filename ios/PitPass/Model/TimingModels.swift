@@ -133,7 +133,12 @@ struct TowerCar: Codable, Sendable, Equatable, Identifiable {
     let stintLaps: Int?
     /// IMSA telemetry: % remaining, nil when off, unseen or stale.
     let energyPct: Double?
+    /// energyPct over energyUsePerLapPct: green laps left; nil when either is.
     let energyLapsLeft: Double?
+    /// Average use over the car's last green laps of the session, across pit stops.
+    var energyUsePerLapPct: Double? = nil
+    /// How many green laps that rests on: 3 to 10, nil below 3.
+    var energyUseLaps: Int? = nil
     /// Participant details' BOX / OUT_LAP / TRACK / STOPPED; nil when that channel is off.
     var trackStatus: String? = nil
     /// Its place in its class on the starting grid, in a race; nil off the grid.
@@ -200,6 +205,8 @@ struct LapRow: Codable, Sendable, Equatable, Identifiable {
     let pitOutMs: Int?
     let energyPct: Double?
     let energyUsedPct: Double?
+    /// GREEN or CAUTION when the lap counts toward energy use, else why not (PIT, REFILL…).
+    var energyLap: String? = nil
     var id: Int { lap }
 }
 
