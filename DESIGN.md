@@ -508,6 +508,18 @@ in a modal.
   as a fill, so text contrast is ours in both themes; a blinking message
   blinks only its bar, and not at all under reduced motion. Under 640px the
   label and link share the top line and the messages run below.
+- **Weather** (`Weather.tsx`, `.wx-*`): above race control, a `--surface`
+  strip labelled "Weather" in muted caps, like race control's: track, air,
+  humidity, wind (speed and 16-point compass, where it blows from) and
+  pressure as muted labels with ink, semibold, tabular values, in the feed's
+  units. "Over the session" opens the **Weather** view: track and air now
+  in `--text-xl`, how far each has moved since the first reading and its
+  low/high; a line chart of both over the session on the analysis chart's
+  marks (slot 2 track, slot 1 air, labelled at their ends, whole-degree axis
+  at least 4° tall so a quiet afternoon is not drawn as a storm, a crosshair
+  readout); and every reading in a collapsed `.grid-table`, newest first.
+  Under 640px the label and link share the top line and the readings wrap
+  below.
 - **Session clock**: the page's one big number, right of the title (below
   it under 640px), in tabular figures: time to go, counted down in the
   browser from the feed's status, or "Lap 12 of 30" for a lap-limited race.

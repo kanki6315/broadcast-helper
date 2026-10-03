@@ -4,7 +4,8 @@ import SwiftUI
 /// (its Timing tab) or for one series weekend as the feed has it, filed under
 /// an event or not (pushed from the Timing screen): the live timing tower;
 /// gaps, best sectors and pit stops over a recorded session
-/// (TimingAnalysis.swift); and drive time. Read-only apart from the shared
+/// (TimingAnalysis.swift); drive time; and the championship calculator, live
+/// or as a scenario (TimingPoints.swift). Read-only apart from the shared
 /// connect/disconnect switch in `LiveTimingBar`. Rules are edited on the website.
 ///
 /// Everything here is polled through `LiveFeed` and never stored: the tower
@@ -14,6 +15,8 @@ import SwiftUI
 struct TimingSheet: View {
     @Environment(AppSession.self) private var session
     let scope: TimingScope
+    /// This event's season, for the Points view's scenario; nil on a series weekend's screen.
+    var seasonId: Int? = nil
     @State private var status = LiveFeed<LiveStatus>()
     /// A weekend's own description: its name, and the event it is filed under (if any).
     @State private var weekend = LiveFeed<WeekendChampionship>()
@@ -26,7 +29,7 @@ struct TimingSheet: View {
     @AppStorage("timing.order") private var order = "class"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    enum Mode: String { case tower, gaps, sectors, pits, drive, control }
+    enum Mode: String { case tower, points, gaps, sectors, pits, drive, control, weather }
 
     struct OpenCar: Identifiable {
         let carNumber: String
@@ -37,7 +40,10 @@ struct TimingSheet: View {
         var id: String { carNumber }
     }
 
-    init(eventId: Int) { scope = .event(eventId) }
+    init(eventId: Int, seasonId: Int? = nil) {
+        scope = .event(eventId)
+        self.seasonId = seasonId
+    }
     init(scope: TimingScope) { self.scope = scope }
 
     /// The session on track belongs here when it is filed under this event or —
@@ -57,6 +63,12 @@ struct TimingSheet: View {
         case let .event(id): id
         case .weekend: weekend.value?.eventId
         }
+    }
+
+    /// This screen's own event: none on a series weekend's screen, filed or not.
+    private var ownEventId: Int? {
+        if case let .event(id) = scope { return id }
+        return nil
     }
 
     private var title: String {
@@ -91,14 +103,16 @@ struct TimingSheet: View {
                 HStack(spacing: PP.Space.s3) {
                     Picker("View", selection: $mode) {
                         Text("Tower").tag(Mode.tower)
+                        Text("Points").tag(Mode.points)
                         Text("Gaps").tag(Mode.gaps)
                         Text("Sectors").tag(Mode.sectors)
                         Text("Pits").tag(Mode.pits)
                         Text("Drive time").tag(Mode.drive)
                         Text("Race control").tag(Mode.control)
+                        Text("Weather").tag(Mode.weather)
                     }
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 600)
+                    .frame(maxWidth: 760)
                     if followingThis, let s = tower.value?.session { SessionLine(session: s) }
                     Spacer(minLength: 0)
                     if let error = tower.error, tower.value != nil {
@@ -107,6 +121,8 @@ struct TimingSheet: View {
                 }
                 if mode == .tower {
                     towerContent
+                } else if mode == .points {
+                    TimingPointsSection(scenarioEventId: ownEventId, scenarioSeasonId: seasonId, status: status.value, followingThis: followingThis)
                 } else {
                     RecordedSessions(path: sessionsPath, scopeName: scopeName) { chosen in
                         switch mode {
@@ -118,6 +134,10 @@ struct TimingSheet: View {
                             RaceControlSection(chosen: chosen,
                                                utcOffsetHours: chosen.current && tower.value?.sessionDbId == chosen.sessionDbId
                                                    ? tower.value?.session?.clock?.utcOffsetHours : nil)
+                        case .weather:
+                            WeatherSection(chosen: chosen, us: tower.value?.speedUnit == "mph",
+                                           utcOffsetHours: chosen.current && tower.value?.sessionDbId == chosen.sessionDbId
+                                               ? tower.value?.session?.clock?.utcOffsetHours : nil)
                         default:
                             // Colours come from the event the session is filed under, when the tower shows it.
                             let sameEvent = chosen.eventId != nil && tower.value?.filedEventId == chosen.eventId
@@ -129,7 +149,9 @@ struct TimingSheet: View {
                     }
                 }
             }
-            .padding(PP.Space.s5)
+            // Narrow side margins: on an iPad in landscape the tower needs the width.
+            .padding(.horizontal, PP.Space.s3)
+            .padding(.vertical, PP.Space.s5)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .background(PP.bg)
@@ -193,6 +215,9 @@ struct TimingSheet: View {
                 let unfiled = value.filedEventId == nil
                 if unfiled {
                     Text(unfiledNote(value)).font(.subheadline).foregroundStyle(PP.textMuted)
+                }
+                WeatherStrip(now: value.weather, us: value.speedUnit == "mph") {
+                    mode = .weather
                 }
                 RaceControlStrip(now: value.raceControl, utcOffsetHours: value.session?.clock?.utcOffsetHours) {
                     mode = .control
@@ -349,27 +374,34 @@ private struct TowerGrid: View {
     }
 
     var body: some View {
+        // Widths are the longest usual value plus the 3 pt cell padding either
+        // side (mono 14 pt is 8.4 pt a character): the whole tower, overall
+        // order included, fits an 11" iPad in landscape. Driver and Team give
+        // way first when it is tight, and take any spare width on a 13".
         var ident: [GridColumn] = [
-            .text("pos", "Pos", width: hasStarts ? 76 : overall ? 58 : 48, align: .trailing),
-            .text("car", "#", width: 56, align: .trailing),
+            .text("pos", "Pos", width: hasStarts ? 56 : overall ? 38 : 28, align: .trailing),
+            .text("car", "#", width: 34, align: .trailing),
         ]
-        if overall { ident.append(.text("class", "Class", width: 118)) }
-        ident.append(.text("driver", "Driver", width: 200))
+        if overall { ident.append(.text("class", "Class", width: classTagWidth + 32)) }
+        ident.append(GridColumn(id: "driver", width: 176, growthWeight: 1, minWidth: 120) { header("Driver") })
+        // Pit, chequered flag, out lap, retired: pinned at the tower's edge, so
+        // they never sit off-screen past the sectors on an iPad's width.
+        ident.append(GridColumn(id: "state", width: 42) { Text("").accessibilityHidden(true) })
         var data: [GridColumn] = [
-            .text("team", "Team", width: 170),
-            .text("laps", "Laps", width: 54, align: .trailing),
-            .text("gap", "Gap", width: 96, align: .trailing),
-            .text("int", "Int", width: 92, align: .trailing),
+            GridColumn(id: "team", width: 136, growthWeight: 1, minWidth: 80) { header("Team") },
+            .text("laps", "Laps", width: 36, align: .trailing),
+            .text("gap", "Gap", width: 72, align: .trailing),
+            .text("int", "Int", width: 72, align: .trailing),
         ]
+        // Energy beside the gaps rather than after the sectors: the first screen holds it.
+        if hasEnergy { data.append(.text("energy", "Energy", width: 86, align: .trailing)) }
         if hasLaps {
-            data += [.text("last", "Last", width: 92, align: .trailing),
-                     .text("best", "Best", width: 96, align: .trailing)]
-            data += (0..<sectorCount).map { .text("s\($0)", "S\($0 + 1)", width: 80, align: .trailing) }
-            data.append(.text("stint", "Stint", width: 116, align: .trailing))
+            data += [.text("last", "Last", width: 80, align: .trailing),
+                     .text("best", "Best", width: 80, align: .trailing)]
+            data += (0..<sectorCount).map { .text("s\($0)", "S\($0 + 1)", width: 64, align: .trailing) }
+            data.append(.text("stint", "Stint", width: 86, align: .trailing))
         }
-        if hasPits { data.append(.text("pits", "Last pit", width: 100, align: .trailing)) }
-        if hasEnergy { data.append(.text("energy", "Energy", width: 104, align: .trailing)) }
-        data.append(GridColumn(id: "state", width: 70, growthWeight: 1) { Text("").accessibilityHidden(true) })
+        if hasPits { data.append(.text("pits", "Last pit", width: 80, align: .trailing)) }
 
         // What each car is marked against is always its own class, in either order.
         let bests = Dictionary(tower.classes.map { ($0.className, TimingFormat.classBest($0.cars)) }, uniquingKeysWith: { a, _ in a })
@@ -386,7 +418,18 @@ private struct TowerGrid: View {
             }
         }
         return GridTable(identColumns: ident, dataColumns: data, sections: sections,
-                         lineHeight: 20, cellPadV: 5, cellPadH: 8, headerHeight: 34, separatesIdentity: true, centersCells: true)
+                         lineHeight: 20, cellPadV: 5, cellPadH: 3, headerHeight: 34, separatesIdentity: true, centersCells: true)
+    }
+
+    /// Every class tag one width — the longest class name on the tower, as drawn.
+    private var classTagWidth: CGFloat {
+        let font = UIFontMetrics.default.scaledFont(for: UIFont.systemFont(ofSize: PP.TextSize.xs, weight: .bold))
+        let widest = tower.classes.map { ($0.className as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0
+        return ceil(widest) + 12
+    }
+
+    private func header(_ label: String) -> some View {
+        Text(label).font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted)
     }
 
     /// The class's best sectors, who holds them and the ideal lap, on the band's scrolling half.
@@ -418,7 +461,8 @@ private struct TowerGrid: View {
                 .font(PP.mono(PP.TextSize.sm, weight: mark == .classBest ? 700 : mark == .personalBest ? 600 : 400))
                 .foregroundStyle(mark != nil ? PP.ink : muted ? PP.textMuted : PP.text)
                 .strikethrough(invalid, color: PP.error)
-                .padding(.horizontal, mark != nil ? 4 : 0)
+                .lineLimit(1).minimumScaleFactor(0.85)
+                .padding(.horizontal, mark != nil ? 3 : 0)
                 .background(fill, in: RoundedRectangle(cornerRadius: PP.Radius.xs))
                 .accessibilityLabel(([time] + words).joined(separator: ", ")))
     }
@@ -436,9 +480,17 @@ private struct TowerGrid: View {
         var cells: [AnyView] = [
             GridCell.text(car.teamName ?? "—", muted: true),
             GridCell.num(car.laps.map(String.init) ?? "", muted: muted),
-            GridCell.num(leader ? "" : TimingFormat.gap(ms: place.gapMs, laps: place.gapLaps), muted: muted),
-            GridCell.num(leader ? "" : TimingFormat.gap(ms: place.intervalMs, laps: place.intervalLaps), muted: muted),
+            gapCell(leader ? "" : TimingFormat.gap(ms: place.gapMs, laps: place.gapLaps), muted: muted),
+            gapCell(leader ? "" : TimingFormat.gap(ms: place.intervalMs, laps: place.intervalLaps), muted: muted),
         ]
+        if hasEnergy {
+            cells.append(AnyView(HStack(spacing: PP.Space.s1) {
+                if let e = car.energyPct { Text("\(Int(e.rounded()))%").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.text).fixedSize() }
+                if let left = car.energyLapsLeft {
+                    Text("~\(Int(left))L").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.textMuted).fixedSize()
+                }
+            }))
+        }
         if hasLaps {
             cells.append(lapCell(car.lastLapMs, mark: lastMark, muted: muted))
             cells.append(lapCell(car.bestLapMs, mark: isClassBest ? .classBest : nil, muted: muted,
@@ -452,23 +504,15 @@ private struct TowerGrid: View {
             cells.append(AnyView(HStack(spacing: 4) {
                 if let last = car.lastPitMs {
                     Text(TimingFormat.duration(last)).font(PP.mono(PP.TextSize.sm)).foregroundStyle(muted ? PP.textMuted : PP.text)
+                        .fixedSize()
                 }
                 if let n = car.pitStops, n > 0 {
                     Text("×\(n)").font(PP.mono(PP.TextSize.xs)).foregroundStyle(PP.textMuted)
-                        .frame(minWidth: 24, alignment: .leading)
+                        .frame(minWidth: 20, alignment: .leading)
                         .accessibilityLabel("\(n) \(n == 1 ? "stop" : "stops")")
                 }
             }))
         }
-        if hasEnergy {
-            cells.append(AnyView(HStack(spacing: PP.Space.s2) {
-                if let e = car.energyPct { Text("\(Int(e.rounded()))%").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.text) }
-                if let left = car.energyLapsLeft {
-                    Text("~\(Int(left)) L").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.textMuted)
-                }
-            }))
-        }
-        cells.append(stateCell(car))
 
         let driver = AnyView(HStack(spacing: 6) {
             Text(car.driverName ?? "—").font(PP.sans(PP.TextSize.sm, weight: 500))
@@ -481,6 +525,7 @@ private struct TowerGrid: View {
         var ident = [positionCell(car, place: place, cls: cls, muted: muted), GridCell.car(car.carNumber)]
         if overall { ident.append(classCell(car, cls: cls)) }
         ident.append(driver)
+        ident.append(stateCell(car))
         let gained = hasStarts ? TimingFormat.placesGained(car).flatMap { $0 == 0 ? nil : "\($0 > 0 ? "up" : "down") \(abs($0)) since the start" } : nil
         let label = [place.position.map { "P\($0)\(overall ? " overall" : "")" }, overall ? "\(cls.className) P\(car.position)" : nil, gained,
                      "car \(car.carNumber)", car.driverName, car.teamName,
@@ -490,6 +535,12 @@ private struct TowerGrid: View {
         return GridRowItem(id: car.carNumber, ident: ident, cells: cells, lines: 1,
                            onTap: { open(car, cls) }, tapLabel: label + ". Opens laps and stints.",
                            wash: moved.contains(car.carNumber) ? PP.accent.opacity(0.3) : nil)
+    }
+
+    /// A gap: "+1:02.345" and "+12 laps" are rare and longer, so they shrink a touch rather than wrap.
+    private func gapCell(_ text: String, muted: Bool) -> AnyView {
+        AnyView(Text(text).font(PP.mono(PP.TextSize.sm)).foregroundStyle(muted ? PP.textMuted : PP.text)
+            .lineLimit(1).minimumScaleFactor(0.8))
     }
 
     /// One sector's newest time, marked as the lap columns are; the previous
@@ -522,25 +573,29 @@ private struct TowerGrid: View {
             Text(gained == 0 ? "" : "\(gained > 0 ? "▲" : "▼")\(abs(gained))")
                 .font(PP.sans(PP.TextSize.xs, weight: 500))
                 .foregroundStyle(gained > 0 ? PP.success : PP.error)
-                .frame(width: 28, alignment: .leading)
+                .frame(width: 24, alignment: .leading)
         })
     }
 
     /// Overall: the car's class as a tag and its place in it.
     private func classCell(_ car: TowerCar, cls: TowerClass) -> AnyView {
-        AnyView(HStack(spacing: 6) {
+        // Every tag the same width, so the column reads as one stripe whatever the class's name.
+        AnyView(HStack(spacing: 4) {
             Text(cls.className).font(PP.sans(PP.TextSize.xs, weight: 700)).lineLimit(1)
-                .padding(.horizontal, 6).padding(.vertical, 1)
+                .padding(.vertical, 1)
+                .frame(width: classTagWidth)
                 .foregroundStyle(classInk(cls.color ?? ""))
                 .background(Color(cssHex: cls.color ?? "") ?? PP.surface2, in: RoundedRectangle(cornerRadius: PP.Radius.xs))
                 .overlay(RoundedRectangle(cornerRadius: PP.Radius.xs).strokeBorder(PP.borderStrong))
             Text(String(car.position)).font(PP.mono(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted)
+                .frame(width: 18, alignment: .trailing)
         })
     }
 
     private func stateCell(_ car: TowerCar) -> AnyView {
         if !car.running {
-            return GridCell.text(car.status?.lowercased().replacingOccurrences(of: "_", with: " ") ?? "", muted: true)
+            return AnyView(Text(car.status?.lowercased().replacingOccurrences(of: "_", with: " ") ?? "")
+                .font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted).lineLimit(1))
         }
         if car.checkered == true { return AnyView(ChequeredMark()) }
         if !car.inPit {
@@ -550,7 +605,9 @@ private struct TowerGrid: View {
                     .overlay(RoundedRectangle(cornerRadius: PP.Radius.xs).strokeBorder(PP.borderStrong))
                     .accessibilityLabel("Out lap"))
             }
-            return car.trackStatus == "STOPPED" ? GridCell.text("stopped", muted: true) : GridCell.empty()
+            return car.trackStatus == "STOPPED"
+                ? AnyView(Text("stopped").font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted).lineLimit(1))
+                : GridCell.empty()
         }
         return AnyView(Text("Pit").font(PP.sans(PP.TextSize.xs, weight: 700)).foregroundStyle(PP.ink)
             .padding(.horizontal, 6).padding(.vertical, 1)
@@ -586,16 +643,16 @@ private struct StintCell: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            HStack(spacing: PP.Space.s2) {
+            HStack(spacing: PP.Space.s1) {
                 if let laps = car.stintLaps, !car.inPit {
-                    Text("\(laps) L").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.text)
+                    Text("\(laps)L").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.text).fixedSize()
                 }
                 if let start = car.stintStartMs,
                    let now = TimingFormat.feedNow(state: tower.state, finished: tower.session?.finished ?? false,
                                                   feedClockMs: tower.feedClockMs,
                                                   wallMs: Int(context.date.timeIntervalSince1970 * 1000)) {
                     Text(TimingFormat.duration(now - start)).font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.textMuted)
-                        .frame(minWidth: 52, alignment: .trailing)
+                        .fixedSize()
                 }
             }
         }
@@ -890,8 +947,10 @@ private struct DriveTable: View {
     let classColors: [String: String]
     /// The tower's class order, when it is following this event; else first seen.
     let classOrder: [String]
+    @State private var query = ""
 
     var body: some View {
+        let keep = Self.carsMatching(query, cars: allCars)
         let over = drive.drivers.filter { $0.status == "OVER_MAX" }.count
         let under = drive.drivers.filter { $0.status == "UNDER_MIN" }.count
         let ok = drive.drivers.filter { $0.status == "OK" }.count
@@ -899,6 +958,16 @@ private struct DriveTable: View {
             if drive.drivers.isEmpty {
                 EmptyState(message: "No drivers recorded for this session yet.")
             } else {
+                HStack(spacing: PP.Space.s3) {
+                    FilterField(text: $query, placeholder: "Car numbers, e.g. 4, 911")
+                        .keyboardType(.numbersAndPunctuation)
+                        .frame(maxWidth: 260)
+                        .accessibilityLabel("Filter by car number")
+                    if let keep {
+                        Text(keep.isEmpty ? "No car with that number" : "\(keep.count) of \(allCars.count) cars")
+                            .font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.textMuted)
+                    }
+                }
                 if !drive.rules.isEmpty {
                     HStack(spacing: PP.Space.s4) {
                         if over > 0 { Text("\(over) over the maximum").foregroundStyle(PP.error) }
@@ -907,23 +976,47 @@ private struct DriveTable: View {
                     }
                     .font(.subheadline.weight(.semibold))
                 }
-                GridTable(identColumns: [.text("car", "#", width: 56, align: .trailing), .text("driver", "Driver", width: 210)],
-                          // Status beside the time: it is the answer, and it must stay on screen in
-                          // portrait; the meter is only shape, so it goes last.
-                          dataColumns: [.text("rating", "Rating", width: 84), .text("time", "Drive time", width: 96, align: .trailing),
-                                        .text("status", "Status", width: 180),
-                                        .text("min", "Min", width: 80, align: .trailing), .text("max", "Max", width: 80, align: .trailing),
-                                        GridColumn(id: "meter", width: 140, growthWeight: 1) { Text("").accessibilityHidden(true) }],
-                          sections: sections,
-                          cellPadV: 4, cellPadH: 8, headerHeight: 32, separatesIdentity: true, centersCells: true)
+                if keep?.isEmpty != true {
+                    GridTable(identColumns: [.text("car", "#", width: 56, align: .trailing), .text("driver", "Driver", width: 210)],
+                              // Status beside the time: it is the answer, and it must stay on screen in
+                              // portrait; the meter is only shape, so it goes last.
+                              dataColumns: [.text("rating", "Rating", width: 84), .text("time", "Drive time", width: 96, align: .trailing),
+                                            .text("status", "Status", width: 180),
+                                            .text("min", "Min", width: 80, align: .trailing), .text("max", "Max", width: 80, align: .trailing),
+                                            GridColumn(id: "meter", width: 140, growthWeight: 1) { Text("").accessibilityHidden(true) }],
+                              sections: sections(keep: keep),
+                              cellPadV: 4, cellPadH: 8, headerHeight: 32, separatesIdentity: true, centersCells: true)
+                }
             }
         }
     }
 
-    private var sections: [GridSection] {
+    private var allCars: [String] {
+        var seen = Set<String>()
+        return drive.drivers.map(\.car).filter { seen.insert($0).inserted }
+    }
+
+    /// The cars a number search keeps (as on the web): each comma- or
+    /// space-separated number picks the car with exactly that number when there
+    /// is one (#4 is not #04 or #44), otherwise every car whose number starts
+    /// with it, so typing narrows as it goes. Nil when the search is empty.
+    static func carsMatching(_ query: String, cars: [String]) -> Set<String>? {
+        let wanted = query.split(whereSeparator: { $0 == "," || $0.isWhitespace })
+            .map { $0.hasPrefix("#") ? String($0.dropFirst()).lowercased() : $0.lowercased() }
+            .filter { !$0.isEmpty }
+        if wanted.isEmpty { return nil }
+        var keep = Set<String>()
+        for w in wanted {
+            let exact = cars.filter { $0.lowercased() == w }
+            keep.formUnion(exact.isEmpty ? cars.filter { $0.lowercased().hasPrefix(w) } : exact)
+        }
+        return keep
+    }
+
+    private func sections(keep: Set<String>?) -> [GridSection] {
         var order: [String] = []
         var byClass: [String: [DriveTimeResult]] = [:]
-        for d in drive.drivers {
+        for d in drive.drivers where keep?.contains(d.car) ?? true {
             let cls = d.className ?? "Unmatched"
             if byClass[cls] == nil { order.append(cls) }
             byClass[cls, default: []].append(d)

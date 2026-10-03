@@ -23,6 +23,7 @@ import {
   ruleTime,
   sessionClock,
   trackTime,
+  usUnits,
   type DriveTimeResponse,
   type LiveStatus,
   type DriveTimeResult,
@@ -37,13 +38,16 @@ import {
 import LiveCarModal from '../components/LiveCarModal'
 import { GapsView, PitsView, SectorsView } from './TimingAnalysis'
 import { RaceControlStrip, RaceControlView } from './RaceControl'
+import { WeatherStrip, WeatherView } from './Weather'
+import { PointsView } from './TimingPoints'
 
 /**
  * The live timing page — for a Pit Pass event (`/timing/:eventId`) or for one
  * series weekend as the feed has it, filed or not (`/timing/weekend/:id`):
  * the tower; gaps, best sectors and pit stops over a recorded session
  * (TimingAnalysis); drive time per driver against the filed event's rules; and
- * race control's messages (RaceControl). Chrome-less like the sheet — it is kept
+ * race control's messages (RaceControl); the track's weather (Weather); and the
+ * championships projected live (TimingPoints, members only). Chrome-less like the sheet — it is kept
  * open on a second screen in the booth.
  *
  * Reads, apart from two admin-only controls: the shared connect/disconnect
@@ -51,15 +55,17 @@ import { RaceControlStrip, RaceControlView } from './RaceControl'
  * (a 304 when nothing moved), drive time every 10 s, the analysis views every
  * 15 s while their session is live.
  */
-type View = 'tower' | 'gaps' | 'sectors' | 'pits' | 'drive' | 'control'
+type View = 'tower' | 'points' | 'gaps' | 'sectors' | 'pits' | 'drive' | 'control' | 'weather'
 
 const VIEWS: { id: View; label: string }[] = [
   { id: 'tower', label: 'Tower' },
+  { id: 'points', label: 'Points' },
   { id: 'gaps', label: 'Gaps' },
   { id: 'sectors', label: 'Sectors' },
   { id: 'pits', label: 'Pits' },
   { id: 'drive', label: 'Drive time' },
   { id: 'control', label: 'Race control' },
+  { id: 'weather', label: 'Weather' },
 ]
 
 /** Either a Pit Pass event's sessions, or one series weekend's (Al Kamel's feed event). */
@@ -71,7 +77,9 @@ const scopePath = (scope: TimingScope, nav: TimingNav) =>
 export default function TimingPage({ scope }: { scope: TimingScope }) {
   const nav = useTimingNav()
   const [params, setParams] = useSearchParams()
-  const view: View = VIEWS.find((v) => v.id === params.get('view'))?.id ?? 'tower'
+  // The shared link opens the timing reads only, not the standings the points need.
+  const views = nav.shared ? VIEWS.filter((v) => v.id !== 'points') : VIEWS
+  const view: View = views.find((v) => v.id === params.get('view'))?.id ?? 'tower'
   // Bumped after an admin connects or disconnects, so the tower follows at once.
   const [feedChanged, setFeedChanged] = useState(0)
   const { value: tower, error: towerError } = useLivePoll<Tower>('/api/live/timing', 2000, feedChanged)
@@ -146,7 +154,7 @@ export default function TimingPage({ scope }: { scope: TimingScope }) {
             ← Timing
           </a>
         )}
-        <ViewTabs view={view} onChange={setView} />
+        <ViewTabs views={views} view={view} onChange={setView} />
         {tower && <FeedStatus tower={tower} followingThis={followingThis} />}
         {towerError && tower && <span className="timing-stale">Not updating: {towerError}</span>}
         <LiveConnectControl eventId={eventId} onChanged={() => setFeedChanged((n) => n + 1)} />
@@ -162,6 +170,8 @@ export default function TimingPage({ scope }: { scope: TimingScope }) {
 
       {view === 'tower' ? (
         <TowerView tower={tower} error={towerError} scope={scope} followingThis={followingThis} />
+      ) : view === 'points' ? (
+        <PointsView tower={tower} followingThis={followingThis} />
       ) : (
         <SessionViews view={view} scope={scope} sessions={sessions} tower={tower} />
       )}
@@ -169,8 +179,7 @@ export default function TimingPage({ scope }: { scope: TimingScope }) {
   )
 }
 
-function ViewTabs({ view, onChange }: { view: View; onChange: (v: View) => void }) {
-  const views = VIEWS
+function ViewTabs({ views, view, onChange }: { views: typeof VIEWS; view: View; onChange: (v: View) => void }) {
   const onKey = (e: KeyboardEvent) => {
     if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
     e.preventDefault()
@@ -528,6 +537,7 @@ function TowerView({
             : "Not filed under a Pit Pass event. Teams and drivers are the feed's own."}
         </p>
       )}
+      <WeatherStrip now={tower.weather} us={usUnits(tower.speedUnit)} href={`${base}?view=weather`} />
       <RaceControlStrip
         now={tower.raceControl}
         utcOffsetHours={tower.session?.clock?.utcOffsetHours}
@@ -1047,7 +1057,7 @@ function SessionViews({
   sessions,
   tower,
 }: {
-  view: Exclude<View, 'tower'>
+  view: Exclude<View, 'tower' | 'points'>
   scope: TimingScope
   sessions: SessionSummary[] | null
   tower: Tower | null
@@ -1113,6 +1123,13 @@ function SessionViews({
           session={chosen}
           utcOffsetHours={chosen.current && tower?.sessionDbId === chosen.sessionDbId ? tower.session?.clock?.utcOffsetHours : null}
         />
+      ) : view === 'weather' ? (
+        <WeatherView
+          key={chosen.sessionDbId}
+          session={chosen}
+          us={usUnits(tower?.speedUnit)}
+          utcOffsetHours={chosen.current && tower?.sessionDbId === chosen.sessionDbId ? tower.session?.clock?.utcOffsetHours : null}
+        />
       ) : (
         <DriveTimeView session={chosen} tower={tower} />
       )}
@@ -1162,13 +1179,36 @@ function DriveTimeView({ session, tower }: { session: SessionSummary; tower: Tow
 
 const STATUS_ORDER = ['OVER_MAX', 'UNDER_MIN', 'OK', 'NO_RULE']
 
+/**
+ * The cars a number search keeps: each comma- or space-separated number picks
+ * the car with exactly that number when there is one (#4 is not #04 or #44),
+ * otherwise every car whose number starts with it, so typing narrows as it goes.
+ */
+function carsMatching(query: string, cars: string[]): Set<string> | null {
+  const wanted = query
+    .split(/[\s,]+/)
+    .map((t) => t.replace(/^#/, '').toLowerCase())
+    .filter(Boolean)
+  if (wanted.length === 0) return null
+  const keep = new Set<string>()
+  for (const w of wanted) {
+    const exact = cars.filter((c) => c.toLowerCase() === w)
+    for (const c of exact.length > 0 ? exact : cars.filter((c) => c.toLowerCase().startsWith(w))) keep.add(c)
+  }
+  return keep
+}
+
 function DriveTable({ drive, classColors }: { drive: DriveTimeResponse; classColors: Map<string, string | null> }) {
+  const [query, setQuery] = useState('')
   if (drive.drivers.length === 0) {
     return <div className="empty-state">No drivers recorded for this session yet.</div>
   }
+  const allCars = [...new Set(drive.drivers.map((d) => d.car))]
+  const keep = carsMatching(query, allCars)
   // Class → car → drivers, classes in first-seen order, cars by number.
   const classes = new Map<string, Map<string, DriveTimeResult[]>>()
   for (const d of drive.drivers) {
+    if (keep && !keep.has(d.car)) continue
     const cls = d.className ?? 'Unmatched'
     if (!classes.has(cls)) classes.set(cls, new Map())
     const cars = classes.get(cls)!
@@ -1179,6 +1219,21 @@ function DriveTable({ drive, classColors }: { drive: DriveTimeResponse; classCol
   const hasRules = drive.rules.length > 0
   return (
     <>
+      <div className="drive-search">
+        <input
+          type="search"
+          inputMode="numeric"
+          value={query}
+          placeholder="Car numbers, e.g. 4, 911"
+          aria-label="Filter by car number"
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {keep && (
+          <span className="muted" aria-live="polite">
+            {keep.size === 0 ? 'No car with that number' : `${keep.size} of ${allCars.length} cars`}
+          </span>
+        )}
+      </div>
       {hasRules && (
         <p className="timing-summary" aria-label="Drive time summary">
           {counts
@@ -1190,48 +1245,50 @@ function DriveTable({ drive, classColors }: { drive: DriveTimeResponse; classCol
             ))}
         </p>
       )}
-      <table className="grid-table drive" aria-label="Drive time by driver">
-        <thead>
-          <tr>
-            <th className="num" scope="col">
-              #
-            </th>
-            <th scope="col">Driver</th>
-            <th scope="col">Rating</th>
-            <th className="num" scope="col" title="Track time: pit lane excluded, as the rule counts it">
-              Drive time
-            </th>
-            <th scope="col">
-              <span className="sr-only">Against the rule</span>
-            </th>
-            <th className="num" scope="col">
-              Min
-            </th>
-            <th className="num" scope="col">
-              Max
-            </th>
-            <th scope="col">Status</th>
-          </tr>
-        </thead>
-        {[...classes.entries()].map(([cls, cars]) => (
-          <tbody key={cls} style={{ '--class-color': classColors.get(cls.toLowerCase()) ?? undefined } as CSSProperties}>
-            <tr className="class-band">
-              <td colSpan={8}>
-                <span className="band-label">{cls}</span>
-              </td>
+      {classes.size > 0 && (
+        <table className="grid-table drive" aria-label="Drive time by driver">
+          <thead>
+            <tr>
+              <th className="num" scope="col">
+                #
+              </th>
+              <th scope="col">Driver</th>
+              <th scope="col">Rating</th>
+              <th className="num" scope="col" title="Track time: pit lane excluded, as the rule counts it">
+                Drive time
+              </th>
+              <th scope="col">
+                <span className="sr-only">Against the rule</span>
+              </th>
+              <th className="num" scope="col">
+                Min
+              </th>
+              <th className="num" scope="col">
+                Max
+              </th>
+              <th scope="col">Status</th>
             </tr>
-            {[...cars.entries()]
-              .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
-              .map(([car, drivers]) => (
-                <Fragment key={car}>
-                  {drivers.map((d, i) => (
-                    <DriveRow key={d.driverOrder} d={d} showCar={i === 0} lastOfCar={i === drivers.length - 1} />
-                  ))}
-                </Fragment>
-              ))}
-          </tbody>
-        ))}
-      </table>
+          </thead>
+          {[...classes.entries()].map(([cls, cars]) => (
+            <tbody key={cls} style={{ '--class-color': classColors.get(cls.toLowerCase()) ?? undefined } as CSSProperties}>
+              <tr className="class-band">
+                <td colSpan={8}>
+                  <span className="band-label">{cls}</span>
+                </td>
+              </tr>
+              {[...cars.entries()]
+                .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+                .map(([car, drivers]) => (
+                  <Fragment key={car}>
+                    {drivers.map((d, i) => (
+                      <DriveRow key={d.driverOrder} d={d} showCar={i === 0} lastOfCar={i === drivers.length - 1} />
+                    ))}
+                  </Fragment>
+                ))}
+            </tbody>
+          ))}
+        </table>
+      )}
     </>
   )
 }

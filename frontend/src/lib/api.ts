@@ -193,6 +193,8 @@ export interface LiveStatus {
   /** The event the session on track is filed under — what live standings are scored against. */
   filedEventId: number | null
   filedEventName: string | null
+  /** The filed event's season: whose standings are projected live. */
+  filedSeasonId: number | null
   lastError: string | null
   session: LiveSession | null
 }

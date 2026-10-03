@@ -326,6 +326,18 @@ class LiveTimingPageServiceTest {
     }
 
     @Test
+    void aCarNeverShowsAnotherCarsEnergyThroughALeadingZero() throws Exception {
+        // Telemetry sent only "4", and #4 is a car of its own here: #04 has no energy, #4 keeps it.
+        seedFour();
+        db.sql("""
+                INSERT INTO live_energy_lap (session_db_id, car_number, lap_number, energy_pct)
+                VALUES (:s, '4', 1, 97), (:s, '4', 2, 93.5)
+                """).param("s", session).update();
+        assertNull(page(false).car("04", session).laps().get(1).energyPct());
+        assertEquals(93.5f, page(false).car("4", session).laps().get(1).energyPct());
+    }
+
+    @Test
     void sessionsOfAnEventNewestFirst() throws Exception {
         var sessions = page(true).sessions(event);
         assertEquals(1, sessions.size());
@@ -405,6 +417,15 @@ class LiveTimingPageServiceTest {
         assertEquals(70_000L, tower.get(0).lastPitMs());
         assertEquals(0, tower.get(1).pitStops(), "#4 has no stints: none yet, not unknown");
         assertNull(tower.get(1).lastPitMs());
+    }
+
+    @Test
+    void withNoSessionRecordedPitStopsAreTheFeedsOrUnknown() throws Exception {
+        // No analysis session: the counts fall back to participant details, which
+        // give #4's but not #04's. A blank count must stay blank, not fail the tower.
+        var cars = page(false).tower().classes().getFirst().cars();
+        assertNull(cars.get(0).pitStops(), "#04's details carry no pitStops");
+        assertEquals(3, cars.get(1).pitStops(), "#4's, as the feed counts them");
     }
 
     @Test

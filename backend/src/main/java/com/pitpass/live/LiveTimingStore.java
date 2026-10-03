@@ -123,6 +123,12 @@ public class LiveTimingStore {
                 .query(String.class).optional();
     }
 
+    /** The season an event belongs to — whose standings the live points project. */
+    public Optional<Long> eventSeasonId(long eventId) {
+        return db.sql("SELECT season_id FROM event WHERE id = :id").param("id", eventId)
+                .query(Long.class).optional();
+    }
+
     private static Instant instant(Timestamp t) {
         return t == null ? null : t.toInstant();
     }

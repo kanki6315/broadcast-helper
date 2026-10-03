@@ -18,15 +18,23 @@ struct AnalysisOpen {
 
 // MARK: - Gaps
 
-/// Categorical slots 1–3 of the data-viz reference palette, stepped per theme
-/// and validated all-pairs against the page background (as timing.css). Aqua
-/// sits under 3:1 on white, so every followed line carries a direct label.
+/// Categorical slots 1–8 of the data-viz reference palette in its fixed order,
+/// stepped per theme and validated adjacent-pairs against the page background
+/// (as timing.css). Aqua, yellow and magenta sit under 3:1 on white, so every
+/// followed line carries a direct label.
 enum GapSeries {
     static let colors: [Color] = [
         PP.dynamicPublic(0x2A78D6, 0x3987E5),
         PP.dynamicPublic(0xEB6834, 0xD95926),
         PP.dynamicPublic(0x1BAF7A, 0x199E70),
+        PP.dynamicPublic(0xEDA100, 0xC98500),
+        PP.dynamicPublic(0xE87BA4, 0xD55181),
+        PP.dynamicPublic(0x008300, 0x008300),
+        PP.dynamicPublic(0x4A3AA7, 0x9085E9),
+        PP.dynamicPublic(0xE34948, 0xE66767),
     ]
+    /// Followed on first open: the class's top three, so the chart starts uncluttered.
+    static let defaultPicks = 3
 }
 
 struct GapsSection: View {
@@ -80,7 +88,7 @@ private struct GapPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: PP.Space.s3) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Gap to the \(cls.className) leader after each lap. Follow up to three cars; the rest stay in grey.")
+                Text("Gap to the \(cls.className) leader after each lap. Follow up to eight cars; the rest stay in grey.")
                     .font(.subheadline).foregroundStyle(PP.textMuted)
                 Spacer(minLength: PP.Space.s3)
                 Picker("Show as", selection: $asTable) {
@@ -102,12 +110,12 @@ private struct GapPanel: View {
         .onAppear {
             guard !seeded else { return }
             seeded = true
-            picked = timed.prefix(GapSeries.colors.count).enumerated().map { ($1.carNumber, $0) }
+            picked = timed.prefix(GapSeries.defaultPicks).enumerated().map { ($1.carNumber, $0) }
         }
     }
 
     private var followedCars: [GapCar] {
-        let order = picked.isEmpty ? timed.prefix(GapSeries.colors.count).map(\.carNumber) : picked.map(\.car)
+        let order = picked.isEmpty ? timed.prefix(GapSeries.defaultPicks).map(\.carNumber) : picked.map(\.car)
         return order.compactMap { c in timed.first { $0.carNumber == c } }
     }
 
@@ -215,9 +223,6 @@ private struct GapChart: View {
                         PointMark(x: .value("Lap", last.lap), y: .value("Gap", max(last.value, -yMax)))
                             .symbolSize(30)
                             .foregroundStyle(color)
-                            .annotation(position: .trailing, spacing: 4) {
-                                Text("#\(f.g.carNumber)").font(PP.mono(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.ink)
-                            }
                     }
                 }
                 if let hoverLap {
@@ -256,14 +261,28 @@ private struct GapChart: View {
             // inside the tab's ScrollView the scroll gesture takes the drag first.
             .chartOverlay { proxy in
                 GeometryReader { geo in
-                    Rectangle().fill(.clear).contentShape(Rectangle())
-                        .onTapGesture { location in
-                            guard let frame = proxy.plotFrame else { return }
-                            let x = location.x - geo[frame].origin.x
-                            guard let lap: Int = proxy.value(atX: x) else { return }
-                            let clamped = min(max(lap, firstLap), lastLap)
-                            hoverLap = hoverLap == clamped ? nil : clamped
+                    ZStack(alignment: .topLeading) {
+                        Rectangle().fill(.clear).contentShape(Rectangle())
+                            .onTapGesture { location in
+                                guard let frame = proxy.plotFrame else { return }
+                                let x = location.x - geo[frame].origin.x
+                                guard let lap: Int = proxy.value(atX: x) else { return }
+                                let clamped = min(max(lap, firstLap), lastLap)
+                                hoverLap = hoverLap == clamped ? nil : clamped
+                            }
+                        if let frame = proxy.plotFrame {
+                            ForEach(labels(focus, proxy: proxy, plot: geo[frame], yMax: yMax)) { l in
+                                HStack(spacing: 4) {
+                                    Circle().fill(GapSeries.colors[l.slot]).frame(width: 8, height: 8)
+                                    Text("#\(l.car)").font(PP.mono(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.ink)
+                                }
+                                .fixedSize()
+                                .frame(width: 0, height: 0, alignment: .leading)
+                                .position(x: l.x + 8, y: l.y)
+                                .allowsHitTesting(false)
+                            }
                         }
+                    }
                 }
             }
             .frame(height: 340)
@@ -276,6 +295,33 @@ private struct GapChart: View {
                     .font(.caption).foregroundStyle(PP.textMuted)
             }
         }
+    }
+
+    private struct GapLabel: Identifiable {
+        let car: String
+        let slot: Int
+        let x: CGFloat
+        var y: CGFloat
+        var id: String { car }
+    }
+
+    /// Direct labels at each followed line's last point, nudged apart so they
+    /// never overlap, then backed up from the bottom edge so a bunch of
+    /// trailing cars never spills under the axis (as the web chart).
+    private func labels(_ focus: [(g: GapCar, slot: Int)], proxy: ChartProxy, plot: CGRect, yMax: Double) -> [GapLabel] {
+        let gap: CGFloat = 15
+        var out = focus.compactMap { f -> GapLabel? in
+            guard let last = points(f.g).last,
+                  let x = proxy.position(forX: last.lap),
+                  let y = proxy.position(forY: max(last.value, -yMax)) else { return nil }
+            return GapLabel(car: f.g.carNumber, slot: f.slot, x: plot.minX + x, y: plot.minY + y)
+        }
+        .sorted { $0.y < $1.y }
+        for i in out.indices.dropFirst() { out[i].y = max(out[i].y, out[i - 1].y + gap) }
+        for i in out.indices.reversed() {
+            out[i].y = min(out[i].y, i == out.count - 1 ? plot.maxY : out[i + 1].y - gap)
+        }
+        return out
     }
 
     private func readout(_ lap: Int, focus: [(g: GapCar, slot: Int)]) -> some View {

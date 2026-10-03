@@ -63,6 +63,12 @@ public class LiveTimingPageController {
         return service.raceControl(session);
     }
 
+    /** The weather station's readings for a session, one a minute, oldest first. */
+    @GetMapping("/weather")
+    public LiveTimingPageService.WeatherLog weather(@RequestParam(required = false) Long session) {
+        return service.weather(session);
+    }
+
     @GetMapping("/drive-time")
     public LiveTimingPageService.DriveTimeResponse driveTime(@RequestParam(required = false) Long session) {
         return service.driveTime(session);

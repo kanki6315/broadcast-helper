@@ -146,6 +146,13 @@ pit-pass:
     # per session (live_race_control) only while analysis is on.
     race-control:
       enabled: ${ALKAMELV2_RACE_CONTROL_ENABLED:true}
+    # The track's weather station (weather.currentData + .sessionData): the
+    # timing page's weather strip and chart. Tiny, but not yet seen on the real
+    # server (protocol 1.0.33), so off until a session has been recorded with
+    # it. The readings are stored per session (live_weather) only while
+    # analysis is on.
+    weather:
+      enabled: ${ALKAMELV2_WEATHER_ENABLED:false}
   # IMSA's own telemetry (imsa.com/telemetry): an AWS AppSync Events websocket
   # carrying energy remaining per car. Unofficial and undocumented — off by
   # default, fails soft, and only ever runs beside the Al Kamel connection in

@@ -104,7 +104,7 @@ class AnalysisIngestTest {
                 1 << 10, 2, 1,
                 new AlKamelV2Properties.Recording(true, recordings.toString(), "", 10, 64),
                 new AlKamelV2Properties.Replay("", 1.0),
-                new AlKamelV2Properties.Analysis(true, 1 << 20), null, null);
+                new AlKamelV2Properties.Analysis(true, 1 << 20), null, null, null);
         LiveTimingService service = new LiveTimingService(props, new LiveTimingServiceTest.MemoryStore(), mapper,
                 null, (segment, key) -> segments.add(segment),
                 new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
@@ -189,7 +189,7 @@ class AnalysisIngestTest {
         AlKamelV2Properties props = new AlKamelV2Properties("127.0.0.1", server.port(), "u", "p", false, false,
                 "Pit Pass test", List.of("timing.session.info"), 1 << 10, 2, 1,
                 new AlKamelV2Properties.Recording(false, recordings.toString(), "", 10, 64),
-                new AlKamelV2Properties.Replay("", 1.0), new AlKamelV2Properties.Analysis(true, 1 << 20), null, null);
+                new AlKamelV2Properties.Replay("", 1.0), new AlKamelV2Properties.Analysis(true, 1 << 20), null, null, null);
         LiveTimingService service = new LiveTimingService(props, new LiveTimingServiceTest.MemoryStore(), mapper,
                 null, (segment, key) -> { },
                 new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
@@ -242,7 +242,7 @@ class AnalysisIngestTest {
                 "Pit Pass test", List.of("timing.session.info"), 1 << 10, 2, 1,
                 new AlKamelV2Properties.Recording(false, recordings.toString(), "", 10, 64),
                 new AlKamelV2Properties.Replay("", 1.0), new AlKamelV2Properties.Analysis(true, 1 << 20), null,
-                new AlKamelV2Properties.RaceControl(true));
+                new AlKamelV2Properties.RaceControl(true), null);
         LiveTimingService service = new LiveTimingService(props, new LiveTimingServiceTest.MemoryStore(), mapper,
                 null, (segment, key) -> { },
                 new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
@@ -276,6 +276,71 @@ class AnalysisIngestTest {
         assertEquals(List.of("CAR 04 TRACK LIMITS WARNING", "FULL COURSE YELLOW"),
                 now.lines().stream().map(LiveRaceControl.Message::text).toList(), "the screen, in line order");
         assertEquals("CAR 04 BLACK/WHITE FLAG", now.latest().text());
+    }
+
+    /**
+     * Weather: the session's readings are stored per session — from a
+     * snapshot rooted at its channel as well as from {"weather":…} pushes —
+     * with missing units converted, and a null reading deletes its row. The
+     * latest reading stays in the tree for the tower.
+     */
+    @Test
+    void weatherReadingsAreStoredPerSession() throws Exception {
+        long t0 = RACE_START;
+        long t1 = RACE_START + 60_000;
+        long t2 = RACE_START + 120_000;
+        List<String> lines = List.of(
+                "JSON:1::" + info(session, "Race"),
+                // a JOIN snapshot rooted at its own channel, metric only (an older server)
+                "JSON:2:weather.sessionData:{\"" + t0 + "\":{\"dayTime\":" + t0 + ",\"ambientTemperature\":24.0,"
+                        + "\"trackTemperature\":38.0,\"humidity\":60,\"pressure\":1012,\"windDirection\":200,"
+                        + "\"windSpeed\":10},\"" + t1 + "\":{\"dayTime\":" + t1 + ",\"trackTemperature\":39.5}}",
+                "JSON:3::{\"weather\":{\"sessionData\":{\"" + t2 + "\":{\"dayTime\":" + t2
+                        + ",\"trackTemperature\":41.0,\"trackTemperatureF\":105.8},\"" + t1 + "\":null},"
+                        + "\"currentData\":{\"dayTime\":" + (t2 + 15_000) + ",\"ambientTemperature\":25.1,"
+                        + "\"trackTemperature\":41.2}}}",
+                "JSON:4::{\"timing\":{\"session\":{\"status\":{\"currentFlag\":\"GREEN\"}}}}");
+        List<Recorded> feed = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            feed.add(new Recorded(1_000 + i, lines.get(i)));
+        }
+        AksReplayServer server = new AksReplayServer(feed, 0, 20).start();
+        cleanup.add(server);
+        AnalysisWriter writer = new AnalysisWriter(jdbc, mapper, 1_000, 500, Duration.ofMillis(50));
+        cleanup.add(writer::stop);
+        AlKamelV2Properties props = new AlKamelV2Properties("127.0.0.1", server.port(), "u", "p", false, false,
+                "Pit Pass test", List.of("timing.session.info"), 1 << 10, 2, 1,
+                new AlKamelV2Properties.Recording(false, recordings.toString(), "", 10, 64),
+                new AlKamelV2Properties.Replay("", 1.0), new AlKamelV2Properties.Analysis(true, 1 << 20), null,
+                null, new AlKamelV2Properties.Weather(true));
+        LiveTimingService service = new LiveTimingService(props, new LiveTimingServiceTest.MemoryStore(), mapper,
+                null, (segment, key) -> { },
+                new Pacing(Duration.ofMillis(20), Duration.ofSeconds(2), List.of(Duration.ofMillis(50)),
+                        Duration.ofSeconds(5), Duration.ofSeconds(10)),
+                writer, null, null, null);
+        service.start();
+        cleanup.add(service::stop);
+
+        service.request(true, null, "t");
+        await(() -> "GREEN".equals(text(service, "timing.session.status", "currentFlag")));
+        await(() -> count("live_weather WHERE session_db_id = :s") == 2 && writer.stats().queued() == 0);
+        Thread.sleep(150);
+
+        assertTrue(service.status().channels().containsAll(AlKamelV2Properties.WEATHER_CHANNELS));
+        assertEquals(0, writer.stats().failed());
+
+        var log = new LiveTimingPageService(db, service, null, null).weather(session);
+        assertEquals(List.of(t0, t2), log.readings().stream().map(LiveWeather.Reading::dayTimeMs).toList(),
+                "oldest first; the null reading deleted its row");
+        var first = log.readings().getFirst();
+        assertEquals(24.0, first.airC());
+        assertEquals(75.2, first.airF(), "converted: the station sent Celsius only");
+        assertEquals(6.2, first.windMph());
+        assertEquals(105.8, log.readings().get(1).trackF());
+
+        var now = LiveWeather.now(service.state("weather.currentData"), service.state("weather.sessionData"));
+        assertEquals(25.1, now.airC());
+        assertEquals(t2 + 15_000, now.dayTimeMs());
     }
 
     @Test
@@ -345,11 +410,16 @@ class AnalysisIngestTest {
             public java.util.Optional<Long> filedEvent(long sessionDbId) {
                 return real.filedEvent(sessionDbId);
             }
+
+            @Override
+            public java.util.Optional<Long> eventSeasonId(long eventId) {
+                return real.eventSeasonId(eventId);
+            }
         };
         AlKamelV2Properties props = new AlKamelV2Properties("127.0.0.1", server.port(), "u", "p", false, false,
                 "Pit Pass test", List.of("timing.session.info", "timing.session.entry"), 1 << 10, 2, 1,
                 new AlKamelV2Properties.Recording(false, recordings.toString(), "", 10, 64),
-                new AlKamelV2Properties.Replay("", 1.0), new AlKamelV2Properties.Analysis(true, 1 << 20), null, null);
+                new AlKamelV2Properties.Replay("", 1.0), new AlKamelV2Properties.Analysis(true, 1 << 20), null, null, null);
         ImsaTelemetryProperties telemetryProps = new ImsaTelemetryProperties(false, "https://example.invalid/",
                 List.of(wtName), List.of("telemetry/message"), 15, false, telemetry.toString(), 0);
         LiveTimingService service = new LiveTimingService(props, store, mapper, null, (segment, key) -> { },
@@ -366,6 +436,7 @@ class AnalysisIngestTest {
         assertNull(filedUnder(), "PC's #04 is TCR; the car on track is GTD");
         assertEquals(pcEvent, service.status().eventId(), "still bound to Pilot Challenge");
         assertNull(service.status().filedEventId(), "but Pit Pass rows come only from the filed event: none");
+        assertNull(service.status().filedSeasonId(), "and no season to project");
         assertEquals(TelemetryRunner.State.OFF, service.status().telemetry().state());
         assertEquals("The series on track sends no energy telemetry", service.status().telemetry().idleReason());
 
@@ -374,6 +445,8 @@ class AnalysisIngestTest {
         service.request(true, wtEvent, "t");
         await(() -> Long.valueOf(wtEvent).equals(filedUnder()));
         assertEquals(wtEvent, service.status().filedEventId());
+        assertEquals(db.sql("SELECT season_id FROM event WHERE id = :e").param("e", wtEvent).query(Long.class).single(),
+                service.status().filedSeasonId(), "the live points project the filed event's season");
         await(() -> Long.valueOf(ann).equals(db.sql("""
                 SELECT driver_id FROM live_driver WHERE session_db_id = :s AND car_number = '04' AND driver_order = 1
                 """).param("s", session).query((rs, i) -> rs.getObject("driver_id", Long.class)).optional().orElse(null)));

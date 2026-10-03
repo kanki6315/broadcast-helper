@@ -96,9 +96,13 @@ class LiveEnergy {
                                 rs.getObject("pit_out_time_ms", Long.class), rs.getObject("lap_time_ms", Integer.class),
                                 rs.getObject("driver_order", Integer.class), null, null)))
                 .list();
+        // Every Al Kamel number in the session: a loose match never takes another car's readings.
+        java.util.Set<String> alKamelCars = new java.util.HashSet<>(laps.keySet());
+        alKamelCars.addAll(db.sql("SELECT car_number FROM live_car WHERE session_db_id = :s")
+                .param("s", session).query(String.class).list());
         Map<String, EnergyModel.Car> out = new HashMap<>();
         for (var e : laps.entrySet()) {
-            Map<Integer, Reading> readings = readingsFor(e.getKey(), energy, laps.keySet());
+            Map<Integer, Reading> readings = readingsFor(e.getKey(), energy, alKamelCars);
             if (readings == null) {
                 continue;
             }
