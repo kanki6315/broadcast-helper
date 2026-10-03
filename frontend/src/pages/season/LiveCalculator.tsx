@@ -117,13 +117,13 @@ export function LiveTable({ recap, live, showAll, setShowAll }: { recap: Recap; 
     {(live.livePhase || live.qualifyingImported) && <>
       <div className="calculator-scroll"><table className="calculator-table calculator-live-table">
         <caption className="sr-only">{recap.championship.className} {who.toLowerCase()} standings projected from the running order</caption>
-        <thead><tr><th scope="col">Rank</th><th scope="col"><abbr title="Places gained or lost against the imported standings">±</abbr></th><th scope="col">{who}</th><th scope="col">Projected</th><th scope="col">Gap</th><th scope="col">Imported</th>{phases.map(p => <th scope="col" key={p}>{p}</th>)}<th scope="col">Running</th></tr></thead>
+        <thead><tr><th scope="col">Rank</th><th scope="col"><abbr title="Places gained or lost against the imported standings">±</abbr></th><th scope="col">{who}</th><th scope="col">Projected</th><th scope="col"><abbr title="Points behind the leader">Gap</abbr></th><th scope="col"><abbr title="Points behind the row above">Int</abbr></th><th scope="col">Imported</th>{phases.map(p => <th scope="col" key={p}>{p}</th>)}<th scope="col">Running</th></tr></thead>
         <tbody>{(showAll ? lines : lines.slice(0, SHORT_LIST)).map(line => <tr key={line.competitorKey}>
           <td>{line.tied ? '=' : ''}{line.rank}</td>
           <td className={line.movement > 0 ? 'is-up' : line.movement < 0 ? 'is-down' : ''}>{line.movement === 0 ? <span aria-label="No change">–</span>
             : <span aria-label={`${line.movement > 0 ? 'Up' : 'Down'} ${Math.abs(line.movement)}`}>{line.movement > 0 ? '▲' : '▼'}{Math.abs(line.movement)}</span>}</td>
           <th scope="row">{liveName(line, live.kind)}</th>
-          <td className="calculator-total">{line.total}</td><td>{line.gap}</td><td>{line.totalPoints}</td>
+          <td className="calculator-total">{line.total}</td><td>{line.gap}</td><td>{line.interval}</td><td>{line.totalPoints}</td>
           {phases.map((phase, i) => <td key={phase}>{line.positions[i] ? <>P{line.positions[i]}<small>+{line.awards[i]}</small></> : '–'}</td>)}
           <td className="calculator-live-running">{line.running ? <>#{line.running.carNumber}{liveGap(line.running) && ` · ${liveGap(line.running)}`}
             {line.running.status && line.running.status !== 'CLASSIFIED' && <small>{words(line.running.status)}</small>}</> : <small>Not running</small>}</td>

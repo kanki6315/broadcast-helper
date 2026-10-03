@@ -610,8 +610,20 @@ private struct TowerGrid: View {
 
     private func stateCell(_ car: TowerCar) -> AnyView {
         if !car.running {
-            return AnyView(Text(car.status?.lowercased().replacingOccurrences(of: "_", with: " ") ?? "")
-                .font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted).lineLimit(1))
+            guard let status = car.status else { return GridCell.empty() }
+            let mark = TimingFormat.statusMark(status)
+            // RET and DSQ as a red pill, the rarer outs (DNS, NC, …) outlined like Out.
+            if status == "RETIRED" || status == "DISQUALIFIED" {
+                return AnyView(Text(mark.code).font(PP.sans(PP.TextSize.xs, weight: 700)).foregroundStyle(PP.error)
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(PP.errorTint, in: RoundedRectangle(cornerRadius: PP.Radius.xs))
+                    .overlay(RoundedRectangle(cornerRadius: PP.Radius.xs).strokeBorder(PP.error.opacity(0.45)))
+                    .accessibilityLabel(mark.name))
+            }
+            return AnyView(Text(mark.code).font(PP.sans(PP.TextSize.xs)).foregroundStyle(PP.textMuted).lineLimit(1)
+                .padding(.horizontal, 6).padding(.vertical, 1)
+                .overlay(RoundedRectangle(cornerRadius: PP.Radius.xs).strokeBorder(PP.borderStrong))
+                .accessibilityLabel(mark.name))
         }
         if car.checkered == true { return AnyView(ChequeredMark()) }
         if !car.inPit {

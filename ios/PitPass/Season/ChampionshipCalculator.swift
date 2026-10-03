@@ -20,6 +20,8 @@ enum ChampionshipCalculator {
         var rank: Int = 0
         var tied = false
         var gap: Double = 0
+        /// Points behind the row directly above: 0 for the leader and within a tie.
+        var interval: Double = 0
         var id: String { row.competitorKey }
     }
     static func supported(_ c: ChampionshipSummary) -> Bool {
@@ -63,6 +65,7 @@ enum ChampionshipCalculator {
             rows[i].rank = 1 + totals.filter { $0 > rows[i].total }.count
             rows[i].tied = totals.filter { $0 == rows[i].total }.count > 1
             rows[i].gap = (totals.first ?? 0) - rows[i].total
+            rows[i].interval = i == 0 ? 0 : totals[i - 1] - rows[i].total
         }
         return rows
     }

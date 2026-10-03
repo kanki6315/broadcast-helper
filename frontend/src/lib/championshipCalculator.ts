@@ -34,8 +34,10 @@ export function project(recap: Recap, scenario: Scenario, cup: boolean, phaseCou
     const added = awards.reduce((a, b) => a + b, 0) + entry.adjustment
     return { ...row, awards, added, total: row.totalPoints + added }
   }).sort((a, b) => b.total - a.total || a.position - b.position || a.competitorKey.localeCompare(b.competitorKey))
-  return rows.map(row => ({ ...row, rank: 1 + rows.filter(r => r.total > row.total).length,
-    tied: rows.filter(r => r.total === row.total).length > 1, gap: (rows[0]?.total ?? 0) - row.total }))
+  // gap is to the leader, interval to the row directly above (0 for the leader and within a tie).
+  return rows.map((row, i) => ({ ...row, rank: 1 + rows.filter(r => r.total > row.total).length,
+    tied: rows.filter(r => r.total === row.total).length > 1, gap: (rows[0]?.total ?? 0) - row.total,
+    interval: i === 0 ? 0 : rows[i - 1].total - row.total }))
 }
 /** Block an event already covered by the latest ledger, including zero-point participation.
  * Cup round ordinals differ from season ordinals: use the recap's event mapping. */

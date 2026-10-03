@@ -254,6 +254,15 @@ final class TimingFormatTests: XCTestCase {
                        "stopped only with participant details")
     }
 
+    func testAnOutCarReadsAsItsTimingScreenCode() {
+        XCTAssertEqual(TimingFormat.statusMark("RETIRED").code, "RET")
+        XCTAssertEqual(TimingFormat.statusMark("RETIRED").name, "Retired")
+        XCTAssertEqual(TimingFormat.statusMark("NOT_STARTED").code, "DNS")
+        XCTAssertEqual(TimingFormat.statusMark("DISQUALIFIED").code, "DSQ")
+        XCTAssertEqual(TimingFormat.statusMark("SUBSTITUTE").code, "substitute", "an unknown status reads as itself")
+        XCTAssertEqual(TimingFormat.statusMark("SUBSTITUTE").name, "Substitute")
+    }
+
     func testOnlyAChangeOfPlaceCountsAsAMove() throws {
         let before = try towerOf([("4", ["position": 1]), ("04", ["position": 2]), ("23", ["position": 3])])
         let after = try towerOf([("04", ["position": 1]), ("4", ["position": 2]), ("23", ["position": 3])])

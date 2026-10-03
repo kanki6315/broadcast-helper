@@ -42,7 +42,7 @@ final class ChampionshipCalculatorTests: XCTestCase {
         let changed = ChampionshipCalculator.assign(scenario, key: "6", phase: 1, position: 1)
         XCTAssertEqual(changed["7"]?.positions, [2, 5])
         let tied = ChampionshipCalculator.project(recap, scenario: ["6": .init(positions: [0, 0]), "7": .init(positions: [0, 0], adjustment: 20)], cup: false, phaseCount: 2)
-        XCTAssertTrue(tied.allSatisfy { $0.rank == 1 && $0.tied && $0.gap == 0 })
+        XCTAssertTrue(tied.allSatisfy { $0.rank == 1 && $0.tied && $0.gap == 0 && $0.interval == 0 })
         XCTAssertNotNil(ChampionshipCalculator.baselineIssue(recap, eventId: 11))
         XCTAssertNil(ChampionshipCalculator.baselineIssue(recap, eventId: 22))
         XCTAssertNotNil(ChampionshipCalculator.baselineIssue(recap, eventId: 99))

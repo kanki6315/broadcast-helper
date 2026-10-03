@@ -36,6 +36,8 @@ final class LiveProjectionTests: XCTestCase {
         XCTAssertEqual(lines.map(\.projection.total), [2532 + 35 + 350, 2562 + 32 + 320, 2228])
         XCTAssertEqual(lines.map(\.movement), [1, -1, 0], "Porsche takes the lead as it stands")
         XCTAssertEqual(lines[1].projection.gap, 3)
+        XCTAssertEqual(lines.map(\.projection.interval), [0, 3, 686], "points behind the row above")
+        XCTAssertEqual(lines[2].projection.gap, 689)
         XCTAssertEqual(lines[2].projection.added, 0, "not running: in the table, adding nothing")
         XCTAssertNil(lines[2].running)
     }

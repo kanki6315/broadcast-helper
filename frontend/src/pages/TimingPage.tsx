@@ -17,6 +17,7 @@ import {
   fieldCounts,
   lastLapMark,
   placesGained,
+  statusMark,
   initialedName,
   sectorMark,
   parseRuleTime,
@@ -993,7 +994,7 @@ function TowerRow({
       )}
       <td className="tower-state">
         {!running ? (
-          <span className="tower-status">{car.status?.toLowerCase().replace(/_/g, ' ')}</span>
+          car.status && <StatusMark status={car.status} />
         ) : car.checkered ? (
           <span className="tower-flag-mark" title="Has taken the chequered flag">
             <i aria-hidden="true" />
@@ -1008,6 +1009,18 @@ function TowerRow({
         )}
       </td>
     </tr>
+  )
+}
+
+/** Out of the race: RET and DSQ as a red pill, the rarer outs (DNS, NC, …) outlined like Out. */
+function StatusMark({ status }: { status: string }) {
+  const { code, name } = statusMark(status)
+  const severe = status === 'RETIRED' || status === 'DISQUALIFIED'
+  return (
+    <span className={severe ? 'tower-ret-mark' : 'tower-out-mark'} title={name}>
+      <span aria-hidden="true">{code}</span>
+      <span className="sr-only">{name}</span>
+    </span>
   )
 }
 

@@ -222,6 +222,21 @@ enum TimingFormat {
             retired: cars.filter { $0.status == "RETIRED" }.count)
     }
 
+    /// A car that is out, as a timing-screen code (RET, DSQ, …) and its full name, as the web's statusMark;
+    /// an unknown status reads as itself.
+    static func statusMark(_ status: String) -> (code: String, name: String) {
+        switch status {
+        case "RETIRED": return ("RET", "Retired")
+        case "DISQUALIFIED": return ("DSQ", "Disqualified")
+        case "NOT_STARTED": return ("DNS", "Did not start")
+        case "NOT_CLASSIFIED": return ("NC", "Not classified")
+        case "EXCLUDED": return ("EXC", "Excluded")
+        default:
+            let words = status.lowercased().replacingOccurrences(of: "_", with: " ")
+            return (words, words.prefix(1).uppercased() + words.dropFirst())
+        }
+    }
+
     /// Cars whose class or place changed between two towers (the first tower seen has nothing to compare with).
     static func moved(from before: Tower?, to after: Tower) -> Set<String> {
         guard let before else { return [] }

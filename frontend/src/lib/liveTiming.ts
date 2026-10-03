@@ -839,6 +839,20 @@ export function fieldCounts(tower: Pick<Tower, 'classes'>): { onTrack: number; i
   }
 }
 
+const STATUS_MARKS: Record<string, { code: string; name: string }> = {
+  RETIRED: { code: 'RET', name: 'Retired' },
+  DISQUALIFIED: { code: 'DSQ', name: 'Disqualified' },
+  NOT_STARTED: { code: 'DNS', name: 'Did not start' },
+  NOT_CLASSIFIED: { code: 'NC', name: 'Not classified' },
+  EXCLUDED: { code: 'EXC', name: 'Excluded' },
+}
+
+/** A car that is out, as a timing-screen code (RET, DSQ, …) and its full name; an unknown status reads as itself. */
+export function statusMark(status: string): { code: string; name: string } {
+  const words = status.toLowerCase().replace(/_/g, ' ')
+  return STATUS_MARKS[status] ?? { code: words, name: words.charAt(0).toUpperCase() + words.slice(1) }
+}
+
 /** The class's fastest best lap, to mark in the tower. */
 export function classBest(cars: TowerCar[]): number | null {
   let best: number | null = null

@@ -316,14 +316,15 @@ struct LiveChampionshipTable: View {
     private func table(_ lines: [ChampionshipCalculator.LiveLine]) -> some View {
         // Sized so the whole table fits an 11" iPad in portrait (786pt) with
         // both scoring columns; the name column takes whatever a wider screen adds.
-        var who = GridColumn.text("who", live.kind == "DRIVERS" ? "Driver" : live.kind == "MANUFACTURERS" ? "Manufacturer" : "Team", width: 166)
+        var who = GridColumn.text("who", live.kind == "DRIVERS" ? "Driver" : live.kind == "MANUFACTURERS" ? "Manufacturer" : "Team", width: 144)
         who.growthWeight = 1
         let identity = [GridColumn.text("rank", "Rank", width: 58), GridColumn.text("move", "±", width: 44, align: .center), who]
-        let data = [GridColumn.text("total", "Projected", width: 86, align: .trailing),
-                    GridColumn.text("gap", "Gap", width: 58, align: .trailing),
-                    GridColumn.text("base", "Imported", width: 78, align: .trailing)]
+        let data = [GridColumn.text("total", "Projected", width: 80, align: .trailing),
+                    GridColumn.text("gap", "Gap", width: 52, align: .trailing),
+                    GridColumn.text("int", "Int", width: 48, align: .trailing),
+                    GridColumn.text("base", "Imported", width: 74, align: .trailing)]
             + phases.enumerated().map { GridColumn.text("phase\($0.offset)", $0.element, width: 82, align: .center) }
-            + [GridColumn.text("running", "Running", width: 126)]
+            + [GridColumn.text("running", "Running", width: 116)]
         let items = lines.map { line in
             GridRowItem(id: line.id,
                         ident: [AnyView(Text("\(line.projection.tied ? "=" : "")\(line.projection.rank)").lineLimit(1)),
@@ -347,7 +348,8 @@ struct LiveChampionshipTable: View {
 
     private func cells(_ line: ChampionshipCalculator.LiveLine) -> [AnyView] {
         var result = [AnyView(Text(number(line.projection.total)).bold().foregroundStyle(PP.accentInk)),
-                      AnyView(Text(number(line.projection.gap))),
+                      AnyView(Text(number(line.projection.gap)).accessibilityLabel("\(number(line.projection.gap)) behind the leader")),
+                      AnyView(Text(number(line.projection.interval)).accessibilityLabel("\(number(line.projection.interval)) behind the row above")),
                       AnyView(Text(number(line.projection.row.totalPoints)))]
         for (i, award) in line.projection.awards.enumerated() {
             let position = line.positions.indices.contains(i) ? line.positions[i] : 0
