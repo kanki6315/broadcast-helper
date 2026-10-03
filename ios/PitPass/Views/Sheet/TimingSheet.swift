@@ -379,13 +379,14 @@ private struct TowerGrid: View {
         // Widths are the longest usual value plus the 3 pt cell padding either
         // side (mono 14 pt is 8.4 pt a character): the whole tower, overall
         // order included, fits an 11" iPad in landscape. Driver and Team give
-        // way first when it is tight, and take any spare width on a 13".
+        // way first when it is tight; only Team takes spare width on a 13",
+        // since a wider Driver just pushes the state marks away from the name.
         var ident: [GridColumn] = [
             .text("pos", "Pos", width: hasStarts ? 56 : overall ? 38 : 28, align: .trailing),
             .text("car", "#", width: 34, align: .trailing),
         ]
         if overall { ident.append(.text("class", "Class", width: classTagWidth + 32)) }
-        ident.append(GridColumn(id: "driver", width: 176, growthWeight: 1, minWidth: 120) { header("Driver") })
+        ident.append(GridColumn(id: "driver", width: 176, minWidth: 120) { header("Driver") })
         // Pit, chequered flag, out lap, retired: pinned at the tower's edge, so
         // they never sit off-screen past the sectors on an iPad's width.
         ident.append(GridColumn(id: "state", width: 42) { Text("").accessibilityHidden(true) })
