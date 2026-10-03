@@ -12,8 +12,11 @@ const assert = require('node:assert/strict');
  try {
   const page = await browser.newPage({viewport:{width:1280,height:900}});
   const now = Date.now();
-  const car = (position, carNumber, extra={}) => ({position,carNumber,entryId:100+position,teamName:`Team ${carNumber}`,vehicle:null,manufacturer:null,
-   status:'CLASSIFIED',laps:50,gapToLeaderMs:null,gapToLeaderLaps:null,intervalMs:null,intervalLaps:null,driverOrder:1,driverName:`Driver ${carNumber}`,
+  // Real names and teams, the longest the grid has: the 1024px checks below only mean something with them.
+  const crews = {'7':['Frederik Schandorff','Acura Meyer Shank Racing w/Curb Agajanian'],'31':['Sébastien Bourdais','Cadillac Whelen'],
+   '04':['Klaus Bachler','Corvette Racing by Pratt Miller Motorsports'],'4':['Antonio García','Heart of Racing Team'],'23':['Alessio Rovera','Paul Miller Racing']};
+  const car = (position, carNumber, extra={}) => ({position,carNumber,entryId:100+position,teamName:crews[carNumber][1],vehicle:null,manufacturer:null,
+   status:'CLASSIFIED',laps:50,gapToLeaderMs:null,gapToLeaderLaps:null,intervalMs:null,intervalLaps:null,driverOrder:1,driverName:crews[carNumber][0],
    driverShortName:null,driverRating:'G',lastLap:50,lastLapMs:98_000,bestLap:12,bestLapMs:97_500,inPit:false,stintStartMs:now-30*60_000,stintLaps:18,energyPct:null,energyLapsLeft:null,pitStops:0,lastPitMs:null,trackStatus:null,currentSector:null,sectors:null,bestSectorMs:null,idealMs:null,startPosition:null,topSpeed:null,
    overallPosition:null,overallGapMs:null,overallGapLaps:null,overallIntervalMs:null,overallIntervalLaps:null,checkered:false,bestLapDriver:null,...extra});
   const sec = (ms, currentLap=true, valid=true) => ({ms,valid,currentLap});
@@ -23,7 +26,8 @@ const assert = require('node:assert/strict');
    {className:'GTP',feedClass:'GTP',color:'#1a1a1a',bestSectors:[{ms:31_900,car:'31',driver:'Aitken'},{ms:33_000,car:'7',driver:null},{ms:32_700,car:'31',driver:'Derani'}],idealMs:97_600,cars:[car(1,'7',{overallPosition:1,bestLapDriver:'Driver Seven',startPosition:3,topSpeed:151.3,energyPct:62.4,energyLapsLeft:9.6,pitStops:2,lastPitMs:65_000,
     trackStatus:'TRACK',currentSector:3,sectors:[sec(32_000),sec(33_000),sec(32_900,false)],bestSectorMs:[32_000,33_000,32_800],idealMs:97_800}),car(2,'31',{overallPosition:3,overallGapMs:6100,overallIntervalMs:1900,startPosition:1,topSpeed:150.2,gapToLeaderMs:4200,intervalMs:4200,lastLapMs:97_100,bestLapMs:97_100,inPit:true,trackStatus:'BOX',currentSector:1,
     sectors:[sec(31_900,false),sec(33_100,false,false),null],bestSectorMs:[31_900,33_050,32_700]})]},
-   {className:'GTD PRO',feedClass:'GTDPRO',color:'#e30d0d',bestSectors:[],idealMs:null,cars:[car(1,'04',{overallPosition:2,overallGapMs:4200,overallIntervalMs:4200,lastLapMs:105_000,bestLapMs:105_000,trackStatus:'OUT_LAP'}),
+   {className:'GTD PRO',feedClass:'GTDPRO',color:'#e30d0d',bestSectors:[],idealMs:null,cars:[car(1,'04',{overallPosition:2,overallGapMs:4200,overallIntervalMs:4200,lastLapMs:105_000,bestLapMs:105_000,trackStatus:'OUT_LAP',
+    stintStartMs:now-(75*60_000+42_000),stintLaps:41,currentSector:3,sectors:[sec(74_218),sec(61_480),null],bestSectorMs:[35_102,36_877,34_950]}),
     car(2,'4',{overallPosition:4,overallGapLaps:1,overallIntervalLaps:1,gapToLeaderLaps:1,intervalLaps:1,bestLapMs:104_000,entryId:null,checkered:true}),
     car(3,'23',{overallPosition:5,status:'RETIRED',stintStartMs:null,stintLaps:null})]}],
    raceControl:{lines:[{key:'1',dayTimeMs:null,text:'FULL COURSE YELLOW',group:null,line:1,foreground:'#000000',background:'#ffff00',blink:true}],
@@ -159,9 +163,25 @@ const assert = require('node:assert/strict');
   await control.getByRole('button',{name:'Disconnect'}).waitFor();
   assert.deepEqual(posts.at(-1), {path:'/api/live/connect', body:{eventId:22}});
   posts.length = 0;
-  assert.equal(await page.evaluate(() => document.body.scrollWidth > document.documentElement.clientWidth), false);
+  // The tower with sectors, pits and energy fits a laptop and up: 1009 is 1024 beside a classic scrollbar.
+  const fits = async (what) => {
+   for (const width of [1009,1024,1280,1440]) {
+    await page.setViewportSize({width,height:900});
+    assert.equal(await page.evaluate(() => document.body.scrollWidth > document.documentElement.clientWidth), false, `${what} fits ${width}px`);
+   }
+   await page.setViewportSize({width:1280,height:900});
+  };
+  await fits('the tower by class');
+  // Narrow, the driver is initial and surname, in full on hover; the team gives way, the energy cell does not.
   await page.setViewportSize({width:1024,height:900});
-  assert.equal(await page.evaluate(() => document.body.scrollWidth > document.documentElement.clientWidth), false, 'the tower with sectors, pits and energy fits 1024px');
+  const name7 = towerTable.locator('.tower-row').nth(0).locator('.tower-driver-name');
+  assert.equal(await name7.innerText(), 'F. Schandorff');
+  assert.equal(await name7.getAttribute('title'), 'Frederik Schandorff');
+  assert.equal(await towerTable.locator('thead th.tower-team').isVisible(), false);
+  assert.match(await towerTable.locator('.tower-row').nth(0).locator('.tower-energy').innerText(), /62%\s+~9 L/);
+  await page.setViewportSize({width:1440,height:900});
+  assert.equal(await name7.innerText(), 'Frederik Schandorff', 'in full where there is room');
+  assert.equal(await towerTable.locator('.tower-row').nth(2).locator('.tower-team').isVisible(), true);
   await page.setViewportSize({width:1280,height:900});
 
   // Optional columns: top speed is opt-in, the rest can be hidden; only columns with data are offered.
@@ -193,9 +213,7 @@ const assert = require('node:assert/strict');
   assert.match(await overallTable.locator('.tower-row').nth(2).innerText(), /\+6\.100\s+\+1\.900/, "#31's gap and interval overall, not in class");
   assert.equal(await page.evaluate(() => localStorage.getItem('pitpass.timing.order')), 'overall');
   assert.equal(await overallTable.locator('.tower-row').nth(1).locator('.tower-last.tower-pb').count(), 1, 'marks still count against the class');
-  await page.setViewportSize({width:1024,height:900});
-  assert.equal(await page.evaluate(() => document.body.scrollWidth > document.documentElement.clientWidth), false, 'overall fits 1024px too');
-  await page.setViewportSize({width:1280,height:900});
+  await fits('the tower overall');
   if (process.env.TIMING_SHOT_DIR) await page.screenshot({path:`${process.env.TIMING_SHOT_DIR}/overall.png`});
   await page.getByRole('group',{name:'Running order'}).getByRole('button',{name:'By class'}).click();
   await towerTable.waitFor();
@@ -225,7 +243,7 @@ const assert = require('node:assert/strict');
   tower = {...tower, session};
 
   // A car's laps (newest first) and stints, polled only while open.
-  await page.getByRole('button',{name:'#31 Team 31: laps and stints'}).click();
+  await page.getByRole('button',{name:'#31 Cadillac Whelen: laps and stints'}).click();
   const modal = page.getByRole('dialog',{name:'Car 31 laps and stints'});
   await modal.locator('tbody tr').first().waitFor();
   assert.match(await modal.locator('.lc-head').innerText(), /#31[\s\S]*Jack Aitken[\s\S]*Pipo Derani/);

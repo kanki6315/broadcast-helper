@@ -17,6 +17,7 @@ import {
   fieldCounts,
   lastLapMark,
   placesGained,
+  initialedName,
   sectorMark,
   parseRuleTime,
   ratingName,
@@ -877,7 +878,14 @@ function TowerRow({
         </td>
       )}
       <td className="tower-driver">
-        {car.driverName ?? <span className="muted">—</span>}
+        {car.driverName ? (
+          <span className="tower-driver-name" title={car.driverName}>
+            <span className="tower-name-full">{car.driverName}</span>
+            <span className="tower-name-short">{initialedName(car.driverName)}</span>
+          </span>
+        ) : (
+          <span className="muted">—</span>
+        )}
         {car.driverRating && (
           <span className="tower-rating" title={ratingName(car.driverRating) ?? undefined}>
             {car.driverRating}

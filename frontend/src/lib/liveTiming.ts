@@ -617,6 +617,12 @@ export function sectorMark(ms: number | null | undefined, carBest: number | null
   return ms === carBest ? 'pb' : null
 }
 
+/** A driver's name for a narrow tower: the first name to its initial, the rest as it is ("F. Schandorff"). */
+export function initialedName(name: string): string {
+  const [first, ...rest] = name.trim().split(/\s+/)
+  return rest.length === 0 ? first : `${first.charAt(0)}. ${rest.join(' ')}`
+}
+
 /** Places gained in class since the start: positive = up. null without a start position. */
 export function placesGained(car: Pick<TowerCar, 'position' | 'startPosition'>): number | null {
   return car.startPosition == null ? null : car.startPosition - car.position
