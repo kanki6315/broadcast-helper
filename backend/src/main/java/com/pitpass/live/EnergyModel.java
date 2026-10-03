@@ -27,28 +27,28 @@ import java.util.Set;
  * caution laps; a car rarely has enough of its own, so the class's pooled
  * caution laps stand in (see {@link #pooled}).
  */
-final class EnergyModel {
+public final class EnergyModel {
 
     static final int WINDOW = 10;
     static final int SHORT_WINDOW = 5;
     static final int MIN_LAPS = 3;
 
     /** Why a lap counts, or why it does not. */
-    enum Kind { GREEN, CAUTION, NO_READING, PIT, OUT_LAP, REFILL, EMPTY, RED, FLAG_CHANGE, FLAG_UNKNOWN }
+    public enum Kind { GREEN, CAUTION, NO_READING, PIT, OUT_LAP, REFILL, EMPTY, RED, FLAG_CHANGE, FLAG_UNKNOWN }
 
     /** Where caution figures came from: the car's own laps, or its class's. */
-    enum Source { CAR, CLASS }
+    public enum Source { CAR, CLASS }
 
     /**
      * One lap as recorded: live_lap, plus the energy at the line after it
      * (live_energy_lap at this lap) and whether that reading was in the pit lane.
      */
-    record Lap(int lap, List<String> sectorFlags, Long pitInMs, Long pitOutMs, Integer lapTimeMs,
+    public record Lap(int lap, List<String> sectorFlags, Long pitInMs, Long pitOutMs, Integer lapTimeMs,
                Integer driverOrder, Float energyEnd, Boolean pitLaneEnd) {
     }
 
-    /** energyPct is the reading at the line after the lap; usedPct the drop over it, null when either reading is missing. */
-    record Classified(int lap, Kind kind, Float energyPct, Float usedPct, Integer lapTimeMs, Integer driverOrder) {
+    /** energyPct is the reading at the line after the lap; usedPct the drop over it, null over a rise or a missing reading. */
+    public record Classified(int lap, Kind kind, Float energyPct, Float usedPct, Integer lapTimeMs, Integer driverOrder) {
     }
 
     /**
@@ -56,11 +56,11 @@ final class EnergyModel {
      * on (at most the window); driverChange says they were not all one
      * driver's. lastLap is the newest of them.
      */
-    record Average(double perLapPct, Double lapTimeMs, int laps, boolean driverChange, int lastLap) {
+    public record Average(double perLapPct, Double lapTimeMs, int laps, boolean driverChange, int lastLap) {
     }
 
     /** A car's laps, classified, and what they average to. Averages are null below MIN_LAPS. */
-    record Car(List<Classified> laps, Average green, Average greenShort, Average caution) {
+    public record Car(List<Classified> laps, Average green, Average greenShort, Average caution) {
     }
 
     private static final Set<String> FLAGS = Set.of("GREEN", "FULL_YELLOW", "RED");
@@ -77,9 +77,13 @@ final class EnergyModel {
         }
         List<Classified> out = new ArrayList<>();
         for (Lap l : sorted) {
+            if (l.lap() < 1) {
+                continue; // the line before lap 1: a reading to start from, not a lap
+            }
             Lap before = byLap.get(l.lap() - 1);
             Float start = before == null ? null : before.energyEnd();
-            Float used = start == null || l.energyEnd() == null ? null : start - l.energyEnd();
+            // A rise is a refill or a recharge, not negative use: no figure.
+            Float used = start == null || l.energyEnd() == null || l.energyEnd() > start ? null : start - l.energyEnd();
             out.add(new Classified(l.lap(), kind(l, before, start), l.energyEnd(), used, l.lapTimeMs(), l.driverOrder()));
         }
         return new Car(out, average(out, Kind.GREEN, WINDOW), average(out, Kind.GREEN, SHORT_WINDOW),

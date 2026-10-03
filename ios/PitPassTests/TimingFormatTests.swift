@@ -87,6 +87,29 @@ final class TimingFormatTests: XCTestCase {
                        "a server from before the green average sends neither field")
     }
 
+    func testDecodesTheEnergyViewAndSaysWhatWasLeftOut() throws {
+        let json = """
+        {"sessionDbId":3180,"live":false,"classes":[{"className":"GTP","color":"#1a1a1a",
+          "cars":[{"carNumber":"7","teamName":"Porsche Penske Motorsport","className":"GTP"}],
+          "caution":{"perLapPct":0.85,"lapTimeMs":160000.0,"laps":12,"driverChange":false,"lastLap":30},
+          "energy":[{"carNumber":"7","energyPct":null,"greenLapsLeft":null,
+            "green":{"perLapPct":2.35,"lapTimeMs":72100.5,"laps":10,"driverChange":true,"lastLap":51},
+            "greenShort":{"perLapPct":2.36,"lapTimeMs":72000.0,"laps":5,"driverChange":false,"lastLap":51},
+            "caution":{"perLapPct":0.85,"lapTimeMs":160000.0,"laps":12,"driverChange":false,"lastLap":30},
+            "cautionSource":"CLASS","lastLap":52,"lapsSinceGreen":1,
+            "laps":{"GREEN":40,"PIT":7,"OUT_LAP":1,"NO_READING":2,"EMPTY":1}}]}]}
+        """
+        let energy = try JSONDecoder().decode(EnergyResponse.self, from: Data(json.utf8))
+        let car = try XCTUnwrap(energy.classes.first?.energy.first)
+        XCTAssertEqual(car.green?.laps, 10)
+        XCTAssertEqual(car.green?.driverChange, true)
+        XCTAssertEqual(car.cautionSource, "CLASS")
+        XCTAssertEqual(TimingFormat.energyLeftOut(car.laps), "7 pit laps, 1 out lap, 1 lap on empty, 2 laps unread")
+        XCTAssertEqual(TimingFormat.energyLapLabel("FLAG_CHANGE"), "Flag changed")
+        XCTAssertTrue(TimingFormat.energyLapCounts("CAUTION"))
+        XCTAssertFalse(TimingFormat.energyLapCounts("REFILL"))
+    }
+
     // MARK: Session clock and lap marks
 
     /// Road Atlanta practice 1 (2026-09-30): an hour from 16:25:00Z. At

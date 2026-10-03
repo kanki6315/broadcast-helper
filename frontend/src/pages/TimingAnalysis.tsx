@@ -4,7 +4,10 @@ import {
   duration,
   gapAt,
   lapTime,
+  energyLeftOut,
   type AnalysisCar,
+  type EnergyAverage,
+  type EnergyResponse,
   type GapCar,
   type GapClass,
   type GapsResponse,
@@ -17,7 +20,7 @@ import LiveCarModal from '../components/LiveCarModal'
 
 /**
  * The timing page's analysis views — gap to the class leader lap by lap,
- * best sectors, and pit stops — over one recorded session. All three are
+ * best sectors, pit stops and energy use — over one recorded session. All three are
  * recomputed by the backend from the stored laps and stints on every poll
  * (see LiveAnalysis.java), so they fill in as the session runs and correct
  * themselves when the feed corrects a lap.
@@ -667,6 +670,127 @@ function StopList({ pit, name }: { pit: PitCar; name: (car: string, order: numbe
           <td />
         </tr>
       ))}
+    </>
+  )
+}
+
+// ---- energy ---------------------------------------------------------------------------
+
+const perLap = (a: EnergyAverage | null) => (a ? `${a.perLapPct.toFixed(2)}%` : '')
+
+/**
+ * Every car's energy use side by side: green use over the last 10 and 5 green
+ * laps, what that rests on, caution use, and green laps left on the energy it
+ * has now. Opening a car shows each lap and whether it counted.
+ */
+export function EnergyView({ session }: { session: SessionSummary }) {
+  const { value, error } = useLivePoll<EnergyResponse>(`/api/live/energy?session=${session.sessionDbId}`, pollEvery(session))
+  const { open, modal } = useOpenCar(session)
+  if (!value) return <Loading label="energy" error={error} />
+  if (value.classes.length === 0) {
+    return <div className="empty-state">No energy telemetry recorded for this session. Only IMSA WeatherTech cars send it.</div>
+  }
+  const live = value.live
+  const columns = live ? 10 : 8
+  return (
+    <>
+      {error && <p className="timing-stale">Not updating: {error}</p>}
+      <table className="grid-table tower an-energy" aria-label="Energy use by class">
+        <thead>
+          <tr>
+            <th className="num" scope="col">
+              #
+            </th>
+            <th scope="col">Team</th>
+            {live && (
+              <th className="num" scope="col" title="Energy remaining now (IMSA telemetry)">
+                Energy
+              </th>
+            )}
+            <th className="num" scope="col" title="Average energy used per green lap, over the last 10 green laps">
+              Green / lap
+            </th>
+            <th className="num" scope="col" title="The same over the last 5 green laps: a change shows here first">
+              Last 5
+            </th>
+            <th scope="col" title="How many green laps the average rests on, and whether they span a driver change">
+              Based on
+            </th>
+            {live && (
+              <th className="num" scope="col" title="Green laps left on the energy now, at the 10-lap green use">
+                Green laps left
+              </th>
+            )}
+            <th className="num" scope="col" title="Average energy used per full-course-yellow lap: the car's own, else its class's">
+              Caution / lap
+            </th>
+            <th className="num" scope="col" title="Laps run since the car's newest green lap">
+              Since green
+            </th>
+            <th scope="col" title="Laps whose energy does not count, and why">
+              Left out
+            </th>
+          </tr>
+        </thead>
+        {value.classes.map((cls) => {
+          const info = new Map(cls.cars.map((c) => [c.carNumber, c]))
+          return (
+            <tbody key={cls.className} style={{ '--class-color': cls.color ?? undefined } as CSSProperties}>
+              <tr className="class-band">
+                <td colSpan={columns}>
+                  <span className="band-label">{cls.className}</span>
+                  {cls.caution && (
+                    <span className="band-bests" title="Every car's full-course-yellow laps in the class, pooled">
+                      <span>
+                        Caution <span className="band-num">{perLap(cls.caution)}</span> a lap over {cls.caution.laps} laps
+                      </span>
+                    </span>
+                  )}
+                </td>
+              </tr>
+              {cls.energy.map((e) => {
+                const car = info.get(e.carNumber) ?? { carNumber: e.carNumber, teamName: null, className: cls.className }
+                const thin = e.green != null && e.green.laps < 10
+                return (
+                  <tr key={e.carNumber} className="tower-row" onClick={() => open(car, cls.color)}>
+                    <td className="num tower-car">
+                      <CarButton car={car} onOpen={() => open(car, cls.color)} />
+                    </td>
+                    <td className="tower-team">{car.teamName ?? <span className="muted">—</span>}</td>
+                    {live && <td className="num">{e.energyPct != null ? `${Math.round(e.energyPct)}%` : ''}</td>}
+                    <td className={`num${thin ? ' tower-energy-thin' : ''}`}>{perLap(e.green)}</td>
+                    <td className="num muted">{perLap(e.greenShort)}</td>
+                    <td>
+                      {e.green ? (
+                        <>
+                          {e.green.laps} {e.green.laps === 1 ? 'lap' : 'laps'}
+                          {e.green.driverChange && <span className="muted"> · 2+ drivers</span>}
+                        </>
+                      ) : (
+                        <span className="muted">Needs 3 green laps</span>
+                      )}
+                    </td>
+                    {live && <td className="num">{e.greenLapsLeft != null ? `${Math.floor(e.greenLapsLeft)} L` : ''}</td>}
+                    <td className="num">
+                      {perLap(e.caution)}
+                      {e.cautionSource === 'CLASS' && <span className="muted"> class</span>}
+                    </td>
+                    <td className="num">{e.lapsSinceGreen != null ? `${e.lapsSinceGreen} L` : ''}</td>
+                    <td className="muted an-energy-out">{energyLeftOut(e.laps)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          )
+        })}
+      </table>
+      <p className="timing-foot an-foot">
+        A lap counts when it is run under one flag — green, or full-course yellow for caution — clear of the pits,
+        with IMSA's energy reading seen at the line before and after it. Green use averages the car's last 10 green
+        laps of the session across pit stops; under 10 it is underlined, under 3 there is none. A car with fewer than
+        3 caution laps of its own uses its class's. Open a car to see every lap and why it counted or not.
+      </p>
+      {modal}
     </>
   )
 }

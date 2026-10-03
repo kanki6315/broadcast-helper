@@ -385,6 +385,55 @@ struct PitClass: Codable, Sendable, Equatable, Identifiable {
     var id: String { className }
 }
 
+/// An average over a car's newest laps of one kind (backend EnergyModel.Average).
+struct EnergyAverage: Codable, Sendable, Equatable {
+    let perLapPct: Double
+    let lapTimeMs: Double?
+    /// How many laps it rests on (at most 10).
+    let laps: Int
+    /// The laps were not all one driver's.
+    let driverChange: Bool
+    let lastLap: Int
+}
+
+struct EnergyCar: Codable, Sendable, Equatable, Identifiable {
+    let carNumber: String
+    /// Now, in the session being fed only.
+    let energyPct: Double?
+    let greenLapsLeft: Double?
+    /// Last 10 green laps, last 5; nil below 3.
+    let green: EnergyAverage?
+    let greenShort: EnergyAverage?
+    /// The car's own caution laps when it has 3, else its class's (cautionSource "CLASS").
+    let caution: EnergyAverage?
+    let cautionSource: String?
+    let lastLap: Int?
+    /// Laps since the newest green lap: how old the green figure is.
+    let lapsSinceGreen: Int?
+    /// How many laps of each kind (GREEN, PIT, REFILL…).
+    let laps: [String: Int]
+    var id: String { carNumber }
+}
+
+struct EnergyClass: Codable, Sendable, Equatable, Identifiable {
+    let className: String
+    let color: String?
+    let cars: [AnalysisCar]
+    /// Every car's caution laps pooled.
+    let caution: EnergyAverage?
+    /// Fewest green laps left first.
+    let energy: [EnergyCar]
+    var id: String { className }
+}
+
+/// `GET /api/live/energy?session=`.
+struct EnergyResponse: Codable, Sendable, Equatable {
+    let sessionDbId: Int
+    /// The session is the one being fed, so energyPct is now.
+    let live: Bool
+    let classes: [EnergyClass]
+}
+
 /// `GET /api/live/pits?session=`.
 struct PitsResponse: Codable, Sendable, Equatable {
     let sessionDbId: Int

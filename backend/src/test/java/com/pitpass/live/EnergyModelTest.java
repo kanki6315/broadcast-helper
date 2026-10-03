@@ -39,7 +39,7 @@ class EnergyModelTest {
                 lap(9, null, 89f),
                 lap(11, GREEN3, 85f));                                                       // lap 10 never read
         assertEquals(List.of(GREEN, PIT, OUT_LAP, GREEN, FLAG_CHANGE, CAUTION, RED, FLAG_UNKNOWN,
-                FLAG_UNKNOWN, NO_READING), kinds(EnergyModel.car(laps)).subList(1, 11));
+                FLAG_UNKNOWN, NO_READING), kinds(EnergyModel.car(laps)), "lap 0 is the reading lap 1 starts from, not a lap");
     }
 
     @Test
@@ -56,6 +56,7 @@ class EnergyModelTest {
         // Refills land at ~96-98%, and a red flag's pit-lane laps can arrive without pit marks.
         var car = EnergyModel.car(List.of(lap(1, GREEN3, 60f), lap(2, GREEN3, 97.8f), lap(3, GREEN3, 95.6f)));
         assertEquals(List.of(NO_READING, REFILL, GREEN), kinds(car));
+        assertNull(car.laps().get(1).usedPct(), "a rise is not negative use");
     }
 
     @Test

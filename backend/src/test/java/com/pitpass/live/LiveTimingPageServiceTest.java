@@ -289,6 +289,33 @@ class LiveTimingPageServiceTest {
     }
 
     @Test
+    void theEnergyViewListsCarsWithTelemetryFewestGreenLapsLeftFirst() throws Exception {
+        db.sql("UPDATE live_lap SET sector_flags = '{GREEN,GREEN,GREEN}' WHERE session_db_id = :s AND car_number = '04'")
+                .param("s", session).update();
+        db.sql("""
+                INSERT INTO live_energy_lap (session_db_id, car_number, lap_number, energy_pct)
+                VALUES (:s, '04', 0, 100), (:s, '04', 1, 97), (:s, '04', 2, 94), (:s, '04', 3, 91)
+                """).param("s", session).update();
+        var energy = analysis(true).energy(session);
+        assertTrue(energy.live(), "the session being fed: energy is now");
+        var cls = energy.classes().getFirst();
+        assertEquals(List.of("04"), cls.energy().stream().map(LiveAnalysisService.EnergyCar::carNumber).toList(),
+                "#4 sends no telemetry, so it is not listed");
+        var car = cls.energy().getFirst();
+        assertEquals(42.0, car.energyPct());
+        assertEquals(3.0, car.green().perLapPct(), 1e-4);
+        assertEquals(14.0, car.greenLapsLeft(), 1e-3);
+        assertEquals(0, car.lapsSinceGreen());
+        assertNull(car.caution(), "no caution laps, the car's or its class's");
+        assertEquals(3, car.laps().get(EnergyModel.Kind.GREEN));
+        assertNull(car.laps().get(EnergyModel.Kind.NO_READING), "the reading before lap 1 starts it; it is not a lap");
+
+        var past = analysis(false).energy(session);
+        assertFalse(past.live());
+        assertNull(past.classes().getFirst().energy().getFirst().energyPct(), "a past session has no energy now");
+    }
+
+    @Test
     void aCarsLapsSayWhetherTheyCountAndItsStintsAverageTheGreenOnes() throws Exception {
         // #77: green 1-4, pits on 5 and refills, out lap 6, green 7-9, then a caution lap and a lap the flag changed on.
         for (int lap = 1; lap <= 11; lap++) {

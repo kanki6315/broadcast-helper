@@ -128,7 +128,7 @@ public class LiveTimingPageService {
 
     /**
      * energyPct is the energy at the line after the lap, energyUsedPct the
-     * drop over it, energyLap what the energy model made of it: GREEN or
+     * drop over it (null over a refill's rise), energyLap what the energy model made of it: GREEN or
      * CAUTION when it counts, else why not (EnergyModel.Kind). All null
      * without telemetry for the car.
      */
@@ -643,6 +643,11 @@ public class LiveTimingPageService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No laps for car " + carNumber + " in this session");
         }
         return new CarDetail(session, carNumber, drivers, laps, stints);
+    }
+
+    /** Every car of a session with energy recorded, its laps classified (see EnergyModel). */
+    Map<String, EnergyModel.Car> energyModels(long session) {
+        return energy == null ? Map.of() : energy.session(session);
     }
 
     /** A stint's green use per lap, as the tower counts it. */

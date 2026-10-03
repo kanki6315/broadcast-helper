@@ -45,6 +45,12 @@ public class LiveTimingPageController {
         return analysis.pits(session);
     }
 
+    /** Each car's energy use per green and caution lap, and green laps left, class by class. */
+    @GetMapping("/energy")
+    public LiveAnalysisService.EnergyResponse energy(@RequestParam(required = false) Long session) {
+        return analysis.energy(session);
+    }
+
     /** The tower: order, gaps and intervals from the feed, plus driver, laps and stint per car. */
     @GetMapping("/timing")
     public LiveTimingPageService.Tower timing() {

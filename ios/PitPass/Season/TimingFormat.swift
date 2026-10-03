@@ -277,6 +277,40 @@ enum TimingFormat {
         return parts.joined(separator: " ")
     }
 
+    /// What a lap's energy figure was made of, in words: why it counts or why not.
+    static func energyLapLabel(_ kind: String?) -> String? {
+        switch kind {
+        case "GREEN": "Green"
+        case "CAUTION": "Caution"
+        case "NO_READING": "No reading"
+        case "PIT": "Pit lap"
+        case "OUT_LAP": "Out lap"
+        case "REFILL": "Refill"
+        case "EMPTY": "Empty"
+        case "RED": "Red flag"
+        case "FLAG_CHANGE": "Flag changed"
+        case "FLAG_UNKNOWN": "Flag unknown"
+        default: nil
+        }
+    }
+
+    /// Whether a lap's energy use counts toward green or caution use per lap.
+    static func energyLapCounts(_ kind: String?) -> Bool { kind == "GREEN" || kind == "CAUTION" }
+
+    /// Laps whose energy does not count, with how many of each ("6 pit laps, 2 out laps").
+    static func energyLeftOut(_ laps: [String: Int]) -> String {
+        let order: [(String, String, String)] = [
+            ("PIT", "pit lap", "pit laps"), ("OUT_LAP", "out lap", "out laps"), ("REFILL", "refill", "refills"),
+            ("FLAG_CHANGE", "flag change", "flag changes"), ("RED", "red-flag lap", "red-flag laps"),
+            ("EMPTY", "lap on empty", "laps on empty"), ("NO_READING", "lap unread", "laps unread"),
+            ("FLAG_UNKNOWN", "unknown flag", "unknown flags"),
+        ]
+        return order.compactMap { kind, one, many in
+            guard let n = laps[kind], n > 0 else { return nil }
+            return "\(n) \(n == 1 ? one : many)"
+        }.joined(separator: ", ")
+    }
+
     /// "62.4%", or empty.
     static func pct(_ value: Double?, digits: Int = 1) -> String {
         guard let value else { return "" }

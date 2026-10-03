@@ -35,11 +35,18 @@ const assert = require('node:assert/strict');
   const rcLog = {sessionDbId:3150,messages:[tower.raceControl.latest,
    {key:'3500000',dayTimeMs:Date.UTC(2026,9,4,18,1,0),text:'FULL COURSE YELLOW',group:null,line:1,foreground:'#000000',background:'#ffff00',blink:true}]};
   const laps = [1,2,3].map(n => ({lap:n,driverOrder:n<3?1:2,driverLap:n,position:1,startTimeMs:now-(4-n)*98_000,lapTimeMs:n===3?null:98_000-n*100,
-   sectorMs:[32_000,33_000,n===3?null:32_900],sectorFlags:['GREEN',n===2?'YELLOW':'GREEN',null],valid:true,longLap:false,shortLap:false,trackLimits:0,topSpeed:280.5,pitInMs:n===2?1:null,pitOutMs:null,energyPct:n===3?null:100-n*3.5,energyUsedPct:n===2?3.5:null}));
+   sectorMs:[32_000,33_000,n===3?null:32_900],sectorFlags:['GREEN',n===2?'YELLOW':'GREEN',null],valid:true,longLap:false,shortLap:false,trackLimits:0,topSpeed:280.5,pitInMs:n===2?1:null,pitOutMs:null,energyPct:n===3?null:100-n*3.5,energyUsedPct:n===2?3.5:null,energyLap:n===1?'NO_READING':n===2?'PIT':null}));
   const carDetail = {sessionDbId:3150,carNumber:'31',drivers:[{driverOrder:1,firstName:'Jack',lastName:'Aitken',shortName:'Ait',license:'Platinum',rating:'P',driverId:1},
    {driverOrder:2,firstName:'Pipo',lastName:'Derani',shortName:'Der',license:'Platinum',rating:'P',driverId:2}],laps,
    stints:[{startTimeMs:now-3_600_000,type:'TRACK',pitType:null,driverOrder:1,openLap:1,closeLap:2,finishTimeMs:now-1_800_000,driverAccumSessionTrackMs:1_780_000,driverAccumSessionMs:1_800_000,driverAccumTrackMs:1_780_000,driverAccumMs:1_800_000,avgEnergyPerLapPct:3.5},
     {startTimeMs:now-1_800_000,type:'TRACK',pitType:null,driverOrder:2,openLap:3,closeLap:null,finishTimeMs:null,driverAccumSessionTrackMs:null,driverAccumSessionMs:null,driverAccumTrackMs:null,driverAccumMs:null,avgEnergyPerLapPct:null}]};
+  const avg = (perLapPct, laps, extra={}) => ({perLapPct,lapTimeMs:98_000,laps,driverChange:false,lastLap:40,...extra});
+  const energyView = {sessionDbId:3150,live:true,classes:[{className:'GTP',color:'#1a1a1a',
+   cars:[{carNumber:'31',teamName:'Team 31',className:'GTP'},{carNumber:'7',teamName:'Team 7',className:'GTP'}],caution:avg(0.85,4),
+   energy:[{carNumber:'7',energyPct:31.4,greenLapsLeft:13.1,green:avg(2.4,6,{driverChange:true}),greenShort:avg(2.5,5),caution:avg(0.85,4),cautionSource:'CLASS',
+     lastLap:42,lapsSinceGreen:2,laps:{GREEN:30,PIT:6,OUT_LAP:2,NO_READING:1}},
+    {carNumber:'31',energyPct:62.4,greenLapsLeft:27.1,green:avg(2.3,10),greenShort:avg(2.28,5),caution:null,cautionSource:null,
+     lastLap:40,lapsSinceGreen:0,laps:{GREEN:36,PIT:4}}]}]};
   let rules = [{className:'GTP',rating:null,minMs:null,maxMs:4*3_600_000,note:'4h max'}];
   const driveResult = (car, driverOrder, name, rating, driveMs, status, extra={}) => ({car,driverOrder,name,rating,driverId:null,className:'GTP',driveMs,inCar:false,minMs:null,maxMs:4*3_600_000,status,owedMs:null,remainingMs:4*3_600_000-driveMs,overMs:null,...extra});
   const drive = () => ({sessionDbId:3150,eventId:22,rules,drivers:[
@@ -74,6 +81,7 @@ const assert = require('node:assert/strict');
     : path === '/api/live/cars/31' ? carDetail
     : path === '/api/live/drive-time' ? drive()
     : path === '/api/live/sectors' ? {sessionDbId:3150,classes:[]}
+    : path === '/api/live/energy' ? (url.searchParams.get('session') === '3149' ? {sessionDbId:3149,live:false,classes:[]} : energyView)
     : path === '/api/live/weather' ? (url.searchParams.get('session') === '3149' ? {sessionDbId:3149,readings:[]} : wxLog)
     : path === '/api/live/race-control' ? (url.searchParams.get('session') === '3149' ? {sessionDbId:3149,messages:[]} : rcLog)
     : /^\/api\/events\/\d+$/.test(path) ? {event:{id:Number(path.split('/')[3]),name:path.endsWith('/22') ? 'Petit Le Mans' : 'Road America'}}
@@ -245,7 +253,8 @@ const assert = require('node:assert/strict');
   assert.match(await modal.locator('.lc-drivers li').nth(0).locator('.lc-driver-best--car').innerText(), /1:37\.800/);
   assert.equal(await modal.locator('.lc-drivers li').nth(1).locator('.lc-driver-best').count(), 0, 'no completed lap for Derani yet');
   if (process.env.TIMING_SHOT_DIR) await page.screenshot({path:`${process.env.TIMING_SHOT_DIR}/car.png`});
-  assert.match(await modal.locator('tbody tr').nth(1).innerText(), /93\.0%\s+3\.5%/, 'energy at the line and used');
+  assert.match(await modal.locator('tbody tr').nth(1).innerText(), /93\.0%\s+3\.5%\s+Pit lap/, 'energy at the line, used, and why it does not count');
+  assert.match(await modal.locator('tbody tr').nth(2).innerText(), /No reading/);
   await modal.getByRole('tab',{name:/Stints/}).click();
   assert.match(await modal.locator('tbody tr').first().innerText(), /Derani[\s\S]*Current/);
   assert.match(await modal.locator('tbody tr').nth(1).innerText(), /Aitken[\s\S]*1–2[\s\S]*29:40\s+3\.50%/);
@@ -254,6 +263,26 @@ const assert = require('node:assert/strict');
   const before = carRequests;
   await page.waitForTimeout(2500);
   assert.equal(carRequests, before, 'a closed panel stops polling');
+
+  // Energy: every car's use side by side, fewest green laps left first; a car opens its laps.
+  await page.getByRole('tab',{name:'Energy'}).click();
+  assert.match(page.url(), /view=energy/);
+  const enTable = page.getByRole('table',{name:'Energy use by class'});
+  await enTable.waitFor();
+  assert.deepEqual(await enTable.locator('.tower-car').allInnerTexts(), ['7','31']);
+  assert.match((await enTable.locator('.class-band').innerText()).replace(/\s+/g,' '), /GTP Caution 0\.85% a lap over 4 laps/);
+  const seven = enTable.locator('.tower-row').nth(0);
+  assert.match((await seven.innerText()).replace(/\s+/g,' '),
+    /31% 2\.40% 2\.50% 6 laps · 2\+ drivers 13 L 0\.85% class 2 L 6 pit laps, 2 out laps, 1 lap unread/);
+  assert.equal(await seven.locator('.tower-energy-thin').count(), 1, 'six green laps: marked as thin');
+  assert.match((await enTable.locator('.tower-row').nth(1).innerText()).replace(/\s+/g,' '), /62% 2\.30% 2\.28% 10 laps 27 L 0 L 4 pit laps/);
+  await enTable.getByRole('button',{name:'#31 Team 31: laps and stints'}).click();
+  await page.getByRole('dialog',{name:'Car 31 laps and stints'}).locator('tbody tr').first().waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('group',{name:'Session'}).getByRole('button',{name:'Qualifying'}).click();
+  await page.getByText('No energy telemetry recorded for this session').waitFor();
+  await page.getByRole('group',{name:'Session'}).getByRole('button',{name:/^Race/}).click();
+  await enTable.waitFor();
 
   // The race control log: newest first, track time while live; an older session with none says so.
   await page.getByRole('tab',{name:'Race control'}).click();

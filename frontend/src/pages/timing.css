@@ -1437,6 +1437,12 @@
   font-style: italic;
 }
 
+/* The left-out tally is the longest cell; it wraps rather than widen the table. */
+.an-energy-out {
+  min-width: 18ch;
+  white-space: normal;
+}
+
 .an-foot {
   margin-top: var(--space-3);
 }

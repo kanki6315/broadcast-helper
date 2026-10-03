@@ -402,6 +402,110 @@ export interface PitClass {
   pits: PitCar[]
 }
 
+/** An average over a car's newest laps of one kind (EnergyModel.Average). */
+export interface EnergyAverage {
+  perLapPct: number
+  lapTimeMs: number | null
+  /** How many laps it rests on (at most 10). */
+  laps: number
+  /** The laps were not all one driver's. */
+  driverChange: boolean
+  lastLap: number
+}
+
+export type EnergyLapKind =
+  | 'GREEN'
+  | 'CAUTION'
+  | 'NO_READING'
+  | 'PIT'
+  | 'OUT_LAP'
+  | 'REFILL'
+  | 'EMPTY'
+  | 'RED'
+  | 'FLAG_CHANGE'
+  | 'FLAG_UNKNOWN'
+
+export interface EnergyCar {
+  carNumber: string
+  /** Now, in the session being fed only; null when stale or past. */
+  energyPct: number | null
+  greenLapsLeft: number | null
+  /** Last 10 green laps, last 5; null below 3. */
+  green: EnergyAverage | null
+  greenShort: EnergyAverage | null
+  /** The car's own caution laps when it has 3, else its class's (cautionSource). */
+  caution: EnergyAverage | null
+  cautionSource: 'CAR' | 'CLASS' | null
+  lastLap: number | null
+  /** The car's laps since its newest green lap: how old the green figure is. */
+  lapsSinceGreen: number | null
+  /** How many laps of each kind. */
+  laps: Partial<Record<EnergyLapKind, number>>
+}
+
+export interface EnergyClass {
+  className: string
+  color: string | null
+  cars: AnalysisCar[]
+  /** Every car's caution laps pooled. */
+  caution: EnergyAverage | null
+  /** Fewest green laps left first. */
+  energy: EnergyCar[]
+}
+
+export interface EnergyResponse {
+  sessionDbId: number
+  /** The session is the one being fed, so energyPct is now. */
+  live: boolean
+  classes: EnergyClass[]
+}
+
+/** What a lap's energy figure was made of, in words: why it counts or why not. */
+export function energyLapLabel(kind: string | null | undefined): string | null {
+  switch (kind) {
+    case 'GREEN':
+      return 'Green'
+    case 'CAUTION':
+      return 'Caution'
+    case 'NO_READING':
+      return 'No reading'
+    case 'PIT':
+      return 'Pit lap'
+    case 'OUT_LAP':
+      return 'Out lap'
+    case 'REFILL':
+      return 'Refill'
+    case 'EMPTY':
+      return 'Empty'
+    case 'RED':
+      return 'Red flag'
+    case 'FLAG_CHANGE':
+      return 'Flag changed'
+    case 'FLAG_UNKNOWN':
+      return 'Flag unknown'
+    default:
+      return null
+  }
+}
+
+/** Laps that do not count toward energy use, with how many of each ("6 pit laps, 2 out laps"). */
+export function energyLeftOut(laps: EnergyCar['laps']): string {
+  const order: [EnergyLapKind, string, string][] = [
+    ['PIT', 'pit lap', 'pit laps'],
+    ['OUT_LAP', 'out lap', 'out laps'],
+    ['REFILL', 'refill', 'refills'],
+    ['FLAG_CHANGE', 'flag change', 'flag changes'],
+    ['RED', 'red-flag lap', 'red-flag laps'],
+    ['EMPTY', 'lap on empty', 'laps on empty'],
+    ['NO_READING', 'lap unread', 'laps unread'],
+    ['FLAG_UNKNOWN', 'unknown flag', 'unknown flags'],
+  ]
+  return order
+    .filter(([k]) => (laps[k] ?? 0) > 0)
+    .map(([k, one, many]) => `${laps[k]} ${laps[k] === 1 ? one : many}`)
+    .join(', ')
+}
+
 export interface PitsResponse {
   sessionDbId: number
   /** Car → driver order → surname. */

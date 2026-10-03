@@ -589,6 +589,89 @@ struct PitsSection: View {
     }
 }
 
+/// Every car's energy use side by side: green use over the last 10 and 5 green
+/// laps, what that rests on, caution use, and green laps left on the energy it
+/// has now. Tapping a car shows each lap and whether it counted.
+struct EnergySection: View {
+    @Environment(AppSession.self) private var session
+    let chosen: LiveSessionSummary
+    let open: (AnalysisOpen) -> Void
+    @State private var feed = LiveFeed<EnergyResponse>()
+
+    var body: some View {
+        Group {
+            if let value = feed.value {
+                if value.classes.isEmpty {
+                    EmptyState(message: "No energy telemetry recorded for this session. Only IMSA WeatherTech cars send it.")
+                } else {
+                    VStack(alignment: .leading, spacing: PP.Space.s3) {
+                        if let error = feed.error { StaleLine(error: error) }
+                        table(value)
+                        Text("A lap counts when it is run under one flag — green, or full-course yellow for caution — clear of the pits, with IMSA's energy reading seen at the line before and after it. Green use averages the last 10 green laps of the session across pit stops; under 10 it is underlined, under 3 there is none. A car with fewer than 3 caution laps of its own uses its class's. Tap a car for every lap and why it counted.")
+                            .font(.caption).foregroundStyle(PP.textMuted)
+                    }
+                }
+            } else if let error = feed.error {
+                ErrorPanel(message: "Could not load energy: \(error)")
+            } else {
+                SkeletonLines()
+            }
+        }
+        .task(id: chosen.sessionDbId) {
+            await feed.run(session.client, path: "/api/live/energy?session=\(chosen.sessionDbId)", every: pollEvery(chosen))
+        }
+    }
+
+    private func perLap(_ a: EnergyAverage?) -> String { a.map { String(format: "%.2f%%", $0.perLapPct) } ?? "" }
+
+    private func table(_ value: EnergyResponse) -> some View {
+        var data: [GridColumn] = [.text("team", "Team", width: 170)]
+        if value.live { data.append(.text("now", "Energy", width: 70, align: .trailing)) }
+        data += [
+            .text("green", "Green / lap", width: 96, align: .trailing),
+            .text("short", "Last 5", width: 74, align: .trailing),
+            .text("based", "Based on", width: 150),
+        ]
+        if value.live { data.append(.text("left", "Green laps left", width: 120, align: .trailing)) }
+        data += [
+            .text("caution", "Caution / lap", width: 120, align: .trailing),
+            .text("since", "Since green", width: 96, align: .trailing),
+            GridColumn(id: "out", width: 220, growthWeight: 1) {
+                Text("Left out").font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted)
+            },
+        ]
+        let sections = value.classes.map { cls in
+            let info = Dictionary(cls.cars.map { ($0.carNumber, $0) }, uniquingKeysWith: { a, _ in a })
+            let rows = cls.energy.map { e -> GridRowItem in
+                let car = info[e.carNumber] ?? AnalysisCar(carNumber: e.carNumber, teamName: nil, className: cls.className)
+                let thin = (e.green?.laps ?? TimingFormat.energyFullLaps) < TimingFormat.energyFullLaps
+                var cells: [AnyView] = [GridCell.text(car.teamName ?? "—", muted: true)]
+                if value.live { cells.append(GridCell.num(e.energyPct.map { "\(Int($0.rounded()))%" } ?? "")) }
+                cells.append(AnyView(Text(perLap(e.green)).font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.text)
+                    .underline(thin, pattern: .dot)))
+                cells.append(GridCell.num(perLap(e.greenShort), muted: true))
+                if let g = e.green {
+                    cells.append(GridCell.text("\(g.laps) \(g.laps == 1 ? "lap" : "laps")" + (g.driverChange ? " · 2+ drivers" : "")))
+                } else {
+                    cells.append(GridCell.text("Needs 3 green laps", muted: true))
+                }
+                if value.live { cells.append(GridCell.num(e.greenLapsLeft.map { "\(Int($0)) L" } ?? "")) }
+                cells.append(GridCell.num(perLap(e.caution) + (e.cautionSource == "CLASS" ? " class" : "")))
+                cells.append(GridCell.num(e.lapsSinceGreen.map { "\($0) L" } ?? ""))
+                cells.append(GridCell.text(TimingFormat.energyLeftOut(e.laps), muted: true))
+                return GridRowItem(id: e.carNumber, ident: [GridCell.car(e.carNumber)], cells: cells, lines: 1,
+                                   onTap: { open(AnalysisOpen(car: car, color: cls.color)) },
+                                   tapLabel: "Car \(e.carNumber), green use \(perLap(e.green)) a lap. Opens laps and stints.")
+            }
+            return GridSection(id: cls.className, band: (label: cls.className, color: cls.color ?? ""), rows: rows,
+                               bandDetail: cls.caution.map { "Caution \(perLap($0)) a lap over \($0.laps) laps" })
+        }
+        // Wide enough that the pinned band label reads "GTDPRO", not "GT…".
+        return GridTable(identColumns: [.text("car", "#", width: 84, align: .trailing)], dataColumns: data, sections: sections,
+                         lineHeight: 22, cellPadV: 5, cellPadH: 8, headerHeight: 34, separatesIdentity: true, centersCells: true)
+    }
+}
+
 private struct StaleLine: View {
     let error: String
     var body: some View {

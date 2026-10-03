@@ -671,6 +671,14 @@ retry (5 s → 5 min ladder).
   `energyLapsLeft` (energy over green use: green laps left). The car panel
   shows energy, energy used and `energyLap` (GREEN, CAUTION or why it is
   left out) per lap, and each stint's green average.
+  **`/api/live/energy?session=`** (the Energy view, web and iPad) puts every
+  car with telemetry side by side, class by class, fewest green laps left
+  first: energy now and green laps left (the session being fed only), green
+  use over the last 10 and last 5 green laps, how many laps that rests on and
+  whether they span a driver change, caution use (the car's own, else its
+  class's pooled, said which), laps since the newest green lap, and a count
+  of each kind of lap left out. The class band carries the class's pooled
+  caution use. A car opens the car panel, whose laps say how each counted.
   `/api/live/status` has a `telemetry` block: state, source, last error,
   message and car counts, laps stored.
 - **Recorded:** raw websocket frames, gzip segments under `imsa-telemetry/`

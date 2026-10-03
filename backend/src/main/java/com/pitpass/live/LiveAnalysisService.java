@@ -53,6 +53,30 @@ public class LiveAnalysisService {
     public record PitsResponse(long sessionDbId, Map<String, Map<Integer, String>> drivers, List<PitClass> classes) {
     }
 
+    /**
+     * One car's energy over the session. energyPct is now (the session being
+     * fed only, null when stale). green is the last 10 green laps' average,
+     * greenShort the last 5; greenLapsLeft energyPct over green. caution is
+     * the car's own caution laps when it has 3, else its class's pooled
+     * (cautionSource CAR or CLASS). lapsSinceGreen counts the car's laps after
+     * the newest green lap, so a long caution or a run of pit laps shows how
+     * old the green figure is. laps counts each EnergyModel.Kind.
+     */
+    public record EnergyCar(String carNumber, Double energyPct, Double greenLapsLeft, EnergyModel.Average green,
+                            EnergyModel.Average greenShort, EnergyModel.Average caution,
+                            EnergyModel.Source cautionSource, Integer lastLap, Integer lapsSinceGreen,
+                            Map<EnergyModel.Kind, Integer> laps) {
+    }
+
+    /** caution: the class's caution laps pooled, every car's. */
+    public record EnergyClass(String className, String color, List<CarInfo> cars, EnergyModel.Average caution,
+                              List<EnergyCar> energy) {
+    }
+
+    /** live: the session is the one being fed, so energyPct is now. */
+    public record EnergyResponse(long sessionDbId, boolean live, List<EnergyClass> classes) {
+    }
+
     private final JdbcClient db;
     private final LiveTimingService live;
     private final LiveClassificationService classification;
@@ -107,6 +131,46 @@ public class LiveAnalysisService {
         classes(session, seen).forEach((cls, cars) ->
                 out.add(new PitClass(cls.name, cls.color, cars, LiveAnalysis.pitStops(of(stints, cars, Stint::car), lastLap))));
         return new PitsResponse(session, drivers, out);
+    }
+
+    /**
+     * Every car's energy use, class by class, fewest green laps left first: who
+     * has to stop soonest. Cars without telemetry are left out.
+     */
+    public EnergyResponse energy(Long sessionParam) {
+        long session = page.session(sessionParam);
+        Map<String, EnergyModel.Car> models = page.energyModels(session);
+        Long current = live.analysisSessionDbId();
+        boolean isLive = current != null && current == session;
+        List<EnergyClass> out = new ArrayList<>();
+        classes(session, List.copyOf(models.keySet())).forEach((cls, cars) -> {
+            List<EnergyModel.Car> classModels = cars.stream().map(c -> models.get(c.carNumber()))
+                    .filter(java.util.Objects::nonNull).toList();
+            if (classModels.isEmpty()) {
+                return;
+            }
+            List<EnergyCar> rows = new ArrayList<>();
+            for (CarInfo car : cars) {
+                EnergyModel.Car m = models.get(car.carNumber());
+                if (m != null) {
+                    rows.add(energyCar(car.carNumber(), m, classModels, isLive ? live.energyNow(car.carNumber(), null) : null));
+                }
+            }
+            rows.sort(java.util.Comparator.comparing(EnergyCar::greenLapsLeft,
+                    java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())));
+            out.add(new EnergyClass(cls.name, cls.color, cars, EnergyModel.pooled(classModels), rows));
+        });
+        return new EnergyResponse(session, isLive, out);
+    }
+
+    static EnergyCar energyCar(String car, EnergyModel.Car m, List<EnergyModel.Car> classModels, Double now) {
+        LiveEnergy.Caution caution = LiveEnergy.caution(m, classModels);
+        Integer lastLap = m.laps().isEmpty() ? null : m.laps().getLast().lap();
+        Integer since = m.green() == null || lastLap == null ? null : lastLap - m.green().lastLap();
+        Map<EnergyModel.Kind, Integer> counts = new java.util.EnumMap<>(EnergyModel.Kind.class);
+        m.laps().forEach(l -> counts.merge(l.kind(), 1, Integer::sum));
+        return new EnergyCar(car, now, EnergyModel.greenLapsLeft(now, m.green()), m.green(), m.greenShort(),
+                caution.average(), caution.source(), lastLap, since, counts);
     }
 
     // ---- loading ------------------------------------------------------------------------
