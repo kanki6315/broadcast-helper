@@ -3,6 +3,7 @@ import { useLivePoll } from '../lib/useLivePoll'
 import {
   driverName,
   duration,
+  energyLapLabel,
   lapTime,
   pct,
   ratingName,
@@ -172,6 +173,9 @@ export default function LiveCarModal({
  * caption: who set the time is the question asked of it on air. The first
  * lap to a time holds it.
  */
+/** A lap whose energy use counts: run under one flag, clear of the pits, with both readings seen. */
+const counted = (kind: string | null) => kind === 'GREEN' || kind === 'CAUTION'
+
 function bestLaps(laps: LapRow[]): { car: LapRow | null; byDriver: Map<number, LapRow> } {
   let car: LapRow | null = null
   const byDriver = new Map<number, LapRow>()
@@ -245,6 +249,9 @@ function LapTable({
               <th className="num" title="Energy used on the lap">
                 Used
               </th>
+              <th title="Whether the lap's use counts toward green or caution use per lap, or why it is left out">
+                Counts as
+              </th>
             </>
           )}
           <th>Notes</th>
@@ -289,7 +296,8 @@ function LapTable({
               {hasEnergy && (
                 <>
                   <td className="num">{pct(l.energyPct)}</td>
-                  <td className="num">{pct(l.energyUsedPct)}</td>
+                  <td className={`num${counted(l.energyLap) ? '' : ' muted'}`}>{pct(l.energyUsedPct)}</td>
+                  <td className={counted(l.energyLap) ? undefined : 'muted'}>{energyLapLabel(l.energyLap) ?? ''}</td>
                 </>
               )}
               <td className="lc-notes">{notes.join(' · ')}</td>
@@ -320,8 +328,8 @@ function StintTable({ car, driverLabel }: { car: CarDetail; driverLabel: (order:
             Driver track time
           </th>
           {hasEnergy && (
-            <th className="num" title="Average energy used per lap in the stint (IMSA telemetry)">
-              Energy / lap
+            <th className="num" title="Average energy used per green lap in the stint (IMSA telemetry); needs 3 green laps">
+              Green / lap
             </th>
           )}
         </tr>

@@ -808,9 +808,31 @@
   min-width: 4ch;
 }
 
-.tower-energy .muted {
-  min-width: 5ch;
+/* Energy now, green use per lap, green laps left: fixed slots so each
+ * figure lines up down the column even when a car has only some of them. */
+.tower-energy .tower-pair {
+  gap: var(--space-1);
+}
+
+.tower-energy-now {
+  min-width: 4ch;
   text-align: right;
+}
+
+.tower-energy-use {
+  min-width: 3ch;
+  text-align: right;
+}
+
+.tower-energy-left {
+  min-width: 4ch;
+  text-align: right;
+}
+
+/* Fewer than 10 green laps behind the average: still a figure, marked as thin. */
+.tower-energy-thin {
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
 }
 
 /* The last stop's time, then a narrow slot for the count ("×2"), so times
@@ -1175,6 +1197,12 @@
   .tower--sectors .tower-stint .muted {
     font-size: var(--text-xs);
   }
+
+  /* Then green use per lap: energy and laps left are what a glance needs, and
+   * the cell's tooltip still says the use. */
+  .tower--sectors .tower-energy-use {
+    display: none;
+  }
 }
 
 @media (max-width: 900px) {
@@ -1464,6 +1492,64 @@
 .an-ideal td {
   color: var(--text-muted);
   font-style: italic;
+}
+
+/* The left-out tally is the longest cell; it wraps rather than widen the table. */
+.an-energy-out {
+  min-width: 18ch;
+  white-space: normal;
+}
+
+/* The finish scenario: the flag it runs to, then its inputs, above the table. */
+.an-finish {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.an-finish-flag {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.an-finish label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.an-finish input {
+  width: 6ch;
+  font: inherit;
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.an-finish-caution {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.an-finish-caution legend {
+  float: left;
+  color: var(--text-muted);
+  margin-right: var(--space-2);
+}
+
+.an-energy-ok {
+  color: var(--success);
+}
+
+.an-energy-short {
+  color: var(--error);
 }
 
 .an-foot {

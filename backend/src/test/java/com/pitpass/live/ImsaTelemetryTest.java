@@ -212,30 +212,25 @@ class ImsaTelemetryTest {
                         car("04", 68.0, 0, false, "GTD"))), 0, Map.of("04", 6)).stream().map(LiveTelemetry.LapSample::car).toList(),
                 "telemetry's 4 never takes #04's count while telemetry also sends 04");
 
-        LiveTelemetry own = new LiveTelemetry();
-        own.accept(decoder.decode(cars(car("10", 40.0, 50, false))), 0, Map.of("10", 49));
-        assertEquals(List.of(new LiveTelemetry.LapSample("10", 51, 38.0, false, "GTP")),
-                own.accept(decoder.decode(cars(car("10", 38.0, 51, false))), 0, Map.of("10", 49)),
-                "the logger's own count wins when it sends one");
+        // The logger ticks ~6.6 s after the official line; the feed's count is the line.
+        LiveTelemetry timed = new LiveTelemetry();
+        timed.accept(decoder.decode(cars(car("10", 40.0, 49, false))), 0, Map.of("10", 49));
+        assertEquals(List.of(new LiveTelemetry.LapSample("10", 50, 38.0, false, "GTP")),
+                timed.accept(decoder.decode(cars(car("10", 38.0, 49, false))), 0, Map.of("10", 50)),
+                "Al Kamel's count wins: the crossing is sampled at the line, not when the logger catches up");
+        assertTrue(timed.accept(decoder.decode(cars(car("10", 37.8, 50, false))), 0, Map.of("10", 50)).isEmpty(),
+                "the logger catching up is not a second crossing");
+        assertEquals(List.of(new LiveTelemetry.LapSample("10", 51, 36.0, false, "GTP")),
+                timed.accept(decoder.decode(cars(car("10", 36.0, 51, false))), 0, Map.of()),
+                "the logger's count stands in when the feed has none");
     }
 
     @Test
-    void averageUseAndLapsLeftFollowTheStintAndIgnoreRefills() {
+    void energyNowGoesStale() {
         LiveTelemetry t = new LiveTelemetry();
-        feed(t, "04", 100, 1);
-        feed(t, "04", 96, 2);   // at the line after lap 2: 96
-        feed(t, "04", 50, 3);   // after lap 3: 50 (46 used)
-        feed(t, "04", 98, 4);   // after lap 4: 98 — a refill, a rise, not use
-        feed(t, "04", 95, 5);   // after lap 5: 3 used
-        feed(t, "04", 91, 6);   // after lap 6: 4 used
-        LiveTelemetry.CarEnergy stint = t.energy("04", null, 4, 0, 15_000);
-        assertEquals(91.0, stint.energyPct());
-        assertEquals(3.5, stint.avgPerLapPct(), 1e-9, "only this stint's laps (from lap 4)");
-        assertEquals(26.0, stint.lapsLeft(), 1e-9);
-
-        assertEquals((46 + 3 + 4) / 3.0, t.energy("04", null, null, 0, 15_000).avgPerLapPct(), 1e-9,
-                "the refill's rise is left out, not counted as negative use");
-        assertNull(t.energy("04", null, 4, 16_000, 15_000).energyPct(), "stale after 15 s");
+        feed(t, "04", 91, 6);
+        assertEquals(91.0, t.energyNow("04", null, 15_000, 15_000));
+        assertNull(t.energyNow("04", null, 16_000, 15_000), "stale after 15 s");
     }
 
     @Test
@@ -243,11 +238,11 @@ class ImsaTelemetryTest {
         LiveTelemetry t = new LiveTelemetry();
         feed(t, "04", 70, 1);
         feed(t, "4", 40, 1);
-        assertEquals(70.0, t.energy("04", null, null, 0, 15_000).energyPct());
-        assertEquals(40.0, t.energy("4", null, null, 0, 15_000).energyPct());
+        assertEquals(70.0, t.energyNow("04", null, 0, 15_000));
+        assertEquals(40.0, t.energyNow("4", null, 0, 15_000));
         LiveTelemetry only = new LiveTelemetry();
         feed(only, "023", 55, 1);
-        assertEquals(55.0, only.energy("23", null, null, 0, 15_000).energyPct(), "unambiguous without leading zeros");
+        assertEquals(55.0, only.energyNow("23", null, 0, 15_000), "unambiguous without leading zeros");
     }
 
     @Test
@@ -256,9 +251,9 @@ class ImsaTelemetryTest {
         LiveTelemetry t = new LiveTelemetry();
         feed(t, "4", 40, 1);
         java.util.Set<String> grid = java.util.Set.of("4", "04");
-        assertNull(t.energy("04", null, null, 0, 15_000, grid::contains), "#4 is on the grid, so its energy is its own");
-        assertEquals(40.0, t.energy("4", null, null, 0, 15_000, grid::contains).energyPct());
-        assertEquals(40.0, t.energy("04", null, null, 0, 15_000, java.util.Set.of("04")::contains).energyPct(),
+        assertNull(t.energyNow("04", null, 0, 15_000, grid::contains), "#4 is on the grid, so its energy is its own");
+        assertEquals(40.0, t.energyNow("4", null, 0, 15_000, grid::contains));
+        assertEquals(40.0, t.energyNow("04", null, 0, 15_000, java.util.Set.of("04")::contains),
                 "with no #4 on the grid, telemetry's 4 is still #04");
     }
 }

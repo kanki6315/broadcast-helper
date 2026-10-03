@@ -57,13 +57,82 @@ final class TimingFormatTests: XCTestCase {
           "teamName":"Team","vehicle":null,"manufacturer":null,"status":"CLASSIFIED","laps":50,"gapToLeaderMs":null,"gapToLeaderLaps":null,
           "intervalMs":null,"intervalLaps":null,"driverOrder":1,"driverName":"Ann One","driverShortName":"One","driverRating":"G",
           "lastLap":50,"lastLapMs":98000,"bestLap":12,"bestLapMs":97500,"inPit":false,"stintStartMs":1768999000000,"stintLaps":18,
-          "energyPct":62.4,"energyLapsLeft":9.6}]}],"matched":1,"total":1}
+          "energyPct":62.4,"energyLapsLeft":27.1,"energyUsePerLapPct":2.3,"energyUseLaps":10}]}],"matched":1,"total":1}
         """
         let tower = try JSONDecoder().decode(Tower.self, from: Data(json.utf8))
         XCTAssertEqual(tower.classes.first?.cars.first?.carNumber, "04")
         XCTAssertEqual(tower.classes.first?.cars.first?.energyPct, 62.4)
+        XCTAssertEqual(tower.classes.first?.cars.first?.energyUsePerLapPct, 2.3)
+        XCTAssertEqual(tower.classes.first?.cars.first?.energyUseLaps, 10)
         XCTAssertEqual(TimingFormat.classBest(tower.classes[0].cars), 97_500)
         XCTAssertTrue(tower.classes[0].cars[0].running)
+    }
+
+    func testEnergySummarySaysWhatTheAverageRestsOn() throws {
+        func car(_ fields: String) throws -> TowerCar {
+            let json = """
+            {"position":1,"carNumber":"7","entryId":null,"teamName":null,"vehicle":null,"manufacturer":null,"status":null,"laps":null,
+             "gapToLeaderMs":null,"gapToLeaderLaps":null,"intervalMs":null,"intervalLaps":null,"driverOrder":null,"driverName":null,
+             "driverShortName":null,"driverRating":null,"lastLap":null,"lastLapMs":null,"bestLap":null,"bestLapMs":null,"inPit":false,
+             "stintStartMs":null,"stintLaps":null,\(fields)}
+            """
+            return try JSONDecoder().decode(TowerCar.self, from: Data(json.utf8))
+        }
+        XCTAssertEqual(TimingFormat.energySummary(try car(#""energyPct":62.4,"energyLapsLeft":27.1,"energyUsePerLapPct":2.3,"energyUseLaps":10"#)),
+                       "62% energy left. Using 2.3% a lap over the last 10 green laps. About 27 green laps left.")
+        XCTAssertEqual(TimingFormat.energySummary(try car(#""energyPct":40.2,"energyLapsLeft":16.7,"energyUsePerLapPct":2.4,"energyUseLaps":6"#)),
+                       "40% energy left. Using 2.4% a lap over only 6 green laps so far (a full average uses 10). About 16 green laps left.")
+        XCTAssertEqual(TimingFormat.energySummary(try car(#""energyPct":97.0,"energyLapsLeft":null"#)),
+                       "97% energy left. No green-lap average yet: it needs 3 clean green laps.",
+                       "a server from before the green average sends neither field")
+    }
+
+    func testDecodesTheEnergyViewAndSaysWhatWasLeftOut() throws {
+        let json = """
+        {"sessionDbId":3180,"live":false,"classes":[{"className":"GTP","color":"#1a1a1a",
+          "cars":[{"carNumber":"7","teamName":"Porsche Penske Motorsport","className":"GTP"}],
+          "caution":{"perLapPct":0.85,"lapTimeMs":160000.0,"laps":12,"driverChange":false,"lastLap":30},
+          "energy":[{"carNumber":"7","energyPct":null,"greenLapsLeft":null,
+            "green":{"perLapPct":2.35,"lapTimeMs":72100.5,"laps":10,"driverChange":true,"lastLap":51},
+            "greenShort":{"perLapPct":2.36,"lapTimeMs":72000.0,"laps":5,"driverChange":false,"lastLap":51},
+            "caution":{"perLapPct":0.85,"lapTimeMs":160000.0,"laps":12,"driverChange":false,"lastLap":30},
+            "cautionSource":"CLASS","lastLap":52,"lapsSinceGreen":1,
+            "laps":{"GREEN":40,"PIT":7,"OUT_LAP":1,"NO_READING":2,"EMPTY":1}}]}]}
+        """
+        let energy = try JSONDecoder().decode(EnergyResponse.self, from: Data(json.utf8))
+        let car = try XCTUnwrap(energy.classes.first?.energy.first)
+        XCTAssertEqual(car.green?.laps, 10)
+        XCTAssertEqual(car.green?.driverChange, true)
+        XCTAssertEqual(car.cautionSource, "CLASS")
+        XCTAssertEqual(TimingFormat.energyLeftOut(car.laps), "7 pit laps, 1 out lap, 1 lap on empty, 2 laps unread")
+        XCTAssertEqual(TimingFormat.energyLapLabel("FLAG_CHANGE"), "Flag changed")
+        XCTAssertTrue(TimingFormat.energyLapCounts("CAUTION"))
+        XCTAssertFalse(TimingFormat.energyLapCounts("REFILL"))
+    }
+
+    func testTheFinishScenarioAsksWithItsInputsAndSaysWhatItTakes() throws {
+        XCTAssertEqual(TimingFormat.energyPath(session: 3150, reserve: "", fromStop: false, cautionUse: "", cautionLapSec: ""),
+                       "/api/live/energy?session=3150")
+        XCTAssertEqual(TimingFormat.energyPath(session: 3150, reserve: "2", fromStop: true, cautionUse: "0.9", cautionLapSec: "165"),
+                       "/api/live/energy?session=3150&reserve=2.0&from=stop&cautionUse=0.9&cautionLapMs=165000")
+        XCTAssertEqual(TimingFormat.energyPath(session: 3150, reserve: "x", fromStop: false, cautionUse: "0.9", cautionLapSec: ""),
+                       "/api/live/energy?session=3150", "half a caution figure, or a bad reserve, is not sent")
+
+        let json = """
+        {"sessionDbId":3150,"live":true,
+         "finish":{"type":"TIME","clockLeftMs":3540000,"flagInMs":3600000,"leaderLapsLeft":null,"leader":"31",
+           "inputs":{"reservePct":0,"fromStop":false,"cautionUsePct":null,"cautionLapMs":null},"refillPct":97.6,"refillSource":"OBSERVED"},
+         "classes":[{"className":"GTP","color":null,"cars":[],"caution":null,"energy":[{"carNumber":"31","energyPct":62.4,
+           "greenLapsLeft":27.1,"green":null,"greenShort":null,"caution":null,"cautionSource":null,"lastLap":40,"lapsSinceGreen":0,
+           "laps":{},"finish":{"startPct":62.4,"result":{"lapsToFlag":36.9,"needPct":84.9,"marginPct":-22.5,"cautionLaps":9,"makesIt":true},
+           "cautionSource":"MANUAL"}}]}]}
+        """
+        let energy = try JSONDecoder().decode(EnergyResponse.self, from: Data(json.utf8))
+        XCTAssertEqual(energy.finish?.leader, "31")
+        let f = try XCTUnwrap(energy.classes.first?.energy.first?.finish)
+        XCTAssertEqual(TimingFormat.cautionLapsLabel(f), "9 caution laps")
+        XCTAssertEqual(TimingFormat.marginLabel(f.result.marginPct), "−22.5%")
+        XCTAssertEqual(TimingFormat.marginLabel(1.04), "+1.0%")
     }
 
     // MARK: Session clock and lap marks

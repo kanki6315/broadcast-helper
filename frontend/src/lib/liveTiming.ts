@@ -78,8 +78,15 @@ export interface TowerCar {
   stintLaps: number | null
   /** IMSA telemetry, % remaining; null when off, unseen or stale. */
   energyPct: number | null
-  /** energyPct over this stint's average use per lap; null until two laps are sampled. */
+  /** energyPct over energyUsePerLapPct: green laps left. Null when either is. */
   energyLapsLeft: number | null
+  /**
+   * Average energy used per lap over the car's last green laps of the session,
+   * across pit stops (pit, out, refill, caution and mixed-flag laps left out).
+   */
+  energyUsePerLapPct: number | null
+  /** How many green laps that rests on: 3 to 10, null below 3. */
+  energyUseLaps: number | null
   /** Al Kamel PIT stints so far, as the Pits view counts them; null with no session recorded. */
   pitStops: number | null
   /** Pit-lane time of the newest finished stop. */
@@ -222,9 +229,15 @@ export interface LapRow {
   topSpeed: number | null
   pitInMs: number | null
   pitOutMs: number | null
-  /** IMSA telemetry at the line after this lap, and the drop from the lap before (null over a refill). */
+  /** IMSA telemetry at the line after this lap, and the drop from the lap before. */
   energyPct: number | null
   energyUsedPct: number | null
+  /**
+   * What the energy figures made of the lap: GREEN or CAUTION when it counts,
+   * else why not (NO_READING, PIT, OUT_LAP, REFILL, EMPTY, RED, FLAG_CHANGE,
+   * FLAG_UNKNOWN). Null without telemetry for the car.
+   */
+  energyLap: string | null
 }
 
 export interface StintRow {
@@ -389,6 +402,168 @@ export interface PitClass {
   pits: PitCar[]
 }
 
+/** An average over a car's newest laps of one kind (EnergyModel.Average). */
+export interface EnergyAverage {
+  perLapPct: number
+  lapTimeMs: number | null
+  /** How many laps it rests on (at most 10). */
+  laps: number
+  /** The laps were not all one driver's. */
+  driverChange: boolean
+  lastLap: number
+}
+
+export type EnergyLapKind =
+  | 'GREEN'
+  | 'CAUTION'
+  | 'NO_READING'
+  | 'PIT'
+  | 'OUT_LAP'
+  | 'REFILL'
+  | 'EMPTY'
+  | 'RED'
+  | 'FLAG_CHANGE'
+  | 'FLAG_UNKNOWN'
+
+export interface EnergyCar {
+  carNumber: string
+  /** Now, in the session being fed only; null when stale or past. */
+  energyPct: number | null
+  greenLapsLeft: number | null
+  /** Last 10 green laps, last 5; null below 3. */
+  green: EnergyAverage | null
+  greenShort: EnergyAverage | null
+  /** The car's own caution laps when it has 3, else its class's (cautionSource). */
+  caution: EnergyAverage | null
+  cautionSource: 'CAR' | 'CLASS' | null
+  lastLap: number | null
+  /** The car's laps since its newest green lap: how old the green figure is. */
+  lapsSinceGreen: number | null
+  /** How many laps of each kind. */
+  laps: Partial<Record<EnergyLapKind, number>>
+  /** Against the flag, in a race being fed; null otherwise or without a green figure and a crossing. */
+  finish: EnergyScenario | null
+}
+
+/** One car against the flag (backend EnergyFinish.Result). */
+export interface EnergyScenario {
+  /** Energy it starts from: now, or the refill level when starting from a stop. */
+  startPct: number
+  result: {
+    /** Laps still to run from now at green pace. */
+    lapsToFlag: number
+    needPct: number
+    /** Start less reserve less need: over 0 it makes it green. */
+    marginPct: number
+    /** Fewest caution laps that get it there; 0 = makes it green; null = no caution figure, or none would do. */
+    cautionLaps: number | null
+    /** False only when no number of caution laps would do. */
+    makesIt: boolean
+  }
+  /** Whose caution figures: CAR, CLASS or MANUAL; null when none. */
+  cautionSource: 'CAR' | 'CLASS' | 'MANUAL' | null
+}
+
+export interface EnergyInputs {
+  reservePct: number
+  fromStop: boolean
+  cautionUsePct: number | null
+  cautionLapMs: number | null
+}
+
+/** The flag the scenarios run to (a race being fed only). */
+export interface EnergyFinishInfo {
+  type: 'TIME' | 'LAPS'
+  /** TIME: until the clock runs out, and until the leader is projected to take the flag (from the newest feed time). */
+  clockLeftMs: number | null
+  flagInMs: number | null
+  /** LAPS: the leader's laps left. */
+  leaderLapsLeft: number | null
+  leader: string
+  inputs: EnergyInputs
+  /** Where refills landed this session (OBSERVED median), or 100 (ASSUMED). */
+  refillPct: number
+  refillSource: 'OBSERVED' | 'ASSUMED'
+}
+
+export interface EnergyClass {
+  className: string
+  color: string | null
+  cars: AnalysisCar[]
+  /** Every car's caution laps pooled. */
+  caution: EnergyAverage | null
+  /** Fewest green laps left first. */
+  energy: EnergyCar[]
+}
+
+export interface EnergyResponse {
+  sessionDbId: number
+  /** The session is the one being fed, so energyPct is now. */
+  live: boolean
+  /** In a race being fed, the flag the scenarios run to; else null. */
+  finish: EnergyFinishInfo | null
+  classes: EnergyClass[]
+}
+
+/** The scenario as one cell's words: "Makes it", "8 caution laps", "Won't make it", "Needs a caution figure". */
+export function cautionLapsLabel(s: EnergyScenario): string {
+  const r = s.result
+  if (r.cautionLaps === 0) return 'Makes it green'
+  if (r.cautionLaps != null) return `${r.cautionLaps} caution ${r.cautionLaps === 1 ? 'lap' : 'laps'}`
+  return r.makesIt ? 'Needs a caution figure' : "Won't make it"
+}
+
+/** "+3.2%" / "−5.1%": energy left over at the flag, or short of it. */
+export function marginLabel(pct: number): string {
+  return `${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}%`
+}
+
+/** What a lap's energy figure was made of, in words: why it counts or why not. */
+export function energyLapLabel(kind: string | null | undefined): string | null {
+  switch (kind) {
+    case 'GREEN':
+      return 'Green'
+    case 'CAUTION':
+      return 'Caution'
+    case 'NO_READING':
+      return 'No reading'
+    case 'PIT':
+      return 'Pit lap'
+    case 'OUT_LAP':
+      return 'Out lap'
+    case 'REFILL':
+      return 'Refill'
+    case 'EMPTY':
+      return 'Empty'
+    case 'RED':
+      return 'Red flag'
+    case 'FLAG_CHANGE':
+      return 'Flag changed'
+    case 'FLAG_UNKNOWN':
+      return 'Flag unknown'
+    default:
+      return null
+  }
+}
+
+/** Laps that do not count toward energy use, with how many of each ("6 pit laps, 2 out laps"). */
+export function energyLeftOut(laps: EnergyCar['laps']): string {
+  const order: [EnergyLapKind, string, string][] = [
+    ['PIT', 'pit lap', 'pit laps'],
+    ['OUT_LAP', 'out lap', 'out laps'],
+    ['REFILL', 'refill', 'refills'],
+    ['FLAG_CHANGE', 'flag change', 'flag changes'],
+    ['RED', 'red-flag lap', 'red-flag laps'],
+    ['EMPTY', 'lap on empty', 'laps on empty'],
+    ['NO_READING', 'lap unread', 'laps unread'],
+    ['FLAG_UNKNOWN', 'unknown flag', 'unknown flags'],
+  ]
+  return order
+    .filter(([k]) => (laps[k] ?? 0) > 0)
+    .map(([k, one, many]) => `${laps[k]} ${laps[k] === 1 ? one : many}`)
+    .join(', ')
+}
+
 export interface PitsResponse {
   sessionDbId: number
   /** Car → driver order → surname. */
@@ -473,6 +648,26 @@ export function parseRuleTime(text: string): number | null | undefined {
 /** An energy percentage to one decimal ("62.4%"), or nothing. */
 export function pct(value: number | null | undefined, digits = 1): string {
   return value == null ? '' : `${value.toFixed(digits)}%`
+}
+
+/** A full green-use average rests on this many laps; fewer is marked on the tower. */
+export const ENERGY_FULL_LAPS = 10
+
+/** The tower's energy cell spelled out, for its tooltip and screen readers. */
+export function energySummary(car: Pick<TowerCar, 'energyPct' | 'energyUsePerLapPct' | 'energyUseLaps' | 'energyLapsLeft'>): string {
+  const parts: string[] = []
+  if (car.energyPct != null) parts.push(`${Math.round(car.energyPct)}% energy left.`)
+  if (car.energyUsePerLapPct != null && car.energyUseLaps != null) {
+    const over =
+      car.energyUseLaps >= ENERGY_FULL_LAPS
+        ? `the last ${car.energyUseLaps} green laps`
+        : `only ${car.energyUseLaps} green laps so far (a full average uses ${ENERGY_FULL_LAPS})`
+    parts.push(`Using ${car.energyUsePerLapPct.toFixed(1)}% a lap over ${over}.`)
+    if (car.energyLapsLeft != null) parts.push(`About ${Math.floor(car.energyLapsLeft)} green laps left.`)
+  } else {
+    parts.push('No green-lap average yet: it needs 3 clean green laps.')
+  }
+  return parts.join(' ')
 }
 
 /** GREEN → "Green", FULL_YELLOW → "Full yellow". */

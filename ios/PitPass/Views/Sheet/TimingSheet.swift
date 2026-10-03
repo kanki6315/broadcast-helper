@@ -29,7 +29,7 @@ struct TimingSheet: View {
     @AppStorage("timing.order") private var order = "class"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    enum Mode: String { case tower, points, gaps, sectors, pits, drive, control, weather }
+    enum Mode: String { case tower, points, gaps, sectors, pits, energy, drive, control, weather }
 
     struct OpenCar: Identifiable {
         let carNumber: String
@@ -107,12 +107,13 @@ struct TimingSheet: View {
                         Text("Gaps").tag(Mode.gaps)
                         Text("Sectors").tag(Mode.sectors)
                         Text("Pits").tag(Mode.pits)
+                        Text("Energy").tag(Mode.energy)
                         Text("Drive time").tag(Mode.drive)
                         Text("Race control").tag(Mode.control)
                         Text("Weather").tag(Mode.weather)
                     }
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 760)
+                    .frame(maxWidth: 840)
                     if followingThis, let s = tower.value?.session { SessionLine(session: s) }
                     Spacer(minLength: 0)
                     if let error = tower.error, tower.value != nil {
@@ -129,6 +130,7 @@ struct TimingSheet: View {
                         case .gaps: GapsSection(chosen: chosen, open: { openAnalysis($0, chosen) })
                         case .sectors: SectorsSection(chosen: chosen, open: { openAnalysis($0, chosen) })
                         case .pits: PitsSection(chosen: chosen, open: { openAnalysis($0, chosen) })
+                        case .energy: EnergySection(chosen: chosen, open: { openAnalysis($0, chosen) })
                         case .control:
                             // The track's time of day, while this is the session on track.
                             RaceControlSection(chosen: chosen,
@@ -394,7 +396,8 @@ private struct TowerGrid: View {
             .text("int", "Int", width: 72, align: .trailing),
         ]
         // Energy beside the gaps rather than after the sectors: the first screen holds it.
-        if hasEnergy { data.append(.text("energy", "Energy", width: 86, align: .trailing)) }
+        // Energy now, green use per lap, green laps left: "100%  2.3  27 L" is 11 characters and two gaps.
+        if hasEnergy { data.append(.text("energy", "Energy", width: 106, align: .trailing)) }
         if hasLaps {
             data += [.text("last", "Last", width: 80, align: .trailing),
                      .text("best", "Best", width: 80, align: .trailing)]
@@ -484,12 +487,24 @@ private struct TowerGrid: View {
             gapCell(leader ? "" : TimingFormat.gap(ms: place.intervalMs, laps: place.intervalLaps), muted: muted),
         ]
         if hasEnergy {
-            cells.append(AnyView(HStack(spacing: PP.Space.s1) {
+            let thin = (car.energyUseLaps ?? TimingFormat.energyFullLaps) < TimingFormat.energyFullLaps
+            let cell = HStack(spacing: PP.Space.s1) {
                 if let e = car.energyPct { Text("\(Int(e.rounded()))%").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.text).fixedSize() }
-                if let left = car.energyLapsLeft {
-                    Text("~\(Int(left))L").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.textMuted).fixedSize()
+                if let use = car.energyUsePerLapPct {
+                    // Dotted: fewer than 10 green laps behind it.
+                    Text(String(format: "%.1f", use)).font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.textMuted)
+                        .underline(thin, pattern: .dot).fixedSize()
                 }
-            }))
+                if let left = car.energyLapsLeft {
+                    Text("\(Int(left)) L").font(PP.mono(PP.TextSize.sm)).foregroundStyle(PP.textMuted).fixedSize()
+                }
+            }
+            if car.energyPct != nil || car.energyUsePerLapPct != nil {
+                cells.append(AnyView(cell.accessibilityElement(children: .ignore)
+                    .accessibilityLabel(TimingFormat.energySummary(car))))
+            } else {
+                cells.append(AnyView(cell))
+            }
         }
         if hasLaps {
             cells.append(lapCell(car.lastLapMs, mark: lastMark, muted: muted))
@@ -761,7 +776,8 @@ private struct LiveCarSheet: View {
         data += (0..<sectors).map { .text("s\($0)", "S\($0 + 1)", width: 76, align: .trailing) }
         data += [.text("pos", "Pos", width: 48, align: .trailing), .text("speed", "Top speed", width: 86, align: .trailing)]
         if hasEnergy {
-            data += [.text("energy", "Energy", width: 76, align: .trailing), .text("used", "Used", width: 64, align: .trailing)]
+            data += [.text("energy", "Energy", width: 76, align: .trailing), .text("used", "Used", width: 64, align: .trailing),
+                     .text("counts", "Counts as", width: 104)]
         }
         data.append(GridColumn(id: "notes", width: 130, growthWeight: 1) {
             Text("Notes").font(PP.sans(PP.TextSize.xs, weight: 600)).foregroundStyle(PP.textMuted)
@@ -797,7 +813,9 @@ private struct LiveCarSheet: View {
             cells += [GridCell.num(l.position.map(String.init) ?? "", muted: true),
                       GridCell.num(l.topSpeed.map { String(format: "%.1f", $0) } ?? "", muted: true)]
             if hasEnergy {
-                cells += [GridCell.num(TimingFormat.pct(l.energyPct)), GridCell.num(TimingFormat.pct(l.energyUsedPct), muted: true)]
+                let counts = TimingFormat.energyLapCounts(l.energyLap)
+                cells += [GridCell.num(TimingFormat.pct(l.energyPct)), GridCell.num(TimingFormat.pct(l.energyUsedPct), muted: !counts),
+                          GridCell.text(TimingFormat.energyLapLabel(l.energyLap) ?? "", muted: !counts)]
             }
             let notes = [l.pitInMs != nil ? "Pit in" : nil, l.pitOutMs != nil ? "Pit out" : nil, invalid ? "Invalid" : nil,
                          (l.trackLimits ?? 0) > 0 ? "Track limits" : nil].compactMap { $0 }
@@ -836,7 +854,7 @@ private struct LiveCarSheet: View {
         var data: [GridColumn] = [.text("type", "Type", width: 150), .text("laps", "Laps", width: 80, align: .trailing),
                                   .text("start", "Started", width: 90, align: .trailing), .text("len", "Length", width: 80, align: .trailing),
                                   .text("track", "Driver track time", width: 140, align: .trailing)]
-        if hasEnergy { data.append(.text("energy", "Energy / lap", width: 100, align: .trailing)) }
+        if hasEnergy { data.append(.text("energy", "Green / lap", width: 100, align: .trailing)) }
         let clock = Date.FormatStyle().hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits)
         let rows = value.stints.reversed().map { s -> GridRowItem in
             let laps = s.openLap.map { open in s.closeLap.map { "\(open)–\($0)" } ?? "\(open)–" } ?? ""

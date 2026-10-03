@@ -4,7 +4,13 @@ import {
   duration,
   gapAt,
   lapTime,
+  cautionLapsLabel,
+  energyLeftOut,
+  marginLabel,
   type AnalysisCar,
+  type EnergyAverage,
+  type EnergyFinishInfo,
+  type EnergyResponse,
   type GapCar,
   type GapClass,
   type GapsResponse,
@@ -17,7 +23,7 @@ import LiveCarModal from '../components/LiveCarModal'
 
 /**
  * The timing page's analysis views — gap to the class leader lap by lap,
- * best sectors, and pit stops — over one recorded session. All three are
+ * best sectors, pit stops and energy use — over one recorded session. All three are
  * recomputed by the backend from the stored laps and stints on every poll
  * (see LiveAnalysis.java), so they fill in as the session runs and correct
  * themselves when the feed corrects a lap.
@@ -668,5 +674,300 @@ function StopList({ pit, name }: { pit: PitCar; name: (car: string, order: numbe
         </tr>
       ))}
     </>
+  )
+}
+
+// ---- energy ---------------------------------------------------------------------------
+
+const perLap = (a: EnergyAverage | null) => (a ? `${a.perLapPct.toFixed(2)}%` : '')
+
+/**
+ * Every car's energy use side by side: green use over the last 10 and 5 green
+ * laps, what that rests on, caution use, and green laps left on the energy it
+ * has now. Opening a car shows each lap and whether it counted.
+ */
+/** The scenario inputs as typed: blank fields are "not given". */
+type ScenarioForm = { reserve: string; fromStop: boolean; cautionUse: string; cautionLapSec: string }
+
+const num = (s: string) => (s.trim() === '' || !Number.isFinite(Number(s)) ? null : Number(s))
+
+function energyPath(session: number, f: ScenarioForm): string {
+  const q = new URLSearchParams({ session: String(session) })
+  const reserve = num(f.reserve)
+  if (reserve != null && reserve > 0 && reserve <= 100) q.set('reserve', String(reserve))
+  if (f.fromStop) q.set('from', 'stop')
+  const use = num(f.cautionUse)
+  const lap = num(f.cautionLapSec)
+  if (use != null && use >= 0 && use <= 100 && lap != null && lap > 0) {
+    q.set('cautionUse', String(use))
+    q.set('cautionLapMs', String(Math.round(lap * 1000)))
+  }
+  return `/api/live/energy?${q}`
+}
+
+export function EnergyView({ session }: { session: SessionSummary }) {
+  const [form, setForm] = useState<ScenarioForm>({ reserve: '', fromStop: false, cautionUse: '', cautionLapSec: '' })
+  // Typing settles before it asks: one request per pause, not per keystroke.
+  const [asked, setAsked] = useState(form)
+  useEffect(() => {
+    const t = setTimeout(() => setAsked(form), 400)
+    return () => clearTimeout(t)
+  }, [form])
+  const { value: fresh, error } = useLivePoll<EnergyResponse>(energyPath(session.sessionDbId, asked), pollEvery(session))
+  // A changed scenario asks again; the last answer stays on screen until the new one lands.
+  const last = useRef<EnergyResponse | null>(null)
+  if (fresh) last.current = fresh
+  const value = fresh ?? last.current
+  const { open, modal } = useOpenCar(session)
+  if (!value) return <Loading label="energy" error={error} />
+  if (value.classes.length === 0) {
+    return <div className="empty-state">No energy telemetry recorded for this session. Only IMSA WeatherTech cars send it.</div>
+  }
+  const live = value.live
+  const finish = value.finish
+  const columns = (live ? 10 : 8) + (finish ? 3 : 0)
+  return (
+    <>
+      {error && <p className="timing-stale">Not updating: {error}</p>}
+      {finish && <FinishControls finish={finish} form={form} onChange={setForm} />}
+      <table className="grid-table tower an-energy" aria-label="Energy use by class">
+        <thead>
+          <tr>
+            <th className="num" scope="col">
+              #
+            </th>
+            <th scope="col">Team</th>
+            {live && (
+              <th className="num" scope="col" title="Energy remaining now (IMSA telemetry)">
+                Energy
+              </th>
+            )}
+            <th className="num" scope="col" title="Average energy used per green lap, over the last 10 green laps">
+              Green / lap
+            </th>
+            <th className="num" scope="col" title="The same over the last 5 green laps: a change shows here first">
+              Last 5
+            </th>
+            <th scope="col" title="How many green laps the average rests on, and whether they span a driver change">
+              Based on
+            </th>
+            {live && (
+              <th className="num" scope="col" title="Green laps left on the energy now, at the 10-lap green use">
+                Green laps left
+              </th>
+            )}
+            <th className="num" scope="col" title="Average energy used per full-course-yellow lap: the car's own, else its class's">
+              Caution / lap
+            </th>
+            <th className="num" scope="col" title="Laps run since the car's newest green lap">
+              Since green
+            </th>
+            <th scope="col" title="Laps whose energy does not count, and why">
+              Left out
+            </th>
+            {finish && (
+              <>
+                <th className="num" scope="col" title="Laps still to run to the chequered flag at green pace">
+                  To flag
+                </th>
+                <th className="num" scope="col" title="Energy left over at the flag if it stays green, less the reserve (minus: short)">
+                  Green margin
+                </th>
+                <th scope="col" title="The fewest caution laps that get it to the flag">
+                  To make it
+                </th>
+              </>
+            )}
+          </tr>
+        </thead>
+        {value.classes.map((cls) => {
+          const info = new Map(cls.cars.map((c) => [c.carNumber, c]))
+          return (
+            <tbody key={cls.className} style={{ '--class-color': cls.color ?? undefined } as CSSProperties}>
+              <tr className="class-band">
+                <td colSpan={columns}>
+                  <span className="band-label">{cls.className}</span>
+                  {cls.caution && (
+                    <span className="band-bests" title="Every car's full-course-yellow laps in the class, pooled">
+                      <span>
+                        Caution <span className="band-num">{perLap(cls.caution)}</span> a lap over {cls.caution.laps} laps
+                      </span>
+                    </span>
+                  )}
+                </td>
+              </tr>
+              {cls.energy.map((e) => {
+                const car = info.get(e.carNumber) ?? { carNumber: e.carNumber, teamName: null, className: cls.className }
+                const thin = e.green != null && e.green.laps < 10
+                return (
+                  <tr key={e.carNumber} className="tower-row" onClick={() => open(car, cls.color)}>
+                    <td className="num tower-car">
+                      <CarButton car={car} onOpen={() => open(car, cls.color)} />
+                    </td>
+                    <td className="tower-team">{car.teamName ?? <span className="muted">—</span>}</td>
+                    {live && <td className="num">{e.energyPct != null ? `${Math.round(e.energyPct)}%` : ''}</td>}
+                    <td className={`num${thin ? ' tower-energy-thin' : ''}`}>{perLap(e.green)}</td>
+                    <td className="num muted">{perLap(e.greenShort)}</td>
+                    <td>
+                      {e.green ? (
+                        <>
+                          {e.green.laps} {e.green.laps === 1 ? 'lap' : 'laps'}
+                          {e.green.driverChange && <span className="muted"> · 2+ drivers</span>}
+                        </>
+                      ) : (
+                        <span className="muted">Needs 3 green laps</span>
+                      )}
+                    </td>
+                    {live && <td className="num">{e.greenLapsLeft != null ? `${Math.floor(e.greenLapsLeft)} L` : ''}</td>}
+                    <td className="num">
+                      {perLap(e.caution)}
+                      {e.cautionSource === 'CLASS' && <span className="muted"> class</span>}
+                    </td>
+                    <td className="num">{e.lapsSinceGreen != null ? `${e.lapsSinceGreen} L` : ''}</td>
+                    <td className="muted an-energy-out">{energyLeftOut(e.laps)}</td>
+                    {finish && (
+                      <>
+                        <td className="num">{e.finish ? e.finish.result.lapsToFlag.toFixed(1) : ''}</td>
+                        <td className={`num${e.finish ? (e.finish.result.marginPct >= 0 ? ' an-energy-ok' : ' an-energy-short') : ''}`}>
+                          {e.finish ? marginLabel(e.finish.result.marginPct) : ''}
+                        </td>
+                        <td>
+                          {e.finish ? (
+                            <>
+                              {cautionLapsLabel(e.finish)}
+                              {e.finish.result.cautionLaps != null && e.finish.result.cautionLaps > 0 && e.finish.cautionSource && (
+                                <span className="muted">
+                                  {' '}
+                                  · {e.finish.cautionSource === 'CAR' ? 'own caution use' : e.finish.cautionSource === 'CLASS' ? 'class caution use' : 'your caution figure'}
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="muted">{e.green ? '' : 'Needs 3 green laps'}</span>
+                          )}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                )
+              })}
+            </tbody>
+          )
+        })}
+      </table>
+      <p className="timing-foot an-foot">
+        A lap counts when it is run under one flag — green, or full-course yellow for caution — clear of the pits,
+        with IMSA's energy reading seen at the line before and after it. Green use averages the car's last 10 green
+        laps of the session across pit stops; under 10 it is underlined, under 3 there is none. A car with fewer than
+        3 caution laps of its own uses its class's. Open a car to see every lap and why it counted or not.
+      </p>
+      {finish && (
+        <p className="timing-foot an-foot">
+          {finish.type === 'TIME'
+            ? 'The flag falls on the overall leader’s first crossing after the clock runs out, projected at its green pace; each car finishes on its next crossing. A caution lap uses less energy and more of the clock, so fewer laps fit before the flag.'
+            : 'The leader’s laps left, less the laps a car is down. A caution lap replaces a green one and uses less.'}{' '}
+          Not counted: the time a stop takes (so a stop now is given the laps as if it had not — the cautious side).
+        </p>
+      )}
+      {modal}
+    </>
+  )
+}
+
+/** The scenario's inputs and the flag it runs to, above the Energy table in a live race. */
+function FinishControls({
+  finish,
+  form,
+  onChange,
+}: {
+  finish: EnergyFinishInfo
+  form: ScenarioForm
+  onChange: (f: ScenarioForm) => void
+}) {
+  const refill = `${finish.refillPct.toFixed(1)}%${finish.refillSource === 'ASSUMED' ? ', assumed: no refill seen yet' : ', where refills have landed'}`
+  return (
+    <div className="an-finish" role="group" aria-label="Finish scenario">
+      <p className="an-finish-flag">
+        {finish.type === 'TIME' ? (
+          <>
+            Clock: <strong>{duration(finish.clockLeftMs)}</strong> left · leader #{finish.leader} takes the flag in about{' '}
+            <strong>{duration(finish.flagInMs)}</strong>
+          </>
+        ) : (
+          <>
+            Leader #{finish.leader}: <strong>{finish.leaderLapsLeft}</strong> {finish.leaderLapsLeft === 1 ? 'lap' : 'laps'} left
+          </>
+        )}
+        {finish.inputs.fromStop && (
+          <span className="muted">
+            {' '}
+            · every car from a stop now, at {refill}
+          </span>
+        )}
+      </p>
+      <label>
+        Reserve{' '}
+        <input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          max={100}
+          step={0.5}
+          value={form.reserve}
+          placeholder="0"
+          onChange={(e) => onChange({ ...form, reserve: e.target.value })}
+        />
+        %
+      </label>
+      <div className="seg" role="radiogroup" aria-label="Start from">
+        <button
+          type="button"
+          role="radio"
+          className={`seg-btn${form.fromStop ? '' : ' active'}`}
+          aria-checked={!form.fromStop}
+          onClick={() => onChange({ ...form, fromStop: false })}
+        >
+          Energy now
+        </button>
+        <button
+          type="button"
+          role="radio"
+          className={`seg-btn${form.fromStop ? ' active' : ''}`}
+          aria-checked={form.fromStop}
+          title={`A stop now, refilled to ${refill}`}
+          onClick={() => onChange({ ...form, fromStop: true })}
+        >
+          A stop now
+        </button>
+      </div>
+      <fieldset className="an-finish-caution">
+        <legend>Caution figure, where a car and its class have none</legend>
+        <label>
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            max={100}
+            step={0.1}
+            value={form.cautionUse}
+            placeholder="—"
+            onChange={(e) => onChange({ ...form, cautionUse: e.target.value })}
+          />
+          % a lap
+        </label>
+        <label>
+          <input
+            type="number"
+            inputMode="decimal"
+            min={1}
+            step={1}
+            value={form.cautionLapSec}
+            placeholder="—"
+            onChange={(e) => onChange({ ...form, cautionLapSec: e.target.value })}
+          />
+          s a lap
+        </label>
+      </fieldset>
+    </div>
   )
 }

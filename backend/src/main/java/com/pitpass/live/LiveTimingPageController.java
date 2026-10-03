@@ -45,6 +45,27 @@ public class LiveTimingPageController {
         return analysis.pits(session);
     }
 
+    /**
+     * Each car's energy use per green and caution lap, and green laps left,
+     * class by class; in a race being fed, each car against the flag too.
+     * reserve: energy % to keep at the flag. from: "now" or "stop" (a stop
+     * now, at the session's refill level). cautionUse / cautionLapMs: the
+     * caution figure for cars whose own and class's are not known.
+     */
+    @GetMapping("/energy")
+    public LiveAnalysisService.EnergyResponse energy(@RequestParam(required = false) Long session,
+                                                     @RequestParam(defaultValue = "0") double reserve,
+                                                     @RequestParam(defaultValue = "now") String from,
+                                                     @RequestParam(required = false) Double cautionUse,
+                                                     @RequestParam(required = false) Double cautionLapMs) {
+        if (reserve < 0 || reserve > 100 || (cautionUse != null && (cautionUse < 0 || cautionUse > 100))
+                || (cautionLapMs != null && cautionLapMs <= 0)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "reserve and cautionUse are 0-100 %, cautionLapMs over 0");
+        }
+        return analysis.energy(session, new LiveAnalysisService.EnergyInputs(reserve, "stop".equalsIgnoreCase(from),
+                cautionUse, cautionLapMs));
+    }
+
     /** The tower: order, gaps and intervals from the feed, plus driver, laps and stint per car. */
     @GetMapping("/timing")
     public LiveTimingPageService.Tower timing() {

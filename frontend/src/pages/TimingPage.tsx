@@ -25,6 +25,8 @@ import {
   sessionClock,
   trackTime,
   usUnits,
+  energySummary,
+  ENERGY_FULL_LAPS,
   type DriveTimeResponse,
   type LiveStatus,
   type DriveTimeResult,
@@ -37,7 +39,7 @@ import {
   type WeekendChampionship,
 } from '../lib/liveTiming'
 import LiveCarModal from '../components/LiveCarModal'
-import { GapsView, PitsView, SectorsView } from './TimingAnalysis'
+import { EnergyView, GapsView, PitsView, SectorsView } from './TimingAnalysis'
 import { RaceControlStrip, RaceControlView } from './RaceControl'
 import { WeatherStrip, WeatherView } from './Weather'
 import { PointsView } from './TimingPoints'
@@ -56,7 +58,7 @@ import { PointsView } from './TimingPoints'
  * (a 304 when nothing moved), drive time every 10 s, the analysis views every
  * 15 s while their session is live.
  */
-type View = 'tower' | 'points' | 'gaps' | 'sectors' | 'pits' | 'drive' | 'control' | 'weather'
+type View = 'tower' | 'points' | 'gaps' | 'sectors' | 'pits' | 'energy' | 'drive' | 'control' | 'weather'
 
 const VIEWS: { id: View; label: string }[] = [
   { id: 'tower', label: 'Tower' },
@@ -64,6 +66,7 @@ const VIEWS: { id: View; label: string }[] = [
   { id: 'gaps', label: 'Gaps' },
   { id: 'sectors', label: 'Sectors' },
   { id: 'pits', label: 'Pits' },
+  { id: 'energy', label: 'Energy' },
   { id: 'drive', label: 'Drive time' },
   { id: 'control', label: 'Race control' },
   { id: 'weather', label: 'Weather' },
@@ -607,7 +610,11 @@ function TowerView({
               </th>
             )}
             {show('energy') && (
-              <th className="num" scope="col" title="Energy remaining (IMSA telemetry)">
+              <th
+                className="num"
+                scope="col"
+                title="Energy remaining, average use per green lap, and green laps left at that use (IMSA telemetry)"
+              >
                 Energy
               </th>
             )}
@@ -961,15 +968,27 @@ function TowerRow({
         </td>
       )}
       {hasEnergy && (
-        <td className="num tower-energy">
-          <span className="tower-pair">
-            {car.energyPct != null && <span>{Math.round(car.energyPct)}%</span>}
-            {car.energyLapsLeft != null && (
-              <span className="muted" title="Laps left at this stint's average use per lap">
-                ~{Math.floor(car.energyLapsLeft)} L
-              </span>
-            )}
+        <td
+          className="num tower-energy"
+          title={car.energyPct != null || car.energyUsePerLapPct != null ? energySummary(car) : undefined}
+        >
+          <span className="tower-pair" aria-hidden="true">
+            <span className="tower-energy-now">{car.energyPct != null ? `${Math.round(car.energyPct)}%` : ''}</span>
+            <span
+              className={
+                'muted tower-energy-use' +
+                (car.energyUseLaps != null && car.energyUseLaps < ENERGY_FULL_LAPS ? ' tower-energy-thin' : '')
+              }
+            >
+              {car.energyUsePerLapPct != null ? car.energyUsePerLapPct.toFixed(1) : ''}
+            </span>
+            <span className="muted tower-energy-left">
+              {car.energyLapsLeft != null ? `${Math.floor(car.energyLapsLeft)} L` : ''}
+            </span>
           </span>
+          {(car.energyPct != null || car.energyUsePerLapPct != null) && (
+            <span className="sr-only">{energySummary(car)}</span>
+          )}
         </td>
       )}
       <td className="tower-state">
@@ -1125,6 +1144,8 @@ function SessionViews({
         <SectorsView key={chosen.sessionDbId} session={chosen} />
       ) : view === 'pits' ? (
         <PitsView key={chosen.sessionDbId} session={chosen} />
+      ) : view === 'energy' ? (
+        <EnergyView key={chosen.sessionDbId} session={chosen} />
       ) : view === 'control' ? (
         <RaceControlView
           key={chosen.sessionDbId}

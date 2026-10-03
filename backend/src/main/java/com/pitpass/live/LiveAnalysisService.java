@@ -53,6 +53,63 @@ public class LiveAnalysisService {
     public record PitsResponse(long sessionDbId, Map<String, Map<Integer, String>> drivers, List<PitClass> classes) {
     }
 
+    /**
+     * One car's energy over the session. energyPct is now (the session being
+     * fed only, null when stale). green is the last 10 green laps' average,
+     * greenShort the last 5; greenLapsLeft energyPct over green. caution is
+     * the car's own caution laps when it has 3, else its class's pooled
+     * (cautionSource CAR or CLASS). lapsSinceGreen counts the car's laps after
+     * the newest green lap, so a long caution or a run of pit laps shows how
+     * old the green figure is. laps counts each EnergyModel.Kind.
+     */
+    public record EnergyCar(String carNumber, Double energyPct, Double greenLapsLeft, EnergyModel.Average green,
+                            EnergyModel.Average greenShort, EnergyModel.Average caution,
+                            EnergyModel.Source cautionSource, Integer lastLap, Integer lapsSinceGreen,
+                            Map<EnergyModel.Kind, Integer> laps, Scenario finish) {
+
+        EnergyCar withFinish(Scenario s) {
+            return new EnergyCar(carNumber, energyPct, greenLapsLeft, green, greenShort, caution, cautionSource, lastLap,
+                    lapsSinceGreen, laps, s);
+        }
+    }
+
+    /**
+     * What the Energy view's finish scenarios are asked for: an energy reserve
+     * to keep, whether to start from the energy now or from a stop now (the
+     * session's observed refill level), and a caution figure for cars whose
+     * own and class's are not known yet.
+     */
+    public record EnergyInputs(double reservePct, boolean fromStop, Double cautionUsePct, Double cautionLapMs) {
+        public static final EnergyInputs NONE = new EnergyInputs(0, false, null, null);
+    }
+
+    /**
+     * One car against the flag (EnergyFinish.Result), with the energy it
+     * started from and whose caution figures it used: CAR, CLASS or MANUAL.
+     */
+    public record Scenario(double startPct, EnergyFinish.Result result, String cautionSource) {
+    }
+
+    /**
+     * The flag the scenarios run to, in a race being fed only. type TIME: the
+     * clock runs out in clockLeftMs and the overall leader (leader) is
+     * projected to take the flag in flagInMs. type LAPS: the leader has
+     * leaderLapsLeft. refillPct is where refills landed this session
+     * (OBSERVED, the median) or 100 (ASSUMED) when none has been seen.
+     */
+    public record Finish(String type, Long clockLeftMs, Long flagInMs, Integer leaderLapsLeft, String leader,
+                         EnergyInputs inputs, double refillPct, String refillSource) {
+    }
+
+    /** caution: the class's caution laps pooled, every car's. */
+    public record EnergyClass(String className, String color, List<CarInfo> cars, EnergyModel.Average caution,
+                              List<EnergyCar> energy) {
+    }
+
+    /** live: the session is the one being fed, so energyPct is now. */
+    public record EnergyResponse(long sessionDbId, boolean live, Finish finish, List<EnergyClass> classes) {
+    }
+
     private final JdbcClient db;
     private final LiveTimingService live;
     private final LiveClassificationService classification;
@@ -107,6 +164,181 @@ public class LiveAnalysisService {
         classes(session, seen).forEach((cls, cars) ->
                 out.add(new PitClass(cls.name, cls.color, cars, LiveAnalysis.pitStops(of(stints, cars, Stint::car), lastLap))));
         return new PitsResponse(session, drivers, out);
+    }
+
+    /**
+     * Every car's energy use, class by class, fewest green laps left first: who
+     * has to stop soonest. Cars without telemetry are left out.
+     */
+    public EnergyResponse energy(Long sessionParam) {
+        return energy(sessionParam, EnergyInputs.NONE);
+    }
+
+    public EnergyResponse energy(Long sessionParam, EnergyInputs inputs) {
+        long session = page.session(sessionParam);
+        Map<String, EnergyModel.Car> models = page.energyModels(session);
+        Long current = live.analysisSessionDbId();
+        boolean isLive = current != null && current == session;
+        List<EnergyClass> out = new ArrayList<>();
+        classes(session, List.copyOf(models.keySet())).forEach((cls, cars) -> {
+            List<EnergyModel.Car> classModels = cars.stream().map(c -> models.get(c.carNumber()))
+                    .filter(java.util.Objects::nonNull).toList();
+            if (classModels.isEmpty()) {
+                return;
+            }
+            List<EnergyCar> rows = new ArrayList<>();
+            for (CarInfo car : cars) {
+                EnergyModel.Car m = models.get(car.carNumber());
+                if (m != null) {
+                    rows.add(energyCar(car.carNumber(), m, classModels, isLive ? live.energyNow(car.carNumber(), null) : null));
+                }
+            }
+            rows.sort(java.util.Comparator.comparing(EnergyCar::greenLapsLeft,
+                    java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())));
+            out.add(new EnergyClass(cls.name, cls.color, cars, EnergyModel.pooled(classModels), rows));
+        });
+        Crossings crossed = isLive ? crossings(session) : null;
+        Finish finish = crossed == null ? null : finish(classification.current().session(), crossed, models, inputs);
+        if (finish != null) {
+            for (int i = 0; i < out.size(); i++) {
+                EnergyClass cls = out.get(i);
+                List<EnergyCar> rows = cls.energy().stream()
+                        .map(e -> e.withFinish(scenario(e, models.get(e.carNumber()), finish, crossed)))
+                        .toList();
+                out.set(i, new EnergyClass(cls.className(), cls.color(), cls.cars(), cls.caution(), rows));
+            }
+        }
+        return new EnergyResponse(session, isLive, finish, out);
+    }
+
+    /** Each car's last crossing and laps completed, and the newest feed time: "now" for the finish. */
+    record Crossings(Map<String, Long> at, Map<String, Integer> laps, long nowMs) {
+    }
+
+    private Crossings crossings(long session) {
+        Map<String, Integer> laps = new HashMap<>();
+        db.sql("SELECT car_number, max(lap_number) AS laps FROM live_lap WHERE session_db_id = :s AND lap_time_ms > 0 GROUP BY car_number")
+                .param("s", session)
+                .query((rs, i) -> laps.put(rs.getString("car_number"), rs.getInt("laps")))
+                .list();
+        return new Crossings(page.lastCrossings(session), laps, page.latestFeedTime(session));
+    }
+
+    /**
+     * The flag to run to, in a race only: a timed race (BY_TIME) or a lap race
+     * (BY_LAPS), while the clock runs. Null otherwise — practice, a red flag,
+     * a finish type not modelled, or no lap times yet.
+     */
+    static Finish finish(LiveTimingService.Session now, Crossings c, Map<String, EnergyModel.Car> models,
+                         EnergyInputs inputs) {
+        if (now == null || !"RACE".equalsIgnoreCase(now.type()) || now.clock() == null || now.clock().stopMs() != null) {
+            return null;
+        }
+        LiveTimingService.Clock clock = now.clock();
+        Map<String, Integer> laps = c.laps();
+        Map<String, Long> at = c.at();
+        long feedNow = c.nowMs();
+        // The overall leader: the most laps, and of those the first across the line.
+        String leader = laps.entrySet().stream()
+                .filter(e -> at.containsKey(e.getKey()))
+                .max(java.util.Comparator.<Map.Entry<String, Integer>>comparingInt(Map.Entry::getValue)
+                        .thenComparing(e -> -at.get(e.getKey())))
+                .map(Map.Entry::getKey).orElse(null);
+        if (leader == null) {
+            return null;
+        }
+        double[] refill = refillLevel(models);
+        String type = clock.finalType();
+        if ("BY_TIME".equalsIgnoreCase(type) && clock.startMs() != null && clock.finalMs() != null) {
+            Double leaderLap = greenLapMs(models.get(leader), models);
+            if (leaderLap == null) {
+                return null;
+            }
+            long clockEnd = clock.startMs() + clock.finalMs() + clock.stoppedMs();
+            long flag = EnergyFinish.leaderFlagMs(clockEnd, at.get(leader), leaderLap);
+            return new Finish("TIME", clockEnd - feedNow, flag - feedNow, null, leader, inputs, refill[0],
+                    refill[1] > 0 ? "OBSERVED" : "ASSUMED");
+        }
+        if ("BY_LAPS".equalsIgnoreCase(type) && clock.finalLaps() != null) {
+            return new Finish("LAPS", null, null, Math.max(0, clock.finalLaps() - laps.get(leader)), leader, inputs,
+                    refill[0], refill[1] > 0 ? "OBSERVED" : "ASSUMED");
+        }
+        return null;
+    }
+
+    /** The car's green lap time; for a car without one, the median of every car's. */
+    private static Double greenLapMs(EnergyModel.Car car, Map<String, EnergyModel.Car> models) {
+        if (car != null && car.green() != null && car.green().lapTimeMs() != null) {
+            return car.green().lapTimeMs();
+        }
+        List<Double> all = models.values().stream().filter(m -> m.green() != null && m.green().lapTimeMs() != null)
+                .map(m -> m.green().lapTimeMs()).sorted().toList();
+        return all.isEmpty() ? null : all.get(all.size() / 2);
+    }
+
+    /**
+     * Where refills landed this session: the median energy after a rise of
+     * more than 10 points between consecutive readings. {median, count}; 100
+     * and 0 when none was seen.
+     */
+    static double[] refillLevel(Map<String, EnergyModel.Car> models) {
+        List<Float> landed = new ArrayList<>();
+        for (EnergyModel.Car m : models.values()) {
+            Float before = null;
+            for (EnergyModel.Classified l : m.laps()) {
+                if (l.energyPct() != null) {
+                    if (before != null && l.energyPct() - before > 10) {
+                        landed.add(l.energyPct());
+                    }
+                    before = l.energyPct();
+                }
+            }
+        }
+        if (landed.isEmpty()) {
+            return new double[]{100, 0};
+        }
+        landed.sort(null);
+        return new double[]{landed.get(landed.size() / 2), landed.size()};
+    }
+
+    static Scenario scenario(EnergyCar e, EnergyModel.Car m, Finish finish, Crossings c) {
+        Long last = c.at().get(e.carNumber());
+        Double start = finish.inputs().fromStop() ? Double.valueOf(finish.refillPct()) : e.energyPct();
+        if (m == null || m.green() == null || m.green().lapTimeMs() == null || last == null || start == null) {
+            return null;
+        }
+        Double cautionUse = null;
+        Double cautionLap = null;
+        String source = null;
+        if (e.caution() != null && e.caution().lapTimeMs() != null) {
+            cautionUse = e.caution().perLapPct();
+            cautionLap = e.caution().lapTimeMs();
+            source = e.cautionSource() == null ? null : e.cautionSource().name();
+        } else if (finish.inputs().cautionUsePct() != null && finish.inputs().cautionLapMs() != null) {
+            cautionUse = finish.inputs().cautionUsePct();
+            cautionLap = finish.inputs().cautionLapMs();
+            source = "MANUAL";
+        }
+        Integer leaderLaps = c.laps().get(finish.leader());
+        Integer carLaps = c.laps().get(e.carNumber());
+        int behind = leaderLaps == null || carLaps == null ? 0 : Math.max(0, leaderLaps - carLaps);
+        var car = new EnergyFinish.Car(start, m.green().perLapPct(), m.green().lapTimeMs(), cautionUse, cautionLap,
+                last, behind);
+        long feedNow = c.nowMs();
+        EnergyFinish.Result r = "TIME".equals(finish.type())
+                ? EnergyFinish.timed(car, feedNow, feedNow + finish.flagInMs(), finish.inputs().reservePct())
+                : EnergyFinish.laps(car, feedNow, finish.leaderLapsLeft(), finish.inputs().reservePct());
+        return new Scenario(start, r, source);
+    }
+
+    static EnergyCar energyCar(String car, EnergyModel.Car m, List<EnergyModel.Car> classModels, Double now) {
+        LiveEnergy.Caution caution = LiveEnergy.caution(m, classModels);
+        Integer lastLap = m.laps().isEmpty() ? null : m.laps().getLast().lap();
+        Integer since = m.green() == null || lastLap == null ? null : lastLap - m.green().lastLap();
+        Map<EnergyModel.Kind, Integer> counts = new java.util.EnumMap<>(EnergyModel.Kind.class);
+        m.laps().forEach(l -> counts.merge(l.kind(), 1, Integer::sum));
+        return new EnergyCar(car, now, EnergyModel.greenLapsLeft(now, m.green()), m.green(), m.greenShort(),
+                caution.average(), caution.source(), lastLap, since, counts, null);
     }
 
     // ---- loading ------------------------------------------------------------------------

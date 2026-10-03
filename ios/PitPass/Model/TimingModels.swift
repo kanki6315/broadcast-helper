@@ -133,7 +133,12 @@ struct TowerCar: Codable, Sendable, Equatable, Identifiable {
     let stintLaps: Int?
     /// IMSA telemetry: % remaining, nil when off, unseen or stale.
     let energyPct: Double?
+    /// energyPct over energyUsePerLapPct: green laps left; nil when either is.
     let energyLapsLeft: Double?
+    /// Average use over the car's last green laps of the session, across pit stops.
+    var energyUsePerLapPct: Double? = nil
+    /// How many green laps that rests on: 3 to 10, nil below 3.
+    var energyUseLaps: Int? = nil
     /// Participant details' BOX / OUT_LAP / TRACK / STOPPED; nil when that channel is off.
     var trackStatus: String? = nil
     /// Its place in its class on the starting grid, in a race; nil off the grid.
@@ -200,6 +205,8 @@ struct LapRow: Codable, Sendable, Equatable, Identifiable {
     let pitOutMs: Int?
     let energyPct: Double?
     let energyUsedPct: Double?
+    /// GREEN or CAUTION when the lap counts toward energy use, else why not (PIT, REFILL…).
+    var energyLap: String? = nil
     var id: Int { lap }
 }
 
@@ -376,6 +383,99 @@ struct PitClass: Codable, Sendable, Equatable, Identifiable {
     let cars: [AnalysisCar]
     let pits: [PitCar]
     var id: String { className }
+}
+
+/// An average over a car's newest laps of one kind (backend EnergyModel.Average).
+struct EnergyAverage: Codable, Sendable, Equatable {
+    let perLapPct: Double
+    let lapTimeMs: Double?
+    /// How many laps it rests on (at most 10).
+    let laps: Int
+    /// The laps were not all one driver's.
+    let driverChange: Bool
+    let lastLap: Int
+}
+
+struct EnergyCar: Codable, Sendable, Equatable, Identifiable {
+    let carNumber: String
+    /// Now, in the session being fed only.
+    let energyPct: Double?
+    let greenLapsLeft: Double?
+    /// Last 10 green laps, last 5; nil below 3.
+    let green: EnergyAverage?
+    let greenShort: EnergyAverage?
+    /// The car's own caution laps when it has 3, else its class's (cautionSource "CLASS").
+    let caution: EnergyAverage?
+    let cautionSource: String?
+    let lastLap: Int?
+    /// Laps since the newest green lap: how old the green figure is.
+    let lapsSinceGreen: Int?
+    /// How many laps of each kind (GREEN, PIT, REFILL…).
+    let laps: [String: Int]
+    /// Against the flag, in a race being fed; nil otherwise.
+    var finish: EnergyScenario? = nil
+    var id: String { carNumber }
+}
+
+/// One car against the flag (backend EnergyFinish.Result).
+struct EnergyScenario: Codable, Sendable, Equatable {
+    struct Result: Codable, Sendable, Equatable {
+        /// Laps still to run from now at green pace.
+        let lapsToFlag: Double
+        let needPct: Double
+        /// Start less reserve less need: over 0 it makes it green.
+        let marginPct: Double
+        /// Fewest caution laps that get it there; 0 = green; nil = no caution figure, or none would do.
+        let cautionLaps: Int?
+        /// False only when no number of caution laps would do.
+        let makesIt: Bool
+    }
+    let startPct: Double
+    let result: Result
+    /// CAR, CLASS or MANUAL; nil when none.
+    let cautionSource: String?
+}
+
+struct EnergyInputs: Codable, Sendable, Equatable {
+    let reservePct: Double
+    let fromStop: Bool
+    let cautionUsePct: Double?
+    let cautionLapMs: Double?
+}
+
+/// The flag the scenarios run to (a race being fed only).
+struct EnergyFinishInfo: Codable, Sendable, Equatable {
+    /// TIME or LAPS.
+    let type: String
+    let clockLeftMs: Int?
+    let flagInMs: Int?
+    let leaderLapsLeft: Int?
+    let leader: String
+    let inputs: EnergyInputs
+    let refillPct: Double
+    /// OBSERVED (median of this session's refills) or ASSUMED (100, none seen).
+    let refillSource: String
+}
+
+struct EnergyClass: Codable, Sendable, Equatable, Identifiable {
+    let className: String
+    let color: String?
+    let cars: [AnalysisCar]
+    /// Every car's caution laps pooled.
+    let caution: EnergyAverage?
+    /// Fewest green laps left first.
+    let energy: [EnergyCar]
+    var id: String { className }
+}
+
+/// `GET /api/live/energy?session=`.
+struct EnergyResponse: Codable, Sendable, Equatable {
+    let sessionDbId: Int
+    /// The session is the one being fed, so energyPct is now.
+    let live: Bool
+    /// In a race being fed, the flag the scenarios run to.
+    var finish: EnergyFinishInfo? = nil
+    let classes: [EnergyClass]
 }
 
 /// `GET /api/live/pits?session=`.

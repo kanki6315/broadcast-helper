@@ -72,8 +72,10 @@ public class LiveTimingPageService {
 
     /**
      * energyPct is IMSA telemetry's energy remaining (null when off, unseen or
-     * older than the stale limit); energyLapsLeft projects it over this
-     * stint's average use per lap (null until the stint has two lap samples).
+     * older than the stale limit). energyUsePerLapPct is the average use over
+     * the car's last green laps of the session (see {@link EnergyModel}),
+     * energyUseLaps how many it rests on (3 to 10; null below 3), and
+     * energyLapsLeft is energyPct over it: green laps left, null when either is.
      * laps is laps completed: the last lap from analysis, else the standings'
      * lapNumber in a race only — in practice and qualifying that is the number
      * of the car's best lap (Road Atlanta practice, 2026-09-30).
@@ -103,7 +105,8 @@ public class LiveTimingPageService {
                            Integer driverOrder, String driverName, String driverShortName, String driverRating,
                            Integer lastLap, Integer lastLapMs, Integer bestLap, Integer bestLapMs,
                            boolean inPit, Long stintStartMs, Integer stintLaps, Double energyPct,
-                           Double energyLapsLeft, Integer pitStops, Long lastPitMs,
+                           Double energyLapsLeft, Double energyUsePerLapPct, Integer energyUseLaps,
+                           Integer pitStops, Long lastPitMs,
                            String trackStatus, Integer currentSector, List<LiveParticipantDetails.SectorTime> sectors,
                            List<Integer> bestSectorMs, Long idealMs, Integer startPosition, Double topSpeed,
                            Integer overallPosition, Long overallGapMs, Integer overallGapLaps,
@@ -123,14 +126,21 @@ public class LiveTimingPageService {
                                  int laps, int cars, boolean current) {
     }
 
+    /**
+     * energyPct is the energy at the line after the lap, energyUsedPct the
+     * drop over it (null over a refill's rise), energyLap what the energy model made of it: GREEN or
+     * CAUTION when it counts, else why not (EnergyModel.Kind). All null
+     * without telemetry for the car.
+     */
     public record LapRow(int lap, Integer driverOrder, Integer driverLap, Integer position, Long startTimeMs,
                          Integer lapTimeMs, List<Integer> sectorMs, List<String> sectorFlags, Boolean valid,
                          Boolean longLap, Boolean shortLap, Integer trackLimits, Float topSpeed,
-                         Long pitInMs, Long pitOutMs, Float energyPct, Float energyUsedPct) {
+                         Long pitInMs, Long pitOutMs, Float energyPct, Float energyUsedPct, String energyLap) {
 
-        LapRow withEnergy(Float pct, Float used) {
+        LapRow withEnergy(EnergyModel.Classified e) {
             return new LapRow(lap, driverOrder, driverLap, position, startTimeMs, lapTimeMs, sectorMs, sectorFlags,
-                    valid, longLap, shortLap, trackLimits, topSpeed, pitInMs, pitOutMs, pct, used);
+                    valid, longLap, shortLap, trackLimits, topSpeed, pitInMs, pitOutMs, e.energyPct(), e.usedPct(),
+                    e.kind().name());
         }
     }
 
@@ -158,6 +168,7 @@ public class LiveTimingPageService {
     private final JdbcClient db;
     private final LiveTimingService live;
     private final LiveClassificationService classification;
+    private final LiveEnergy energy;
     /**
      * Which driver set a lap or a sector time, once found in live_lap: a
      * recorded lap's driver does not change, and the tower asks every poll.
@@ -165,10 +176,12 @@ public class LiveTimingPageService {
      */
     private final Map<String, Integer> setBy = new java.util.concurrent.ConcurrentHashMap<>();
 
-    public LiveTimingPageService(JdbcClient db, LiveTimingService live, LiveClassificationService classification) {
+    public LiveTimingPageService(JdbcClient db, LiveTimingService live, LiveClassificationService classification,
+                                 LiveEnergy energy) {
         this.db = db;
         this.live = live;
         this.classification = classification;
+        this.energy = energy;
     }
 
     // ---- tower -----------------------------------------------------------------------
@@ -195,6 +208,7 @@ public class LiveTimingPageService {
         if (setBy.size() > 20_000) {
             setBy.clear();
         }
+        Map<String, EnergyModel.Car> energyModels = session == null || energy == null ? Map.of() : energy.session(session);
         Map<String, LiveAnalysis.PitCar> pits = session == null ? Map.of()
                 : LiveAnalysis.pitStops(stints(session), Map.of()).stream()
                         .collect(Collectors.toMap(LiveAnalysis.PitCar::carNumber, Function.identity()));
@@ -229,7 +243,9 @@ public class LiveTimingPageService {
                 Named bestDriver = named(car.carNumber(), bestBy, resolved, feedCar);
                 Overall o = overall.get(car.carNumber());
                 boolean checkered = d != null && d.checkered() != null ? d.checkered() : pastFlag.contains(car.carNumber());
-                LiveTelemetry.CarEnergy energy = live.energy(car.carNumber(), cls.feedClass(), s == null ? null : s.stintOpenLap());
+                Double energyNow = live.energyNow(car.carNumber(), cls.feedClass());
+                EnergyModel.Car model = energyModels.get(car.carNumber());
+                EnergyModel.Average green = model == null ? null : model.green();
                 LiveAnalysis.PitCar pit = pits.get(car.carNumber());
                 Long lastPitMs = pit == null ? null : pit.stops().stream().map(LiveAnalysis.PitStop::durationMs)
                         .filter(java.util.Objects::nonNull).reduce((a, b) -> b).orElse(null);
@@ -244,7 +260,8 @@ public class LiveTimingPageService {
                         best != null ? Integer.valueOf(best[1]) : s == null ? null : s.bestLapMs(),
                         (s != null && "PIT".equalsIgnoreCase(s.stintType())) || (d != null && d.inBox()),
                         s == null ? null : s.stintStartMs(), s == null ? null : s.lapsInStint(),
-                        energy == null ? null : energy.energyPct(), energy == null ? null : energy.lapsLeft(),
+                        energyNow, EnergyModel.greenLapsLeft(energyNow, green),
+                        green == null ? null : green.perLapPct(), green == null ? null : green.laps(),
                         // Boxed: an int branch would unbox a null pitStops() and throw.
                         session == null ? (d == null ? null : d.pitStops()) : Integer.valueOf(pit == null ? 0 : pit.stops().size()), lastPitMs,
                         d == null ? null : d.trackStatus(), d == null ? null : d.currentSector(),
@@ -384,7 +401,7 @@ public class LiveTimingPageService {
     }
 
     /** Each car's newest crossing of the line: its last recorded lap's end. */
-    private Map<String, Long> lastCrossings(long session) {
+    Map<String, Long> lastCrossings(long session) {
         Map<String, Long> out = new HashMap<>();
         db.sql("""
                 SELECT car_number, max(start_time_ms + lap_time_ms) AS crossed FROM live_lap
@@ -600,11 +617,13 @@ public class LiveTimingPageService {
                         rs.getObject("is_short_lap", Boolean.class), integer(rs, "track_limits"),
                         rs.getObject("top_speed", Float.class),
                         rs.getObject("pit_in_time_ms", Long.class), rs.getObject("pit_out_time_ms", Long.class),
-                        null, null))
+                        null, null, null))
                 .list();
-        Map<Integer, Float> energy = energyByLap(session, carNumber);
-        if (!energy.isEmpty()) {
-            laps = laps.stream().map(l -> l.withEnergy(energy.get(l.lap()), used(energy, l.lap()))).toList();
+        EnergyModel.Car model = energy == null ? null : energy.car(session, carNumber);
+        if (model != null) {
+            Map<Integer, EnergyModel.Classified> byLap = model.laps().stream()
+                    .collect(Collectors.toMap(EnergyModel.Classified::lap, Function.identity()));
+            laps = laps.stream().map(l -> byLap.containsKey(l.lap()) ? l.withEnergy(byLap.get(l.lap())) : l).toList();
         }
         List<StintRow> stints = db.sql("""
                 SELECT * FROM live_stint WHERE session_db_id = :s AND car_number = :car ORDER BY start_time_ms
@@ -617,7 +636,7 @@ public class LiveTimingPageService {
                         rs.getObject("driver_accum_session_ms", Long.class),
                         rs.getObject("driver_accum_track_ms", Long.class),
                         rs.getObject("driver_accum_ms", Long.class),
-                        averageUse(energy, integer(rs, "open_lap_number"), integer(rs, "close_lap_number"))))
+                        stintUse(model, integer(rs, "open_lap_number"), integer(rs, "close_lap_number"))))
                 .list();
         List<DriverRow> drivers = drivers(session, carNumber).stream().map(Map.Entry::getValue).toList();
         if (laps.isEmpty() && stints.isEmpty() && drivers.isEmpty()) {
@@ -626,55 +645,15 @@ public class LiveTimingPageService {
         return new CarDetail(session, carNumber, drivers, laps, stints);
     }
 
-    /**
-     * IMSA telemetry's energy at the line, by lap, for an Al Kamel car. The
-     * telemetry's car number exactly first (#04 is not #4), then without
-     * leading zeros only when that names one car that is not itself another
-     * Al Kamel car in the session — #04 never shows #4's energy.
-     */
-    private Map<Integer, Float> energyByLap(long session, String carNumber) {
-        Map<String, Map<Integer, Float>> byCar = new HashMap<>();
-        db.sql("""
-                SELECT car_number, lap_number, energy_pct FROM live_energy_lap e
-                WHERE session_db_id = :s AND ltrim(car_number, '0') = ltrim(:car, '0')
-                  AND (car_number = :car
-                       OR NOT EXISTS (SELECT 1 FROM live_car c WHERE c.session_db_id = :s AND c.car_number = e.car_number)
-                          AND NOT EXISTS (SELECT 1 FROM live_lap l WHERE l.session_db_id = :s AND l.car_number = e.car_number))
-                """)
-                .param("s", session).param("car", carNumber)
-                .query((rs, i) -> byCar.computeIfAbsent(rs.getString("car_number"), k -> new HashMap<>())
-                        .put(rs.getInt("lap_number"), rs.getFloat("energy_pct")))
-                .list();
-        if (byCar.containsKey(carNumber)) {
-            return byCar.get(carNumber);
-        }
-        return byCar.size() == 1 ? byCar.values().iterator().next() : Map.of();
+    /** Every car of a session with energy recorded, its laps classified (see EnergyModel). */
+    Map<String, EnergyModel.Car> energyModels(long session) {
+        return energy == null ? Map.of() : energy.session(session);
     }
 
-    /** Energy used on a lap: the drop from the previous lap's reading. A rise is a refill, not use. */
-    private static Float used(Map<Integer, Float> energy, int lap) {
-        Float before = energy.get(lap - 1);
-        Float after = energy.get(lap);
-        return before == null || after == null || after > before ? null : before - after;
-    }
-
-    /** Average use per lap over a stint's laps, where both ends of a lap were seen. */
-    private static Float averageUse(Map<Integer, Float> energy, Integer openLap, Integer closeLap) {
-        if (energy.isEmpty() || openLap == null) {
-            return null;
-        }
-        int last = closeLap != null ? closeLap : energy.keySet().stream().max(Integer::compare).orElse(openLap);
-        float total = 0;
-        int laps = 0;
-        // A stint's first lap counts: a refill before it shows as a rise and is left out anyway.
-        for (int lap = openLap; lap <= last; lap++) {
-            Float u = used(energy, lap);
-            if (u != null) {
-                total += u;
-                laps++;
-            }
-        }
-        return laps == 0 ? null : total / laps;
+    /** A stint's green use per lap, as the tower counts it. */
+    private static Float stintUse(EnergyModel.Car model, Integer openLap, Integer closeLap) {
+        EnergyModel.Average a = model == null ? null : EnergyModel.stint(model.laps(), openLap, closeLap);
+        return a == null ? null : (float) a.perLapPct();
     }
 
     private List<Map.Entry<String, DriverRow>> drivers(long session, String car) {
@@ -734,7 +713,7 @@ public class LiveTimingPageService {
     }
 
     /** The newest time the feed reported for a session: the last lap's end or stint's start/finish. 0 = none. */
-    private long latestFeedTime(long session) {
+    long latestFeedTime(long session) {
         return db.sql("""
                 SELECT COALESCE(GREATEST(
                     (SELECT max(start_time_ms + COALESCE(lap_time_ms, 0)) FROM live_lap WHERE session_db_id = :s),

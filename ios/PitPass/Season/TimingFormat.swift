@@ -259,6 +259,87 @@ enum TimingFormat {
         return best
     }
 
+    /// A full green-use average rests on this many laps; fewer is marked on the tower.
+    static let energyFullLaps = 10
+
+    /// The tower's energy cell spelled out, for VoiceOver (as the web tower's tooltip).
+    static func energySummary(_ car: TowerCar) -> String {
+        var parts: [String] = []
+        if let e = car.energyPct { parts.append("\(Int(e.rounded()))% energy left.") }
+        if let use = car.energyUsePerLapPct, let n = car.energyUseLaps {
+            let over = n >= energyFullLaps ? "the last \(n) green laps"
+                : "only \(n) green laps so far (a full average uses \(energyFullLaps))"
+            parts.append("Using \(String(format: "%.1f", use))% a lap over \(over).")
+            if let left = car.energyLapsLeft { parts.append("About \(Int(left)) green laps left.") }
+        } else {
+            parts.append("No green-lap average yet: it needs 3 clean green laps.")
+        }
+        return parts.joined(separator: " ")
+    }
+
+    /// What a lap's energy figure was made of, in words: why it counts or why not.
+    static func energyLapLabel(_ kind: String?) -> String? {
+        switch kind {
+        case "GREEN": "Green"
+        case "CAUTION": "Caution"
+        case "NO_READING": "No reading"
+        case "PIT": "Pit lap"
+        case "OUT_LAP": "Out lap"
+        case "REFILL": "Refill"
+        case "EMPTY": "Empty"
+        case "RED": "Red flag"
+        case "FLAG_CHANGE": "Flag changed"
+        case "FLAG_UNKNOWN": "Flag unknown"
+        default: nil
+        }
+    }
+
+    /// Whether a lap's energy use counts toward green or caution use per lap.
+    static func energyLapCounts(_ kind: String?) -> Bool { kind == "GREEN" || kind == "CAUTION" }
+
+    /// Laps whose energy does not count, with how many of each ("6 pit laps, 2 out laps").
+    static func energyLeftOut(_ laps: [String: Int]) -> String {
+        let order: [(String, String, String)] = [
+            ("PIT", "pit lap", "pit laps"), ("OUT_LAP", "out lap", "out laps"), ("REFILL", "refill", "refills"),
+            ("FLAG_CHANGE", "flag change", "flag changes"), ("RED", "red-flag lap", "red-flag laps"),
+            ("EMPTY", "lap on empty", "laps on empty"), ("NO_READING", "lap unread", "laps unread"),
+            ("FLAG_UNKNOWN", "unknown flag", "unknown flags"),
+        ]
+        return order.compactMap { kind, one, many in
+            guard let n = laps[kind], n > 0 else { return nil }
+            return "\(n) \(n == 1 ? one : many)"
+        }.joined(separator: ", ")
+    }
+
+    /// The scenario as one cell's words: "Makes it green", "8 caution laps", "Won't make it", "Needs a caution figure".
+    static func cautionLapsLabel(_ s: EnergyScenario) -> String {
+        if s.result.cautionLaps == 0 { return "Makes it green" }
+        if let n = s.result.cautionLaps { return "\(n) caution \(n == 1 ? "lap" : "laps")" }
+        return s.result.makesIt ? "Needs a caution figure" : "Won't make it"
+    }
+
+    /// "+3.2%" / "−5.1%": energy left over at the flag, or short of it.
+    static func marginLabel(_ pct: Double) -> String {
+        (pct >= 0 ? "+" : "−") + String(format: "%.1f%%", abs(pct))
+    }
+
+    /// The Energy view's request: the session and the scenario's inputs, blank ones left out.
+    static func energyPath(session: Int, reserve: String, fromStop: Bool, cautionUse: String, cautionLapSec: String) -> String {
+        var items = [URLQueryItem(name: "session", value: String(session))]
+        if let r = Double(reserve.trimmingCharacters(in: .whitespaces)), r > 0, r <= 100 {
+            items.append(URLQueryItem(name: "reserve", value: String(r)))
+        }
+        if fromStop { items.append(URLQueryItem(name: "from", value: "stop")) }
+        if let u = Double(cautionUse.trimmingCharacters(in: .whitespaces)), u >= 0, u <= 100,
+           let s = Double(cautionLapSec.trimmingCharacters(in: .whitespaces)), s > 0 {
+            items.append(URLQueryItem(name: "cautionUse", value: String(u)))
+            items.append(URLQueryItem(name: "cautionLapMs", value: String(Int((s * 1000).rounded()))))
+        }
+        var c = URLComponents()
+        c.queryItems = items
+        return "/api/live/energy" + (c.url?.absoluteString ?? "")
+    }
+
     /// "62.4%", or empty.
     static func pct(_ value: Double?, digits: Int = 1) -> String {
         guard let value else { return "" }
