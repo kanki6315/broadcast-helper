@@ -12,16 +12,21 @@ struct GridColumn: Identifiable {
     var width: CGFloat
     /// Opt-in share of unused table width; `width` remains the minimum.
     var growthWeight: CGFloat = 0
+    /// Opt-in floor when the table is too wide: columns with one give up
+    /// width (down to it) before the data half has to scroll.
+    var minWidth: CGFloat?
     var align: Align = .leading
     /// Horizontal cell padding override (round cells run tighter, like `.race-cell`).
     var padH: CGFloat?
 
-    init(id: String, width: CGFloat, align: Align = .leading, padH: CGFloat? = nil, growthWeight: CGFloat = 0, @ViewBuilder title: () -> some View) {
+    init(id: String, width: CGFloat, align: Align = .leading, padH: CGFloat? = nil, growthWeight: CGFloat = 0,
+         minWidth: CGFloat? = nil, @ViewBuilder title: () -> some View) {
         self.id = id
         self.width = width
         self.align = align
         self.padH = padH
         self.growthWeight = growthWeight
+        self.minWidth = minWidth
         self.title = AnyView(title())
     }
 
@@ -109,9 +114,14 @@ struct GridTable: View {
             let weight = (identColumns + dataColumns).reduce(0) { $0 + $1.growthWeight }
             let extra = max(0, geo.size.width - identWidth - dataWidth)
             let unit = weight > 0 ? extra / weight : 0
-            let identity = expanded(identColumns, unit: unit)
-            let data = expanded(dataColumns, unit: unit)
+            // Too wide: columns with a floor give up width in proportion to what they can spare.
+            let deficit = max(0, identWidth + dataWidth - geo.size.width)
+            let spare = (identColumns + dataColumns).reduce(0) { $0 + max(0, $1.width - ($1.minWidth ?? $1.width)) }
+            let squeeze = spare > 0 ? min(1, deficit / spare) : 0
+            let identity = expanded(identColumns, unit: unit, squeeze: squeeze)
+            let data = expanded(dataColumns, unit: unit, squeeze: squeeze)
             let pinnedWidth = identity.reduce(0) { $0 + $1.width }
+            let scrollingWidth = data.reduce(0) { $0 + $1.width }
             HStack(alignment: .top, spacing: 0) {
                 column(identity, ident: true)
                     // Flexible row frames must not let the pinned pane absorb
@@ -124,7 +134,7 @@ struct GridTable: View {
                     .zIndex(1)
                 ScrollView(.horizontal, showsIndicators: true) {
                     column(data, ident: false)
-                        .frame(minWidth: max(dataWidth, geo.size.width - pinnedWidth), alignment: .leading)
+                        .frame(minWidth: max(scrollingWidth, geo.size.width - pinnedWidth), alignment: .leading)
                 }
                 .resumeScrollIfNeeded(resumeKey)
                 .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
@@ -136,10 +146,11 @@ struct GridTable: View {
         .padding(.bottom, PP.Space.s5)
     }
 
-    private func expanded(_ columns: [GridColumn], unit: CGFloat) -> [GridColumn] {
+    private func expanded(_ columns: [GridColumn], unit: CGFloat, squeeze: CGFloat) -> [GridColumn] {
         columns.map { column in
             var result = column
             result.width += unit * column.growthWeight
+            result.width -= squeeze * max(0, column.width - (column.minWidth ?? column.width))
             return result
         }
     }
