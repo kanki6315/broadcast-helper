@@ -58,7 +58,7 @@ const assert = require('node:assert/strict');
   await page.getByRole('link',{name:'IMSA Michelin Pilot Challenge',exact:true}).click();
   await page.getByRole('table',{name:'Running order by class'}).waitFor();
   assert.equal(await page.locator('.timing-back').getAttribute('href'), `#/live/${TOKEN}`);
-  assert.match(await page.locator('.tower-row').first().innerText(), /Some Driver/); // the team column folds away at phone width
+  assert.match(await page.locator('.tower-row').first().innerText(), /S\. Driver/); // the team column folds away at phone width, the driver to initial and surname
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false, 'phone width, no sideways scroll');
 
   // Every API call but the public /api/me carried the token.

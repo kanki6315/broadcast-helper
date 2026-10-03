@@ -461,10 +461,21 @@
 
 /* A timing tower is one line per car: tighter than the standard grid, the
  * way the Stats table earns its density, with the identity cells keeping
- * room so names never crowd. */
+ * room so names never crowd. The custom properties are what the compact tower
+ * (narrow screens, and overall) tightens; see the narrow-screens rules. */
+.tower {
+  --tower-pad-x: 6px;
+  --tower-pair-gap: var(--space-2);
+  --tower-stint-lead: var(--space-4);
+  --tower-sector-size: var(--text-sm);
+  --tower-name-max: none;
+  --tower-name-full: inline;
+  --tower-name-short: none;
+}
+
 .tower th,
 .tower td {
-  padding: 3px 6px;
+  padding: 3px var(--tower-pad-x);
 }
 
 .tower thead th {
@@ -578,7 +589,11 @@
 
 /* The stint's laps would otherwise butt against the last sector time. */
 .tower--sectors td.tower-stint {
-  padding-left: var(--space-4);
+  padding-left: var(--tower-stint-lead);
+}
+
+.tower td.tower-sector {
+  font-size: var(--tower-sector-size);
 }
 
 /* A sector time left from the previous lap: the car has not run it again yet. */
@@ -698,6 +713,25 @@
 .tower-driver {
   color: var(--ink);
   font-weight: 500;
+  white-space: nowrap;
+}
+
+/* The name alone gives way so the rating beside it stays: where room runs
+ * short, initial and surname, then an ellipsis; in full on hover. */
+.tower-driver-name {
+  display: inline-block;
+  max-width: var(--tower-name-max);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+.tower-name-full {
+  display: var(--tower-name-full);
+}
+
+.tower-name-short {
+  display: var(--tower-name-short);
 }
 
 .tower-rating {
@@ -707,10 +741,16 @@
   color: var(--text-muted);
 }
 
+/* The team takes whatever the timing columns leave, never more: a zero
+ * max-width keeps its name out of the table's minimum, so a long one shortens
+ * (to an ellipsis) instead of pushing the tower past the screen. */
 .tower-team {
-  max-width: 28ch;
+  width: 100%;
+  min-width: 8ch;
+  max-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text);
 }
 
@@ -756,7 +796,7 @@
 .tower-pair {
   display: inline-flex;
   justify-content: flex-end;
-  gap: var(--space-2);
+  gap: var(--tower-pair-gap);
 }
 
 .tower-stint .muted {
@@ -1104,46 +1144,63 @@
 
 /* -- narrow screens ------------------------------------------------------------------------ */
 
-/* Team names are the longest cells: shortened first, dropped last. */
-@media (max-width: 1200px) {
-  .tower-team {
-    max-width: 12ch;
-  }
+/* Team names are the longest cells: shortened first (they take only the room
+ * left over), dropped last. The compact tower tightens the timing columns as
+ * well: less padding, sector times a size down, the driver as initial and
+ * surname. Overall is compact at every width: its class column costs what the
+ * team's room would, and the page stops at 1320px however wide the screen. */
+.tower--overall {
+  --tower-pad-x: 4px;
+  --tower-pair-gap: var(--space-1);
+  --tower-stint-lead: var(--space-2);
+  --tower-sector-size: var(--text-xs);
+  --tower-name-max: 13ch;
+  --tower-name-full: none;
+  --tower-name-short: inline;
+}
 
+@media (max-width: 1200px) {
   .timing {
     padding-inline: var(--space-3);
-  }
-}
-
-/* Sectors and energy beside real team names ("Acura Meyer Shank Racing
- * w/Curb Agajanian") overflow the page's 1320px column, and a 1280px laptop
- * further still: with sectors the team is cut shorter, enough to place the car. */
-.tower--sectors .tower-team {
-  max-width: 18ch;
-}
-
-@media (max-width: 1440px) {
-  .tower--sectors .tower-team {
-    max-width: 10ch;
-  }
-}
-
-/* Sector columns take the room the team name had: with them the team goes a
- * step earlier, so the tower still fits 1024px beside the energy column. */
-@media (max-width: 1100px) {
-  .tower--sectors .tower-team {
-    display: none;
-  }
-
-  /* Then green use per lap: energy and laps left are what a glance needs, and
-   * the cell's tooltip still says the use. */
-  .tower--sectors .tower-energy-use {
-    display: none;
   }
 
   /* Overall adds the class column; the stint gives way to it, since overall
    * is for reading battles on track, not strategy. */
   .tower--overall .tower-stint {
+    display: none;
+  }
+
+  .tower {
+    --tower-pad-x: 4px;
+    --tower-pair-gap: var(--space-1);
+    --tower-stint-lead: var(--space-2);
+    --tower-sector-size: var(--text-xs);
+    --tower-name-max: 13ch;
+    --tower-name-full: none;
+    --tower-name-short: inline;
+  }
+}
+
+/* Sector columns take the room the team name had: with them the team goes a
+ * step earlier, the cells close up once more and the stint's time drops a
+ * size, so the tower still fits 1024px (beside a scrollbar) with real names
+ * and times, energy column and all. */
+@media (max-width: 1100px) {
+  .tower--sectors .tower-team {
+    display: none;
+  }
+
+  .tower--sectors {
+    --tower-pad-x: 3px;
+  }
+
+  .tower--sectors .tower-stint .muted {
+    font-size: var(--text-xs);
+  }
+
+  /* Then green use per lap: energy and laps left are what a glance needs, and
+   * the cell's tooltip still says the use. */
+  .tower--sectors .tower-energy-use {
     display: none;
   }
 }
