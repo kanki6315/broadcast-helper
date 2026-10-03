@@ -1149,20 +1149,31 @@
 
 /* -- analysis: gaps, sectors, pits (TimingAnalysis.tsx) ------------------------------ */
 
-/* Categorical slots 1–3 of the data-viz reference palette, stepped per theme
- * and validated all-pairs against --bg (aqua sits under 3:1 on white, so every
- * followed line carries a direct label and the table view has the numbers). */
+/* Categorical slots 1–8 of the data-viz reference palette in its fixed order,
+ * stepped per theme and validated on the adjacent pairlist (the line-chart case)
+ * against --bg. Aqua, yellow and magenta sit under 3:1 on white, so every
+ * followed line carries a direct label and the table view has the numbers. */
 .an-gaps,
 .an-legend-pit {
   --an-s1: #2a78d6;
   --an-s2: #eb6834;
   --an-s3: #1baf7a;
+  --an-s4: #eda100;
+  --an-s5: #e87ba4;
+  --an-s6: #008300;
+  --an-s7: #4a3aa7;
+  --an-s8: #e34948;
 }
 
 :root[data-theme='dark'] :is(.an-gaps, .an-legend-pit) {
   --an-s1: #3987e5;
   --an-s2: #d95926;
   --an-s3: #199e70;
+  --an-s4: #c98500;
+  --an-s5: #d55181;
+  --an-s6: #008300;
+  --an-s7: #9085e9;
+  --an-s8: #e66767;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1170,12 +1181,22 @@
     --an-s1: #3987e5;
     --an-s2: #d95926;
     --an-s3: #199e70;
+    --an-s4: #c98500;
+    --an-s5: #d55181;
+    --an-s6: #008300;
+    --an-s7: #9085e9;
+    --an-s8: #e66767;
   }
 }
 
 .an-s1 { --an-color: var(--an-s1); }
 .an-s2 { --an-color: var(--an-s2); }
 .an-s3 { --an-color: var(--an-s3); }
+.an-s4 { --an-color: var(--an-s4); }
+.an-s5 { --an-color: var(--an-s5); }
+.an-s6 { --an-color: var(--an-s6); }
+.an-s7 { --an-color: var(--an-s7); }
+.an-s8 { --an-color: var(--an-s8); }
 
 .an-classes {
   margin-bottom: var(--space-3);
