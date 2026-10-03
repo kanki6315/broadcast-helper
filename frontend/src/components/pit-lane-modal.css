@@ -143,6 +143,15 @@
   white-space: nowrap;
 }
 
+/* Two cars of this series in one box: the PDF stacks them, the lane repeats
+   the box number and says so, since "box 1" alone would send you to the
+   wrong crew half the time. */
+.pl-shared {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 /* Same pill as the season pages' .class-tag (this stylesheet loads without
    season.css, so the idiom is restated here). */
 .pl-class {

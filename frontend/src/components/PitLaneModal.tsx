@@ -73,9 +73,15 @@ function landmarkKind(label: string): string {
 }
 
 /** The lane in physical order: rows, landmark dividers, and collapsed runs of
- *  boxes used only by the other series sharing the lane. */
+ *  boxes used only by the other series sharing the lane. Rows are per car, so
+ *  a shared box yields several rows (in PDF order) flagged `shared`. */
 function laneItems(rows: AssignmentRow[], landmarks: Landmark[]) {
-  const rowByBox = new Map(rows.map((r) => [r.boxNumber, r]))
+  const rowsByBox = new Map<number, AssignmentRow[]>()
+  rows.forEach((r) => {
+    const list = rowsByBox.get(r.boxNumber) ?? []
+    list.push(r)
+    rowsByBox.set(r.boxNumber, list)
+  })
   const marksAfter = new Map<number, Landmark[]>()
   landmarks.forEach((m) => {
     const list = marksAfter.get(m.afterBox) ?? []
@@ -84,7 +90,11 @@ function laneItems(rows: AssignmentRow[], landmarks: Landmark[]) {
   })
   const maxBox = Math.max(0, ...rows.map((r) => r.boxNumber), ...landmarks.map((m) => m.afterBox))
 
-  const items: ({ kind: 'row'; row: AssignmentRow } | { kind: 'mark'; mark: Landmark } | { kind: 'gap'; count: number })[] = []
+  const items: (
+    | { kind: 'row'; row: AssignmentRow; shared: boolean }
+    | { kind: 'mark'; mark: Landmark }
+    | { kind: 'gap'; count: number }
+  )[] = []
   let gap = 0
   const flushGap = () => {
     if (gap > 0) items.push({ kind: 'gap', count: gap })
@@ -92,10 +102,10 @@ function laneItems(rows: AssignmentRow[], landmarks: Landmark[]) {
   }
   for (const mark of marksAfter.get(0) ?? []) items.push({ kind: 'mark', mark })
   for (let box = 1; box <= maxBox; box++) {
-    const row = rowByBox.get(box)
-    if (row) {
+    const boxRows = rowsByBox.get(box)
+    if (boxRows) {
       flushGap()
-      items.push({ kind: 'row', row })
+      boxRows.forEach((row) => items.push({ kind: 'row', row, shared: boxRows.length > 1 }))
     } else {
       gap++
     }
@@ -194,13 +204,13 @@ export default function PitLaneModal({
       .finally(() => setBusy(false))
   }
 
-  function setRowEntry(boxNumber: number, entryId: number | null) {
+  function setRowEntry(index: number, entryId: number | null) {
     if (!proposal) return
     const entry = entries.find((e) => e.entryId === entryId) ?? null
     setProposal({
       ...proposal,
-      rows: proposal.rows.map((r) =>
-        r.boxNumber === boxNumber
+      rows: proposal.rows.map((r, i) =>
+        i === index
           ? {
               ...r,
               entryId,
@@ -429,7 +439,7 @@ export default function PitLaneModal({
           {!loading && proposal && (
             <>
               <p className="pl-review-hint">
-                {proposal.rows.length} boxes from the PDF
+                {proposal.rows.length} cars from the PDF
                 {unmatched > 0
                   ? `; ${unmatched} car${unmatched === 1 ? '' : 's'} didn't match an entry — fix or leave off the lane.`
                   : ' — every car matched an entry.'}
@@ -445,8 +455,8 @@ export default function PitLaneModal({
                   </tr>
                 </thead>
                 <tbody>
-                  {proposal.rows.map((r) => (
-                    <tr key={r.boxNumber} className={r.entryId == null ? 'pl-unmatched' : undefined}>
+                  {proposal.rows.map((r, i) => (
+                    <tr key={i} className={r.entryId == null ? 'pl-unmatched' : undefined}>
                       <td>{r.boxNumber}</td>
                       <td>#{r.carNumber}</td>
                       <td>{r.teamName}</td>
@@ -455,7 +465,7 @@ export default function PitLaneModal({
                           value={r.entryId ?? ''}
                           disabled={busy}
                           onChange={(ev) =>
-                            setRowEntry(r.boxNumber, ev.target.value === '' ? null : Number(ev.target.value))
+                            setRowEntry(i, ev.target.value === '' ? null : Number(ev.target.value))
                           }
                         >
                           <option value="">— not on the sheet —</option>
@@ -499,12 +509,13 @@ export default function PitLaneModal({
                     <button
                       type="button"
                       className="pl-rowbtn"
-                      aria-label={`Guide me to box ${r.boxNumber}, #${r.carNumber} ${team}`}
+                      aria-label={`Guide me to box ${r.boxNumber}${item.shared ? ' (shared)' : ''}, #${r.carNumber} ${team}`}
                       onClick={() => setTarget({ boxNumber: r.boxNumber, carNumber: r.carNumber, team })}
                     >
                       <span className="pl-box">{r.boxNumber}</span>
                       <span className="pl-car">#{r.carNumber}</span>
                       <span className="pl-team">{team}</span>
+                      {item.shared && <span className="pl-shared">shared box</span>}
                       {r.className && <span className="pl-class">{r.className}</span>}
                     </button>
                   </li>

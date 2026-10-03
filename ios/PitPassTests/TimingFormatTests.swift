@@ -107,6 +107,25 @@ final class TimingFormatTests: XCTestCase {
         XCTAssertNotNil(TimingFormat.messageTime(dayTimeMs: 1_790_787_014_000, utcOffsetHours: nil), "the device's clock")
     }
 
+    func testWeatherDecodesAndReadsInTheFeedsUnits() throws {
+        XCTAssertNil(try tower().weather, "a server without weather")
+        let json = """
+        {"dayTimeMs":1790787014000,"airC":24.3,"airF":75.7,"trackC":38.3,"trackF":100.9,"humidityPct":61.0,
+         "pressureMbar":1012.4,"pressureInHg":29.9,"windDirection":225,"windKmh":14.0,"windMph":8.7}
+        """
+        let r = try JSONDecoder().decode(WeatherReading.self, from: Data(json.utf8))
+        XCTAssertEqual(TimingFormat.temperature(c: r.trackC, f: r.trackF, us: true), "100.9°")
+        XCTAssertEqual(TimingFormat.temperature(c: r.trackC, f: r.trackF, us: false), "38.3°")
+        XCTAssertEqual(TimingFormat.wind(r, us: true), "9 mph SW")
+        XCTAssertEqual(TimingFormat.wind(r, us: false), "14 km/h SW")
+        XCTAssertEqual(TimingFormat.pressure(r, us: true), "29.90 inHg")
+        XCTAssertEqual(TimingFormat.pressure(r, us: false), "1012 mbar")
+        XCTAssertEqual(TimingFormat.compass(0), "N")
+        XCTAssertEqual(TimingFormat.compass(350), "N")
+        XCTAssertEqual(TimingFormat.compass(-90), "W")
+        XCTAssertNil(TimingFormat.compass(nil))
+    }
+
     func testAStoppedClockFreezesAtTheStop() throws {
         let start = 1_790_785_500_000
         let reading = TimingFormat.sessionClock(try tower(stopMs: start + 300_000, stoppedMs: 60_000), wallMs: start + 3_000_000)

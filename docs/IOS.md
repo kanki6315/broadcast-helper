@@ -42,7 +42,7 @@ The Series library uses compact rows with expandable seasons. Selecting a
 season establishes the root workspace; All series switches back to the library
 without stacking another season in navigation history. Event broadcast workspaces
 remain pushed destinations with six tabs (Sheet, Recap, Pit lane, Scratchpad,
-Conversations, Calculator) and a Back to series action. The event workspace uses
+Conversations, Timing) and a Back to series action. The event workspace uses
 the native top tab bar on iPad, adapting to bottom tabs in compact windows. It
 does not force compact sizing or enable a persistent sidebar.
 
@@ -541,9 +541,12 @@ accessible name.
 ### Live timing (the Timing tab)
 
 The web's `/timing/:eventId` as a tab in the event workspace
-(`Views/Sheet/TimingSheet.swift`), beside the calculator. `LiveTimingBar`
-sits on top, so connect and disconnect stay where they are on the
-calculator. Everything is a `LiveFeed`, polled and never stored: the tower
+(`Views/Sheet/TimingSheet.swift`). `LiveTimingBar` sits on top with
+connect and disconnect. The championship calculator lives here too, as the
+**Points** view (`TimingPointsSection`): Live (the default) beside the tower,
+or Scenario for this event; a series weekend's screen offers Live only, since
+a scenario needs the event's season. There is no separate Calculator tab.
+Everything is a `LiveFeed`, polled and never stored: the tower
 every 2 s, drive time every 10 s while shown, the analysis views every 15 s
 while their session is live (2 min once it is over), a car every 10 s while
 its sheet is open. Gaps, Sectors, Pits and Drive time share one session
@@ -617,8 +620,9 @@ championship name to a series stays on the website (Manage → Live timing).
   tab offers that series' weekend screen (`TimingRoute.weekend`).
 - Drive-time rules come from the session's filed event; unfiled, a note
   replaces them.
-- The calculator projects only from a session filed under its event, and
-  says when the session on track is filed nowhere.
+- Points project the season of the event the session on track is filed
+  under (`LiveStatus.filedSeasonId`), only on the screen following that
+  session, and say when the session is filed nowhere.
 
 ### The season pages
 

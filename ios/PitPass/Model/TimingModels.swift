@@ -24,6 +24,33 @@ struct Tower: Codable, Sendable, Equatable {
     let total: Int
     /// Race control's screen now and its newest message; nil when the feed sends no race control.
     var raceControl: RaceControlNow? = nil
+    /// "mph" or "km/h", from the feed's unit of measure; nil before the feed says.
+    var speedUnit: String? = nil
+    /// The track's weather station, latest reading; nil when the feed sends no weather.
+    var weather: WeatherReading? = nil
+}
+
+/// One weather station reading, in both unit systems (the backend converts
+/// whichever the station did not send). `windDirection` is degrees as the
+/// station sends it — taken as where the wind comes from, unverified.
+struct WeatherReading: Codable, Sendable, Equatable {
+    let dayTimeMs: Int?
+    let airC: Double?
+    let airF: Double?
+    let trackC: Double?
+    let trackF: Double?
+    let humidityPct: Double?
+    let pressureMbar: Double?
+    let pressureInHg: Double?
+    let windDirection: Int?
+    let windKmh: Double?
+    let windMph: Double?
+}
+
+/// `GET /api/live/weather?session=`, one a minute, oldest first.
+struct WeatherLog: Codable, Sendable, Equatable {
+    let sessionDbId: Int
+    let readings: [WeatherReading]
 }
 
 /// One race control message. `dayTimeMs` is when it was shown (nil on the

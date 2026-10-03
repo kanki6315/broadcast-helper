@@ -27,7 +27,7 @@ final class AnalysisRows {
 
     /** Anything the writer is asked to do, in arrival order. */
     sealed interface Op permits LapPatch, StintPatch, LapDeleted, StintDeleted, SessionSeen, EntriesChanged, EnergyLap,
-            RaceControlMessage, RaceControlDeleted {
+            RaceControlMessage, RaceControlDeleted, WeatherSample, WeatherDeleted {
     }
 
     /** IMSA telemetry: energy at the line after {@code lap} (see TelemetryRunner). */
@@ -41,6 +41,13 @@ final class AnalysisRows {
     }
 
     record RaceControlDeleted(long sessionDbId, String key) implements Op {
+    }
+
+    /** One of the session's weather readings (weather.sessionData.<dayTime>), as the station sent it. */
+    record WeatherSample(long sessionDbId, long dayTimeMs, LiveWeather.Reading reading) implements Op {
+    }
+
+    record WeatherDeleted(long sessionDbId, long dayTimeMs) implements Op {
     }
 
     record SessionSeen(SessionInfo session) implements Op {

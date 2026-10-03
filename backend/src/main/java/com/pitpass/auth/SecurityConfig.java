@@ -63,7 +63,8 @@ public class SecurityConfig {
     static final String[] SHARED_TIMING = {
             "/api/live/timing", "/api/live/status", "/api/live/sessions", "/api/live/weekends",
             "/api/live/feed-events/*", "/api/live/gaps", "/api/live/sectors", "/api/live/pits",
-            "/api/live/cars/*", "/api/live/drive-time", "/api/live/race-control"
+            "/api/live/cars/*", "/api/live/drive-time", "/api/live/race-control",
+            "/api/live/weather"
     };
 
     @Bean

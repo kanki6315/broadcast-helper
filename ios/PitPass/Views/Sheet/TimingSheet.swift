@@ -4,7 +4,8 @@ import SwiftUI
 /// (its Timing tab) or for one series weekend as the feed has it, filed under
 /// an event or not (pushed from the Timing screen): the live timing tower;
 /// gaps, best sectors and pit stops over a recorded session
-/// (TimingAnalysis.swift); and drive time. Read-only apart from the shared
+/// (TimingAnalysis.swift); drive time; and the championship calculator, live
+/// or as a scenario (TimingPoints.swift). Read-only apart from the shared
 /// connect/disconnect switch in `LiveTimingBar`. Rules are edited on the website.
 ///
 /// Everything here is polled through `LiveFeed` and never stored: the tower
@@ -14,6 +15,8 @@ import SwiftUI
 struct TimingSheet: View {
     @Environment(AppSession.self) private var session
     let scope: TimingScope
+    /// This event's season, for the Points view's scenario; nil on a series weekend's screen.
+    var seasonId: Int? = nil
     @State private var status = LiveFeed<LiveStatus>()
     /// A weekend's own description: its name, and the event it is filed under (if any).
     @State private var weekend = LiveFeed<WeekendChampionship>()
@@ -26,7 +29,7 @@ struct TimingSheet: View {
     @AppStorage("timing.order") private var order = "class"
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    enum Mode: String { case tower, gaps, sectors, pits, drive, control }
+    enum Mode: String { case tower, points, gaps, sectors, pits, drive, control, weather }
 
     struct OpenCar: Identifiable {
         let carNumber: String
@@ -37,7 +40,10 @@ struct TimingSheet: View {
         var id: String { carNumber }
     }
 
-    init(eventId: Int) { scope = .event(eventId) }
+    init(eventId: Int, seasonId: Int? = nil) {
+        scope = .event(eventId)
+        self.seasonId = seasonId
+    }
     init(scope: TimingScope) { self.scope = scope }
 
     /// The session on track belongs here when it is filed under this event or —
@@ -57,6 +63,12 @@ struct TimingSheet: View {
         case let .event(id): id
         case .weekend: weekend.value?.eventId
         }
+    }
+
+    /// This screen's own event: none on a series weekend's screen, filed or not.
+    private var ownEventId: Int? {
+        if case let .event(id) = scope { return id }
+        return nil
     }
 
     private var title: String {
@@ -91,14 +103,16 @@ struct TimingSheet: View {
                 HStack(spacing: PP.Space.s3) {
                     Picker("View", selection: $mode) {
                         Text("Tower").tag(Mode.tower)
+                        Text("Points").tag(Mode.points)
                         Text("Gaps").tag(Mode.gaps)
                         Text("Sectors").tag(Mode.sectors)
                         Text("Pits").tag(Mode.pits)
                         Text("Drive time").tag(Mode.drive)
                         Text("Race control").tag(Mode.control)
+                        Text("Weather").tag(Mode.weather)
                     }
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 600)
+                    .frame(maxWidth: 760)
                     if followingThis, let s = tower.value?.session { SessionLine(session: s) }
                     Spacer(minLength: 0)
                     if let error = tower.error, tower.value != nil {
@@ -107,6 +121,8 @@ struct TimingSheet: View {
                 }
                 if mode == .tower {
                     towerContent
+                } else if mode == .points {
+                    TimingPointsSection(scenarioEventId: ownEventId, scenarioSeasonId: seasonId, status: status.value, followingThis: followingThis)
                 } else {
                     RecordedSessions(path: sessionsPath, scopeName: scopeName) { chosen in
                         switch mode {
@@ -118,6 +134,10 @@ struct TimingSheet: View {
                             RaceControlSection(chosen: chosen,
                                                utcOffsetHours: chosen.current && tower.value?.sessionDbId == chosen.sessionDbId
                                                    ? tower.value?.session?.clock?.utcOffsetHours : nil)
+                        case .weather:
+                            WeatherSection(chosen: chosen, us: tower.value?.speedUnit == "mph",
+                                           utcOffsetHours: chosen.current && tower.value?.sessionDbId == chosen.sessionDbId
+                                               ? tower.value?.session?.clock?.utcOffsetHours : nil)
                         default:
                             // Colours come from the event the session is filed under, when the tower shows it.
                             let sameEvent = chosen.eventId != nil && tower.value?.filedEventId == chosen.eventId
@@ -195,6 +215,9 @@ struct TimingSheet: View {
                 let unfiled = value.filedEventId == nil
                 if unfiled {
                     Text(unfiledNote(value)).font(.subheadline).foregroundStyle(PP.textMuted)
+                }
+                WeatherStrip(now: value.weather, us: value.speedUnit == "mph") {
+                    mode = .weather
                 }
                 RaceControlStrip(now: value.raceControl, utcOffsetHours: value.session?.clock?.utcOffsetHours) {
                     mode = .control
@@ -924,8 +947,10 @@ private struct DriveTable: View {
     let classColors: [String: String]
     /// The tower's class order, when it is following this event; else first seen.
     let classOrder: [String]
+    @State private var query = ""
 
     var body: some View {
+        let keep = Self.carsMatching(query, cars: allCars)
         let over = drive.drivers.filter { $0.status == "OVER_MAX" }.count
         let under = drive.drivers.filter { $0.status == "UNDER_MIN" }.count
         let ok = drive.drivers.filter { $0.status == "OK" }.count
@@ -933,6 +958,16 @@ private struct DriveTable: View {
             if drive.drivers.isEmpty {
                 EmptyState(message: "No drivers recorded for this session yet.")
             } else {
+                HStack(spacing: PP.Space.s3) {
+                    FilterField(text: $query, placeholder: "Car numbers, e.g. 4, 911")
+                        .keyboardType(.numbersAndPunctuation)
+                        .frame(maxWidth: 260)
+                        .accessibilityLabel("Filter by car number")
+                    if let keep {
+                        Text(keep.isEmpty ? "No car with that number" : "\(keep.count) of \(allCars.count) cars")
+                            .font(PP.sans(PP.TextSize.sm)).foregroundStyle(PP.textMuted)
+                    }
+                }
                 if !drive.rules.isEmpty {
                     HStack(spacing: PP.Space.s4) {
                         if over > 0 { Text("\(over) over the maximum").foregroundStyle(PP.error) }
@@ -941,23 +976,47 @@ private struct DriveTable: View {
                     }
                     .font(.subheadline.weight(.semibold))
                 }
-                GridTable(identColumns: [.text("car", "#", width: 56, align: .trailing), .text("driver", "Driver", width: 210)],
-                          // Status beside the time: it is the answer, and it must stay on screen in
-                          // portrait; the meter is only shape, so it goes last.
-                          dataColumns: [.text("rating", "Rating", width: 84), .text("time", "Drive time", width: 96, align: .trailing),
-                                        .text("status", "Status", width: 180),
-                                        .text("min", "Min", width: 80, align: .trailing), .text("max", "Max", width: 80, align: .trailing),
-                                        GridColumn(id: "meter", width: 140, growthWeight: 1) { Text("").accessibilityHidden(true) }],
-                          sections: sections,
-                          cellPadV: 4, cellPadH: 8, headerHeight: 32, separatesIdentity: true, centersCells: true)
+                if keep?.isEmpty != true {
+                    GridTable(identColumns: [.text("car", "#", width: 56, align: .trailing), .text("driver", "Driver", width: 210)],
+                              // Status beside the time: it is the answer, and it must stay on screen in
+                              // portrait; the meter is only shape, so it goes last.
+                              dataColumns: [.text("rating", "Rating", width: 84), .text("time", "Drive time", width: 96, align: .trailing),
+                                            .text("status", "Status", width: 180),
+                                            .text("min", "Min", width: 80, align: .trailing), .text("max", "Max", width: 80, align: .trailing),
+                                            GridColumn(id: "meter", width: 140, growthWeight: 1) { Text("").accessibilityHidden(true) }],
+                              sections: sections(keep: keep),
+                              cellPadV: 4, cellPadH: 8, headerHeight: 32, separatesIdentity: true, centersCells: true)
+                }
             }
         }
     }
 
-    private var sections: [GridSection] {
+    private var allCars: [String] {
+        var seen = Set<String>()
+        return drive.drivers.map(\.car).filter { seen.insert($0).inserted }
+    }
+
+    /// The cars a number search keeps (as on the web): each comma- or
+    /// space-separated number picks the car with exactly that number when there
+    /// is one (#4 is not #04 or #44), otherwise every car whose number starts
+    /// with it, so typing narrows as it goes. Nil when the search is empty.
+    static func carsMatching(_ query: String, cars: [String]) -> Set<String>? {
+        let wanted = query.split(whereSeparator: { $0 == "," || $0.isWhitespace })
+            .map { $0.hasPrefix("#") ? String($0.dropFirst()).lowercased() : $0.lowercased() }
+            .filter { !$0.isEmpty }
+        if wanted.isEmpty { return nil }
+        var keep = Set<String>()
+        for w in wanted {
+            let exact = cars.filter { $0.lowercased() == w }
+            keep.formUnion(exact.isEmpty ? cars.filter { $0.lowercased().hasPrefix(w) } : exact)
+        }
+        return keep
+    }
+
+    private func sections(keep: Set<String>?) -> [GridSection] {
         var order: [String] = []
         var byClass: [String: [DriveTimeResult]] = [:]
-        for d in drive.drivers {
+        for d in drive.drivers where keep?.contains(d.car) ?? true {
             let cls = d.className ?? "Unmatched"
             if byClass[cls] == nil { order.append(cls) }
             byClass[cls, default: []].append(d)

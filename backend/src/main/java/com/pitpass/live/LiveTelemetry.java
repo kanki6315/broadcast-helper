@@ -10,6 +10,7 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 
 /**
  * What IMSA telemetry leaves in memory: the latest reading per car, and each
@@ -59,8 +60,10 @@ final class LiveTelemetry {
             clock = decoded.session();
         }
         List<LapSample> completed = new ArrayList<>();
+        java.util.Set<String> sent = new java.util.HashSet<>(latest.keySet());
+        decoded.cars().forEach(c -> sent.add(c.number()));
         for (CarReading car : decoded.cars()) {
-            Integer laps = car.lapsCompleted() != null ? car.lapsCompleted() : feedLaps(feedLaps, car.number());
+            Integer laps = car.lapsCompleted() != null ? car.lapsCompleted() : feedLaps(feedLaps, car.number(), sent::contains);
             Reading previous = latest.put(car.number(), new Reading(car, laps, nowMs));
             if (previous == null || previous.laps() == null || laps == null || laps <= previous.laps()) {
                 continue;
@@ -82,15 +85,21 @@ final class LiveTelemetry {
         return completed;
     }
 
-    /** The feed's count for a telemetry number: exactly first (#04 is not #4), then unambiguous without leading zeros. */
-    private static Integer feedLaps(Map<String, Integer> feedLaps, String number) {
+    /**
+     * The feed's count for a telemetry number: exactly first (#04 is not #4),
+     * then unambiguous without leading zeros among feed numbers that are not
+     * themselves a telemetry car (telemetryHasCar) — telemetry's 4 never takes
+     * #04's count while telemetry also sends 04.
+     */
+    private static Integer feedLaps(Map<String, Integer> feedLaps, String number, Predicate<String> telemetryHasCar) {
         Integer exact = feedLaps.get(number);
         if (exact != null || feedLaps.isEmpty()) {
             return exact;
         }
         String normalized = SheetController.normalizeCarNumber(number);
         List<Integer> loose = feedLaps.entrySet().stream()
-                .filter(e -> SheetController.normalizeCarNumber(e.getKey()).equals(normalized))
+                .filter(e -> SheetController.normalizeCarNumber(e.getKey()).equals(normalized)
+                        && !telemetryHasCar.test(e.getKey()))
                 .map(Map.Entry::getValue).toList();
         return loose.size() == 1 ? loose.getFirst() : null;
     }
@@ -110,15 +119,23 @@ final class LiveTelemetry {
         clock = null;
     }
 
+    /** As below, knowing no other Al Kamel car numbers. */
+    CarEnergy energy(String alKamelNumber, String feedClass, Integer stintOpenLap, long nowMs, long staleMs) {
+        return energy(alKamelNumber, feedClass, stintOpenLap, nowMs, staleMs, n -> false);
+    }
+
     /**
      * The Al Kamel car's telemetry: its number exactly first (#04 is not #4),
-     * then without leading zeros only when that is unambiguous — and only when
-     * the reading's class agrees with the car's class in the Al Kamel feed, so
+     * then without leading zeros only when that is unambiguous and the
+     * telemetry number is not itself another Al Kamel car (feedHasCar) — #04
+     * never takes #4's energy when #4 is on the grid — and only when the
+     * reading's class agrees with the car's class in the Al Kamel feed, so
      * another series' car sharing the number never lends it its energy. Null
      * energy when the last reading is older than staleMs.
      */
-    CarEnergy energy(String alKamelNumber, String feedClass, Integer stintOpenLap, long nowMs, long staleMs) {
-        String key = resolve(alKamelNumber);
+    CarEnergy energy(String alKamelNumber, String feedClass, Integer stintOpenLap, long nowMs, long staleMs,
+                     Predicate<String> feedHasCar) {
+        String key = resolve(alKamelNumber, feedHasCar);
         if (key == null) {
             return null;
         }
@@ -138,7 +155,7 @@ final class LiveTelemetry {
                 || LiveEventMatch.sameClass(telemetryClass, feedClass);
     }
 
-    private String resolve(String number) {
+    private String resolve(String number, Predicate<String> feedHasCar) {
         if (number == null) {
             return null;
         }
@@ -147,7 +164,7 @@ final class LiveTelemetry {
         }
         String normalized = SheetController.normalizeCarNumber(number);
         List<String> loose = latest.keySet().stream()
-                .filter(k -> SheetController.normalizeCarNumber(k).equals(normalized)).toList();
+                .filter(k -> SheetController.normalizeCarNumber(k).equals(normalized) && !feedHasCar.test(k)).toList();
         return loose.size() == 1 ? loose.getFirst() : null;
     }
 

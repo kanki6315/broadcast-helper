@@ -49,6 +49,7 @@ replica would see `STANDBY` and no data.
 | `GET /api/live/cars/{car}?session=` | member | One car's laps, stints and drivers. |
 | `GET /api/live/drive-time?session=` | member | Drive time per driver against the event's rules. |
 | `GET /api/live/race-control?session=` | member | Race control's messages for a session, newest first — see *Race control messages*. |
+| `GET /api/live/weather?session=` | member | The weather station's readings for a session, one a minute, oldest first — see *Weather*. |
 | `GET /api/live/sessions?eventId=` or `?feedEvent=` | member | The sessions recorded for an event, or for one series weekend (filed or not), newest first by date. |
 | `GET /api/live/weekends?days=60` | member | Recorded series weekends grouped by weekend (same track, first sessions within 5 days), each with its sessions, where it is filed, and the events it could be filed under. |
 | `GET /api/live/feed-events/{id}` | member | One series weekend, the same shape. |
@@ -71,7 +72,8 @@ is never trusted to pick the event.
 where the connect control stands, and which event filing tries (see
 *Which event a session belongs to*). `filedEventId` / `filedEventName` is
 the event the session on track is actually filed under, read from
-`live_session`. **Every Pit Pass overlay — entries, teams, class colours,
+`live_session`; `filedSeasonId` is that event's season, whose standings the
+timing page's Points view projects. **Every Pit Pass overlay — entries, teams, class colours,
 driver links, championship positions — comes from the filed event, never
 the binding.** A binding can outlive its series' session: on 2026-09-30 an
 IMPC binding stayed up while VP Racing ran, and matching VP cars against the
@@ -207,6 +209,7 @@ All `ALKAMELV2_*`. Set the first three on Railway; the rest have working default
 | `ALKAMELV2_REPLAY_SPEED` | `1.0` | `10` = ten times faster; `0` = no pauses. |
 | `ALKAMELV2_ANALYSIS_ENABLED` | `false` | Also join `timing.analysis.laps` and `.stints` and stream them into Postgres — see *timing.analysis*. Off until a practice session has run clean with it. |
 | `ALKAMELV2_RACE_CONTROL_ENABLED` | `true` | Also join `raceControl.messages` and `raceControl.currentMessages`: the timing page's race control strip and log. A few lines a session, so on by default. The log is stored only while analysis is on. |
+| `ALKAMELV2_WEATHER_ENABLED` | `false` | Also join `weather.currentData` and `weather.sessionData`: the timing page's weather strip and chart. Tiny, but no recording has the channel yet and the server is older than the spec, so off until a session has run with it. The readings are stored only while analysis is on. |
 | `ALKAMELV2_PARTICIPANT_DETAILS_ENABLED` | `false` | Also join `timing.session.standings.overall.participantDetails` into the state tree, for the tower's sector columns, class best sectors and BOX / OUT_LAP marks. It updates at every loop crossing of every car, so it stays off until a practice session has been recorded with it. |
 | `ALKAMELV2_ANALYSIS_MAX_LINE_BYTES` | `536870912` | Sanity cap on one **streamed** line (counted, never buffered). `ALKAMELV2_MAX_LINE_BYTES` then guards only buffered lines. |
 
@@ -544,6 +547,39 @@ control's colours only as a bar beside the text.
 "current session"; if it is not, the reconnect snapshot would file old
 messages under the new session), what `showTime` counts, and what `isNull`
 means in practice. Check all three in the first recording that has it.
+
+### Weather
+
+The feed's `weather` channel (spec 1.0.36 §4.3), joined when
+`ALKAMELV2_WEATHER_ENABLED=true`. Both sub-channels go into the state tree like
+`timing.session`:
+
+- `weather.currentData` — the station's latest reading, every 5–20 s:
+  `ambientTemperature`/`F`, `trackTemperature`/`F`, `humidity`, `pressure`
+  (mBar) / `pressureInHg`, `windDirection` (degrees), `windSpeed` (km/h) /
+  `windSpeedMi`, `dayTime` (epoch ms). Live only, never stored: it is the
+  tower's `weather`, or — when absent — the newest of the session's readings.
+- `weather.sessionData` — the session's readings, one a minute, keyed by
+  `dayTime`. With analysis on, the router hands each reading a diff touches
+  to the writer as the tree now has it, into `live_weather` (V65) keyed by
+  session and `dayTime`. A null reading deletes its row; a null channel
+  deletes nothing.
+
+`LiveWeather` reads both, tolerantly: the server runs protocol 1.0.33 and the
+spec's changelog says the US units were added later, so a unit the station
+did not send is converted from the other, and a number sent as a string is
+read as one. Both unit systems are served; the web page and the iPad show the
+feed's own (`°F`, mph, inHg when `speedUnit` is mph).
+
+**Unverified — no recording has joined this channel yet:** whether the
+1.0.33 server has the `currentData` / `sessionData` split at all (the
+changelog calls it an update — an older server may send one flat
+`weather` object, which would land in the tree but show nothing), whether
+`sessionData` is cleared at a session change (if not, the reconnect snapshot
+would file the last session's readings under the new one), and whether
+`windDirection` is where the wind comes from (the pages assume so). Check all
+three in the first recording that has it, then decide whether the flag
+defaults on.
 
 ### Drive time
 
