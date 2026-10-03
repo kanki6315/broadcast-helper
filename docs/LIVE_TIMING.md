@@ -776,17 +776,20 @@ shortened. The same stand-in drives `LiveTimingServiceTest`.
 
 One link at a time (`live_share_token`, V62), no expiry, made and revoked in
 Manage → Live timing: `https://…/#/live/<token>`. It opens the timing pages —
-the `#/timing` home and each series weekend's page, every series, live and
-recorded — signed-out, and nothing else of Pit Pass.
+the `#/timing` home and each series weekend's page (Points view included),
+every series, live and recorded — signed-out. Since 2026-10-03 the token
+reads whatever a member reads, but the SPA only sends it from `#/live/…`
+pages, so the rest of Pit Pass is not browsable from the link.
 
 - The SPA sends the token from the URL fragment as `X-Pit-Pass-Share` on each
   API call (`lib/shareLink.ts`, via the global fetch wrapper). The fragment
   never reaches a server, so the token stays out of access logs and Referer.
 - `ShareTokenFilter` turns a working token into a `ShareAuthentication`: not
-  a member (no email), admitted only by `LiveAuthorization.timingReader` on
-  `SecurityConfig.SHARED_TIMING` — GETs of `/api/live/timing`, `status`,
-  `sessions`, `weekends`, `feed-events/*`, `gaps`, `sectors`, `pits`,
-  `cars/*`, `drive-time`. Everything else answers 403; a wrong, replaced or
+  a member (no email), admitted by `LiveAuthorization.reader` on every
+  GET/HEAD under `/api` that a member can read. Still 403 for it: the
+  admin-only reads (`/api/users/**`, the Al Kamel and artifact imports,
+  `/api/live/state`, `/api/live/share`), the per-person scratchpads
+  (`/api/events/*/scratchpad`, reads too), and every write. A wrong, replaced or
   revoked token is anonymous and gets 401, which the shared page shows as
   "this link no longer works" instead of the sign-in bounce.
 - `status` leaves out `requestedBy` (an email) and `holder` for the link.

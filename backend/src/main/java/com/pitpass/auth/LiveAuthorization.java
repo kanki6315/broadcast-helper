@@ -27,7 +27,7 @@ public class LiveAuthorization {
         this.directory = directory;
     }
 
-    /** Any listed email (viewer or admin) — gates GET/HEAD under /api. */
+    /** Any listed email (viewer or admin). */
     public AuthorizationManager<RequestAuthorizationContext> member() {
         return (authentication, context) ->
                 new AuthorizationDecision(directory.allows(emailOf(authentication.get())));
@@ -40,10 +40,11 @@ public class LiveAuthorization {
     }
 
     /**
-     * The timing pages' reads: any member, or whoever holds the shareable
-     * timing link (a {@link ShareAuthentication}, which no other rule admits).
+     * Reads: any member, or whoever holds a shareable timing link (a
+     * {@link ShareAuthentication}, which no other rule admits). Gates GET/HEAD
+     * under /api, after the admin-only reads and the scratchpad are ruled out.
      */
-    public AuthorizationManager<RequestAuthorizationContext> timingReader() {
+    public AuthorizationManager<RequestAuthorizationContext> reader() {
         return (authentication, context) -> {
             Authentication a = authentication.get();
             return new AuthorizationDecision(a instanceof ShareAuthentication || directory.allows(emailOf(a)));

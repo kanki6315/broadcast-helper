@@ -50,7 +50,7 @@ import { PointsView } from './TimingPoints'
  * the tower; gaps, best sectors and pit stops over a recorded session
  * (TimingAnalysis); drive time per driver against the filed event's rules; and
  * race control's messages (RaceControl); the track's weather (Weather); and the
- * championships projected live (TimingPoints, members only). Chrome-less like the sheet — it is kept
+ * championships projected live (TimingPoints). Chrome-less like the sheet — it is kept
  * open on a second screen in the booth.
  *
  * Reads, apart from two admin-only controls: the shared connect/disconnect
@@ -81,9 +81,7 @@ const scopePath = (scope: TimingScope, nav: TimingNav) =>
 export default function TimingPage({ scope }: { scope: TimingScope }) {
   const nav = useTimingNav()
   const [params, setParams] = useSearchParams()
-  // The shared link opens the timing reads only, not the standings the points need.
-  const views = nav.shared ? VIEWS.filter((v) => v.id !== 'points') : VIEWS
-  const view: View = views.find((v) => v.id === params.get('view'))?.id ?? 'tower'
+  const view: View = VIEWS.find((v) => v.id === params.get('view'))?.id ?? 'tower'
   // Bumped after an admin connects or disconnects, so the tower follows at once.
   const [feedChanged, setFeedChanged] = useState(0)
   const { value: tower, error: towerError } = useLivePoll<Tower>('/api/live/timing', 2000, feedChanged)
@@ -158,7 +156,7 @@ export default function TimingPage({ scope }: { scope: TimingScope }) {
             ← Timing
           </a>
         )}
-        <ViewTabs views={views} view={view} onChange={setView} />
+        <ViewTabs views={VIEWS} view={view} onChange={setView} />
         {tower && <FeedStatus tower={tower} followingThis={followingThis} />}
         {towerError && tower && <span className="timing-stale">Not updating: {towerError}</span>}
         <LiveConnectControl eventId={eventId} onChanged={() => setFeedChanged((n) => n + 1)} />

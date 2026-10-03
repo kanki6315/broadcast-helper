@@ -10,8 +10,8 @@ import './season/calculator.css'
  * The timing page's Points view: the season calculator's Live mode, beside the
  * tower. It projects the championships of the season the session on track is
  * filed under — the same event the calculator scores against — so it only
- * shows on the page that is following that session. Members only: the shared
- * link opens the timing reads, not the standings.
+ * shows on the page that is following that session. On the shareable link too,
+ * minus the way out to the season calculator, which the link does not reach.
  */
 export function PointsView({ tower, followingThis }: { tower: Tower | null; followingThis: boolean }) {
   const nav = useTimingNav()
@@ -89,8 +89,13 @@ export function PointsView({ tower, followingThis }: { tower: Tower | null; foll
       <section className="calculator timing-points">
         {hub && filedEventId != null && (
           <p className="calculator-note">
-            As it stands: the {hub.year} {hub.seriesName} standings, projected from where the field is running.{' '}
-            <a href={`#/seasons/${hub.id}/calculator`}>Season calculator</a>
+            As it stands: the {hub.year} {hub.seriesName} standings, projected from where the field is running.
+            {!nav.shared && (
+              <>
+                {' '}
+                <a href={`#/seasons/${hub.id}/calculator`}>Season calculator</a>
+              </>
+            )}
           </p>
         )}
         {body}
