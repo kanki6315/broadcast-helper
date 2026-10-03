@@ -72,8 +72,10 @@ function CarButton({ car, onOpen }: { car: AnalysisCar; onOpen: () => void }) {
 
 // ---- gaps -----------------------------------------------------------------------------
 
-/** Categorical slots 1–3 (validated all-pairs in both themes); more cars stay grey context. */
-const SLOTS = 3
+/** Categorical slots 1–8 (validated adjacent-pairs in both themes); more cars stay grey context. */
+const SLOTS = 8
+/** Followed on first open: the class's top three, so the chart starts uncluttered. */
+const DEFAULT_PICKS = 3
 
 export function GapsView({ session }: { session: SessionSummary }) {
   const { value, error } = useLivePoll<GapsResponse>(`/api/live/gaps?session=${session.sessionDbId}`, pollEvery(session))
@@ -110,7 +112,7 @@ function GapPanel({ cls, onOpen }: { cls: GapClass; onOpen: (car: AnalysisCar) =
   const timed = cls.gaps.filter((g) => g.gapMs.length > 0)
   // Picked cars keep their colour slot until unpicked: colour follows the car, not its rank.
   const [picked, setPicked] = useState<{ car: string; slot: number }[]>(() =>
-    timed.slice(0, SLOTS).map((g, i) => ({ car: g.carNumber, slot: i })),
+    timed.slice(0, DEFAULT_PICKS).map((g, i) => ({ car: g.carNumber, slot: i })),
   )
   const [asTable, setAsTable] = useState(false)
   const info = new Map(cls.cars.map((c) => [c.carNumber, c]))
@@ -128,7 +130,7 @@ function GapPanel({ cls, onOpen }: { cls: GapClass; onOpen: (car: AnalysisCar) =
     <section className="an-gaps" aria-label={`${cls.className} gap to the class leader`}>
       <div className="an-gap-bar">
         <p className="an-hint">
-          Gap to the {cls.className} leader after each lap. Pick up to three cars to follow; the rest stay in grey.
+          Gap to the {cls.className} leader after each lap. Pick up to eight cars to follow; the rest stay in grey.
         </p>
         <div className="seg" role="group" aria-label="Show as">
           <button className={`seg-btn${!asTable ? ' active' : ''}`} aria-pressed={!asTable} onClick={() => setAsTable(false)}>
@@ -237,6 +239,9 @@ function GapChart({ gaps, picked }: { gaps: GapCar[]; picked: { car: string; slo
     .filter((l): l is NonNullable<typeof l> => l != null)
     .sort((a, b) => a.y - b.y)
   for (let i = 1; i < labels.length; i++) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 14)
+  // Then back up from the bottom edge, so a bunch of trailing cars never spills under the axis.
+  for (let i = labels.length - 1; i >= 0; i--)
+    labels[i].y = Math.min(labels[i].y, i === labels.length - 1 ? PAD.top + plotH : labels[i + 1].y - 14)
 
   const onMove = (e: PointerEvent<SVGRectElement>) => {
     const box = e.currentTarget.getBoundingClientRect()
@@ -350,7 +355,7 @@ function GapTable({
   picked: { car: string; slot: number }[]
   onOpen: (car: AnalysisCar) => void
 }) {
-  const cars = (picked.length ? picked.map((p) => p.car) : cls.gaps.slice(0, SLOTS).map((g) => g.carNumber))
+  const cars = (picked.length ? picked.map((p) => p.car) : cls.gaps.slice(0, DEFAULT_PICKS).map((g) => g.carNumber))
     .map((c) => cls.gaps.find((g) => g.carNumber === c))
     .filter((g): g is GapCar => !!g)
   const info = new Map(cls.cars.map((c) => [c.carNumber, c]))
