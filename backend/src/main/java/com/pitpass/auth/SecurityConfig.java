@@ -26,7 +26,8 @@ import org.springframework.security.web.context.SecurityContextHolderFilter;
  * except {@code /api/me} (the SPA polls it to learn auth state) and leaves the
  * static bundle open so the app shell can load and drive the login redirect.
  * Authorization is decided per request by {@link LiveAuthorization} — reads for
- * any listed email, writes for admins, and {@code /api/users/**} (the roster +
+ * any listed email or shareable timing link (scratchpads excepted: those are
+ * per person), writes for admins, and {@code /api/users/**} (the roster +
  * denied-login lists) admin-only even for reads — so membership changes apply
  * immediately instead of when the session expires. Login itself only rejects
  * unlisted emails (the access_denied UX, recorded via {@link DeniedLogins});
@@ -57,16 +58,6 @@ public class SecurityConfig {
             "/api/auth/device/start", "/api/auth/device/exchange"
     };
 
-    // What the shareable timing link opens: the timing pages' reads and nothing
-    // else (docs/LIVE_TIMING_ALL_SERIES_PLAN.md, slice 5). GET only; the raw
-    // feed (/api/live/state), championships and every write stay closed to it.
-    static final String[] SHARED_TIMING = {
-            "/api/live/timing", "/api/live/status", "/api/live/sessions", "/api/live/weekends",
-            "/api/live/feed-events/*", "/api/live/gaps", "/api/live/sectors", "/api/live/pits",
-            "/api/live/cars/*", "/api/live/drive-time", "/api/live/race-control",
-            "/api/live/weather"
-    };
-
     @Bean
     @ConditionalOnProperty(prefix = "pit-pass.auth", name = "enabled", havingValue = "true")
     SecurityFilterChain securedChain(HttpSecurity http, UserDirectory directory,
@@ -95,15 +86,20 @@ public class SecurityConfig {
                         .requestMatchers("/api/live/state").access(live.admin())
                         // The share links themselves are admin business, reads included.
                         .requestMatchers("/api/live/share", "/api/live/share/*").access(live.admin())
-                        .requestMatchers(HttpMethod.GET, SHARED_TIMING).access(live.timingReader())
-                        // A viewer's scratchpad is their own writable surface —
-                        // the controller pins the row to the caller's email, so
-                        // member() is sufficient here.
+                        // A viewer's scratchpad is their own surface — the
+                        // controller pins the row to the caller's email, so
+                        // member() is sufficient here, and it keeps the
+                        // shareable link (no email) out of it, reads included.
+                        .requestMatchers(HttpMethod.GET, "/api/events/*/scratchpad").access(live.member())
+                        .requestMatchers(HttpMethod.HEAD, "/api/events/*/scratchpad").access(live.member())
                         .requestMatchers(HttpMethod.PUT, "/api/events/*/scratchpad").access(live.member())
                         // A device signing itself out revokes only its own token.
                         .requestMatchers(HttpMethod.DELETE, "/api/auth/device").access(live.member())
-                        .requestMatchers(HttpMethod.GET, "/api/**").access(live.member())
-                        .requestMatchers(HttpMethod.HEAD, "/api/**").access(live.member())
+                        // Reads: any member, or whoever holds a shareable timing
+                        // link — everything above (admin reads, the raw feed,
+                        // scratchpads) is already ruled out for the link.
+                        .requestMatchers(HttpMethod.GET, "/api/**").access(live.reader())
+                        .requestMatchers(HttpMethod.HEAD, "/api/**").access(live.reader())
                         // Every other method — including OPTIONS and anything
                         // exotic — fails closed to admins. Same-origin SPA sends
                         // no CORS preflights, so nothing legitimate is lost.

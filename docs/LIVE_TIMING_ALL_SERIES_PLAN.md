@@ -362,6 +362,14 @@ let viewers behind one network (a booth's Wi-Fi) throttle each other.
 - Manage → Live timing lists the working links with a name field to make one
   and Revoke on each row.
 
+### Follow-up: the link reads what a member reads — DONE 2026-10-03
+The Points view needs the season's standings, which the timing-only
+allowlist did not open, so shared pages hid it. The allowlist
+(`SecurityConfig.SHARED_TIMING`) is gone: a share token now passes every
+GET/HEAD a member passes (`LiveAuthorization.reader`), except the scratchpads,
+which are per person. Admin reads and all writes stay closed. Shared weekend
+pages show the Points tab; its "Season calculator" link is hidden there.
+
 ### Slice 5: the share token (backend)
 Modelled on `DeviceTokens` / `DeviceTokenFilter`, simplified by the
 decisions above.

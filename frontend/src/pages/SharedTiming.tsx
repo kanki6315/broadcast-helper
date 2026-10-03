@@ -9,7 +9,7 @@ import TimingPage from './TimingPage'
  * The shareable timing link: `#/live/<token>` (the timing home) and
  * `#/live/<token>/weekend/<id>` (one series weekend). Signed-out and
  * chrome-less; the token in the URL rides on every API call (lib/shareLink.ts) and
- * opens the timing reads only. A revoked or replaced link answers 401, and
+ * reads what a member reads, the scratchpads apart. A revoked or replaced link answers 401, and
  * the page says so instead of sending anyone to sign in.
  */
 export default function SharedTiming({ token, feedEventDbId }: { token: string; feedEventDbId?: number }) {

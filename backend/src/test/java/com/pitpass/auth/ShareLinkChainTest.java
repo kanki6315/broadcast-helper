@@ -23,8 +23,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * The shareable timing links through the secured chain: each opens the
- * timing pages' reads and nothing else; links work side by side and revoking
+ * The shareable timing links through the secured chain: each reads what a
+ * member reads, scratchpads and admin reads excepted, and writes nothing; links work side by side and revoking
  * one leaves the others working; a revoked one gets the 401 the shared page
  * turns into "this link no longer works". Committed fixtures, like
  * SecuredChainTest; the local database's own working links are restored
@@ -73,7 +73,7 @@ class ShareLinkChainTest {
     }
 
     @Test
-    void theLinkOpensTheTimingReadsAndNothingElse() throws Exception {
+    void theLinkReadsWhatAMemberReadsAndWritesNothing() throws Exception {
         String token = tokens.issue("Sam", ADMIN).token();
 
         for (String path : new String[] {"/api/live/timing", "/api/live/weekends", "/api/live/sessions?feedEvent=1"}) {
@@ -84,16 +84,26 @@ class ShareLinkChainTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.requestedBy").doesNotExist())
                 .andExpect(jsonPath("$.holder").doesNotExist());
+        // Member reads, the Points view's among them: past the chain (a
+        // missing row may 404, but never 401/403).
+        for (String path : new String[] {"/api/series", "/api/live/championships/1", "/api/live/classification",
+                "/api/live/feed-championships", "/api/events/1/sheet", "/api/seasons/1"}) {
+            int code = mvc.perform(get(path).header(H, token)).andReturn().getResponse().getStatus();
+            assertTrue(code != 401 && code != 403, path + " answered " + code);
+        }
 
-        // Authenticated but not a member: everything else is 403, not a login bounce.
-        for (String path : new String[] {"/api/live/state", "/api/live/championships/1", "/api/live/classification",
-                "/api/live/share", "/api/live/feed-championships", "/api/series", "/api/events/1/sheet"}) {
+        // Authenticated but not a member: admin reads, the raw feed and the
+        // per-person scratchpads are 403, not a login bounce.
+        for (String path : new String[] {"/api/live/state", "/api/live/share", "/api/users",
+                "/api/users/sessions", "/api/imports/alkamel/years", "/api/events/1/scratchpad"}) {
             mvc.perform(get(path).header(H, token)).andExpect(status().isForbidden());
         }
         mvc.perform(post("/api/live/connect").header(H, token).contentType("application/json").content("{}"))
                 .andExpect(status().isForbidden());
         mvc.perform(put("/api/live/feed-events/1/event").header(H, token).contentType("application/json")
                 .content("{\"none\":true}")).andExpect(status().isForbidden());
+        mvc.perform(put("/api/events/1/scratchpad").header(H, token).contentType("application/json")
+                .content("{}")).andExpect(status().isForbidden());
         mvc.perform(get("/api/me").header(H, token)).andExpect(jsonPath("$.email").doesNotExist());
     }
 
