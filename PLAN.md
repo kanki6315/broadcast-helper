@@ -865,6 +865,17 @@ display size.)
   bits were extracted for reuse: `lib/useSeriesEvents` (the series/events fetch),
   `lib/importGroups` (filename→round grouping + kind labels), and
   `ImportStatusIcon`.
+- **Carrera Cup Asia timing PDFs (`PCCA_PDF`, "generic PCCA parser") — ✅ DONE
+  (2026-10-09).** Rounds away from F1 weekends (Bangsaen, Sepang) are timed by
+  Time Service Asia. `parser/parse_pcca_pdf.py` reads its race classification,
+  qualifying (single session, best-lap combined, Q1+Q2 summed combined) and
+  starting grid (one per line, or two-up split at the "Row N" label) into the
+  F1 sidecar's JSON, so `F1PdfMapper` maps both. The weekend race number comes
+  from the header's round list or the file name ("Rounds 7&8"). Grids print no
+  class and Bangsaen's no entrant either, so commit qualifying/results first;
+  `upsertEntry` borrows a missing team the way it borrows a missing class.
+  Zhuhai (Chinese timing system) and Fuji (Japanese Excel export) layouts are
+  not covered yet. Shanghai and Singapore are F1 weekends (`F1_PDF`).
 - **F1 support-race PDFs (`F1_PDF`) — ✅ DONE (2026-09-16).** Carrera Cup NA's
   Formula 1 weekends (Miami every year, Montréal 2024–25, Austin 2025) publish
   F1-paddock-style sheets, and Al Kamel posts them as **PDF only** — the XML

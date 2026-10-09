@@ -15,6 +15,7 @@ the standard the one-make cups share; other series' PDFs vary by timing provider
 | `parse_points.py` | championship-points PDF | [`points.json`](POINTS_SCHEMA.md) |
 | `parse_grid_pdf.py` | IMSA starting-grid PDF | grid JSON (see docstring) |
 | `parse_f1_pdf.py` | F1 support-race results / qualifying / grid PDF | results-or-grid JSON (see docstring) |
+| `parse_pcca_pdf.py` | Carrera Cup Asia (Time Service Asia) results / qualifying / grid PDF | same JSON as `parse_f1_pdf.py` |
 | `extract_team_sheet_pages.py` | team-sheets PDF | car number → first page map |
 
 `extract_team_sheet_pages.py` is a locator, not a parser: it reads the first

@@ -67,6 +67,10 @@ pit-pass:
   # race/qualifying classification and starting grid — into one JSON shape.
   f1-pdf-parser:
     script: ${F1_PDF_PARSER_SCRIPT:../parser/parse_f1_pdf.py}
+  # Sibling sidecar (same python) reading Carrera Cup Asia's Time Service Asia
+  # timing sheets into the F1 sidecar's JSON shape.
+  pcca-pdf-parser:
+    script: ${PCCA_PDF_PARSER_SCRIPT:../parser/parse_pcca_pdf.py}
   # Sibling sidecar (same python) reading IMSA's pit-lane-assignments PDF
   # into box -> car/team per series column.
   pit-assignments-parser:

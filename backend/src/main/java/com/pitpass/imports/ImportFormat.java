@@ -25,6 +25,10 @@ public enum ImportFormat {
     // race classification, qualifying classification and starting grid; like
     // the other PDF families it has to be chosen explicitly.
     F1_PDF("F1", Medium.PDF, "F1 support race — PDF (results/qualifying/grid)"),
+    // Carrera Cup Asia rounds away from F1 weekends are timed by Time Service
+    // Asia; its sheets (results, qualifying incl. combined, grid) read into the
+    // F1 sidecar's JSON shape. Explicit choice, like every PDF family.
+    PCCA_PDF("PCCA", Medium.PDF, "Carrera Cup Asia — timing PDF (results/qualifying/grid)"),
     // One subsession export holds a whole meeting — qualifying, every race, and
     // each race's grid — so it stages as several batches. The same payload comes
     // back from the Data API, so IRacingClient feeds this format's parser too.

@@ -62,6 +62,7 @@ public class ImportService {
     private final String pointsParserScript;
     private final String gridPdfParserScript;
     private final String f1PdfParserScript;
+    private final String pccaPdfParserScript;
 
     public ImportService(JdbcClient db, ObjectMapper json, IRacingClient iracing,
                          com.pitpass.formats.RaceFormatService raceFormats,
@@ -72,7 +73,8 @@ public class ImportService {
                          @org.springframework.beans.factory.annotation.Value("${pit-pass.entry-list-parser.script:../parser/parse_entry_list.py}") String parserScript,
                          @org.springframework.beans.factory.annotation.Value("${pit-pass.points-parser.script:../parser/parse_points.py}") String pointsParserScript,
                          @org.springframework.beans.factory.annotation.Value("${pit-pass.grid-pdf-parser.script:../parser/parse_grid_pdf.py}") String gridPdfParserScript,
-                         @org.springframework.beans.factory.annotation.Value("${pit-pass.f1-pdf-parser.script:../parser/parse_f1_pdf.py}") String f1PdfParserScript) {
+                         @org.springframework.beans.factory.annotation.Value("${pit-pass.f1-pdf-parser.script:../parser/parse_f1_pdf.py}") String f1PdfParserScript,
+                         @org.springframework.beans.factory.annotation.Value("${pit-pass.pcca-pdf-parser.script:../parser/parse_pcca_pdf.py}") String pccaPdfParserScript) {
         this.db = db;
         this.json = json;
         this.iracing = iracing;
@@ -85,6 +87,7 @@ public class ImportService {
         this.pointsParserScript = pointsParserScript;
         this.gridPdfParserScript = gridPdfParserScript;
         this.f1PdfParserScript = f1PdfParserScript;
+        this.pccaPdfParserScript = pccaPdfParserScript;
     }
 
     // ---------------------------------------------------------------- staging
@@ -119,6 +122,7 @@ public class ImportService {
             case IMSA_GRID_PDF -> List.of(stageImsaGridPdf(filename, content));
             case IMSA_CSV -> List.of(stageImsaCsv(filename, content));
             case F1_PDF -> List.of(stageF1Pdf(filename, content));
+            case PCCA_PDF -> List.of(stagePccaPdf(filename, content));
             case IRACING_JSON -> stageIRacingJson(content);
         };
         if (source != null) {
@@ -829,16 +833,39 @@ public class ImportService {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "Not a PDF file (expected an F1 support-race results, qualifying or grid PDF)");
         }
-        JsonNode root;
+        return stageTimingSheet(runTimingSheetParser(f1PdfParserScript, "F1 PDF", "f1-pdf", filename, pdf),
+                "F1 weekend");
+    }
+
+    /** Stages a Carrera Cup Asia timing sheet (Time Service Asia: results,
+     *  qualifying incl. combined, starting grid). The sidecar writes the F1
+     *  sidecar's JSON shape, so both share {@link F1PdfMapper} and the same
+     *  reviewer-picks-the-event flow. */
+    private Staged stagePccaPdf(String filename, byte[] pdf) {
+        if (!isPdf(pdf)) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Not a PDF file (expected a Carrera Cup Asia results, qualifying or grid PDF)");
+        }
+        return stageTimingSheet(runTimingSheetParser(pccaPdfParserScript, "Carrera Cup Asia PDF", "pcca-pdf",
+                filename, pdf), "Carrera Cup Asia");
+    }
+
+    private JsonNode runTimingSheetParser(String script, String label, String slug, String filename, byte[] pdf) {
         try {
-            root = json.readTree(runPdfParser(f1PdfParserScript, "F1 PDF", "f1-pdf", filename, pdf));
+            return json.readTree(runPdfParser(script, label, slug, filename, pdf));
         } catch (IOException e) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "F1 PDF parser returned invalid JSON: " + e.getMessage());
+                    label + " parser returned invalid JSON: " + e.getMessage());
         }
-        String header = "%s %d — %s".formatted(
-                root.path("location").asText("F1 weekend"), root.path("year").asInt(),
-                root.path("session").asText());
+    }
+
+    private Staged stageTimingSheet(JsonNode root, String fallbackLocation) {
+        // A season round number beside the weekend's race ("Race 2 (Round 10)")
+        // tells the reviewer which standings round the session is.
+        String round = root.path("round").isInt() ? " (Round %d)".formatted(root.path("round").asInt()) : "";
+        String header = "%s %d — %s%s".formatted(
+                root.path("location").asText(fallbackLocation), root.path("year").asInt(),
+                root.path("session").asText(), round);
         String mark = root.path("revised").asBoolean(false) ? " (Revised)" : "";
         if (F1PdfMapper.isGrid(root)) {
             GridImport parsed = F1PdfMapper.mapGrid(root);
@@ -2968,6 +2995,26 @@ public class ImportService {
                         + " has no class in this file and nothing this season classifies it — import a file"
                         + " that does (qualifying, results, entry list) first");
             }
+        }
+        // Likewise a source with no entrant at all: Carrera Cup Asia's Bangsaen
+        // grids print position, number, name and time only. Same order — the
+        // event's own entry, then the car earlier in the season (a placeholder
+        // the results overwrite) — and the same named gap when neither exists.
+        if (team == null || team.isBlank()) {
+            team = db.sql("SELECT team_name FROM entry WHERE event_id = :e AND car_number = :n")
+                    .param("e", eventId).param("n", number).query(String.class).optional()
+                    .or(() -> db.sql("""
+                                    SELECT en.team_name FROM entry en
+                                             JOIN event ev ON ev.id = en.event_id
+                                    WHERE ev.season_id = (SELECT season_id FROM event WHERE id = :e)
+                                      AND en.car_number = :n
+                                    ORDER BY ev.event_date DESC NULLS LAST, ev.id DESC
+                                    LIMIT 1
+                                    """)
+                            .param("e", eventId).param("n", number).query(String.class).optional())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                            "Car #" + number + " has no team in this file and nothing this season names one"
+                            + " — import a file that does (qualifying, results, entry list) first"));
         }
         // is_guest is deliberately untouched on update: it is user-managed state.
         // manufacturer/class_group only overwrite when the source supplies them —
