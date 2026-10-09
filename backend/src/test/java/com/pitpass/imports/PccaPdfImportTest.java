@@ -134,6 +134,36 @@ class PccaPdfImportTest {
     }
 
     @Test
+    void fujiExcelExportCommitsResultsThenGrid() throws Exception {
+        Seeded s = seed("Fuji");
+        // Qualifying first: #4 is on the grid but never started, so only
+        // qualifying names its class.
+        service.commit(stage("2026_PCCA_Fuji Rounds 5&6_Qualifying_1.pdf"), target(s.eventId(), "QUALIFYING", 1, null));
+        service.commit(stage("2026_PCCA_Fuji Rounds 5&6_Results_R5.pdf"), target(s.eventId(), "RACE", 1, null));
+        service.commit(stage("2026_PCCA_Fuji Rounds 5&6_Grid_R5.pdf"), target(s.eventId(), "RACE", 1, null));
+
+        Map<String, Object> race = db.sql("""
+                        SELECT count(*) FILTER (WHERE r.position_overall IS NOT NULL) AS classified,
+                               count(*) FILTER (WHERE r.status = 'Disqualified') AS disqualified,
+                               (SELECT count(*) FROM grid_position g WHERE g.session_id = rs.id) AS grid
+                        FROM race_session rs JOIN result r ON r.session_id = rs.id
+                        WHERE rs.event_id = :event AND rs.session_type = 'RACE'
+                        GROUP BY rs.id
+                        """)
+                .param("event", s.eventId()).query().singleRow();
+        assertEquals(25L, race.get("classified"));
+        assertEquals(1L, race.get("disqualified"));
+        assertEquals(30L, race.get("grid"));
+
+        Map<String, String> teams = db.sql("SELECT car_number, team_name FROM entry WHERE event_id = :e")
+                .param("e", s.eventId())
+                .query((rs, i) -> Map.entry(rs.getString(1), rs.getString(2))).list()
+                .stream().collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        assertEquals("Porsche Vietnam", teams.get("12"));
+        assertEquals("Wetrade X Phantom Global", teams.get("8"));
+    }
+
+    @Test
     void gridWithoutEntrantsKeepsTheTeamsTheSeasonAlreadyKnows() throws Exception {
         Seeded s = seed("Bangsaen");
         // Bangsaen's grids print no entrant. Round 7's results name every car

@@ -1,7 +1,23 @@
 """Parse a Porsche Carrera Cup Asia timing PDF into JSON (the generic PCCA parser).
 
-Carrera Cup Asia rounds away from Formula 1 weekends are timed by Time Service
-Asia (timingresult.com / results.timing.asia). Their sheets share one family
+Carrera Cup Asia rounds away from Formula 1 weekends are timed locally, in
+three layouts this parser tells apart from the first page:
+
+* **Time Service Asia** (Bangsaen, Sepang) — described below.
+* **Fuji** — a Japanese Excel export ("Round.5 2026 / 5 / 9", "Official
+  classification", "Fuji Speedway(4,563m)"). One car per line at fixed column
+  positions, read by x because the text run glues columns together
+  ("MOZWetrade", "Masters1"); minutes are written 1'39.953, course records
+  carry an R prefix, a penalised total prints its pre-penalty time beneath
+  and loses its printed gap (gaps are recomputed from totals). Grids are a
+  four-column stagger: a "position number" pair with the driver and entrant
+  on the two lines below. Some letters are full-width ("Poｓrche").
+* **Zhuhai** — a Chinese timing system ("官方成绩" results, "排位表" grid).
+  Line per car with the entrant below, like Sepang, but no nationality, and
+  no English venue (the file name names it). Grids are two-up, each half a
+  position / "number name" / time stack, the right half a few points lower.
+
+The Time Service Asia (timingresult.com / results.timing.asia) sheets share one family
 look — a header block naming the event, dates and "<Circuit> - <N>mtr.", a
 "Final result <session>" title, then one line per car — in a few variants
 this parser reads by their column header:
@@ -45,6 +61,7 @@ import json
 import logging
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 import pdfplumber
@@ -98,11 +115,16 @@ def _split_name(name: str) -> tuple[str, str]:
     return words[0], " ".join(words[1:])
 
 
+# Misspellings a sheet prints for a team that exists under its real name.
+# Fuji's "Poｓrche Vietnam" (a full-width s, transposed) reads "Posrche".
+TEAM_TYPOS = {"Posrche": "Porsche"}
+
+
 def _team(text: str | None) -> tuple[str | None, bool]:
     """'Team Jebsen #' -> ('Team Jebsen', True)."""
     if not text:
         return None, False
-    text = " ".join(text.split())
+    text = " ".join(TEAM_TYPOS.get(w, w) for w in text.split())
     dealer = text.endswith("#")
     text = text.rstrip("#").strip()
     return text or None, dealer
@@ -162,8 +184,13 @@ def _header(lines: list[str]) -> dict:
 
 # ---------------------------------------------------------------- tables
 
+def _nfkc(text: str) -> str:
+    """Fuji's sheets set some letters full-width ("Poｓrche Vietnam")."""
+    return unicodedata.normalize("NFKC", text)
+
+
 def _page_lines(pdf) -> list[list[str]]:
-    return [(p.extract_text() or "").split("\n") for p in pdf.pages]
+    return [_nfkc(p.extract_text() or "").split("\n") for p in pdf.pages]
 
 
 def _body(page: list[str]) -> tuple[list[str], list[str]]:
@@ -417,7 +444,7 @@ def _grid(pdf, penalised: set[str]) -> list[dict]:
     line (Bangsaen, with no entrants)."""
     slots = []
     for page in pdf.pages:
-        words = page.extract_words()
+        words = [{**w, "text": _nfkc(w["text"])} for w in page.extract_words()]
         two_up = _two_up_grid(words, penalised)
         if two_up:
             slots += two_up
@@ -472,81 +499,459 @@ def _grid(pdf, penalised: set[str]) -> list[dict]:
     return slots
 
 
+# ---------------------------------------------------------------- shared
+
+def _ms(text: str) -> int:
+    """'1:39.953' / "25'12.035" / '1.341' -> milliseconds (integer: gaps
+    computed from totals must not pick up float error)."""
+    text = text.replace("'", ":")
+    whole, _, frac = text.partition(".")
+    total = 0
+    for part in whole.split(":"):
+        total = total * 60 + int(part)
+    return total * 1000 + int((frac + "000")[:3])
+
+
+def _fmt_ms(ms: int) -> str:
+    s, milli = divmod(ms, 1000)
+    m, s = divmod(s, 60)
+    return f"+{m}:{s:02d}.{milli:03d}" if m else f"+{s}.{milli:03d}"
+
+
+def _lap_time(text: str | None) -> str | None:
+    """Fuji prints minutes with an apostrophe (1'39.953) and course records
+    with an R prefix; the importer wants 1:39.953."""
+    if not text:
+        return None
+    m = re.search(r"(\d{1,2})'(\d{2}\.\d{3})", text) or re.search(r"(\d{1,2}):(\d{2}\.\d{3})", text)
+    return f"{int(m.group(1))}:{m.group(2)}" if m else None
+
+
+def _race_gaps(rows: list[dict]) -> int | None:
+    """Gaps to the winner from laps and total times, for sheets whose printed
+    gap is missing on some rows (Fuji drops it beside a time penalty)."""
+    leader = next((r for r in rows if r["classified"] and r["position"] == 1), None)
+    if leader is None:
+        return None
+    for r in rows:
+        if not r["classified"] or r is leader or r["laps"] is None:
+            continue
+        if r["laps"] < leader["laps"]:
+            n = leader["laps"] - r["laps"]
+            r["gap"] = f"{n} Lap" if n == 1 else f"{n} Laps"
+        elif r["time"] and leader["time"]:
+            r["gap"] = _fmt_ms(_ms(r["time"]) - _ms(leader["time"]))
+    return leader["laps"]
+
+
+def _location_from_filename(filename: str | None) -> str | None:
+    """'PCCA 2026_Zhuhai Rounds 3&4_Round 3 Official Results.pdf' -> 'Zhuhai'."""
+    m = re.search(r"(?:^|_)\s*([A-Za-z][A-Za-z ]*?)\s+Rounds?\s+\d", filename or "")
+    return m.group(1).strip() if m else None
+
+
+def _row(number, name, star, cls, team, penalised, position=None, nat=None) -> dict:
+    first, surname = _split_name(" ".join(name.split()))
+    team, dealer = _team(team)
+    return {"position": position, "number": number, "first_name": first, "surname": surname,
+            "class": cls, "penalty": number in penalised, "non_series": bool(star),
+            "nationality": nat, "team": team, "dealer_trophy": dealer}
+
+
+def _words(page) -> list[dict]:
+    words = page.extract_words(x_tolerance=1.5, keep_blank_chars=False)
+    for w in words:
+        w["text"] = _nfkc(w["text"])
+    return words
+
+
+def _word_rows(words: list[dict], tolerance: float = 2.0) -> list[tuple[float, list[dict]]]:
+    rows: list[tuple[float, list[dict]]] = []
+    for w in sorted(words, key=lambda w: w["top"]):
+        if rows and w["top"] - rows[-1][0] <= tolerance:
+            rows[-1][1].append(w)
+        else:
+            rows.append((w["top"], [w]))
+    return [(top, sorted(ws, key=lambda w: w["x0"])) for top, ws in rows]
+
+
+# ---------------------------------------------------------------- Time Service Asia
+
+def _parse_tsa(pdf, pages: list[list[str]], filename: str) -> dict:
+    header = _header(pages[0])
+    title = header["title"]
+    notes: list[str] = []
+    out = {"event": header["event"], "location": header["location"], "year": header["year"],
+           "rounds": _rounds(header["head"], filename), "title": title}
+
+    if m := GRID_TITLE_RE.match(title):
+        for page in pages:
+            notes += [l for l in page if NOTE_START_RE.match(l)]
+        notes = _join_notes(notes)
+        out.update(document="GRID", rows=_grid(pdf, _penalised(notes)),
+                   kind=m.group("kind").lower(), n=int(m.group("n")))
+    elif m := RACE_TITLE_RE.match(title):
+        cars, notes, _ = _car_rows(pages)
+        rows, laps = _race(cars, _penalised(notes))
+        out.update(document="RACE", rows=rows, laps=laps, kind=m.group("kind").lower(), n=int(m.group("n")))
+        counts = COUNTS_RE.search(" ".join(pages[0][:header["title_idx"] + 3]))
+        if counts:
+            classified = sum(1 for r in rows if r["classified"])
+            not_classified = len(rows) - classified
+            if (classified, not_classified) != (int(counts.group("classified")), int(counts.group("nc"))):
+                raise ValueError(
+                    f"read {classified} classified + {not_classified} not classified, but the sheet "
+                    f"says {counts.group('classified')} + {counts.group('nc')}")
+    elif m := QUALI_TITLE_RE.match(title):
+        cars, notes, _ = _car_rows(pages)
+        combined_sum = any("Qual-1" in l for page in pages for l in page[:12])
+        rest = m.group("rest").strip()
+        out.update(document="QUALIFYING", rows=_quali(cars, _penalised(notes), combined_sum),
+                   qualifying="combined" if combined_sum or rest.lower().startswith("combined") else rest)
+    else:
+        raise ValueError(f"unrecognised session title: {title!r}")
+    out["notes"] = notes
+    return out
+
+
+# ---------------------------------------------------------------- Fuji (Japanese Excel export)
+
+FUJI_TITLE_RE = re.compile(r"^(?:Round\.?\s*(?P<round>\d+)|Qualifying\s+Q(?P<q>\d+))\s+(?P<year>20\d\d)\s*/")
+FUJI_CIRCUIT_RE = re.compile(r"^(?P<loc>.+?)\s*\([\d,.]+\s*m\)")
+FUJI_TIME_RE = re.compile(r"R?\d{1,2}'\d{2}\.\d{3}.*")
+FUJI_STOP_RE = re.compile(r"^(?:Steward|Stewards|Fastest Lap|Start Time|Entry\s*:|Chief Steward|R\s*:)",
+                          re.IGNORECASE)
+
+
+def _fuji_header(page) -> dict:
+    lines = (page.extract_text() or "").split("\n")
+    m = next((FUJI_TITLE_RE.match(l) for l in lines[:3] if FUJI_TITLE_RE.match(l)), None)
+    if m is None:
+        raise ValueError("not a Carrera Cup Asia timing PDF: no 'Round.N' / 'Qualifying QN' title")
+    loc = next((FUJI_CIRCUIT_RE.match(l).group("loc") for l in lines[:8] if FUJI_CIRCUIT_RE.match(l)), None)
+    return {"match": m, "location": loc, "year": int(m.group("year")), "lines": lines}
+
+
+def _fuji_columns(rows, names: list[str]) -> dict | None:
+    """x0 of each header word (first occurrence, left to right)."""
+    for _, ws in rows:
+        texts = [w["text"] for w in ws]
+        if texts[:2] == ["Pos", "No"]:
+            cols = {}
+            for w in ws:
+                cols.setdefault(w["text"], w["x0"])
+            if all(n in cols for n in names):
+                return cols
+    return None
+
+
+def _fuji_table(pdf, quali: bool, penalised: set[str]) -> list[dict]:
+    """Fuji's classification: one car per line, columns at fixed x. Read by
+    position, not by text (the text joins the nationality onto the entrant)."""
+    out = []
+    not_classified = False
+    for page in pdf.pages:
+        rows = _word_rows(_words(page))
+        cols = _fuji_columns(rows, ["Class", "Driver", "Nat", "Entrant"])
+        if cols is None:
+            continue
+        number_end = cols["Class"] - 5
+        driver_x, nat_x, entrant_x = cols["Driver"] - 1, cols["Nat"] - 1, cols["Entrant"] - 1
+        figures_x = (cols["Best"] if quali else cols["Lap"]) - 2
+        started = False
+        for top, ws in rows:
+            line = " ".join(w["text"] for w in ws)
+            if not started:
+                started = [w["text"] for w in ws][:2] == ["Pos", "No"]
+                continue
+            if FUJI_STOP_RE.match(line):
+                break
+            if "Not Classified" in line or "Not Qualified" in line:
+                not_classified = "Not Classified" in line
+                continue
+            pos = next((w["text"] for w in ws if w["x1"] < cols["No"] - 2), None)
+            number = next((w["text"] for w in ws if cols["No"] - 4 <= w["x0"] < number_end
+                           and w["text"].isdigit()), None)
+            if number is None:
+                continue  # a penalty sub-line ("(26'31.243 + 5sec)") or a page header
+            cls = next((w["text"] for w in ws if number_end <= w["x0"] < driver_x
+                        and re.fullmatch(CLASSES, w["text"])), None)
+            driver = [w["text"] for w in ws if driver_x <= w["x0"] < nat_x]
+            nat = next((w["text"] for w in ws if nat_x <= w["x0"] < entrant_x), None)
+            # A course-record time ("R1'41.767") starts inside the entrant
+            # column, so lap times are told apart by shape as well as place.
+            timed = [w for w in ws if FUJI_TIME_RE.fullmatch(w["text"])]
+            team = [w["text"] for w in ws if entrant_x <= w["x0"] < figures_x and w not in timed]
+            # Some rows set the entrant flush against the nationality, so the
+            # two come out as one word ("MOZWetrade").
+            if nat and len(nat) > 3 and re.match(r"[A-Z]{3}[A-Z]?[a-z0-9]", nat):
+                nat, team = nat[:3], [nat[3:]] + team
+            figures = [w["text"] for w in ws if w["x0"] >= figures_x or w in timed]
+            name = " ".join(driver)
+            star = name.endswith("*")
+            row = _row(number, name.rstrip("*"), star, cls, " ".join(team), penalised,
+                       position=int(pos) if pos and pos.isdigit() else None, nat=nat)
+            status = "DSQ" if "DSQ" in figures else None
+            if quali:
+                times = [f for f in figures if _lap_time(f)]
+                row.update({"classified": row["position"] is not None, "status": status,
+                            "time": _lap_time(times[0]) if times else None, "second_time": None,
+                            "laps": None})
+            else:
+                laps = int(figures[0]) if figures and figures[0].isdigit() else None
+                total = _lap_time(figures[1]) if len(figures) > 1 else None
+                total = None if total is None else total  # keep minutes:seconds
+                if len(figures) > 1 and re.match(r"\d+'\d{2}\.\d{3}", figures[1]):
+                    t = re.match(r"(\d+)'(\d{2}\.\d{3})", figures[1])
+                    total = f"{int(t.group(1))}:{t.group(2)}"
+                kph = next((float(f) for f in figures if re.fullmatch(r"\d{2,3}\.\d{3}", f)), None)
+                lap_times = [f for f in figures[2:] if re.fullmatch(r"R?\d{1,2}'\d{2}\.\d{3}", f)]
+                best = _lap_time(lap_times[-1]) if lap_times else None
+                slash = figures.index("/") if "/" in figures else None
+                best_lap = int(figures[slash - 1]) if slash and figures[slash - 1].isdigit() else None
+                row.update({"classified": row["position"] is not None and not not_classified,
+                            "status": status, "laps": laps, "time": total, "gap": None, "interval": None,
+                            "kph": kph, "fastest_lap": best, "fastest_lap_number": best_lap or None})
+            out.append(row)
+    return out
+
+
+def _fuji_grid(pdf, penalised: set[str]) -> list[dict]:
+    """Fuji's staggered grid: each slot is a position and car number side by
+    side, the driver on the line below and the entrant below that, all in the
+    slot's column. Notes printed beside a short column stay out of it because
+    only words just below a slot, between its column and the next, join it."""
+    slots = []
+    for page in pdf.pages:
+        words = _words(page)
+        anchors = []
+        for w in words:
+            if not w["text"].isdigit():
+                continue
+            car = next((c for c in words if c is not w and c["text"].isdigit()
+                        and abs(c["top"] - w["top"]) <= 2 and 35 <= c["x0"] - w["x0"] <= 55), None)
+            if car is not None:
+                anchors.append((w, car))
+        # A real column repeats down the page; a stray digit pair (a car
+        # number beside the "69" in "Porsche Own Retail 69 Team") does not.
+        xs = [p["x0"] for p, _ in anchors]
+        starts = sorted({round(x) for x in xs if sum(abs(x - o) <= 4 for o in xs) >= 3})
+        anchors = [(p, c) for p, c in anchors if any(abs(p["x0"] - x) <= 4 for x in starts)]
+        for pos, car in anchors:
+            col_start = pos["x0"] - 2
+            nxt = [x for x in starts if x > pos["x0"] + 5]
+            col_end = (min(nxt) - 25) if nxt else page.width
+            def band(lo, hi):
+                return " ".join(w["text"] for w in sorted(
+                    (w for w in words if lo < w["top"] - pos["top"] <= hi and col_start <= w["x0"] < col_end
+                     and w is not pos and w is not car), key=lambda w: w["x0"]))
+            name = band(4, 16)
+            team = band(16, 28)
+            if not name:
+                continue
+            star = name.endswith("*")
+            slot = _row(car["text"], name.rstrip("*"), star, None, team, penalised, position=int(pos["text"]))
+            slot["time"] = None
+            slots.append(slot)
+    slots.sort(key=lambda s: s["position"])
+    return slots
+
+
+def _parse_fuji(pdf, pages: list[list[str]], filename: str) -> dict:
+    head = _fuji_header(pdf.pages[0])
+    text = "\n".join("\n".join(p) for p in pages)
+    # Notes start a line, except on the grid, where one sits beside a row.
+    notes = _join_notes([m.group(0) for p in pages for l in p
+                         if (m := re.search(r"Stewards?\s+Decision.*$", l, re.IGNORECASE))])
+    penalised = _penalised(notes)
+    out = {"event": f"{head['location'] or 'Fuji'} {head['year']}", "location": head["location"],
+           "year": head["year"], "rounds": _rounds("", filename), "title": head["lines"][0], "notes": notes}
+    m = head["match"]
+    if "Official Starting Grid" in text:
+        out.update(document="GRID", rows=_fuji_grid(pdf, penalised), kind="round", n=int(m.group("round")))
+    elif m.group("q"):
+        out.update(document="QUALIFYING", rows=_fuji_table(pdf, True, penalised), qualifying=m.group("q"))
+    else:
+        rows = _fuji_table(pdf, False, penalised)
+        out.update(document="RACE", rows=rows, laps=_race_gaps(rows), kind="round", n=int(m.group("round")))
+        counts = re.search(r"Start\s*:\s*(\d+)\s+Finish\s*:\s*(\d+)", text)
+        if counts and sum(r["classified"] for r in rows) != int(counts.group(2)):
+            raise ValueError(f"read {sum(r['classified'] for r in rows)} classified, "
+                             f"but the sheet says Finish : {counts.group(2)}")
+    return out
+
+
+# ---------------------------------------------------------------- Zhuhai (Chinese timing system)
+
+ZH_SESSION_RE = re.compile(r"^Porsche Carrera Cup Asia\s*-\s*(?:Round\s+(?P<round>\d+)|Qualifying\s+(?P<q>\d+))",
+                           re.IGNORECASE)
+ZH_CAR_RE = re.compile(
+    rf"^(?P<pos>\d+|{STATUS_WORDS})\s+(?P<nbr>\d+)\s+(?P<name>.+?)\s*(?P<star>\*)?\s+"
+    rf"(?P<cls>{CLASSES})\s+(?P<pic>\d+|{STATUS_WORDS})(?P<tail>(?:\s+\S+)*)\s*$")
+ZH_STOP_RE = re.compile(r"^(?:比赛场地|仲裁|第\s*\d+\s*页|\d+-\(|\$\()")
+ZH_NOTE_RE = re.compile(r"^(?:\d+\.\s*)?Stewards?\s+Decision", re.IGNORECASE)
+
+
+def _zh_cars(pages: list[list[str]], penalised: set[str], quali: bool) -> list[dict]:
+    out = []
+    for page in pages:
+        start = next((i for i, l in enumerate(page) if l.startswith("Pos No")), None)
+        if start is None:
+            continue
+        not_classified = False
+        for line in page[start + 1:]:
+            if ZH_STOP_RE.match(line) or ZH_NOTE_RE.match(line) or re.match(r"^#\d+\s*\+", line):
+                break
+            if line.lower().startswith("not classified"):
+                not_classified = True
+                continue
+            m = ZH_CAR_RE.match(line)
+            if m is None:
+                if out and out[-1]["team"] is None:
+                    out[-1]["team"], out[-1]["dealer_trophy"] = _team(line)
+                continue
+            pos = m.group("pos")
+            row = _row(m.group("nbr"), m.group("name"), m.group("star"), m.group("cls"), None, penalised,
+                       position=int(pos) if pos.isdigit() else None)
+            t = m.group("tail").split()
+            gaps = [x for x in t if x.startswith("+")]
+            plain = [x for x in t if not x.startswith("+")]
+            status = None if pos.isdigit() else pos
+            if quali:
+                # [+Diff +Gap] laps best
+                row.update({"classified": row["position"] is not None, "status": status,
+                            "laps": int(plain[0]) if plain and plain[0].isdigit() else None,
+                            "time": _lap_time(plain[1]) if len(plain) > 1 else None, "second_time": None})
+            else:
+                # laps total [+Diff +Gap] best in
+                laps = int(plain[0]) if plain and plain[0].isdigit() else None
+                total = plain[1] if len(plain) > 1 and LAP_TIME_RE.match(plain[1]) or \
+                    (len(plain) > 1 and re.fullmatch(r"\d+:\d{2}:\d{2}\.\d{3}|\d+:\d{2}\.\d{3}", plain[1])) else None
+                best = plain[2] if len(plain) > 2 and LAP_TIME_RE.match(plain[2]) else None
+                lap_no = int(plain[3]) if len(plain) > 3 and plain[3].isdigit() else None
+                row.update({"classified": row["position"] is not None and not not_classified, "status": status,
+                            "laps": laps, "time": total, "gap": gaps[0] if gaps and row["position"] else None,
+                            "interval": gaps[1] if len(gaps) > 1 and row["position"] else None, "kph": None,
+                            "fastest_lap": best, "fastest_lap_number": lap_no})
+            row["team"] = None
+            out.append(row)
+    return out
+
+
+def _zh_grid(pdf, penalised: set[str]) -> list[dict]:
+    """Zhuhai's two-up grid. Each half of the page runs position, then "number
+    name", then time, one line each; the right half sits a few points lower
+    than the left and the row label on its own line at the far left, so each
+    half is read on its own rather than line by line across the page."""
+    slots = []
+    for page in pdf.pages:
+        mid = page.width / 2
+        words = [w for w in _words(page) if w["x0"] > 60 and w["top"] > 150]
+        for side in ([w for w in words if w["x0"] < mid], [w for w in words if w["x0"] >= mid]):
+            position = None
+            last = None
+            for _, ws in _word_rows(side, tolerance=2.0):
+                texts = [w["text"] for w in ws]
+                if NOTE_START_RE.match(" ".join(texts)) or ZH_STOP_RE.match(" ".join(texts)):
+                    break
+                if len(texts) == 1 and texts[0].isdigit():
+                    position = int(texts[0])
+                elif len(texts) >= 2 and texts[0].isdigit() and position is not None:
+                    name = " ".join(texts[1:])
+                    star = name.endswith("*")
+                    last = _row(texts[0], name.rstrip("*"), star, None, None, penalised, position=position)
+                    last["time"] = None
+                    slots.append(last)
+                    position = None
+                elif last is not None and len(texts) == 1 and LAP_TIME_RE.match(texts[0]):
+                    last["time"] = texts[0]
+                    last = None
+    slots.sort(key=lambda s: s["position"])
+    return slots
+
+
+def _parse_zhuhai(pdf, pages: list[list[str]], filename: str) -> dict:
+    first = pages[0]
+    m = next((ZH_SESSION_RE.match(l) for l in first[:4] if ZH_SESSION_RE.match(l)), None)
+    if m is None:
+        raise ValueError("not a Carrera Cup Asia timing PDF: no 'Porsche Carrera Cup Asia - <session>' title")
+    year = next((int(y.group(1)) for l in first[:3] if (y := re.match(r"^(20\d\d)\b", l))), None)
+    location = _location_from_filename(filename)
+    notes = _join_notes([re.sub(r"^\d+\.\s*", "", l) for p in pages for l in p if ZH_NOTE_RE.match(l)])
+    penalised = _penalised(notes)
+    out = {"event": f"{location or 'Zhuhai'} {year}", "location": location, "year": year,
+           "rounds": _rounds("", filename), "title": first[1], "notes": notes}
+    if any("排位表" in l for l in first[:6]):
+        out.update(document="GRID", rows=_zh_grid(pdf, penalised), kind="round", n=int(m.group("round")))
+    elif m.group("q"):
+        out.update(document="QUALIFYING", rows=_zh_cars(pages, penalised, True), qualifying=m.group("q"))
+    else:
+        rows = _zh_cars(pages, penalised, False)
+        out.update(document="RACE", rows=rows, laps=next((r["laps"] for r in rows if r["position"] == 1), None),
+                   kind="round", n=int(m.group("round")))
+    return out
+
+
+# ---------------------------------------------------------------- entry point
+
+def _layout(pages: list[list[str]]) -> str:
+    head = pages[0][:8]
+    if any(l in ("官方成绩", "排位表") for l in head):
+        return "zhuhai"
+    if any(FUJI_TITLE_RE.match(l) for l in head[:3]) and any(l.startswith("Official") for l in head):
+        return "fuji"
+    return "tsa"
+
+
 def parse(pdf_path: Path, filename: str | None = None) -> dict:
     filename = filename or pdf_path.name
     with pdfplumber.open(pdf_path) as pdf:
         pages = _page_lines(pdf)
-        header = _header(pages[0])
-        title = header["title"]
-        rounds = _rounds(header["head"], filename)
-        notes: list[str] = []
+        layout = _layout(pages)
+        out = {"tsa": _parse_tsa, "fuji": _parse_fuji, "zhuhai": _parse_zhuhai}[layout](pdf, pages, filename)
 
-        if m := GRID_TITLE_RE.match(title):
-            for page in pages:
-                notes += [l for l in page if NOTE_START_RE.match(l)]
-            notes = _join_notes(notes)
-            rows = _grid(pdf, _penalised(notes))
-            doc = {"document": "GRID"}
-            kind, n = m.group("kind").lower(), int(m.group("n"))
-        elif m := RACE_TITLE_RE.match(title):
-            cars, notes, _ = _car_rows(pages)
-            rows, laps = _race(cars, _penalised(notes))
-            doc = {"document": "RACE", "laps": laps}
-            kind, n = m.group("kind").lower(), int(m.group("n"))
-            counts = COUNTS_RE.search(" ".join(pages[0][:header["title_idx"] + 3]))
-            if counts:
-                classified = sum(1 for r in rows if r["classified"])
-                not_classified = len(rows) - classified
-                if (classified, not_classified) != (int(counts.group("classified")), int(counts.group("nc"))):
-                    raise ValueError(
-                        f"read {classified} classified + {not_classified} not classified, but the sheet "
-                        f"says {counts.group('classified')} + {counts.group('nc')}")
-        elif m := QUALI_TITLE_RE.match(title):
-            cars, notes, _ = _car_rows(pages)
-            combined_sum = any("Qual-1" in l for page in pages for l in page[:12])
-            rows = _quali(cars, _penalised(notes), combined_sum)
-            doc = {"document": "QUALIFYING"}
-            rest = m.group("rest").strip()
-            if combined_sum or rest.lower().startswith("combined"):
-                session, number = "Qualifying Combined", 1
-            elif rest.isdigit():
-                session, number = f"Qualifying {rest}", int(rest)
-            else:
-                session, number = "Qualifying", 1
-            kind = None
-        else:
-            raise ValueError(f"unrecognised session title: {title!r}")
-
+    rows = out["rows"]
     if not rows:
-        raise ValueError(f"no rows found under '{title}'")
+        raise ValueError(f"no rows found under '{out['title']}'")
     numbers = [r["number"] for r in rows]
     dupes = sorted({x for x in numbers if numbers.count(x) > 1})
     if dupes:
         raise ValueError(f"car numbers appear twice: {', '.join(dupes)}")
 
-    if kind is not None:
+    rounds = out["rounds"]
+    round_no = None
+    if out["document"] == "QUALIFYING":
+        q = str(out.get("qualifying") or "").strip()
+        if q == "combined":
+            session, number = "Qualifying Combined", 1
+        elif q.isdigit():
+            session, number = f"Qualifying {q}", int(q)
+        else:
+            session, number = "Qualifying", 1
+    else:
         # "Race 1" is already the weekend's race; "Round 10" is the season's
         # round, placed in the weekend by the round list when there is one.
+        kind, n = out["kind"], out["n"]
         if kind == "race":
-            race, round_no = n, (rounds[n - 1] if 0 < n <= len(rounds) else None)
+            number, round_no = n, (rounds[n - 1] if 0 < n <= len(rounds) else None)
         else:
-            race, round_no = (rounds.index(n) + 1 if n in rounds else None), n
-        session = f"Race {race}" if race else f"Round {n}"
-        number = race
-    doc.update({
-        "event": header["event"],
-        "location": header["location"],
-        "year": header["year"],
+            number, round_no = (rounds.index(n) + 1 if n in rounds else None), n
+        session = f"Race {number}" if number else f"Round {n}"
+    return {
+        "document": out["document"],
+        "layout": layout,
+        "event": out["event"],
+        "location": out["location"],
+        "year": out["year"],
         "session": session,
         "race": number,
-        "round": round_no if kind is not None else None,
+        "round": round_no,
         "status": "Final",
         "revised": False,
-        "notes": "\n".join(notes) or None,
+        "laps": out.get("laps"),
+        "notes": "\n".join(out["notes"]) or None,
         "rows": rows,
-    })
-    doc.setdefault("laps", None)
-    return doc
+    }
 
 
 def main(argv: list[str] | None = None) -> int:

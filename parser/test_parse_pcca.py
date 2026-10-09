@@ -145,3 +145,102 @@ def test_rejects_other_pdfs():
     other = SAMPLES / "2026_PCCA_Shanghai_Grid_R1.pdf"  # an F1-paddock sheet
     with pytest.raises(ValueError, match="not a Carrera Cup Asia timing PDF"):
         p.parse(other)
+
+
+# ---------------------------------------------------------------- Fuji (Japanese Excel export)
+
+FUJI_RACE = SAMPLES / "2026_PCCA_Fuji Rounds 5&6_Results_R5.pdf"
+FUJI_QUALI = SAMPLES / "2026_PCCA_Fuji Rounds 5&6_Qualifying_1.pdf"
+FUJI_GRID = SAMPLES / "2026_PCCA_Fuji Rounds 5&6_Grid_R5.pdf"
+
+
+def test_fuji_race_by_column_position():
+    doc = p.parse(FUJI_RACE)
+    assert (doc["layout"], doc["document"], doc["session"], doc["round"]) == ("fuji", "RACE", "Race 1", 5)
+    assert (doc["location"], doc["year"], doc["laps"]) == ("Fuji Speedway", 2026, 15)
+    rows = doc["rows"]
+    assert sum(r["classified"] for r in rows) == 25  # "Finish :25"
+    amand = rows[0]
+    assert (amand["time"], amand["fastest_lap"], amand["fastest_lap_number"], amand["kph"]) == \
+        ("25:12.035", "1:39.953", 5, 162.237)
+    # The text run glues nationality to entrant ("MOZWetrade"); columns don't.
+    dias = by_number(doc, "8")
+    assert (dias["nationality"], dias["team"]) == ("MOZ", "Wetrade X Phantom Global")
+    # A penalised total prints its pre-penalty time beneath and drops the
+    # printed gap; the gap comes from the totals instead.
+    ling = by_number(doc, "87")
+    assert (ling["time"], ling["gap"], ling["penalty"]) == ("25:38.489", "+26.454", True)
+    # The full-width typo in "Poｓrche Vietnam" reads as the real team.
+    assert by_number(doc, "12")["team"] == "Porsche Vietnam"
+    tan = by_number(doc, "89")  # not classified, still has its laps
+    assert (tan["classified"], tan["laps"], tan["position"]) == (False, 4, None)
+    wang = by_number(doc, "22")
+    assert (wang["status"], wang["classified"]) == ("DSQ", False)
+
+
+def test_fuji_qualifying_course_record_times():
+    doc = p.parse(FUJI_QUALI)
+    assert (doc["session"], doc["race"]) == ("Qualifying 1", 1)
+    assert [r["position"] for r in doc["rows"]] == list(range(1, 31))
+    # "R1'41.767" (course record) starts inside the entrant column.
+    wang = by_number(doc, "22")
+    assert (wang["time"], wang["team"]) == ("1:41.767", "Origine Motorsport")
+    assert all(r["time"] for r in doc["rows"])
+
+
+def test_fuji_staggered_grid():
+    doc = p.parse(FUJI_GRID)
+    assert (doc["document"], doc["session"], doc["round"]) == ("GRID", "Race 1", 5)
+    rows = doc["rows"]
+    assert [r["position"] for r in rows] == list(range(1, 31))
+    assert all(r["team"] for r in rows)
+    assert (rows[0]["number"], rows[0]["first_name"], rows[0]["surname"], rows[0]["team"]) == \
+        ("88", "Marvin", "KLEIN", "Absolute Racing")
+    # The far column (25-30) keeps its names despite "69" in a team name.
+    assert (rows[29]["number"], rows[29]["team"]) == ("969", "Porsche Own Retail 69 Team")
+    # The steward note printed beside row 5 names car 66 and joins no slot.
+    assert by_number(doc, "66")["penalty"] is True
+    assert by_number(doc, "66")["team"] == "Team Porsche New Zealand"
+
+
+# ---------------------------------------------------------------- Zhuhai (Chinese timing system)
+
+ZHUHAI_RACE = SAMPLES / "2026_PCCA_Zhuhai Rounds 3&4_Results_R4.pdf"
+ZHUHAI_QUALI = SAMPLES / "2026_PCCA_Zhuhai Rounds 3&4_Qualifying_2.pdf"
+ZHUHAI_GRID = SAMPLES / "2026_PCCA_Zhuhai Rounds 3&4_Grid_R4.pdf"
+
+
+def test_zhuhai_race():
+    doc = p.parse(ZHUHAI_RACE)
+    # No English venue on the sheet: the file name names it.
+    assert (doc["layout"], doc["session"], doc["round"], doc["location"]) == ("zhuhai", "Race 2", 4, "Zhuhai")
+    rows = doc["rows"]
+    assert len(rows) == 30 and sum(r["classified"] for r in rows) == 25
+    winner = rows[0]
+    assert (winner["number"], winner["time"], winner["gap"], winner["fastest_lap"], winner["non_series"]) == \
+        ("88", "30:29.937", None, "1:37.053", True)
+    assert (rows[1]["gap"], rows[1]["interval"]) == ("+0.566", "+0.566")
+    giltrap = by_number(doc, "66")  # DNF after one lap, no best lap
+    assert (giltrap["status"], giltrap["laps"], giltrap["time"], giltrap["fastest_lap"]) == \
+        ("DNF", 1, "1:52.958", None)
+    assert all(r["team"] for r in rows)
+    assert by_number(doc, "77")["penalty"] is True
+
+
+def test_zhuhai_qualifying_across_pages():
+    doc = p.parse(ZHUHAI_QUALI)
+    assert (doc["session"], doc["race"]) == ("Qualifying 2", 2)
+    rows = doc["rows"]
+    assert [r["position"] for r in rows] == list(range(1, 31))
+    assert (rows[0]["number"], rows[0]["time"], rows[0]["laps"]) == ("17", "1:35.401", 4)
+    assert (rows[-1]["number"], rows[-1]["team"]) == ("69", "OpenRoad Racing")
+
+
+def test_zhuhai_two_up_grid_reads_each_half():
+    doc = p.parse(ZHUHAI_GRID)
+    assert (doc["session"], doc["round"]) == ("Race 2", 4)
+    rows = doc["rows"]
+    assert [r["position"] for r in rows] == list(range(1, 31))
+    assert all(r["time"] for r in rows)
+    assert (rows[1]["number"], rows[1]["surname"], rows[1]["time"]) == ("3", "AMAND", "1:35.712")
+    assert (rows[-1]["number"], rows[-1]["penalty"]) == ("99", True)  # dropped five places

@@ -874,8 +874,12 @@ display size.)
   from the header's round list or the file name ("Rounds 7&8"). Grids print no
   class and Bangsaen's no entrant either, so commit qualifying/results first;
   `upsertEntry` borrows a missing team the way it borrows a missing class.
-  Zhuhai (Chinese timing system) and Fuji (Japanese Excel export) layouts are
-  not covered yet. Shanghai and Singapore are F1 weekends (`F1_PDF`).
+  Fuji (Japanese Excel export, read by column x) and Zhuhai (Chinese timing
+  system) layouts followed the same day, so all of 2026 Rounds 2–11 import;
+  Shanghai and Singapore are F1 weekends (`F1_PDF`). Driver matching gained a
+  last, same-car-only tier for a shortened name (Fuji's "Roy TANG" for Tien Foo
+  Roy TANG); a different romanisation (Fuji's "LYU Wei" for LU Wei) still needs
+  a driver merge.
 - **F1 support-race PDFs (`F1_PDF`) — ✅ DONE (2026-09-16).** Carrera Cup NA's
   Formula 1 weekends (Miami every year, Montréal 2024–25, Austin 2025) publish
   F1-paddock-style sheets, and Al Kamel posts them as **PDF only** — the XML

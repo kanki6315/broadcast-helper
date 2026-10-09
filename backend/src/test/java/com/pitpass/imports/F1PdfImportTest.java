@@ -223,6 +223,20 @@ class F1PdfImportTest {
     }
 
     @Test
+    void aShortenedNameMatchesOnlyTheSameCar() {
+        // Fuji prints "Roy TANG" for #25 Tien Foo Roy TANG.
+        Seeded s = seed();
+        String family = s.surname().toUpperCase();
+        long tang = service.findOrCreateDriver("Tien", "Foo Roy " + family, null, null);
+        long otherEvent = db.sql("INSERT INTO event (season_id, name) VALUES (:s, 'Zhuhai') RETURNING id")
+                .param("s", s.seasonId()).query(Long.class).single();
+        assign(entry(otherEvent, "25"), tang);
+
+        assertEquals(tang, service.resolveDriver(named("Roy", family), entry(s.eventId(), "25")));
+        assertNotEquals(tang, service.resolveDriver(named("Roy", family), entry(s.eventId(), "26")));
+    }
+
+    @Test
     void namesAgreeRules() {
         assertTrue(ImportService.namesAgree("Kang", "LING", "LING Kang"));
         assertTrue(ImportService.namesAgree("Tien Foo Roy", "TANG", "Tien Foo Roy TANG"));
@@ -233,6 +247,9 @@ class F1PdfImportTest {
         assertFalse(ImportService.namesAgree("J.", "BAO", "BAO Kang"));
         assertFalse(ImportService.namesAgree("J.", "BAO", "J. BAO"));
         assertFalse(ImportService.namesAgree("Kang", "LING", "LING Kang Jr"));
+        assertTrue(ImportService.shortenedName("Roy", "TANG", "Tien Foo Roy TANG"));
+        assertFalse(ImportService.shortenedName("Roy", "TAN", "Tien Foo Roy TANG"));
+        assertFalse(ImportService.shortenedName("Wei", "LYU", "LU Wei"));
     }
 
     // ------------------------------------------------------------ end to end

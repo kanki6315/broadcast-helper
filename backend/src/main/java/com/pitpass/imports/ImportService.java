@@ -3186,10 +3186,13 @@ public class ImportService {
                         """)
                 .param("entryId", entryId)
                 .query((rs, i) -> new Candidate(rs.getLong("id"), rs.getString("name"), rs.getBoolean("same_car")))
-                .list()
-                .stream().filter(c -> namesAgree(first, surname, c.name())).toList();
+                .list();
+        // Last, and only for the same car: a sheet that drops given names
+        // (Fuji's "Roy TANG" for #25 Tien Foo Roy TANG).
         for (java.util.function.Predicate<Candidate> tier : List.<java.util.function.Predicate<Candidate>>of(
-                Candidate::sameCar, c -> true)) {
+                c -> c.sameCar() && namesAgree(first, surname, c.name()),
+                c -> namesAgree(first, surname, c.name()),
+                c -> c.sameCar() && shortenedName(first, surname, c.name()))) {
             List<Candidate> fit = candidates.stream().filter(tier).toList();
             if (fit.size() == 1) {
                 return Optional.of(fit.get(0).id());
@@ -3277,6 +3280,19 @@ public class ImportService {
         }
         return givenSides.stream().anyMatch(given ->
                 given.get(0).charAt(0) == initial && !given.get(0).endsWith("."));
+    }
+
+    /**
+     * Whether the sheet's name is the candidate's with given names left out:
+     * every word of it in the candidate, the surname included ("Roy TANG" ~
+     * "Tien Foo Roy TANG"). Too loose on its own — only ever paired with the
+     * same car number this season.
+     */
+    static boolean shortenedName(String first, String surname, String candidate) {
+        List<String> sheet = lowerWords(first + " " + surname);
+        List<String> cand = lowerWords(candidate);
+        return sheet.size() >= 2 && sheet.size() < cand.size()
+                && cand.containsAll(sheet) && cand.containsAll(lowerWords(surname));
     }
 
     private static List<String> lowerWords(String text) {
