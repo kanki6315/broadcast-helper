@@ -182,6 +182,19 @@ def test_revised_two_page_grid_with_notes():
     ]
 
 
+def test_team_name_starting_with_a_digit_is_still_a_team():
+    # Carrera Cup Asia's "610 Racing" starts with digits like a car line does;
+    # only the missing position digit beside it marks it as the team.
+    grid = SAMPLES / "2026_PCCA_Shanghai_Grid_R1.pdf"
+    if not grid.exists():
+        pytest.skip("PCCA grid sample not present")
+    doc = p.parse(grid)
+    assert [r["position"] for r in doc["rows"]] == list(range(1, 31))
+    assert all(r["team"] for r in doc["rows"])
+    assert {r["number"]: r["team"] for r in doc["rows"] if r["team"] == "610 Racing"}.keys() == {"25", "610", "99"}
+    assert (by_number(doc, "610")["first_name"], by_number(doc, "610")["surname"]) == ("Qikuan", "CAO")
+
+
 # ---------------------------------------------------------------- names + errors
 
 @pytest.mark.parametrize("text, expected", [

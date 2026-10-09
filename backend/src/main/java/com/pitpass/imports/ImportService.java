@@ -22,6 +22,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -3048,43 +3049,114 @@ public class ImportService {
             java.util.regex.Pattern.compile("^(?:\\p{Lu}{1,3}\\.\\s*)+$");
 
     /**
-     * A driver for one seat of an entry. Some timing sheets shorten the given
-     * name to an initial ("N. LASTOCHKIN", "A. R. FERNANDES"); taken literally
-     * that would mint a second driver beside the full-named one, so an
-     * initialled name first looks for a known driver with that surname and
-     * initial — preferring one who drove this car number this season, then
-     * anyone in this season, then anyone at all — and only when exactly one
-     * fits. No unique match falls back to the literal name; re-committing once
-     * the full name is known (import that weekend's grid first) replaces it.
+     * A driver for one seat of an entry. Sheets spell the same person three
+     * ways a literal lookup would split into separate drivers:
+     * <ul>
+     *   <li>an initial for the given name ("N. LASTOCHKIN", "A. R. FERNANDES");</li>
+     *   <li>the family name first (Carrera Cup Asia's entry lists and points
+     *       sheets print "LING Kang"; the F1-paddock sheet at Shanghai prints
+     *       "Kang LING");</li>
+     *   <li>both at once ("J. BAO" for BAO Jinlong).</li>
+     * </ul>
+     * So a name with no exact match is looked up loosely — same words in any
+     * order, or the initial against the given-name side whichever end it is
+     * on — first among this season's drivers, preferring the one who drove
+     * this car number, then in the season's standings, then among all known
+     * drivers. Each step takes a match only when exactly one fits. The car
+     * number only picks between drivers whose names agree; it is never proof
+     * on its own, because a car changes hands mid-season (Carrera Cup Asia's
+     * #4 is LU Wei in the points and LI Kerong at Bangsaen). No unique match
+     * falls back to the literal name; re-committing once the full name is
+     * known (import that weekend's grid first) replaces it.
      */
     long resolveDriver(RaceResultsImport.DriverRow d, long entryId) {
-        if (d.firstName() != null && d.surname() != null
-                && INITIALS.matcher(d.firstName().trim()).matches()) {
-            Optional<Long> known = findByInitial(d.firstName().trim(), d.surname(), entryId);
-            if (known.isPresent()) {
-                return known.get();
-            }
-            // No driver record yet, but the season's standings (JSON, full names)
-            // may already list the person: a driver who only ever raced the F1
-            // weekends has no full-named result anywhere else to match.
-            Optional<String> fromStandings = fullNameFromStandings(d.firstName().trim(), d.surname(), entryId);
-            if (fromStandings.isPresent()) {
-                // The key ends in the sheet's surname (that is how it matched), so
-                // split there — "Kelvin van der Linde" is Kelvin / van der Linde, the
-                // way the results JSON spells it, not Kelvin van der / Linde.
-                String full = fromStandings.get().trim();
-                int cut = full.length() - d.surname().trim().length();
-                return findOrCreateDriver(full.substring(0, cut).trim(), full.substring(cut).trim(),
-                        d.country(), d.hometown());
-            }
+        String first = d.firstName() == null ? "" : d.firstName().trim();
+        String surname = d.surname() == null ? "" : d.surname().trim();
+        if (first.isEmpty() || surname.isEmpty()) {
+            return findOrCreateDriver(d.firstName(), d.surname(), d.country(), d.hometown());
+        }
+        boolean initialled = INITIALS.matcher(first).matches();
+        if (!initialled && hasDriverNamed(first + " " + surname)) {
+            return findOrCreateDriver(d.firstName(), d.surname(), d.country(), d.hometown());
+        }
+        Optional<Long> inSeason = seasonDriverNamed(first, surname, entryId);
+        if (inSeason.isPresent()) {
+            return inSeason.get();
+        }
+        // No driver record this season, but the season's standings may already
+        // list the person: a driver who only ever raced the F1 weekends has no
+        // full-named result anywhere else to match.
+        Optional<String[]> fromStandings = splitFromStandings(first, surname, entryId);
+        if (fromStandings.isPresent()) {
+            return findOrCreateDriver(fromStandings.get()[0], fromStandings.get()[1], d.country(), d.hometown());
+        }
+        Optional<Long> known = initialled
+                ? findByInitial(first, surname, entryId)
+                : anyDriverWithTheseWords(first, surname);
+        if (known.isPresent()) {
+            return known.get();
         }
         return findOrCreateDriver(d.firstName(), d.surname(), d.country(), d.hometown());
     }
 
-    /** The one standings row of the entry's season whose key ends in this
-     *  surname and starts with this initial ("Andre Renha Fernandes" for
-     *  "A. R. FERNANDES"); empty unless exactly one fits. */
-    private Optional<String> fullNameFromStandings(String initials, String surname, long entryId) {
+    /** Whether a driver (or a merged-away spelling) has exactly this name — the
+     *  same comparison {@link #findOrCreateDriver} matches on. */
+    private boolean hasDriverNamed(String fullName) {
+        return db.sql("""
+                        SELECT EXISTS (SELECT 1 FROM driver
+                                       WHERE lower(regexp_replace(first_name || ' ' || surname, '\\s+', ' ', 'g'))
+                                           = lower(regexp_replace(:name, '\\s+', ' ', 'g')))
+                            OR EXISTS (SELECT 1 FROM driver_alias
+                                       WHERE lower(regexp_replace(trim(alias), '\\s+', ' ', 'g'))
+                                           = lower(regexp_replace(trim(:name), '\\s+', ' ', 'g')))
+                        """)
+                .param("name", fullName)
+                .query(Boolean.class).single();
+    }
+
+    /** The one driver seen this season whose name agrees with the sheet's,
+     *  preferring whoever drove this entry's car number. */
+    private Optional<Long> seasonDriverNamed(String first, String surname, long entryId) {
+        record Candidate(long id, String name, boolean sameCar) {
+        }
+        List<Candidate> candidates = db.sql("""
+                        WITH ctx AS (
+                            SELECT regexp_replace(trim(e.car_number), '^0+(?=\\d)', '') AS car, ev.season_id
+                            FROM entry e JOIN event ev ON ev.id = e.event_id
+                            WHERE e.id = :entryId
+                        ), seen AS (
+                            SELECT da.driver_id,
+                                   bool_or(regexp_replace(trim(e2.car_number), '^0+(?=\\d)', '') = ctx.car) AS same_car
+                            FROM driver_assignment da
+                            JOIN entry e2 ON e2.id = da.entry_id
+                            JOIN event ev2 ON ev2.id = e2.event_id
+                            JOIN ctx ON ctx.season_id = ev2.season_id
+                            WHERE da.driver_id IS NOT NULL
+                            GROUP BY da.driver_id
+                        )
+                        SELECT d.id, d.first_name || ' ' || d.surname AS name, seen.same_car
+                        FROM seen JOIN driver d ON d.id = seen.driver_id
+                        """)
+                .param("entryId", entryId)
+                .query((rs, i) -> new Candidate(rs.getLong("id"), rs.getString("name"), rs.getBoolean("same_car")))
+                .list()
+                .stream().filter(c -> namesAgree(first, surname, c.name())).toList();
+        for (java.util.function.Predicate<Candidate> tier : List.<java.util.function.Predicate<Candidate>>of(
+                Candidate::sameCar, c -> true)) {
+            List<Candidate> fit = candidates.stream().filter(tier).toList();
+            if (fit.size() == 1) {
+                return Optional.of(fit.get(0).id());
+            }
+            if (fit.size() > 1) {
+                return Optional.empty();
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** The one standings key of the entry's season whose name agrees with the
+     *  sheet's, split into (first, surname) so the two read back as the key. */
+    private Optional<String[]> splitFromStandings(String first, String surname, long entryId) {
         List<String> keys = db.sql("""
                         SELECT DISTINCT r.competitor_key
                         FROM standings_row r
@@ -3092,13 +3164,77 @@ public class ImportService {
                                  JOIN championship_group g ON g.id = c.group_id
                         WHERE c.season_id = (SELECT ev.season_id FROM entry e JOIN event ev ON ev.id = e.event_id WHERE e.id = :entryId)
                           AND g.kind = 'DRIVERS'
-                          AND lower(right(r.competitor_key, length(:surname) + 1)) = ' ' || lower(:surname)
-                          AND upper(left(r.competitor_key, 1)) = :initial
                         """)
-                .param("entryId", entryId).param("surname", surname.trim())
-                .param("initial", initials.substring(0, 1).toUpperCase(Locale.ROOT))
-                .query(String.class).list();
-        return keys.size() == 1 ? Optional.of(keys.get(0)) : Optional.empty();
+                .param("entryId", entryId)
+                .query(String.class).list()
+                .stream().filter(k -> namesAgree(first, surname, k)).toList();
+        if (keys.size() != 1) {
+            return Optional.empty();
+        }
+        // Split where the sheet's surname sits in the key, keeping the key's
+        // word order: "Kelvin van der Linde" is Kelvin / van der Linde (not
+        // Kelvin van der / Linde), and "BAO Jinlong" stays BAO / Jinlong — the
+        // order the series' entry list and points use, so they still match.
+        List<String> words = List.of(keys.get(0).trim().split("\\s+"));
+        int n = surname.split("\\s+").length;
+        boolean atEnd = words.subList(words.size() - n, words.size()).stream()
+                .map(w -> w.toLowerCase(Locale.ROOT)).toList().equals(lowerWords(surname));
+        int cut = atEnd ? words.size() - n : (n < words.size() ? n : 1);
+        return Optional.of(new String[] {
+                String.join(" ", words.subList(0, cut)), String.join(" ", words.subList(cut, words.size()))});
+    }
+
+    /** The one known driver with the same words in another order ("LING Kang"
+     *  for "Kang LING"). */
+    private Optional<Long> anyDriverWithTheseWords(String first, String surname) {
+        List<Long> ids = db.sql("""
+                        SELECT id, first_name || ' ' || surname AS name FROM driver
+                        WHERE lower(first_name || ' ' || surname) LIKE '%' || lower(:surname) || '%'
+                        """)
+                .param("surname", surname)
+                .query((rs, i) -> namesAgree(first, surname, rs.getString("name")) ? rs.getLong("id") : null)
+                .list().stream().filter(Objects::nonNull).toList();
+        return ids.size() == 1 ? Optional.of(ids.get(0)) : Optional.empty();
+    }
+
+    /**
+     * Whether a sheet's (first, surname) can name the same person as a known
+     * full name. A full given name needs the same words in any order ("Kang
+     * LING" ~ "LING Kang", "Hoang Dat SAWER" ~ "SAWER Hoang Dat"). An initial
+     * needs the surname's words at either end of the candidate and the initial
+     * to start the given-name words on the other side ("J. BAO" ~ "BAO
+     * Jinlong", "R. DIAS ALMEIDA" ~ "Rodrigo DIAS ALMEIDA") — never another
+     * initial ("J. BAO" is not "J. BAO" minted earlier).
+     */
+    static boolean namesAgree(String first, String surname, String candidate) {
+        List<String> cand = lowerWords(candidate);
+        List<String> sur = lowerWords(surname);
+        if (!INITIALS.matcher(first).matches()) {
+            List<String> sheet = new ArrayList<>(lowerWords(first + " " + surname));
+            List<String> other = new ArrayList<>(cand);
+            java.util.Collections.sort(sheet);
+            java.util.Collections.sort(other);
+            return sheet.equals(other);
+        }
+        if (cand.size() <= sur.size()) {
+            return false;
+        }
+        char initial = Character.toLowerCase(first.charAt(0));
+        int n = sur.size();
+        List<List<String>> givenSides = new ArrayList<>();
+        if (cand.subList(cand.size() - n, cand.size()).equals(sur)) {
+            givenSides.add(cand.subList(0, cand.size() - n));
+        }
+        if (cand.subList(0, n).equals(sur)) {
+            givenSides.add(cand.subList(n, cand.size()));
+        }
+        return givenSides.stream().anyMatch(given ->
+                given.get(0).charAt(0) == initial && !given.get(0).endsWith("."));
+    }
+
+    private static List<String> lowerWords(String text) {
+        String trimmed = Objects.toString(text, "").trim();
+        return trimmed.isEmpty() ? List.of() : List.of(trimmed.toLowerCase(Locale.ROOT).split("\\s+"));
     }
 
     private Optional<Long> findByInitial(String initials, String surname, long entryId) {

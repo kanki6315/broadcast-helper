@@ -15,6 +15,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -114,6 +115,124 @@ class F1PdfImportTest {
         long nate = service.resolveDriver(
                 new RaceResultsImport.DriverRow(1, "Nate", s.surname(), null, null, null), entry);
         assertNotEquals(nikita, nate);
+    }
+
+    // ------------------------------------------------------------ family name first
+
+    // Carrera Cup Asia's entry list and points print "LING Kang"; the F1-paddock
+    // sheet at Shanghai prints "Kang LING" and "J. BAO". The stored split follows
+    // the entry list (first_name LING, surname Kang).
+
+    private static RaceResultsImport.DriverRow named(String first, String surname) {
+        return new RaceResultsImport.DriverRow(1, first, surname, null, null, null);
+    }
+
+    private void standings(long seasonId, String... keys) {
+        long groupId = db.sql("""
+                        INSERT INTO championship_group (season_id, family, kind, label, ordinal)
+                        VALUES (:s, 'Cup', 'DRIVERS', 'Cup — Drivers', 1) RETURNING id
+                        """)
+                .param("s", seasonId).query(Long.class).single();
+        long champId = db.sql("""
+                        INSERT INTO championship (season_id, group_id, name) VALUES (:s, :g, 'Overall') RETURNING id
+                        """)
+                .param("s", seasonId).param("g", groupId).query(Long.class).single();
+        for (int i = 0; i < keys.length; i++) {
+            db.sql("""
+                            INSERT INTO standings_row (championship_id, position, competitor_key, total_points)
+                            VALUES (:c, :p, :k, 0)
+                            """)
+                    .param("c", champId).param("p", i + 1).param("k", keys[i]).update();
+        }
+    }
+
+    private String nameOf(long driverId) {
+        return db.sql("SELECT first_name || '|' || surname FROM driver WHERE id = :id")
+                .param("id", driverId).query(String.class).single();
+    }
+
+    @Test
+    void givenNameFirstResolvesToTheFamilyNameFirstDriverOfThatCar() {
+        Seeded s = seed();
+        String family = s.surname().toUpperCase();
+        long ling = service.findOrCreateDriver(family, "Kang", null, null);
+        long otherEvent = db.sql("INSERT INTO event (season_id, name) VALUES (:s, 'Bangsaen') RETURNING id")
+                .param("s", s.seasonId()).query(Long.class).single();
+        assign(entry(otherEvent, "87"), ling);
+
+        assertEquals(ling, service.resolveDriver(named("Kang", family), entry(s.eventId(), "87")));
+    }
+
+    @Test
+    void theCarNumberAloneNeverNamesTheDriver() {
+        // #4 is LU Wei at Shanghai but LI Kerong at Bangsaen: same car, other person.
+        Seeded s = seed();
+        long liKerong = service.findOrCreateDriver("LI", "Kerong" + s.surname(), null, null);
+        long otherEvent = db.sql("INSERT INTO event (season_id, name) VALUES (:s, 'Bangsaen') RETURNING id")
+                .param("s", s.seasonId()).query(Long.class).single();
+        assign(entry(otherEvent, "4"), liKerong);
+
+        long luWei = service.resolveDriver(named("Wei", "LU" + s.surname()), entry(s.eventId(), "4"));
+        assertNotEquals(liKerong, luWei);
+    }
+
+    @Test
+    void initialMatchesTheGivenNameOnEitherSide() {
+        Seeded s = seed();
+        String family = s.surname().toUpperCase();
+        long bao = service.findOrCreateDriver(family, "Jinlong", null, null);
+        long otherEvent = db.sql("INSERT INTO event (season_id, name) VALUES (:s, 'Bangsaen') RETURNING id")
+                .param("s", s.seasonId()).query(Long.class).single();
+        assign(entry(otherEvent, "7"), bao);
+
+        assertEquals(bao, service.resolveDriver(initialled("J.", family), entry(s.eventId(), "7")));
+    }
+
+    @Test
+    void standingsNameADriverWithNoRecordInTheSeriesWordOrder() {
+        // BAO skipped Bangsaen, so the points sheet is the only full spelling.
+        Seeded s = seed();
+        String family = s.surname().toUpperCase();
+        standings(s.seasonId(), family + " Jinlong", "WANG Zhongwei");
+
+        long car = entry(s.eventId(), "7");
+        long fromInitial = service.resolveDriver(initialled("J.", family), car);
+        assertEquals(family + "|Jinlong", nameOf(fromInitial));
+        long fromFullName = service.resolveDriver(named("Jinlong", family), car);
+        assertEquals(fromInitial, fromFullName);
+    }
+
+    @Test
+    void reorderedNameMatchesADriverFromAnotherSeason() {
+        Seeded s = seed();
+        String family = s.surname().toUpperCase();
+        long sawer = service.findOrCreateDriver(family, "Hoang Dat", null, null);
+
+        assertEquals(sawer, service.resolveDriver(named("Hoang Dat", family), entry(s.eventId(), "12")));
+    }
+
+    @Test
+    void anExactSpellingStillWinsOverAReorderedOne() {
+        Seeded s = seed();
+        String family = s.surname().toUpperCase();
+        long reordered = service.findOrCreateDriver(family, "Kang", null, null);
+        long exact = service.findOrCreateDriver("Kang", family, null, null);
+
+        assertEquals(exact, service.resolveDriver(named("Kang", family), entry(s.eventId(), "87")));
+        assertNotEquals(reordered, exact);
+    }
+
+    @Test
+    void namesAgreeRules() {
+        assertTrue(ImportService.namesAgree("Kang", "LING", "LING Kang"));
+        assertTrue(ImportService.namesAgree("Tien Foo Roy", "TANG", "Tien Foo Roy TANG"));
+        assertTrue(ImportService.namesAgree("J.", "BAO", "BAO Jinlong"));
+        assertTrue(ImportService.namesAgree("R.", "DIAS ALMEIDA", "Rodrigo DIAS ALMEIDA"));
+        assertTrue(ImportService.namesAgree("H.", "SAWER", "SAWER Hoang Dat"));
+        assertFalse(ImportService.namesAgree("Wei", "LU", "LI Kerong"));
+        assertFalse(ImportService.namesAgree("J.", "BAO", "BAO Kang"));
+        assertFalse(ImportService.namesAgree("J.", "BAO", "J. BAO"));
+        assertFalse(ImportService.namesAgree("Kang", "LING", "LING Kang Jr"));
     }
 
     // ------------------------------------------------------------ end to end

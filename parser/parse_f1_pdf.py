@@ -352,10 +352,17 @@ def _grid(pages):
             half = [w for w in words if side(w)]
             big = [w for w in half if w["size"] >= 10 and w["text"].isdigit()]
             small_rows = _word_rows([w for w in half if w["size"] < 10])
+
+            # A car line has its position digit printed beside it; a team line
+            # has none. Starting with a digit is not enough to tell them apart —
+            # "610 Racing" (Carrera Cup Asia) is a team.
+            def position_of(top):
+                return next((b for b in big if abs(b["top"] - top) <= 5), None)
+
             for i, (top, ws) in enumerate(small_rows):
                 if not ws[0]["text"].isdigit() or len(ws) < 2:
                     continue  # a team line, or the title
-                pos = next((b for b in big if abs(b["top"] - top) <= 5), None)
+                pos = position_of(top)
                 if pos is None:
                     continue
                 time = ws[-1]["text"] if LAP_TIME_RE.match(ws[-1]["text"]) else None
@@ -364,7 +371,7 @@ def _grid(pages):
                 team = None
                 if i + 1 < len(small_rows):
                     nxt_top, nxt = small_rows[i + 1]
-                    if 0 < nxt_top - top <= 14 and not nxt[0]["text"].isdigit():
+                    if 0 < nxt_top - top <= 14 and position_of(nxt_top) is None:
                         team = _line(nxt)
                 slots.append({
                     "position": int(pos["text"]),
