@@ -43,8 +43,9 @@ export default function RaceLine({ r, tag }: { r: RecapRace; tag?: string | null
     ) : (
       r.start
     )
+  const title = [r.notFinished ? 'Retired' : null, r.pointsNote ?? null].filter(Boolean).join(' · ') || undefined
   return withTag(
-    <span className={`race-line ${raceTier(r)}`.trim()} title={r.notFinished ? 'Retired' : undefined}>
+    <span className={`race-line ${raceTier(r)}`.trim()} title={title}>
       {r.start != null ? (
         <>
           {startPart}/{r.finish ?? '–'}
@@ -58,6 +59,16 @@ export default function RaceLine({ r, tag }: { r: RecapRace; tag?: string | null
             R
           </span>
           <span className="sr-only"> retired</span>
+        </>
+      )}
+      {/* The points stay the organiser's; the mark says this finish isn't
+       * what they paid for, and the title says why. */}
+      {r.pointsNote && (
+        <>
+          <span className="pts-note" aria-hidden="true">
+            †
+          </span>
+          <span className="sr-only">. {r.pointsNote}</span>
         </>
       )}
     </span>,

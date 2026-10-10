@@ -723,6 +723,16 @@
   margin-left: 1px;
 }
 
+/* A finish the organiser's points contradict (a decision after the results
+ * sheet): a text mark, like retirement, with the reason in the chip's title. */
+.race-line .pts-note {
+  font-size: 0.72em;
+  font-weight: 700;
+  vertical-align: 0.35em;
+  margin-left: 1px;
+  color: var(--accent-ink);
+}
+
 .race-line .pole {
   color: var(--accent-ink);
   font-weight: 700;

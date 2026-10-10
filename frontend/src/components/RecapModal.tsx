@@ -6,6 +6,7 @@ import {
   ChampFilterBar,
   ClassGrid,
   RecapLegend,
+  hasPointsNotes,
   champFamilies,
   champKinds,
   fetchRecap,
@@ -161,6 +162,7 @@ export default function RecapModal({
   // already being fetched by the class grids, so this rides the cache.
   const [raceTags, setRaceTags] = useState<Map<string, string>>(new Map())
   const [posScope, setPosScope] = useState<PosScope>('class')
+  const [pointsNotes, setPointsNotes] = useState(false)
   useEffect(() => {
     if (shown.length === 0) {
       setRaceTags(new Map())
@@ -172,6 +174,7 @@ export default function RecapModal({
         if (cancelled) return
         setRaceTags(raceLegendTags(recaps))
         setPosScope(posScopeOf(recaps))
+        setPointsNotes(hasPointsNotes(recaps))
       })
       .catch(() => {
         if (cancelled) return
@@ -274,7 +277,7 @@ export default function RecapModal({
             <ChampFilterBar
               sel={sel}
               teams={kind === 'DRIVERS' ? { shown: showTeams, setShown: setShowTeams } : null}
-              legend={<RecapLegend tags={raceTags} scope={posScope} />}
+              legend={<RecapLegend tags={raceTags} scope={posScope} pointsNotes={pointsNotes} />}
             />
             {/* One chip click rewrites every grid below; announce it, as the
               * season header does (WCAG 4.1.3). */}

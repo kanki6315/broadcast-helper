@@ -73,9 +73,14 @@ public class SeasonViewController {
      *  driver-keyed row only ever carries one car per race, but a team-keyed
      *  row (Mustang's DH Entrants) gathers every car the team ran, so a round
      *  cell can hold several lines per race — the number is what tells them
-     *  apart. */
+     *  apart.
+     *
+     *  {@code pointsNote} says why the standings' points for this race don't
+     *  fit this finish, when they don't: the results sheet predates a
+     *  decision the points sheet reflects (a disqualification, a penalty).
+     *  The points shown stay the organiser's; the note only explains them. */
     public record RecapRace(int race, String name, String carNumber, Integer start, Integer finish,
-                            String status, boolean notFinished) {
+                            String status, boolean notFinished, String pointsNote) {
     }
 
     /** How one session paid: the components sum to {@code total} (verified for
@@ -269,6 +274,7 @@ public class SeasonViewController {
         Map<Long, Map<Integer, Double>> pointsByRow = new HashMap<>();
         Map<Long, Map<Integer, Boolean>> contestedByRow = new HashMap<>();
         Map<Long, Map<Integer, RecapSessionPoints>> sessionPointsByRow = new HashMap<>();
+        Map<Long, Map<Integer, RacePoints>> rawPointsByRow = new HashMap<>();
         db.sql("""
                         SELECT sr.id AS row_id, ssp.session_index, ssp.total_points, ssp.race_points,
                                ssp.pole_points, ssp.fastest_lap_points, ssp.penalty_points,
@@ -297,6 +303,8 @@ public class SeasonViewController {
                     sessionPointsByRow.computeIfAbsent(sp.rowId(), k -> new HashMap<>())
                             .put(sp.sessionIndex(), new RecapSessionPoints(sp.points(), sp.race(),
                                     sp.pole(), sp.fastestLap(), sp.penalty(), sp.bonus(), contested));
+                    rawPointsByRow.computeIfAbsent(sp.rowId(), k -> new HashMap<>())
+                            .put(sp.sessionIndex(), new RacePoints(sp.race(), sp.status()));
                 });
 
         // Start→finish cells across the matched events, plus the driver names
@@ -418,7 +426,7 @@ public class SeasonViewController {
                 int round = roundByEventId.get(c.eventId());
                 byRound.computeIfAbsent(round, k -> new ArrayList<>())
                         .add(new RecapRace(c.raceOrdinal(), c.raceName(), c.carNumber(), c.start(),
-                                c.finish(), c.status(), c.notFinished()));
+                                c.finish(), c.status(), c.notFinished(), null));
                 if (c.team() != null && !c.team().isBlank()) {
                     String displayTeam = c.team().trim();
                     distinctTeamNames.putIfAbsent(displayTeam.toLowerCase(Locale.ROOT), displayTeam);
@@ -453,7 +461,117 @@ public class SeasonViewController {
                     h.totalPoints(), h.adjustments(), points, sessions, byRound));
         }
 
-        return new Recap(champ, rounds, rows);
+        return new Recap(champ, rounds, pointsFollowFinish(champ.seriesName())
+                ? withPointsNotes(rows, headers.stream().map(RowHeader::rowId).toList(), rawPointsByRow, rounds)
+                : rows);
+    }
+
+    /**
+     * Notes the race lines whose finish the organiser's points contradict.
+     * Only standings rows take part, so a guest (no row, never scored) neither
+     * gets a note nor makes anyone else's finish look wrong. A race pairs with
+     * its round's points session by running order, and only where the round
+     * has as many sessions as races. Two signals:
+     *  - the points sheet marks the race disqualified but the results classed
+     *    the car (a decision after the sheet — Carrera Cup Asia's Fuji DSQ);
+     *  - the car outfinished a scoring row that out-scored it (a post-race
+     *    penalty the results don't show).
+     * Ties and half points never trip it: only strictly more points from
+     * strictly further back does.
+     */
+    /**
+     * Series whose race points are purely a function of finishing order among
+     * registered drivers, so a finish the points contradict means a decision
+     * the results sheet doesn't show. Not true in general: IMSA's driver
+     * points hinge on drive time, Mustang's DH and iRacing leagues have their
+     * own rules, and the Esports Supercup scores qualifying — there the check
+     * only raises false alarms. Matched on the name so an alias or a renamed
+     * season keeps it.
+     */
+    static boolean pointsFollowFinish(String seriesName) {
+        return seriesName != null && seriesName.toLowerCase(Locale.ROOT).contains("carrera cup asia");
+    }
+
+    /** One standings session's race points and status, for the points-note check. */
+    private record RacePoints(double race, String status) {
+    }
+
+    private static List<RecapRow> withPointsNotes(List<RecapRow> rows, List<Long> rowIds,
+                                                  Map<Long, Map<Integer, RacePoints>> rawByRow,
+                                                  List<RecapRound> rounds) {
+        record Line(int rowIndex, int round, int race, String car, int finish, double racePoints, String status) {
+        }
+        Map<String, Integer> sessionOf = new HashMap<>(); // "round:raceOrdinal" -> session index
+        for (RecapRound round : rounds) {
+            List<Integer> sessions = round.sessions().stream().map(RecapSession::sessionIndex).sorted().toList();
+            List<Integer> races = round.races().stream().map(RecapRaceRef::ordinal).sorted().toList();
+            if (!sessions.isEmpty() && sessions.size() == races.size()) {
+                for (int i = 0; i < races.size(); i++) {
+                    sessionOf.put(round.round() + ":" + races.get(i), sessions.get(i));
+                }
+            }
+        }
+        Map<String, List<Line>> byRace = new HashMap<>();
+        for (int i = 0; i < rows.size(); i++) {
+            Map<Integer, RacePoints> raw = rawByRow.getOrDefault(rowIds.get(i), Map.of());
+            for (Map.Entry<Integer, List<RecapRace>> e : rows.get(i).cells().entrySet()) {
+                for (RecapRace r : e.getValue()) {
+                    // A team row that ran several cars in the race scores on its
+                    // best one: its other lines say nothing about the points.
+                    if (e.getValue().stream().filter(o -> o.race() == r.race()).count() != 1) {
+                        continue;
+                    }
+                    Integer session = sessionOf.get(e.getKey() + ":" + r.race());
+                    RacePoints v = session == null ? null : raw.get(session);
+                    if (r.finish() == null || v == null) {
+                        continue;
+                    }
+                    byRace.computeIfAbsent(e.getKey() + ":" + r.race(), k -> new ArrayList<>())
+                            .add(new Line(i, e.getKey(), r.race(), r.carNumber(), r.finish(), v.race(), v.status()));
+                }
+            }
+        }
+        Map<String, String> notes = new HashMap<>(); // "rowIndex:round:race" -> note
+        for (List<Line> lines : byRace.values()) {
+            for (Line l : lines) {
+                String note = null;
+                if ("disqualified".equalsIgnoreCase(Objects.toString(l.status(), ""))) {
+                    note = "Disqualified in the points — the results sheet came out before the decision";
+                } else {
+                    List<String> ahead = lines.stream()
+                            .filter(o -> o.finish() > l.finish() && o.racePoints() > l.racePoints()
+                                    && !"disqualified".equalsIgnoreCase(Objects.toString(o.status(), "")))
+                            .sorted(java.util.Comparator.comparingInt(Line::finish))
+                            .map(o -> "#" + o.car()).toList();
+                    if (!ahead.isEmpty()) {
+                        note = "Scored behind " + String.join(", ", ahead)
+                                + ", who finished behind — likely a penalty after the results sheet";
+                    }
+                }
+                if (note != null) {
+                    notes.put(l.rowIndex() + ":" + l.round() + ":" + l.race(), note);
+                }
+            }
+        }
+        if (notes.isEmpty()) {
+            return rows;
+        }
+        List<RecapRow> out = new ArrayList<>();
+        for (int i = 0; i < rows.size(); i++) {
+            RecapRow row = rows.get(i);
+            int rowIndex = i;
+            Map<Integer, List<RecapRace>> cells = new LinkedHashMap<>();
+            row.cells().forEach((round, races) -> cells.put(round, races.stream()
+                    .map(r -> {
+                        String note = notes.get(rowIndex + ":" + round + ":" + r.race());
+                        return note == null ? r : new RecapRace(r.race(), r.name(), r.carNumber(), r.start(),
+                                r.finish(), r.status(), r.notFinished(), note);
+                    }).toList()));
+            out.add(new RecapRow(row.position(), row.competitorKey(), row.competitorName(), row.carNumber(),
+                    row.teamName(), row.teamNames(), row.totalPoints(), row.adjustments(), row.pointsByRound(),
+                    row.sessionPoints(), cells));
+        }
+        return out;
     }
 
     /** One hop through the class's car-number aliases, normalized. Applied to

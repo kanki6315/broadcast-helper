@@ -119,6 +119,9 @@ export interface RecapRace {
   finish: number | null
   status: string | null
   notFinished: boolean
+  /** Why the organiser's points for this race don't fit this finish (a
+   * decision after the results sheet). Absent when they agree. */
+  pointsNote?: string | null
 }
 
 /** How one session paid: components sum to total. contested is false for

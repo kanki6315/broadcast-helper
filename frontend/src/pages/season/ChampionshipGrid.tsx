@@ -408,7 +408,22 @@ const POS_SCOPE_NOTE: Record<PosScope, string> = {
   mixed: 'start/finish in class · overall standings: whole field',
 }
 
-export function RecapLegend({ tags, scope }: { tags: Map<string, string>; scope: PosScope }) {
+/** Whether any shown recap marks a finish the organiser's points contradict. */
+export function hasPointsNotes(recaps: Recap[]): boolean {
+  return recaps.some((rc) =>
+    rc.rows.some((row) => Object.values(row.cells).some((races) => races.some((r) => r.pointsNote))),
+  )
+}
+
+export function RecapLegend({
+  tags,
+  scope,
+  pointsNotes = false,
+}: {
+  tags: Map<string, string>
+  scope: PosScope
+  pointsNotes?: boolean
+}) {
   return (
     <div className="legend" aria-label="Cell colours">
       <span className="l-win">
@@ -438,6 +453,11 @@ export function RecapLegend({ tags, scope }: { tags: Map<string, string>; scope:
       <span>
         <sup>R</sup> = retired
       </span>
+      {pointsNotes && (
+        <span>
+          <sup>†</sup> = points don't match this finish (hover for why)
+        </span>
+      )}
       <span>· = no entry</span>
     </div>
   )
@@ -925,6 +945,7 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
   const [ptsFlags, setPtsFlags] = useState<PtsLegendFlags | null>(null)
   const [raceTags, setRaceTags] = useState<Map<string, string>>(new Map())
   const [posScope, setPosScope] = useState<PosScope>('class')
+  const [pointsNotes, setPointsNotes] = useState(false)
 
   // Like every other selection on this page, the view lives in the URL so a
   // filtered board stays bookmarkable and survives sub-page navigation.
@@ -963,6 +984,7 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
         setPtsFlags(mode === 'points' ? ptsLegendFlags(recaps) : null)
         setRaceTags(mode === 'recap' ? raceLegendTags(recaps) : new Map())
         setPosScope(posScopeOf(recaps))
+        setPointsNotes(mode === 'recap' && hasPointsNotes(recaps))
       })
       .catch(() => {
         if (cancelled) return
@@ -994,7 +1016,7 @@ export default function ChampionshipGrid({ mode }: { mode: 'recap' | 'points' })
         view={mode === 'points' && ptsFlags ? { view, setView } : null}
         legend={
           mode === 'recap' ? (
-            <RecapLegend tags={raceTags} scope={posScope} />
+            <RecapLegend tags={raceTags} scope={posScope} pointsNotes={pointsNotes} />
           ) : ptsFlags && view === 'breakdown' ? (
             <PointsLegend f={ptsFlags} />
           ) : null
