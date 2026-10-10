@@ -223,6 +223,56 @@ class PccaPdfImportTest {
         assertEquals("DISCARDED", service.get(gridId).status());
     }
 
+    @Test
+    void aNumberedSessionMovesANamedOneAsideInsteadOfOverwritingIt() throws Exception {
+        // Sepang as committed in production: Q1, then the combined sheet (which
+        // took the next free ordinal, 2), then Q2 — which used to land on it.
+        Seeded s = seed("Sepang");
+        service.commit(stage("2026_PCCA_Sepang_Qualifying_1.pdf"), target(s.eventId(), "QUALIFYING", 1, null));
+        service.commit(stage("2026_PCCA_Sepang_Qualifying_Combined.pdf"), target(s.eventId(), "QUALIFYING", 1, null));
+        // The Q1 sample standing in for Q2: a numbered session claiming ordinal 2.
+        service.commit(stage("2026_PCCA_Sepang_Qualifying_1.pdf"), target(s.eventId(), "QUALIFYING", 2, null));
+
+        Map<String, Integer> byName = db.sql("""
+                        SELECT name, ordinal FROM race_session
+                        WHERE event_id = :e AND session_type = 'QUALIFYING'
+                        """)
+                .param("e", s.eventId())
+                .query((rs, i) -> Map.entry(rs.getString(1), rs.getInt(2))).list()
+                .stream().collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        assertEquals(Map.of("Qualifying", 1, "Qualifying 2", 2, "Qualifying Combined", 3), byName);
+        assertEquals(29L, db.sql("""
+                        SELECT count(*) FROM result r JOIN race_session rs ON rs.id = r.session_id
+                        WHERE rs.event_id = :e AND rs.name = 'Qualifying Combined'
+                        """)
+                .param("e", s.eventId()).query(Long.class).single());
+    }
+
+    @Test
+    void aClasslessGridNumbersCarsWithinTheirEntriesClasses() throws Exception {
+        Seeded s = seed("Sepang");
+        // Grid first: every class is a placeholder until the results land.
+        long gridId = stage("2026_PCCA_Sepang_Grid_R11.pdf");
+        service.commit(gridId, target(s.eventId(), "RACE", 3, null));
+        service.commit(stage("2026_PCCA_Sepang_Results_R9.pdf"), target(s.eventId(), "RACE", 1, null));
+        assertEquals("COMMITTED", service.get(gridId).status());
+
+        Map<String, Integer> inClass = db.sql("""
+                        SELECT e.car_number, g.position_in_class
+                        FROM grid_position g JOIN entry e ON e.id = g.entry_id
+                        JOIN race_session rs ON rs.id = g.session_id
+                        WHERE rs.event_id = :e AND rs.ordinal = 3
+                        """)
+                .param("e", s.eventId())
+                .query((rs, i) -> Map.entry(rs.getString(1), rs.getInt(2))).list()
+                .stream().collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        assertEquals(1, inClass.get("66"));  // pole, Pro
+        assertEquals(1, inClass.get("7"));   // 8th overall, first Pro-Am
+        assertEquals(1, inClass.get("610")); // 11th overall, first Am
+        assertEquals(3, inClass.get("25"));  // 14th overall, behind #610 and #91 in Am
+        assertEquals(2, inClass.get("79"));  // 10th overall, second Pro-Am
+    }
+
     private long gridSlots(long eventId) {
         return db.sql("""
                         SELECT count(*) FROM grid_position g JOIN race_session rs ON rs.id = g.session_id

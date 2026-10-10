@@ -1673,6 +1673,9 @@ public class ImportService {
             if (eventId != null && batch.sourceEvent() != null) {
                 stampEventSource(eventId, batch.sourceEvent());
             }
+            if (eventId != null && ("RACE_RESULTS".equals(batch.kind()) || "ENTRY_LIST".equals(batch.kind()))) {
+                renumberEventGridClasses(eventId);
+            }
             if (eventId != null && batch.sourcePreseason()) {
                 // The planner judged the weekend no round (the Roar, a test): the
                 // event it landed in takes no round number.
@@ -2123,6 +2126,9 @@ public class ImportService {
                                            boolean nameKeyed) {
         String label = nameKeyed ? SessionNames.splitLabel(sessionType, name) : null;
         if (label == null) {
+            if (nameKeyed) {
+                moveNamedSessionAside(eventId, sessionType, ordinal);
+            }
             return new SessionSlot(ordinal, name, null);
         }
         record Existing(int ordinal, String name) {
@@ -2144,6 +2150,28 @@ public class ImportService {
         }
         int next = existing.stream().mapToInt(Existing::ordinal).max().orElse(0) + 1;
         return new SessionSlot(next, name, label);
+    }
+
+    /**
+     * A named session ("Qualifying Combined") took the next free ordinal when it
+     * arrived; a numbered one ("Qualifying 2") imported after it may claim that
+     * same ordinal. The numbered one owns its number, so the named one moves to
+     * the next free ordinal rather than being overwritten — whichever order the
+     * weekend's sheets come in, both sessions survive.
+     */
+    private void moveNamedSessionAside(long eventId, String sessionType, int ordinal) {
+        db.sql("SELECT id, name FROM race_session WHERE event_id = :e AND session_type = :t AND ordinal = :o")
+                .param("e", eventId).param("t", sessionType).param("o", ordinal)
+                .query((rs, i) -> Map.entry(rs.getLong("id"), Objects.toString(rs.getString("name"), "")))
+                .optional()
+                .filter(existing -> SessionNames.splitLabel(sessionType, existing.getValue()) != null)
+                .ifPresent(existing -> db.sql("""
+                                UPDATE race_session
+                                SET ordinal = (SELECT max(ordinal) + 1 FROM race_session
+                                               WHERE event_id = :e AND session_type = :t)
+                                WHERE id = :id
+                                """)
+                        .param("e", eventId).param("t", sessionType).param("id", existing.getKey()).update());
     }
 
     private long commitRaceResults(RaceResultsImport imp, ImportTarget target, boolean nameKeyed) {
@@ -2405,12 +2433,42 @@ public class ImportService {
                     .param("qualifyingDriverId", resolveGridDriver(row.qualifyingDriverSeat(), roster, bySeat, entryId))
                     .update();
         }
+        // A sheet that prints no class can't number cars within their class:
+        // take the classes from the event's entries, now and whenever a later
+        // results or entry-list commit corrects one.
+        if (imp.rows().stream().anyMatch(r -> r.className() == null || r.className().isBlank())) {
+            db.sql("UPDATE race_session SET grid_classes_from_entries = TRUE WHERE id = :id")
+                    .param("id", sessionId).update();
+            renumberGridClasses(sessionId);
+        }
         removeOrphanedEntries(eventId, carRefs(imp), target);
         // A grid can find-or-create the session before its results arrive;
         // keep format assignments in step with the new shape.
         raceFormats.autoAssignEvent(eventId);
         teamAssignments.applySeason(seasonId);
         return eventId;
+    }
+
+    /** position_in_class from the entries' classes, in overall grid order. */
+    private void renumberGridClasses(long sessionId) {
+        db.sql("""
+                        UPDATE grid_position g
+                        SET position_in_class = ranked.rn
+                        FROM (SELECT g2.id,
+                                     row_number() OVER (PARTITION BY e.class_name ORDER BY g2.position_overall) AS rn
+                              FROM grid_position g2 JOIN entry e ON e.id = g2.entry_id
+                              WHERE g2.session_id = :sessionId) ranked
+                        WHERE g.id = ranked.id
+                        """)
+                .param("sessionId", sessionId).update();
+    }
+
+    /** Renumbers every class-less grid of the event — after a commit that may
+     *  have changed a car's class (the placeholder a grid borrowed). */
+    private void renumberEventGridClasses(long eventId) {
+        db.sql("SELECT id FROM race_session WHERE event_id = :e AND grid_classes_from_entries")
+                .param("e", eventId).query(Long.class).list()
+                .forEach(this::renumberGridClasses);
     }
 
     /**
