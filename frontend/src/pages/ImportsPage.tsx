@@ -15,6 +15,8 @@ interface ImportBatch {
   status: string
   summary: string | null
   createdAt: string
+  /** For a WAITING grid: the cars it waits on the event to classify. */
+  waitingFor?: string | null
 }
 
 interface TargetGuess {
@@ -508,6 +510,7 @@ export default function ImportsPage() {
       const err = await res.json().catch(() => null)
       setError(`Batch ${id}: ${err?.message ?? `commit failed (${res.status})`}`)
     }
+    // A 200 can also be a grid parked as WAITING — the table row says why.
     await loadBatches()
     setBusy(false)
   }
@@ -596,6 +599,7 @@ export default function ImportsPage() {
               const review = reviews[b.id]
               const t = targets[b.id]
               const staged = b.status === 'STAGED'
+              const waiting = b.status === 'WAITING'
               return (
                 <Fragment key={b.id}>
                   <tr>
@@ -605,9 +609,17 @@ export default function ImportsPage() {
                     <td>{KIND_LABEL[b.kind] ?? b.kind}</td>
                     <td>{b.format}</td>
                     <td>{b.summary}</td>
-                    <td>{b.status}</td>
                     <td>
-                      {staged && (
+                      {waiting ? (
+                        <span title="Commits itself once this event's qualifying or results name these cars">
+                          Waiting for qualifying/results: {b.waitingFor}
+                        </span>
+                      ) : (
+                        b.status
+                      )}
+                    </td>
+                    <td>
+                      {(staged || waiting) && (
                         <button disabled={busy} onClick={() => discard(b.id)}>
                           Discard
                         </button>

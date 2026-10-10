@@ -188,12 +188,46 @@ class PccaPdfImportTest {
     }
 
     @Test
-    void gridCarNothingNamesATeamForIsAnError() throws Exception {
+    void aGridBeforeItsResultsWaitsThenCommitsItself() throws Exception {
+        // A brand-new season: nothing classifies any car on the grid yet.
+        Seeded s = seed("Sepang");
+        long gridId = stage("2026_PCCA_Sepang_Grid_R11.pdf");
+        ImportService.BatchSummary parked = service.commit(gridId,
+                target(s.eventId(), "RACE", 3, "Combined qualifying (Q1 + Q2 times)"));
+        assertEquals("WAITING", parked.status());
+        assertTrue(parked.waitingFor().startsWith("#66 (class), #3 (class)"), parked.waitingFor());
+        assertEquals(0L, gridSlots(s.eventId()));
+
+        // The weekend's results name every car: the grid lands on its own.
+        service.commit(stage("2026_PCCA_Sepang_Results_R9.pdf"), target(s.eventId(), "RACE", 1, null));
+        ImportService.BatchSummary done = service.get(gridId);
+        assertEquals("COMMITTED", done.status());
+        assertNull(done.waitingFor());
+        assertEquals(29L, gridSlots(s.eventId()));
+        assertEquals("Combined qualifying (Q1 + Q2 times)", db.sql("""
+                        SELECT grid_basis FROM race_session
+                        WHERE event_id = :e AND session_type = 'RACE' AND ordinal = 3
+                        """)
+                .param("e", s.eventId()).query(String.class).single());
+    }
+
+    @Test
+    void aWaitingGridCanBeDiscarded() throws Exception {
         Seeded s = seed("Bangsaen");
         long gridId = stage("2026_PCCA_Bangsaen Rounds 7&8_Grid_R8.pdf");
-        ResponseStatusException e = assertThrows(ResponseStatusException.class,
-                () -> service.commit(gridId, target(s.eventId(), "RACE", 2, null)));
-        assertEquals(422, e.getStatusCode().value());
-        assertTrue(e.getReason().contains("import a file that does"), e.getReason());
+        assertEquals("WAITING", service.commit(gridId, target(s.eventId(), "RACE", 2, null)).status());
+        service.discard(gridId);
+        assertEquals("DISCARDED", service.get(gridId).status());
+        // A later results commit doesn't bring it back.
+        service.commit(stage("2026_PCCA_Bangsaen Rounds 7&8_Results_R7.pdf"), target(s.eventId(), "RACE", 1, null));
+        assertEquals("DISCARDED", service.get(gridId).status());
+    }
+
+    private long gridSlots(long eventId) {
+        return db.sql("""
+                        SELECT count(*) FROM grid_position g JOIN race_session rs ON rs.id = g.session_id
+                        WHERE rs.event_id = :e
+                        """)
+                .param("e", eventId).query(Long.class).single();
     }
 }

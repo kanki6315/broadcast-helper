@@ -237,6 +237,41 @@ class F1PdfImportTest {
     }
 
     @Test
+    void aFullNameAbsorbsTheInitialMintedBeforeIt() {
+        // Qualifying before the grid: "M. MAASSEN" has no known driver, so it is
+        // minted as written; the grid's "Montego MAASSEN" then takes its place.
+        Seeded s = seed();
+        String family = s.surname().toUpperCase();
+        long car = entry(s.eventId(), "89");
+        long minted = service.resolveDriver(initialled("M.", family), car);
+        assign(car, minted);
+        assertEquals("M.", nameOf(minted).split("\\|")[0]);
+
+        long full = service.resolveDriver(named("Montego", family), car);
+        assertNotEquals(minted, full);
+        assertEquals(0L, db.sql("SELECT count(*) FROM driver WHERE id = :id")
+                .param("id", minted).query(Long.class).single());
+        // The seat moved to the full-named driver; the initial is not kept as an alias.
+        assertEquals(full, db.sql("SELECT driver_id FROM driver_assignment WHERE entry_id = :e")
+                .param("e", car).query(Long.class).single());
+        assertEquals(0L, db.sql("SELECT count(*) FROM driver_alias WHERE driver_id = :id")
+                .param("id", full).query(Long.class).single());
+    }
+
+    @Test
+    void anInitialOnAnotherCarIsLeftAlone() {
+        Seeded s = seed();
+        String family = s.surname().toUpperCase();
+        long other = entry(s.eventId(), "88");
+        long minted = service.resolveDriver(initialled("M.", family), other);
+        assign(other, minted);
+
+        service.resolveDriver(named("Montego", family), entry(s.eventId(), "89"));
+        assertEquals(1L, db.sql("SELECT count(*) FROM driver WHERE id = :id")
+                .param("id", minted).query(Long.class).single());
+    }
+
+    @Test
     void namesAgreeRules() {
         assertTrue(ImportService.namesAgree("Kang", "LING", "LING Kang"));
         assertTrue(ImportService.namesAgree("Tien Foo Roy", "TANG", "Tien Foo Roy TANG"));

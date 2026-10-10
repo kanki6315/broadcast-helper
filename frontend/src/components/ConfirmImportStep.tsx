@@ -539,7 +539,11 @@ export default function ConfirmImportStep({
         const next = { ...prev }
         for (const r of result.results) {
           next[r.batchId] =
-            r.status === 'COMMITTED' ? { status: 'ok' } : { status: 'error', message: r.message ?? 'failed' }
+            r.status === 'COMMITTED'
+              ? { status: 'ok' }
+              : r.status === 'WAITING'
+                ? { status: 'skip', message: r.message ?? 'waiting' }
+                : { status: 'error', message: r.message ?? 'failed' }
         }
         return next
       })
@@ -554,6 +558,9 @@ export default function ConfirmImportStep({
     .filter(([, s]) => s.status === 'ok')
     .map(([id]) => Number(id))
   const anyFailed = Object.values(batchState).some((s) => s.status === 'error')
+  // A grid that names a car the event can't classify yet waits in the table
+  // and finishes itself when that weekend's qualifying or results commit.
+  const waitingCount = Object.values(batchState).filter((s) => s.status === 'skip' && s.message).length
 
   function finish() {
     onCommitted({ committedIds, leftoverIds, seriesId, eventId: pinnedEventId })
@@ -798,6 +805,8 @@ export default function ConfirmImportStep({
               {anyFailed
                 ? `Committed ${committedIds.length}; some failed — see the table below.`
                 : `Committed ${committedIds.length} batch${committedIds.length === 1 ? '' : 'es'}.`}
+              {waitingCount > 0 &&
+                ` ${waitingCount} grid${waitingCount === 1 ? '' : 's'} waiting for qualifying or results — see the table below.`}
             </p>
             {anyFailed && (
               <button type="button" className="btn" onClick={() => void commit(true)}>

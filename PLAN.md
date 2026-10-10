@@ -879,7 +879,12 @@ display size.)
   Shanghai and Singapore are F1 weekends (`F1_PDF`). Driver matching gained a
   last, same-car-only tier for a shortened name (Fuji's "Roy TANG" for Tien Foo
   Roy TANG); a different romanisation (Fuji's "LYU Wei" for LU Wei) still needs
-  a driver merge.
+  a driver merge. **Import order no longer matters** (same day): a full name
+  absorbs an initial-only driver minted earlier on the same car this season
+  (via the Drivers merge, initial alias dropped), and a grid naming a car the
+  event can't classify parks as `WAITING` (V67 `waiting_target`/`waiting_for`)
+  and commits itself after the event's next results/qualifying/entry-list
+  commit; group commits run grids last.
 - **F1 support-race PDFs (`F1_PDF`) — ✅ DONE (2026-09-16).** Carrera Cup NA's
   Formula 1 weekends (Miami every year, Montréal 2024–25, Austin 2025) publish
   F1-paddock-style sheets, and Al Kamel posts them as **PDF only** — the XML

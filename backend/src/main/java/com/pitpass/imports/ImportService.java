@@ -35,19 +35,22 @@ public class ImportService {
      *  Kamel site (see {@link SourceContext}); null for uploads and iRacing.
      *  sourcePreseason is the planner's verdict that the fetched weekend is no
      *  round; false for everything else. */
+    /** waitingFor: for a WAITING grid, the cars it waits on the event to classify. */
     public record BatchSummary(long id, String kind, String format, String filename, String status,
                                String summary, OffsetDateTime createdAt, String sourceUrl, String sourceEvent,
-                               boolean sourcePreseason) {
+                               boolean sourcePreseason, String waitingFor) {
     }
 
     private static final String BATCH_COLUMNS =
-            "id, kind, format, filename, status, summary, created_at, source_url, source_event, source_preseason";
+            "id, kind, format, filename, status, summary, created_at, source_url, source_event, source_preseason,"
+            + " waiting_for";
 
     private static BatchSummary batchRow(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new BatchSummary(rs.getLong("id"), rs.getString("kind"),
                 rs.getString("format"), rs.getString("filename"), rs.getString("status"),
                 rs.getString("summary"), rs.getObject("created_at", OffsetDateTime.class),
-                rs.getString("source_url"), rs.getString("source_event"), rs.getBoolean("source_preseason"));
+                rs.getString("source_url"), rs.getString("source_event"), rs.getBoolean("source_preseason"),
+                rs.getString("waiting_for"));
     }
 
     private final JdbcClient db;
@@ -63,11 +66,13 @@ public class ImportService {
     private final String gridPdfParserScript;
     private final String f1PdfParserScript;
     private final String pccaPdfParserScript;
+    private final com.pitpass.drivers.DriverAdminController drivers;
 
     public ImportService(JdbcClient db, ObjectMapper json, IRacingClient iracing,
                          com.pitpass.formats.RaceFormatService raceFormats,
                          com.pitpass.teams.TeamAssignmentService teamAssignments,
                          com.pitpass.teams.TeamResolver teamResolver,
+                         com.pitpass.drivers.DriverAdminController drivers,
                          PlatformTransactionManager txManager,
                          @org.springframework.beans.factory.annotation.Value("${pit-pass.entry-list-parser.python:python3}") String parserPython,
                          @org.springframework.beans.factory.annotation.Value("${pit-pass.entry-list-parser.script:../parser/parse_entry_list.py}") String parserScript,
@@ -88,6 +93,7 @@ public class ImportService {
         this.gridPdfParserScript = gridPdfParserScript;
         this.f1PdfParserScript = f1PdfParserScript;
         this.pccaPdfParserScript = pccaPdfParserScript;
+        this.drivers = drivers;
     }
 
     // ---------------------------------------------------------------- staging
@@ -970,11 +976,14 @@ public class ImportService {
     }
 
     public void discard(long id) {
-        int updated = db.sql("UPDATE import_batch SET status = 'DISCARDED' WHERE id = :id AND status = 'STAGED'")
+        int updated = db.sql("""
+                        UPDATE import_batch SET status = 'DISCARDED', waiting_target = NULL, waiting_for = NULL
+                        WHERE id = :id AND status IN ('STAGED', 'WAITING')
+                        """)
                 .param("id", id)
                 .update();
         if (updated == 0) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Batch is not in STAGED state");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Batch is not in STAGED or WAITING state");
         }
     }
 
@@ -1640,6 +1649,13 @@ public class ImportService {
             // Event-kind commits hand back the event they landed in, so a fetched
             // batch can stamp its source folder on it (standings hang off a
             // championship, not an event).
+            if ("GRID".equals(batch.kind()) && target.eventId() != null) {
+                List<String> unknown = gridCarsTheEventCannotPlace(
+                        json.readValue(payload, GridImport.class), target.eventId());
+                if (!unknown.isEmpty()) {
+                    return park(id, target, unknown);
+                }
+            }
             Long eventId = switch (batch.kind()) {
                 // iRacing numbers its own sessions; every other source's session
                 // name is what tells a split session apart (SessionNames).
@@ -1669,7 +1685,100 @@ public class ImportService {
         db.sql("UPDATE import_batch SET status = 'COMMITTED', committed_at = now() WHERE id = :id")
                 .param("id", id)
                 .update();
+        if (("RACE_RESULTS".equals(batch.kind()) || "ENTRY_LIST".equals(batch.kind()))) {
+            resumeWaitingGrids();
+        }
         return get(id);
+    }
+
+    // ---------------------------------------------------------- waiting grids
+
+    /**
+     * Cars on a grid the event can't give a class or a team. A grid sheet that
+     * prints neither (Carrera Cup Asia's) borrows them from the event's entry
+     * or the car earlier in the season (see {@link #upsertEntry}); a car new
+     * to the season has neither until the weekend's qualifying or results
+     * arrive. Each reads "#12 (class, team)".
+     */
+    private List<String> gridCarsTheEventCannotPlace(GridImport imp, long eventId) {
+        List<String> out = new ArrayList<>();
+        for (GridImport.Row row : imp.rows()) {
+            boolean needsClass = row.className() == null || row.className().isBlank();
+            boolean needsTeam = row.team() == null || row.team().isBlank();
+            if (!needsClass && !needsTeam) {
+                continue;
+            }
+            Map<String, Object> known = db.sql("""
+                            SELECT bool_or(en.class_name IS NOT NULL) AS has_class,
+                                   bool_or(en.team_name IS NOT NULL) AS has_team
+                            FROM entry en JOIN event ev ON ev.id = en.event_id
+                            WHERE ev.season_id = (SELECT season_id FROM event WHERE id = :e)
+                              AND en.car_number = :n
+                            """)
+                    .param("e", eventId).param("n", row.number()).query().singleRow();
+            List<String> missing = new ArrayList<>();
+            if (needsClass && !Boolean.TRUE.equals(known.get("has_class"))) {
+                missing.add("class");
+            }
+            if (needsTeam && !Boolean.TRUE.equals(known.get("has_team"))) {
+                missing.add("team");
+            }
+            if (!missing.isEmpty()) {
+                out.add("#" + row.number() + " (" + String.join(", ", missing) + ")");
+            }
+        }
+        return out;
+    }
+
+    /** Parks a grid until the event can place every car on it. */
+    private BatchSummary park(long id, ImportTarget target, List<String> unknown) throws JsonProcessingException {
+        db.sql("""
+                        UPDATE import_batch
+                        SET status = 'WAITING', waiting_target = CAST(:target AS jsonb), waiting_for = :waiting
+                        WHERE id = :id
+                        """)
+                .param("target", json.writeValueAsString(target))
+                .param("waiting", String.join(", ", unknown))
+                .param("id", id)
+                .update();
+        return get(id);
+    }
+
+    /**
+     * Finishes every waiting grid the event can now place — called after a
+     * results, qualifying or entry-list commit, in the same transaction, so the
+     * grid lands exactly as if it had been committed second. A grid still
+     * missing cars keeps waiting, its list brought up to date.
+     */
+    private void resumeWaitingGrids() {
+        record Waiting(long id, String target) {
+        }
+        List<Waiting> waiting = db.sql("""
+                        SELECT id, waiting_target::text AS target FROM import_batch
+                        WHERE status = 'WAITING' AND kind = 'GRID' ORDER BY id
+                        """)
+                .query((rs, i) -> new Waiting(rs.getLong("id"), rs.getString("target"))).list();
+        for (Waiting w : waiting) {
+            try {
+                ImportTarget target = json.readValue(w.target(), ImportTarget.class);
+                GridImport grid = json.readValue(payloadJson(w.id()), GridImport.class);
+                List<String> unknown = gridCarsTheEventCannotPlace(grid, target.eventId());
+                if (!unknown.isEmpty()) {
+                    db.sql("UPDATE import_batch SET waiting_for = :waiting WHERE id = :id")
+                            .param("waiting", String.join(", ", unknown)).param("id", w.id()).update();
+                    continue;
+                }
+                commitGrid(grid, target, nameKeyed(get(w.id())));
+                db.sql("""
+                                UPDATE import_batch
+                                SET status = 'COMMITTED', committed_at = now(), waiting_target = NULL, waiting_for = NULL
+                                WHERE id = :id
+                                """)
+                        .param("id", w.id()).update();
+            } catch (JsonProcessingException e) {
+                throw new IllegalStateException("Stored payload no longer parses", e);
+            }
+        }
     }
 
     // ---------------------------------------------------------- group commit
@@ -1738,7 +1847,8 @@ public class ImportService {
         }
 
         int committed = (int) results.stream().filter(r -> "COMMITTED".equals(r.status())).count();
-        return new GroupCommitResult(committed, results.size() - committed, results);
+        int failed = (int) results.stream().filter(r -> "FAILED".equals(r.status())).count();
+        return new GroupCommitResult(committed, failed, results);
     }
 
     private record SeasonKey(long seriesId, int year) {
@@ -1815,14 +1925,21 @@ public class ImportService {
             long eventId = txTemplate.execute(status -> {
                 long resolved = pe.eventId() != null ? attachEventId(pe.eventId()) : createGroupEvent(pe, batches);
                 markClassSeeding(resolved, batches);
-                for (GroupBatch gb : batches) {
+                // Grids last: a grid that prints no class or entrant borrows
+                // them from the weekend's results and qualifying.
+                List<GroupBatch> ordered = batches.stream()
+                        .sorted(java.util.Comparator.comparing(gb -> "GRID".equals(get(gb.batchId()).kind())))
+                        .toList();
+                for (GroupBatch gb : ordered) {
                     commit(gb.batchId(), withEvent(gb.target(), resolved, pe.name()));
                 }
                 return resolved;
             });
             List<BatchResult> ok = new ArrayList<>();
             for (GroupBatch gb : batches) {
-                ok.add(new BatchResult(gb.batchId(), "COMMITTED", null, eventId));
+                BatchSummary after = get(gb.batchId());
+                ok.add(new BatchResult(gb.batchId(), after.status(),
+                        "WAITING".equals(after.status()) ? "Waiting for " + after.waitingFor() : null, eventId));
             }
             return ok;
         } catch (RuntimeException ex) {
@@ -3117,6 +3234,66 @@ public class ImportService {
      * known (import that weekend's grid first) replaces it.
      */
     long resolveDriver(RaceResultsImport.DriverRow d, long entryId) {
+        String first = d.firstName() == null ? "" : d.firstName().trim();
+        String surname = d.surname() == null ? "" : d.surname().trim();
+        if (first.isEmpty() || surname.isEmpty() || INITIALS.matcher(first).matches()) {
+            return resolveByName(d, entryId);
+        }
+        // A sheet read earlier may have minted a driver from an initial ("M.
+        // Maassen" from a qualifying sheet, before the grid gave the full name).
+        // Whatever this full name resolves to absorbs that placeholder, so the
+        // order the weekend's sheets are imported in doesn't leave a stray.
+        Optional<Long> provisional = provisionalDriver(first, surname, entryId);
+        long resolved = resolveByName(d, entryId);
+        if (provisional.isPresent() && provisional.get() != resolved) {
+            absorbProvisional(resolved, provisional.get());
+        }
+        return resolved;
+    }
+
+    /** The one initial-only driver who drove this entry's car number this
+     *  season and whose name is an initialled form of the sheet's. */
+    private Optional<Long> provisionalDriver(String first, String surname, long entryId) {
+        String full = first + " " + surname;
+        List<Long> ids = db.sql("""
+                        WITH ctx AS (
+                            SELECT regexp_replace(trim(e.car_number), '^0+(?=\\d)', '') AS car, ev.season_id
+                            FROM entry e JOIN event ev ON ev.id = e.event_id
+                            WHERE e.id = :entryId
+                        )
+                        SELECT DISTINCT d.id, d.first_name, d.surname
+                        FROM driver_assignment da
+                                 JOIN entry e2 ON e2.id = da.entry_id
+                                 JOIN event ev2 ON ev2.id = e2.event_id
+                                 JOIN ctx ON ctx.season_id = ev2.season_id
+                                 JOIN driver d ON d.id = da.driver_id
+                        WHERE regexp_replace(trim(e2.car_number), '^0+(?=\\d)', '') = ctx.car
+                          AND d.first_name ~ '^([[:upper:]]{1,3}\\.\\s*)+$'
+                        """)
+                .param("entryId", entryId)
+                .query((rs, i) -> namesAgree(rs.getString("first_name"), rs.getString("surname"), full)
+                        ? rs.getLong("id") : null)
+                .list().stream().filter(Objects::nonNull).toList();
+        return ids.size() == 1 ? Optional.of(ids.get(0)) : Optional.empty();
+    }
+
+    /** Merges the initial-only placeholder into the full-named driver. The
+     *  merge keeps an absorbed spelling as an alias; an initial is not worth
+     *  keeping — it would answer for any namesake with that initial. */
+    private void absorbProvisional(long driverId, long provisionalId) {
+        String initialled = db.sql("SELECT first_name || ' ' || surname FROM driver WHERE id = :id")
+                .param("id", provisionalId).query(String.class).single();
+        drivers.merge(driverId, new com.pitpass.drivers.DriverAdminController.MergeRequest(provisionalId));
+        db.sql("""
+                        DELETE FROM driver_alias
+                        WHERE driver_id = :id
+                          AND lower(regexp_replace(trim(alias), '\\s+', ' ', 'g'))
+                              = lower(regexp_replace(trim(:alias), '\\s+', ' ', 'g'))
+                        """)
+                .param("id", driverId).param("alias", initialled).update();
+    }
+
+    private long resolveByName(RaceResultsImport.DriverRow d, long entryId) {
         String first = d.firstName() == null ? "" : d.firstName().trim();
         String surname = d.surname() == null ? "" : d.surname().trim();
         if (first.isEmpty() || surname.isEmpty()) {
