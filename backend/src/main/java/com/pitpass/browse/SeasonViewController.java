@@ -318,7 +318,8 @@ public class SeasonViewController {
         String posCol = champ.isOverall() ? "position_overall" : "position_in_class";
         String classFilter = champ.isOverall() ? "" : " AND en.class_name = :className";
         record Cell(long entryId, String carNumber, String team, long eventId, int raceOrdinal,
-                    String raceName, Integer start, Integer finish, String status, boolean notFinished) {
+                    String raceName, Integer start, Integer finish, String status, boolean notFinished,
+                    boolean raceHasResults) {
         }
         // car_number resolves through car_number_alias (V38): the rare entrant
         // that raced under a second number (JDC-Miller's #5 running Daytona as
@@ -333,7 +334,8 @@ public class SeasonViewController {
                                en.team_name, ev.id AS event_id,
                                rs.ordinal AS race_ordinal, rs.name AS race_name,
                                g.%1$s AS start_pos, r.%1$s AS finish_pos, r.status,
-                               COALESCE(r.not_finished, false) AS not_finished
+                               COALESCE(r.not_finished, false) AS not_finished,
+                               EXISTS (SELECT 1 FROM result x WHERE x.session_id = rs.id) AS race_has_results
                         FROM entry en
                                  JOIN event ev ON ev.id = en.event_id
                                  LEFT JOIN car_number_alias cna
@@ -353,7 +355,7 @@ public class SeasonViewController {
                         rs.getString("team_name"), rs.getLong("event_id"), rs.getInt("race_ordinal"),
                         rs.getString("race_name"),
                         rs.getObject("start_pos", Integer.class), rs.getObject("finish_pos", Integer.class),
-                        rs.getString("status"), rs.getBoolean("not_finished")))
+                        rs.getString("status"), rs.getBoolean("not_finished"), rs.getBoolean("race_has_results")))
                 .list()
                 .stream()
                 .filter(c -> c.start() != null || c.finish() != null || c.status() != null)
@@ -377,6 +379,13 @@ public class SeasonViewController {
                     .list();
         }
 
+        // Carrera Cup Asia's results sheets leave a non-starter out entirely;
+        // its grid still lists the car. On the grid, missing from a race that
+        // has results: it didn't start (Fuji's #4, "Entry :30 Start :29").
+        // Elsewhere a grid without a result can mean a race still to run or
+        // one that never did (Shanghai's cancelled Race 1, which has no results
+        // at all and so stays as it is here too).
+        boolean pointsFollowFinish = pointsFollowFinish(champ.seriesName());
         boolean driversKind = "DRIVERS".equals(champ.kind());
         Map<Long, List<String>> driverNamesByEntry = new HashMap<>();
         if (driversKind && !roundByEventId.isEmpty()) {
@@ -426,7 +435,10 @@ public class SeasonViewController {
                 int round = roundByEventId.get(c.eventId());
                 byRound.computeIfAbsent(round, k -> new ArrayList<>())
                         .add(new RecapRace(c.raceOrdinal(), c.raceName(), c.carNumber(), c.start(),
-                                c.finish(), c.status(), c.notFinished(), null));
+                                c.finish(),
+                                pointsFollowFinish && c.raceHasResults() && c.start() != null
+                                        && c.finish() == null && c.status() == null ? NOT_STARTED : c.status(),
+                                c.notFinished(), null));
                 if (c.team() != null && !c.team().isBlank()) {
                     String displayTeam = c.team().trim();
                     distinctTeamNames.putIfAbsent(displayTeam.toLowerCase(Locale.ROOT), displayTeam);
@@ -461,9 +473,12 @@ public class SeasonViewController {
                     h.totalPoints(), h.adjustments(), points, sessions, byRound));
         }
 
-        return new Recap(champ, rounds, pointsFollowFinish(champ.seriesName())
-                ? withPointsNotes(rows, headers.stream().map(RowHeader::rowId).toList(), rawPointsByRow, rounds)
-                : rows);
+        if (!pointsFollowFinish) {
+            return new Recap(champ, rounds, rows);
+        }
+        List<Long> rowIds = headers.stream().map(RowHeader::rowId).toList();
+        return new Recap(champ, rounds, withNonStarters(
+                withPointsNotes(rows, rowIds, rawPointsByRow, rounds), rowIds, rawPointsByRow, rounds));
     }
 
     /**
@@ -492,16 +507,13 @@ public class SeasonViewController {
         return seriesName != null && seriesName.toLowerCase(Locale.ROOT).contains("carrera cup asia");
     }
 
-    /** One standings session's race points and status, for the points-note check. */
-    private record RacePoints(double race, String status) {
-    }
+    /** The status the recap's DNS chip reads (as timing results spell it). */
+    private static final String NOT_STARTED = "Not Started";
 
-    private static List<RecapRow> withPointsNotes(List<RecapRow> rows, List<Long> rowIds,
-                                                  Map<Long, Map<Integer, RacePoints>> rawByRow,
-                                                  List<RecapRound> rounds) {
-        record Line(int rowIndex, int round, int race, String car, int finish, double racePoints, String status) {
-        }
-        Map<String, Integer> sessionOf = new HashMap<>(); // "round:raceOrdinal" -> session index
+    /** "round:raceOrdinal" -> the round's points session it pairs with, by
+     *  running order, where the round has as many sessions as races. */
+    private static Map<String, Integer> sessionByRace(List<RecapRound> rounds) {
+        Map<String, Integer> sessionOf = new HashMap<>();
         for (RecapRound round : rounds) {
             List<Integer> sessions = round.sessions().stream().map(RecapSession::sessionIndex).sorted().toList();
             List<Integer> races = round.races().stream().map(RecapRaceRef::ordinal).sorted().toList();
@@ -511,6 +523,61 @@ public class SeasonViewController {
                 }
             }
         }
+        return sessionOf;
+    }
+
+    /**
+     * Adds a DNS line where the points sheet says the driver didn't start but
+     * no sheet put them on the grid or in the results — a car withdrawn before
+     * the race (Bangsaen's #8 and #12: "Withdraw from Round 7"). The points
+     * import stores Carrera Cup Asia's "DNS" cell as not_classified, the only
+     * cell that maps there.
+     */
+    private static List<RecapRow> withNonStarters(List<RecapRow> rows, List<Long> rowIds,
+                                                  Map<Long, Map<Integer, RacePoints>> rawByRow,
+                                                  List<RecapRound> rounds) {
+        Map<String, Integer> sessionOf = sessionByRace(rounds);
+        List<RecapRow> out = new ArrayList<>();
+        for (int i = 0; i < rows.size(); i++) {
+            RecapRow row = rows.get(i);
+            Map<Integer, RacePoints> raw = rawByRow.getOrDefault(rowIds.get(i), Map.of());
+            Map<Integer, List<RecapRace>> cells = new LinkedHashMap<>();
+            row.cells().forEach((round, races) -> cells.put(round, new ArrayList<>(races)));
+            boolean added = false;
+            for (RecapRound round : rounds) {
+                for (RecapRaceRef race : round.races()) {
+                    Integer session = sessionOf.get(round.round() + ":" + race.ordinal());
+                    RacePoints points = session == null ? null : raw.get(session);
+                    if (points == null || !"not_classified".equalsIgnoreCase(Objects.toString(points.status(), ""))) {
+                        continue;
+                    }
+                    List<RecapRace> lines = cells.computeIfAbsent(round.round(), k -> new ArrayList<>());
+                    if (lines.stream().anyMatch(r -> r.race() == race.ordinal())) {
+                        continue; // a sheet already placed this car in the race
+                    }
+                    lines.add(new RecapRace(race.ordinal(), race.name(), row.carNumber(), null, null,
+                            NOT_STARTED, false, null));
+                    lines.sort(java.util.Comparator.comparingInt(RecapRace::race));
+                    added = true;
+                }
+            }
+            out.add(!added ? row : new RecapRow(row.position(), row.competitorKey(), row.competitorName(),
+                    row.carNumber(), row.teamName(), row.teamNames(), row.totalPoints(), row.adjustments(),
+                    row.pointsByRound(), row.sessionPoints(), cells));
+        }
+        return out;
+    }
+
+    /** One standings session's race points and status, for the points-note check. */
+    private record RacePoints(double race, String status) {
+    }
+
+    private static List<RecapRow> withPointsNotes(List<RecapRow> rows, List<Long> rowIds,
+                                                  Map<Long, Map<Integer, RacePoints>> rawByRow,
+                                                  List<RecapRound> rounds) {
+        record Line(int rowIndex, int round, int race, String car, int finish, double racePoints, String status) {
+        }
+        Map<String, Integer> sessionOf = sessionByRace(rounds);
         Map<String, List<Line>> byRace = new HashMap<>();
         for (int i = 0; i < rows.size(); i++) {
             Map<Integer, RacePoints> raw = rawByRow.getOrDefault(rowIds.get(i), Map.of());

@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -124,6 +125,58 @@ class RecapPointsNoteTest {
         assertNull(notes.get("16"));
         assertNull(notes.get("22"));
         assertEquals(4, notes.size());
+    }
+
+    @Test
+    void nonStartersReadAsDns() {
+        long champId = race("Porsche ARbox Carrera Cup Asia");
+        long seasonId = db.sql("SELECT season_id FROM championship WHERE id = :c")
+                .param("c", champId).query(Long.class).single();
+        long eventId = db.sql("SELECT id FROM event WHERE season_id = :s").param("s", seasonId)
+                .query(Long.class).single();
+        long sessionId = db.sql("SELECT id FROM race_session WHERE event_id = :e").param("e", eventId)
+                .query(Long.class).single();
+        String suffix = UUID.randomUUID().toString();
+        // #4 is on the grid but not in the results (it never started).
+        long entry4 = db.sql("""
+                        INSERT INTO entry (event_id, car_number, class_name, team_name)
+                        VALUES (:e, '4', 'AM', 'Team') RETURNING id
+                        """)
+                .param("e", eventId).query(Long.class).single();
+        long lu = db.sql("INSERT INTO driver (first_name, surname) VALUES ('Wei', :s) RETURNING id")
+                .param("s", "Lu" + suffix).query(Long.class).single();
+        db.sql("INSERT INTO driver_assignment (entry_id, driver_id, seat_order) VALUES (:e, :d, 1)")
+                .param("e", entry4).param("d", lu).update();
+        db.sql("""
+                        INSERT INTO grid_position (session_id, entry_id, position_overall, position_in_class)
+                        VALUES (:s, :e, 12, 6)
+                        """)
+                .param("s", sessionId).param("e", entry4).update();
+        // #12 withdrew: on no sheet but the points, which say DNS.
+        for (String driver : List.of("Wei Lu" + suffix, "Hoang Dat Sawer" + suffix)) {
+            long rowId = db.sql("""
+                            INSERT INTO standings_row (championship_id, position, competitor_key, total_points)
+                            VALUES (:c, 9, :k, 0) RETURNING id
+                            """)
+                    .param("c", champId).param("k", driver).query(Long.class).single();
+            db.sql("""
+                            INSERT INTO standings_session_points (standings_row_id, session_index, total_points,
+                                                                  race_points, status)
+                            VALUES (:r, 1, 0, 0, 'not_classified')
+                            """)
+                    .param("r", rowId).update();
+        }
+
+        Map<String, SeasonViewController.RecapRace> byDriver = new HashMap<>();
+        for (SeasonViewController.RecapRow row : seasonView.recap(champId).rows()) {
+            row.cells().values().forEach(races -> races.forEach(r -> byDriver.put(row.competitorKey(), r)));
+        }
+        SeasonViewController.RecapRace luWei = byDriver.get("Wei Lu" + suffix);
+        assertEquals("Not Started", luWei.status());
+        assertEquals(6, luWei.start());
+        SeasonViewController.RecapRace sawer = byDriver.get("Hoang Dat Sawer" + suffix);
+        assertEquals("Not Started", sawer.status());
+        assertNull(sawer.start());
     }
 
     @Test
