@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Which standings files a plan ticks by default — one copy of each sheet. */
 class AlKamelPlanStandingsTest {
@@ -87,7 +89,7 @@ class AlKamelPlanStandingsTest {
                 plan.stream().filter(f -> f.name().contains("MRRA")).findFirst().orElseThrow().note());
     }
 
-    private static PlanWeekend weekend(String event, long seriesId, boolean loose, String start, boolean withStandings) {
+    private static PlanWeekend weekend(String event, Long seriesId, boolean loose, String start, boolean withStandings) {
         List<PlanSession> sessions = List.of(new PlanSession(event + "/race/", LocalDateTime.parse(start), "Race", "RACE",
                 null, null, null));
         List<PlanFile> standings = withStandings
@@ -99,37 +101,31 @@ class AlKamelPlanStandingsTest {
     }
 
     @Test
-    void aLooseFolderNeverOutranksTheSeriesRealFinaleForStandings() {
-        // Planning one series attributes every folder posted without a series
-        // folder to it; Jerez, posted last and carrying its own points sheet,
-        // must not take the final-standings mark from Road Atlanta.
+    void theSeriesLatestWeekendCarriesTheFinalStandingsLooseOrNot() {
+        // 2024 Carrera Cup: the finale "Circuit of the Americas (PCCNA)" was
+        // posted with no series folder after Road Atlanta; the plan placed it
+        // in the series by its name, so its sheet is the season's. Jerez,
+        // posted last with no series folder and no series in its name, is
+        // nobody's and takes nothing from the series.
         List<PlanWeekend> weekends = new ArrayList<>(List.of(
-                weekend("02_Daytona", 1, false, "2025-01-25T13:40", true),
-                weekend("19_Road Atlanta", 1, false, "2025-10-11T12:10", true),
-                weekend("20_Jerez", 1, true, "2025-11-15T10:00", true)));
+                weekend("02_Daytona", 1L, false, "2024-01-25T13:40", true),
+                weekend("19_Road Atlanta", 1L, false, "2024-10-11T12:10", true),
+                weekend("20_Circuit of the Americas (PCCNA)", 1L, true, "2024-10-19T10:00", true),
+                weekend("23_Jerez de la Frontera Circuit", null, true, "2024-11-15T10:00", true)));
         AlKamelImportService.markFinalStandings(weekends);
-        assertEquals(List.of("19_Road Atlanta"),
+        assertEquals(List.of("20_Circuit of the Americas (PCCNA)", "23_Jerez de la Frontera Circuit"),
                 weekends.stream().filter(PlanWeekend::finalStandings).map(PlanWeekend::eventName).toList());
-
-        // With no proper weekend carrying standings, the latest loose one does.
-        List<PlanWeekend> looseOnly = new ArrayList<>(List.of(
-                weekend("02_Daytona", 1, false, "2025-01-25T13:40", false),
-                weekend("07_COTA", 1, true, "2025-09-06T10:00", true),
-                weekend("20_Jerez", 1, true, "2025-11-15T10:00", true)));
-        AlKamelImportService.markFinalStandings(looseOnly);
-        assertEquals(List.of("20_Jerez"),
-                looseOnly.stream().filter(PlanWeekend::finalStandings).map(PlanWeekend::eventName).toList());
     }
 
     @Test
     void aFolderRepeatingAnEarlierFoldersSessionsIsFlaggedAsADuplicate() {
         // 2025: "17_Circuit of the Americas" and "19_Circuit of the Americas (MC)"
         // hold the same Mustang Challenge sessions; the second is the repeat.
-        PlanWeekend first = weekend("17_Circuit of the Americas", 3, false, "2025-09-06T16:40", false);
+        PlanWeekend first = weekend("17_Circuit of the Americas", 3L, false, "2025-09-06T16:40", false);
         PlanWeekend repeat = new PlanWeekend("25_2025/19_Circuit of the Americas (MC)", "19/", "19/series/",
                 "Circuit of the Americas (MC)", 2025, "01_Mustang Challenge", 3L, "Mustang Challenge", false, false,
                 false, null, first.sessions(), List.of(), false, null, null);
-        PlanWeekend other = weekend("18_Charlotte", 3, false, "2025-10-04T14:00", false);
+        PlanWeekend other = weekend("18_Charlotte", 3L, false, "2025-10-04T14:00", false);
         PlanWeekend otherSeries = new PlanWeekend("25_2025/19_Circuit of the Americas (MC)", "19/", "19/pccna/",
                 "Circuit of the Americas (MC)", 2025, "02_PCCNA", 9L, "PCCNA", false, false,
                 false, null, first.sessions(), List.of(), false, null, null);
@@ -139,5 +135,17 @@ class AlKamelPlanStandingsTest {
         assertEquals("25_2025/19_Circuit of the Americas (MC)", dupes.get(0).sourceEvent());
         assertEquals("01_Mustang Challenge", dupes.get(0).seriesFolder());
         assertEquals("25_2025/17_Circuit of the Americas", dupes.get(0).duplicateOf());
+    }
+
+    @Test
+    void aLooseFolderBelongsToTheChosenSeriesOnlyWhenItNamesIt() {
+        List<String> pccna = List.of("Porsche Carrera Cup North America", "PCCNA",
+                "Porsche Deluxe Carrera Cup North America");
+        assertTrue(AlKamelImportService.namesSeries("PCCNA COTA", pccna));
+        assertTrue(AlKamelImportService.namesSeries("Circuit of The Americas (PCCNA)", pccna));
+        // 2024's Super Trofeo world final, posted with no series folder.
+        assertFalse(AlKamelImportService.namesSeries("Jerez de la Frontera Circuit", pccna));
+        // A word inside another word is no mention.
+        assertFalse(AlKamelImportService.namesSeries("PCCNAX Test", pccna));
     }
 }

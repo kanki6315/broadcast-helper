@@ -328,15 +328,17 @@ export default function AlKamelImportModal({
       const p = body as YearPlan
       setPlan(p)
       // Default tick: weekends with something to read that aren't already here
-      // and are rounds — the Roar, the tests and a folder posted twice wait
-      // for a deliberate tick.
+      // and are rounds — the Roar, the tests, a folder posted twice and a
+      // folder with no series nobody could place wait for a deliberate tick.
       const dupes = new Set((p.duplicates ?? []).map((d) => `${d.sourceEvent}|${d.seriesFolder ?? 'loose'}`))
       setPicked(new Set(p.weekends
         .filter((w) => !w.error && !w.preseason && w.existingEventId == null && !dupes.has(weekendKey(w))
-          && filesFor(w, opts).length > 0)
+          && w.seriesId != null && filesFor(w, opts).length > 0)
         .map(weekendKey)))
+      // The plan places a loose folder in the chosen series only when the
+      // folder names it; any other stays for the admin to pick.
       const loose: Record<string, number> = {}
-      if (seriesId != null) for (const w of p.weekends) if (w.loose) loose[weekendKey(w)] = seriesId
+      for (const w of p.weekends) if (w.loose && w.seriesId != null) loose[weekendKey(w)] = w.seriesId
       setLooseSeries(loose)
       setPhase('plan')
     } catch {

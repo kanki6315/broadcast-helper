@@ -143,30 +143,34 @@ public class ImportService {
      * file with no session name takes the folder label and the ordinal that
      * label carries ("Race 2" → 2). A points PDF takes the folder's year — its
      * own guess is the PDF creation date, wrong for a season republished in
-     * January. Entry lists carry their own dates and are left alone.
+     * January. Entry lists carry their own dates and are left alone. An F1
+     * weekend's sheet is titled with the Grand Prix ("FORMULA 1 CRYPTO.COM
+     * MIAMI GRAND PRIX 2023"), not the support race's weekend, so the folder
+     * names that event instead.
      */
     static Staged applyContext(Staged s, ImportFormat format, SourceContext ctx) {
         Object payload = s.payload();
+        boolean folderNamesEvent = format == ImportFormat.F1_PDF && ctx.eventName() != null;
         if (payload instanceof RaceResultsImport r) {
             boolean fillName = r.sessionName() == null && ctx.sessionLabel() != null;
             payload = new RaceResultsImport(
                     r.championshipName() != null ? r.championshipName() : ctx.seriesName(),
-                    r.eventName() != null ? r.eventName() : ctx.eventName(),
+                    r.eventName() != null && !folderNamesEvent ? r.eventName() : ctx.eventName(),
                     fillName ? ctx.sessionLabel() : r.sessionName(),
                     r.sessionType(),
                     fillName ? ImportParser.sessionOrdinal(ctx.sessionLabel()) : r.sessionOrdinal(),
                     r.reportMark(), r.reportMessage(),
-                    r.sessionStart() != null ? r.sessionStart() : ctx.sessionStart(),
+                    sessionStartOnFolderClock(r.sessionStart(), ctx.sessionStart()),
                     r.circuitName(), r.circuitLengthM(), r.circuitCountry(), r.rows());
         } else if (payload instanceof GridImport g) {
             boolean fillName = g.sessionName() == null && ctx.sessionLabel() != null;
             payload = new GridImport(
                     g.championshipName() != null ? g.championshipName() : ctx.seriesName(),
-                    g.eventName() != null ? g.eventName() : ctx.eventName(),
+                    g.eventName() != null && !folderNamesEvent ? g.eventName() : ctx.eventName(),
                     fillName ? ctx.sessionLabel() : g.sessionName(),
                     g.sessionType(),
                     fillName ? ImportParser.sessionOrdinal(ctx.sessionLabel()) : g.sessionOrdinal(),
-                    g.sessionStart() != null ? g.sessionStart() : ctx.sessionStart(),
+                    sessionStartOnFolderClock(g.sessionStart(), ctx.sessionStart()),
                     g.circuitName(), g.circuitLengthM(), g.circuitCountry(), g.rows());
         } else if (payload instanceof FlagsImport f) {
             payload = new FlagsImport(
@@ -174,7 +178,7 @@ public class ImportService {
                     f.eventName() != null ? f.eventName() : ctx.eventName(),
                     f.sessionName() != null ? f.sessionName() : ctx.sessionLabel(),
                     f.sessionType(), f.sessionOrdinal(), f.reportMark(), f.reportMessage(),
-                    f.sessionStart() != null ? f.sessionStart() : ctx.sessionStart(),
+                    sessionStartOnFolderClock(f.sessionStart(), ctx.sessionStart()),
                     f.circuitName(), f.circuitLengthM(), f.circuitCountry(), f.rows());
         } else if (payload instanceof StandingsImport st && format == ImportFormat.IMSA_POINTS_PDF) {
             // A sheet that names no series at all ("PRO Driver Championship",
@@ -186,6 +190,26 @@ public class ImportService {
                     year, st.sessions(), st.rows());
         }
         return new Staged(s.kind(), payload, s.summary());
+    }
+
+    /**
+     * The payload's session start, read against the folder's stamp. IMSA's
+     * timing JSON prints a 12-hour clock with no AM/PM ("31-07-2026 02:45" for
+     * a 14:45 race); the folder stamp is a 24-hour clock, so when the
+     * afternoon reading lands near it, that is the one. The payload keeps its
+     * minutes — the stamp is the scheduled start, the timing file the actual.
+     */
+    static LocalDateTime sessionStartOnFolderClock(LocalDateTime payload, LocalDateTime folder) {
+        if (payload == null) {
+            return folder;
+        }
+        if (folder == null || payload.getHour() >= 12) {
+            return payload;
+        }
+        LocalDateTime afternoon = payload.plusHours(12);
+        long asPrinted = Math.abs(java.time.Duration.between(payload, folder).toMinutes());
+        long asAfternoon = Math.abs(java.time.Duration.between(afternoon, folder).toMinutes());
+        return asAfternoon < asPrinted && asAfternoon <= 120 ? afternoon : payload;
     }
 
     /**
@@ -1040,8 +1064,8 @@ public class ImportService {
                 return new ClassReview(List.of(), List.of());
             }
             List<String> known = seasonEntryClasses(seasonId.get());
-            String className = deriveClassAndKind(imp.mainTitle(), match.matchedPrefix()).className();
-            CupGuess cup = cupOf(imp.mainTitle(), className);
+            String className = standingsClassKind(imp, Optional.of(match)).className();
+            CupGuess cup = cupOf(cupTitle(imp), className);
             if (cup != null) {
                 className = cup.className();
             }
@@ -1282,25 +1306,13 @@ public class ImportService {
         }
         Optional<SeriesMatch> match = matchSeriesByTitleOpt(imp.mainTitle());
         Optional<Long> seriesId = match.map(SeriesMatch::seriesId);
-        ClassAndKind ck = match.isPresent()
-                ? deriveClassAndKind(imp.mainTitle(), match.get().matchedPrefix())
-                : deriveClassKindFromTail(imp.mainTitle());
-        // Carrera Cup NA's points JSON titles every file with the series alone and
-        // names the championship in the subtitle — "Pro Drivers - Championship
-        // Points Standings" — the same shape its 2025 PDF prints. Read the class
-        // and kind from there when the title itself carries none.
-        if (ck.kind() == null && imp.subTitle() != null) {
-            Matcher m = SUBTITLE_CHAMPIONSHIP.matcher(imp.subTitle().trim());
-            if (m.find()) {
-                ck = classKindOf(m.group(1));
-            }
-        }
+        ClassAndKind ck = standingsClassKind(imp, match);
         String seriesName = seriesId.map(this::seriesName).orElse(null);
         // Default: the primary championship, grouped under the series name. The
         // cups a title names outright (the Endurance Cup tables beside the
         // season tables, a Bronze or Rookie cup) come pre-flipped with their
         // family; any other cup is the reviewer flipping is_cup.
-        CupGuess cup = cupOf(imp.mainTitle(), ck.className());
+        CupGuess cup = cupOf(cupTitle(imp), ck.className());
         return new TargetGuess(seriesId.orElse(null), seriesName, year, null, null, null, null,
                 cup != null ? cup.className() : ck.className(), ck.kind(),
                 cup != null, cup != null ? cup.family() : seriesName);
@@ -1504,6 +1516,35 @@ public class ImportService {
      *  class the word before it (works for single-token classes like GTP/DH). */
     /** "Pro Drivers - Championship Points Standings": the championship a
      *  standings subtitle names, when it names one. */
+    /**
+     * A standings file's class and kind: the title's, else — Carrera Cup NA's
+     * points JSON titles every file with the series alone and names the
+     * championship in the subtitle, "Pro Drivers - Championship Points
+     * Standings", the shape its 2025 PDF prints too — the subtitle's.
+     */
+    private ClassAndKind standingsClassKind(StandingsImport imp, Optional<SeriesMatch> match) {
+        ClassAndKind ck = match.isPresent()
+                ? deriveClassAndKind(imp.mainTitle(), match.get().matchedPrefix())
+                : deriveClassKindFromTail(imp.mainTitle());
+        String phrase = subtitleChampionship(imp);
+        return ck.kind() == null && phrase != null ? classKindOf(phrase) : ck;
+    }
+
+    /** The title a cup is read from, with the subtitle's championship after a
+     *  title that names the series alone ("… Rookie Drivers"). */
+    static String cupTitle(StandingsImport imp) {
+        String phrase = subtitleChampionship(imp);
+        return phrase == null ? imp.mainTitle() : Objects.toString(imp.mainTitle(), "") + " " + phrase;
+    }
+
+    private static String subtitleChampionship(StandingsImport imp) {
+        if (imp.subTitle() == null) {
+            return null;
+        }
+        Matcher m = SUBTITLE_CHAMPIONSHIP.matcher(imp.subTitle().trim());
+        return m.find() ? m.group(1) : null;
+    }
+
     private static final Pattern SUBTITLE_CHAMPIONSHIP =
             Pattern.compile("^(.+?)\\s+-\\s+Championship Points Standings\\b");
 
@@ -3423,11 +3464,13 @@ public class ImportService {
                 .query((rs, i) -> new Candidate(rs.getLong("id"), rs.getString("name"), rs.getBoolean("same_car")))
                 .list();
         // Last, and only for the same car: a sheet that drops given names
-        // (Fuji's "Roy TANG" for #25 Tien Foo Roy TANG).
+        // (Fuji's "Roy TANG" for #25 Tien Foo Roy TANG), or adds or drops a
+        // "Jr" (2025 COTA's "Javier Ripoll jr" for #19 Javier Ripoll).
         for (java.util.function.Predicate<Candidate> tier : List.<java.util.function.Predicate<Candidate>>of(
                 c -> c.sameCar() && namesAgree(first, surname, c.name()),
                 c -> namesAgree(first, surname, c.name()),
-                c -> c.sameCar() && shortenedName(first, surname, c.name()))) {
+                c -> c.sameCar() && shortenedName(first, surname, c.name()),
+                c -> c.sameCar() && namesAgreeButSuffix(first, surname, c.name()))) {
             List<Candidate> fit = candidates.stream().filter(tier).toList();
             if (fit.size() == 1) {
                 return Optional.of(fit.get(0).id());
@@ -3529,6 +3572,20 @@ public class ImportService {
         return sheet.size() >= 2 && sheet.size() < cand.size()
                 && cand.containsAll(sheet) && cand.containsAll(lowerWords(surname));
     }
+
+    /**
+     * Whether the names agree once a generational suffix ("Jr", "Sr", "II")
+     * is dropped from either, and one of them had one. Father and son can
+     * both race, so this is only ever paired with the same car this season.
+     */
+    static boolean namesAgreeButSuffix(String first, String surname, String candidate) {
+        String bareSurname = SUFFIX.matcher(Objects.toString(surname, "")).replaceFirst("");
+        String bareCandidate = SUFFIX.matcher(Objects.toString(candidate, "")).replaceFirst("");
+        return (!bareSurname.equals(surname) || !bareCandidate.equals(candidate))
+                && !bareSurname.isBlank() && namesAgree(first, bareSurname, bareCandidate);
+    }
+
+    private static final Pattern SUFFIX = Pattern.compile("(?i)[\\s,]+(jr|sr|ii|iii|iv)\\.?$");
 
     private static List<String> lowerWords(String text) {
         String trimmed = Objects.toString(text, "").trim();

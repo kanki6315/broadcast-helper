@@ -66,7 +66,7 @@ final class F1PdfMapper {
             }
             Integer inClass = position == null || "Not Started".equals(status)
                     ? null
-                    : classCounters.merge(className, 1, Integer::sum);
+                    : classCounters.merge(classKey(className), 1, Integer::sum);
 
             String lapTime = qualifying ? text(r, "time") : text(r, "fastest_lap");
             rows.add(new RaceResultsImport.Row(
@@ -125,7 +125,7 @@ final class F1PdfMapper {
             Integer seat = roster.isEmpty() ? null : SEAT;
             rows.add(new GridImport.Row(
                     r.path("position").asInt(),
-                    classCounters.merge(className, 1, Integer::sum),
+                    classCounters.merge(classKey(className), 1, Integer::sum),
                     number,
                     className,
                     null,
@@ -179,6 +179,12 @@ final class F1PdfMapper {
                     : word);
         }
         return result.toString();
+    }
+
+    /** One class however the sheet cases it: 2025 Montréal prints "Pro-Am"
+     *  for one car and "PRO-AM" for the rest, which numbered two class winners. */
+    private static String classKey(String className) {
+        return className == null ? null : className.toUpperCase(Locale.ROOT);
     }
 
     private static String text(JsonNode node, String field) {

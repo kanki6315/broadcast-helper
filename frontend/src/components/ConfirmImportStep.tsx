@@ -3,7 +3,7 @@ import './confirm-import-step.css'
 import ImportStatusIcon from './ImportStatusIcon'
 import SeriesEventPicker from './SeriesEventPicker'
 import { useSeriesEvents, type EventOption } from '../lib/useSeriesEvents'
-import { KIND_LABEL, batchDetail, formatEventDate, groupName } from '../lib/importGroups'
+import { KIND_LABEL, batchDetail, formatEventDate, groupName, localDate } from '../lib/importGroups'
 
 /**
  * The confirm-and-commit step both import modals hand off to after staging.
@@ -297,23 +297,28 @@ export default function ConfirmImportStep({
   // Suffix a create-group's name with its date when it collides with a sibling
   // create-group or an existing event in the same season. Qualifier-season
   // events don't count: names are only unique within the target MAIN season.
+  // Last season's "Road America" is no clash for this season's.
   function decollide(drafts: EventGroupDraft[], events: EventOption[], series: number | null): EventGroupDraft[] {
+    const seriesName = series == null ? null : allSeries?.find((s) => s.id === series)?.name
+    // Keyed by the season's year and the event's own date's year, so a season
+    // that runs into the next calendar year still sees its late events.
     const existingNames = new Set(
       events
-        .filter((e) => e.seasonKind !== 'QUALIFIER'
-          && (series == null || allSeries?.find((s) => s.id === series)?.name === e.seriesName))
-        .map((e) => e.name.toLowerCase()),
+        .filter((e) => e.seasonKind !== 'QUALIFIER' && (seriesName == null || seriesName === e.seriesName))
+        .flatMap((e) => [e.year, e.eventDate ? localDate(e.eventDate).getFullYear() : e.year]
+          .map((y) => `${y}|${e.name.toLowerCase()}`)),
     )
+    const nameKey = (d: EventGroupDraft) => `${d.date ? localDate(d.date).getFullYear() : ''}|${d.name.toLowerCase()}`
     const seen = new Map<string, number>()
     for (const d of drafts) {
       if (d.eventId != null) continue
-      seen.set(d.name.toLowerCase(), (seen.get(d.name.toLowerCase()) ?? 0) + 1)
+      seen.set(nameKey(d), (seen.get(nameKey(d)) ?? 0) + 1)
     }
     return drafts.map((d) => {
       if (d.eventId != null) return d
-      const clash = (seen.get(d.name.toLowerCase()) ?? 0) > 1 || existingNames.has(d.name.toLowerCase())
+      const clash = (seen.get(nameKey(d)) ?? 0) > 1 || existingNames.has(nameKey(d))
       if (clash && d.date) {
-        const suffix = new Date(d.date)
+        const suffix = localDate(d.date)
         if (!Number.isNaN(suffix.getTime())) {
           return { ...d, name: `${d.name} (${suffix.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })})` }
         }
@@ -368,7 +373,7 @@ export default function ConfirmImportStep({
     return groups.filter((g) => g.eventId == null && g.itemKeys.length > 0 && !preseason(g))
   }, [groups, itemByKey])
 
-  const yearOf = (d: string | null) => (d ? new Date(d).getFullYear() : null)
+  const yearOf = (d: string | null) => (d ? localDate(d).getFullYear() : null)
   // The calendar years the new events fall in (undated groups can't be placed).
   const spannedYears = useMemo(
     () => [...new Set(groups.filter((g) => g.eventId == null && g.itemKeys.length > 0)
@@ -657,7 +662,7 @@ export default function ConfirmImportStep({
                     onChange={(e) => renameGroup(g.key, e.target.value)}
                   />
                 )}
-                <span className="cis-group-date">{g.date ? formatEventDate(g.date, new Date(g.date).getFullYear()) : 'no date'}</span>
+                <span className="cis-group-date">{g.date ? formatEventDate(g.date, localDate(g.date).getFullYear()) : 'no date'}</span>
                 {g.eventId != null && <span className="cis-tag">existing</span>}
                 <select
                   className="cis-attach"

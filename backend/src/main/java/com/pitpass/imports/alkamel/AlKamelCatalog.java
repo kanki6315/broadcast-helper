@@ -304,12 +304,26 @@ public final class AlKamelCatalog {
                 .min(preference());
     }
 
+    /**
+     * Whether a weekend's sessions are Formula 1 support races, timed by the
+     * F1 paddock: their results come as an XML beside the PDF (Al Kamel never
+     * posts one), or — before 2026 added a CSV — as PDFs and nothing
+     * machine-readable at all.
+     */
+    public static boolean isFormulaOneWeekend(Collection<List<SourceFile>> resultsPerSession) {
+        boolean anyXml = resultsPerSession.stream().flatMap(List::stream).anyMatch(f -> "XML".equals(f.extension()));
+        boolean anyMachine = resultsPerSession.stream().anyMatch(f -> best(f, Kind.RESULTS, false).isPresent());
+        boolean anyPdf = resultsPerSession.stream().flatMap(List::stream).anyMatch(f -> "PDF".equals(f.extension()));
+        return anyXml || (!anyMachine && anyPdf);
+    }
+
     /** Extensions the importer reads for a kind — the PDF fallbacks are the
-     *  sidecar parsers, and results PDFs only on a Formula 1 support weekend. */
+     *  sidecar parsers. A Formula 1 support weekend is read from its PDFs
+     *  alone: the CSV 2026 posts beside them is F1's own export, not Al Kamel's. */
     public static Set<String> importableExtensions(Kind kind, boolean f1Weekend) {
         return switch (kind) {
-            case RESULTS -> f1Weekend ? Set.of("JSON", "CSV", "PDF") : Set.of("JSON", "CSV");
-            case GRID -> Set.of("JSON", "CSV", "PDF");
+            case RESULTS -> f1Weekend ? Set.of("PDF") : Set.of("JSON", "CSV");
+            case GRID -> f1Weekend ? Set.of("PDF") : Set.of("JSON", "CSV", "PDF");
             case FLAGS -> Set.of("JSON");
             case STANDINGS -> Set.of("JSON", "PDF");
             case ENTRY_LIST -> Set.of("PDF");

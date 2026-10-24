@@ -21,12 +21,16 @@ export function batchDetail(summary: string | null): string {
   return i >= 0 ? (summary as string).slice(i + 3) : (summary ?? '')
 }
 
+// A bare date ("2017-04-07") is a calendar day, not an instant: parsed as-is it
+// becomes UTC midnight and shows a day early west of Greenwich.
+export function localDate(iso: string): Date {
+  return new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00` : iso)
+}
+
 // A staged import's event date, shown "22 Jan 2026"; falls back to the year.
 export function formatEventDate(iso: string | null, year: number): string {
   if (!iso) return String(year)
-  // A bare date ("2017-04-07") is a calendar day, not an instant: parsed as-is it
-  // becomes UTC midnight and shows a day early west of Greenwich.
-  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00` : iso)
+  const d = localDate(iso)
   return Number.isNaN(d.getTime())
     ? String(year)
     : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })

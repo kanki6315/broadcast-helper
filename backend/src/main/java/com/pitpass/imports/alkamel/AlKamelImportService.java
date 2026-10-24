@@ -172,9 +172,11 @@ public class AlKamelImportService {
             }
             if (!listing.looseSessions().isEmpty()) {
                 // A weekend posted without series folders. Planning one series, it is
-                // that series' (so an already-imported one is recognised); planning
-                // all, the admin says whose it is.
-                SeriesRow assumed = onlySeriesId == null ? null : seriesRow(onlySeriesId);
+                // that series' when the folder names it ("PCCNA COTA") — so an
+                // already-imported one is recognised; otherwise (Jerez 2024, a Super
+                // Trofeo weekend) and planning all, the admin says whose it is.
+                SeriesRow assumed = onlySeriesId == null
+                        || !namesSeries(event.name(), seriesLabels(onlySeriesId)) ? null : seriesRow(onlySeriesId);
                 weekends.add(planWeekend(sourceEvent, event, event.path(), null, assumed, true, false));
             }
         }
@@ -228,6 +230,28 @@ public class AlKamelImportService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "No such series"));
     }
 
+    /** The series' name, abbreviation and aliases. */
+    private List<String> seriesLabels(long seriesId) {
+        return db.sql("""
+                        SELECT name FROM series WHERE id = :id
+                        UNION SELECT abbreviation FROM series WHERE id = :id AND abbreviation IS NOT NULL
+                        UNION SELECT alias FROM series_alias WHERE series_id = :id
+                        """)
+                .param("id", seriesId).query(String.class).list();
+    }
+
+    /** Whether a folder name mentions any of the labels as whole words,
+     *  ignoring case and punctuation: "Circuit of the Americas (PCCNA)". */
+    static boolean namesSeries(String folderName, List<String> labels) {
+        String folder = " " + words(folderName) + " ";
+        return labels.stream().map(AlKamelImportService::words)
+                .anyMatch(l -> !l.isEmpty() && folder.contains(" " + l + " "));
+    }
+
+    private static String words(String s) {
+        return String.join(" ", s.toLowerCase(Locale.ROOT).split("[^\\p{L}\\p{N}]+")).trim();
+    }
+
     /** A series folder's display name against the recorded names, exactly. */
     Optional<SeriesRow> resolveSeries(String folderName) {
         return db.sql("""
@@ -263,13 +287,7 @@ public class AlKamelImportService {
                 return failedWeekend(sourceEvent, event, e.getReason());
             }
         }
-        // A Formula 1 support weekend publishes its results as F1-paddock PDFs
-        // and nothing machine-readable — the only case a results PDF is read.
-        boolean anyMachine = files.values().stream()
-                .anyMatch(f -> AlKamelCatalog.best(f.of(Kind.RESULTS), Kind.RESULTS, false).isPresent());
-        boolean anyPdf = files.values().stream()
-                .anyMatch(f -> f.of(Kind.RESULTS).stream().anyMatch(x -> "PDF".equals(x.extension())));
-        boolean f1 = !anyMachine && anyPdf;
+        boolean f1 = AlKamelCatalog.isFormulaOneWeekend(files.values().stream().map(f -> f.of(Kind.RESULTS)).toList());
 
         List<PlanSession> sessions = new ArrayList<>();
         List<SourceFile> entryLists = new ArrayList<>(contents.entryLists());
@@ -393,12 +411,10 @@ public class AlKamelImportService {
 
     /**
      * Per series, the latest weekend with standings gets the final-standings
-     * mark. A weekend posted without a series folder only takes it when the
-     * series has no proper weekend with standings at all: planning one series
-     * attributes every loose folder to it, and a loose folder carries its own
-     * points sheet (a Carrera Cup weekend under a WeatherTech plan; Jerez),
-     * which would otherwise outrank the series' real finale by date and leave
-     * the season with the wrong sheet — or none.
+     * mark — a loose folder included, since one is only placed in a series when
+     * its name says so: Carrera Cup's 2024 finale is "Circuit of the Americas
+     * (PCCNA)", posted with no series folder. Folders nobody placed (Jerez, a
+     * Super Trofeo weekend) share a bucket of their own and never compete.
      */
     static void markFinalStandings(List<PlanWeekend> weekends) {
         Map<Object, Integer> latest = new HashMap<>();
@@ -409,11 +425,7 @@ public class AlKamelImportService {
             }
             Object key = w.seriesId() != null ? w.seriesId() : "loose";
             Integer prev = latest.get(key);
-            boolean better = prev == null
-                    || (weekends.get(prev).loose() && !w.loose())
-                    || (weekends.get(prev).loose() == w.loose()
-                        && latestStart(w).compareTo(latestStart(weekends.get(prev))) >= 0);
-            if (better) {
+            if (prev == null || latestStart(w).compareTo(latestStart(weekends.get(prev))) >= 0) {
                 latest.put(key, i);
             }
         }

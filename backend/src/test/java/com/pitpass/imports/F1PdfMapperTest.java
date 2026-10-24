@@ -173,4 +173,16 @@ class F1PdfMapperTest {
     void nameCase(String printed, String expected) {
         assertEquals(expected, F1PdfMapper.nameCase(printed));
     }
+
+    @Test
+    void classPositionsCountACaseVariantAsTheSameClass() throws IOException {
+        // 2025 Montréal Race 1 prints #99's class "Pro-Am", the rest "PRO-AM".
+        JsonNode sheet = mapper.readTree("""
+                {"document": "RACE", "session": "Race 1", "rows": [
+                  {"position": 11, "class": "PRO-AM", "number": "14", "classified": true},
+                  {"position": 12, "class": "PRO-AM", "number": "4", "classified": true},
+                  {"position": 16, "class": "Pro-Am", "number": "99", "classified": true}]}
+                """);
+        assertEquals(3, row(F1PdfMapper.mapResults(sheet), "99").positionInClass());
+    }
 }

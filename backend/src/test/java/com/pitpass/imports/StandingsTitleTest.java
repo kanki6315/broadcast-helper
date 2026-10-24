@@ -2,6 +2,8 @@ package com.pitpass.imports;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
@@ -67,5 +69,11 @@ class StandingsTitleTest {
         assertNull(rookie.className());
         assertNull(ImportService.cupOf("IMSA WeatherTech SportsCar Championship GTP Drivers", "GTP"));
         assertNull(ImportService.cupOf("Mustang Challenge DH Drivers", "DH"));
+
+        // 2026's points JSON titles the file with the series alone and names
+        // the Rookie table in its subtitle: it is still the Rookie Cup.
+        StandingsImport json = new StandingsImport("PCCNA Rookie", "Porsche Carrera Cup North America",
+                "Rookie Drivers - Championship Points Standings", "2026", List.of(), List.of());
+        assertEquals("Rookie Cup", ImportService.cupOf(ImportService.cupTitle(json), "Rookie").family());
     }
 }

@@ -193,6 +193,23 @@ class AlKamelCatalogTest {
     }
 
     @Test
+    void anXmlResultsFileMarksAFormulaOneWeekendEvenBesideACsv() {
+        // 2026 COTA: the F1 paddock's CSV export sits beside the PDF and XML.
+        List<SourceFile> cota = List.of(
+                file("03_Results_Qualifying_Unofficial.csv", Kind.RESULTS, "2026-10-24 10:20"),
+                file("03_Results_Qualifying_Unofficial.pdf", Kind.RESULTS, "2026-10-24 10:20"),
+                file("03_Results_Qualifying_Unofficial.xml", Kind.RESULTS, "2026-10-24 10:20"));
+        assertTrue(AlKamelCatalog.isFormulaOneWeekend(List.of(cota)));
+        assertEquals("03_Results_Qualifying_Unofficial.pdf",
+                AlKamelCatalog.best(cota, Kind.RESULTS, true).orElseThrow().name());
+        // An Al Kamel weekend: CSV and PDF, no XML.
+        List<SourceFile> imsa = List.of(
+                file("03_Results_Race_Official.CSV", Kind.RESULTS, "2021-06-27 12:00"),
+                file("03_Results_Race_Official.PDF", Kind.RESULTS, "2021-06-27 12:00"));
+        assertFalse(AlKamelCatalog.isFormulaOneWeekend(List.of(imsa)));
+    }
+
+    @Test
     void eachKindAndExtensionMapsToOneParserFamily() {
         assertEquals(Optional.of(ImportFormat.IMSA_JSON), AlKamelCatalog.formatFor(Kind.RESULTS, "JSON", false));
         assertEquals(Optional.of(ImportFormat.IMSA_CSV), AlKamelCatalog.formatFor(Kind.RESULTS, "CSV", false));

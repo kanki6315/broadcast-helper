@@ -540,3 +540,49 @@ Known, by design or by source:
 - Circuit name left null for CSV-era events rather than copied from the folder.
 - Session start for CSV-era sessions = the folder stamp as local wall time, the
   same imprecision the results JSON already carries for its `session_date`.
+
+## Carrera Cup North America 2021–2026, re-audited on a production copy (2026-10-24)
+
+Run through the web modal (series = Carrera Cup NA, one season at a time) on a
+copy of the 2026-10-10 production dump, then checked season by season: event
+shape, positions 1..N, class winner ↔ top race points, standings names ↔
+drivers, recap linkage, session start ↔ folder stamp. Fixed on the way:
+
+- **Cross-season date suffixes.** The confirm step suffixed a new event's name
+  with its date ("Road America (Aug 4)") whenever any *other* season of the
+  series had an event of that name, and printed the date a day early. It now
+  compares within the season only and reads bare dates as calendar days.
+  Production already carries 103 such names across series (all strip cleanly
+  within their season).
+- **F1 sheets named the event after the Grand Prix** ("FORMULA 1 CRYPTO.COM
+  MIAMI GRAND PRIX 2023"); a fetched F1 sheet now takes the folder's name.
+- **Jerez 2024** (a Super Trofeo weekend with no series folder) was planned and
+  ticked as a Carrera Cup round. A loose folder now belongs to the chosen
+  series only when its name says so ("PCCNA COTA", "… (PCCNA)"); others stay
+  unticked with a series picker. With that, the latest weekend carries the
+  final standings even when it is loose — 2024's came from Road Atlanta and
+  missed the COTA finale.
+- **2026 COTA** posts the F1 paddock's CSV beside the PDF; the planner read the
+  CSV as Al Kamel's and failed. An XML results file now marks an F1 weekend,
+  and an F1 weekend is read from its PDFs only.
+- **Montréal / COTA 2025** print #99's class "Pro-Am" among "PRO-AM": two class
+  winners. F1 class positions now count case-insensitively.
+- **"Javier Ripoll jr"** (2025 COTA) became a second driver; a Jr/Sr/II suffix
+  is now ignored for the same car in the same season.
+- **2021 "(J)" junior markers** stayed glued to points-sheet names, so eight
+  outright-table rows matched no driver; the points parser drops them.
+- **2026 Rookies JSON** names its table in the subtitle only; it is the Rookie
+  Cup again (and the class review reads the subtitle, so an unknown class can
+  no longer slip through unflagged).
+- **IMSA timing JSON prints a 12-hour clock without AM/PM** (`31-07-2026 02:45`
+  for a 14:45 race). A fetched file's start is read against the folder's
+  24-hour stamp. Uploaded JSON (no folder) is still ambiguous, and production's
+  JSON-era sessions across all IMSA series carry afternoon starts 12 h early.
+
+Source facts, not fixed: 2021 COTA and Road America post no qualifying; the
+2022–2025 "Pro Drivers" table is the whole field scored outright (Pro-Am and
+Am drivers in it show no car in the class recap); the 2024 Pro JSON labels
+Road Atlanta Race 2 "WeatherTech Raceway" (patch `championship_session`); 2026
+Miami Race 2 was run at Road America as "Miami Make-Up - Race 2" — imported
+under Road America, while the standings score it as Miami's round
+(`docs/sql/2026-pccna-miami-makeup-repair.sql` moves it if wanted).

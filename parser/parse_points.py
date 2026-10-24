@@ -410,10 +410,14 @@ def _parse_rows(page, cols):
             name += _text(r)
             prev_x1 = r[-1]["x1"]
 
+        # A junior/class marker glued to the name ("Seb Priaulx(J)", 2021
+        # Carrera Cup) is not part of it: the timing CSVs drop it too, and a
+        # name that keeps it matches no driver.
+        name = re.sub(r"\s*\([A-Z]{1,2}\)$", "", " ".join(name.split()))
         out.append({
             "position": int(first),
             "car_number": _text(car_run) if car_run else None,
-            "name": " ".join(name.split()),
+            "name": name,
             "total": int(_text(total_run)),
             "cells": _cell_values(row_chars, cols, numeric_from, points_font,
                                   claimed=[c for r in fields for c in r]),

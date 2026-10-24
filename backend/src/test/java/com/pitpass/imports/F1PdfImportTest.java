@@ -285,6 +285,10 @@ class F1PdfImportTest {
         assertTrue(ImportService.shortenedName("Roy", "TANG", "Tien Foo Roy TANG"));
         assertFalse(ImportService.shortenedName("Roy", "TAN", "Tien Foo Roy TANG"));
         assertFalse(ImportService.shortenedName("Wei", "LYU", "LU Wei"));
+        assertTrue(ImportService.namesAgreeButSuffix("Javier", "Ripoll jr", "Javier Ripoll"));
+        assertTrue(ImportService.namesAgreeButSuffix("Javier", "RIPOLL", "Javier Ripoll Jr."));
+        assertFalse(ImportService.namesAgreeButSuffix("Javier", "Ripoll", "Javier Ripoll"));
+        assertFalse(ImportService.namesAgreeButSuffix("Jose", "Ripoll jr", "Javier Ripoll"));
     }
 
     // ------------------------------------------------------------ end to end

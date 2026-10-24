@@ -367,7 +367,7 @@ def _events(champ):
 
 def test_2021_carrera_cup_names_keep_their_first_letter(pccna21):
     top = _row(_one(pccna21, "Pro & Pro-Am Drivers"), 1)
-    assert top["key"] == "Seb Priaulx(J)"
+    assert top["key"] == "Seb Priaulx"  # the (J) junior marker is dropped
     assert _row(_one(pccna21, "Entrants"), 1)["key"] == "Kelly-Moss Road and Race"
 
 

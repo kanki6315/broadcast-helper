@@ -212,12 +212,33 @@ class SourceContextImportTest {
         assertEquals(full, ImportService.applyContext(
                 new Staged("RACE_RESULTS", full, ""), ImportFormat.IMSA_JSON, ctx).payload());
 
+        // An F1 weekend's sheet is titled with the Grand Prix; the folder names the event.
+        GridImport f1Grid = new GridImport(null, "FORMULA 1 CRYPTO.COM MIAMI GRAND PRIX 2023", "Race 1", "RACE", 1,
+                null, null, null, null, List.of());
+        assertEquals("Long Beach Street Circuit", ((GridImport) ImportService.applyContext(
+                new Staged("GRID", f1Grid, ""), ImportFormat.F1_PDF, ctx).payload()).eventName());
+
         // A points PDF takes the folder's year; a standings JSON keeps its own.
         StandingsImport st = new StandingsImport("n", "Title", "", "2026", List.of(), List.of());
         assertEquals("2017", ((StandingsImport) ImportService.applyContext(
                 new Staged("STANDINGS", st, ""), ImportFormat.IMSA_POINTS_PDF, ctx).payload()).year());
         assertEquals("2026", ((StandingsImport) ImportService.applyContext(
                 new Staged("STANDINGS", st, ""), ImportFormat.IMSA_JSON, ctx).payload()).year());
+    }
+
+    @Test
+    void aTwelveHourTimingClockIsReadAgainstTheFolderStamp() {
+        // 2026 Road America Race 2: folder 202607311445, JSON "31-07-2026 02:45".
+        assertEquals(LocalDateTime.of(2026, 7, 31, 14, 45), ImportService.sessionStartOnFolderClock(
+                LocalDateTime.of(2026, 7, 31, 2, 45), LocalDateTime.of(2026, 7, 31, 14, 45)));
+        // A morning session stays a morning session; the timing file's minutes win.
+        assertEquals(LocalDateTime.of(2025, 3, 14, 10, 15), ImportService.sessionStartOnFolderClock(
+                LocalDateTime.of(2025, 3, 14, 10, 15), LocalDateTime.of(2025, 3, 14, 10, 20)));
+        // A folder stamp with a mistyped time (kept as midnight) moves nothing.
+        assertEquals(LocalDateTime.of(2025, 6, 14, 4, 0), ImportService.sessionStartOnFolderClock(
+                LocalDateTime.of(2025, 6, 14, 4, 0), LocalDateTime.of(2025, 6, 14, 0, 0)));
+        assertEquals(LocalDateTime.of(2021, 6, 25, 9, 15), ImportService.sessionStartOnFolderClock(
+                null, LocalDateTime.of(2021, 6, 25, 9, 15)));
     }
 
     private static byte[] fixture(String name) throws IOException {
