@@ -420,9 +420,14 @@ export default function ImportsPage() {
   }
 
   function unresolvedClasses(id: number): string[] {
-    const unknown = reviews[id]?.classReview.unknownClasses ?? []
+    const review = reviews[id]
+    const unknown = review?.classReview.unknownClasses ?? []
     const chosen = targets[id]?.classMapping ?? {}
-    return unknown.filter((c) => !chosen[c])
+    // A standings sheet's unknown class is the guessed championship class: once
+    // the reviewer retypes or clears the Class box (an outright table, 2021's
+    // "Pro & Pro-Am"), there is nothing left to map.
+    const typed = (targets[id]?.classCode ?? '').trim().toLowerCase()
+    return unknown.filter((c) => !chosen[c] && (review?.kind !== 'STANDINGS' || c.trim().toLowerCase() === typed))
   }
 
   function seriesChosen(t: TargetState): boolean {
