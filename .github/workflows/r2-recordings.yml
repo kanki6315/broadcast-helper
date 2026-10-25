@@ -1,0 +1,29 @@
+name: R2 recording utility
+on:
+  pull_request:
+    paths:
+      - 'scripts/r2-recordings.sh'
+      - 'scripts/tests/test_r2_recordings.py'
+      - '.gitignore'
+      - '.github/workflows/r2-recordings.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/r2-recordings.sh'
+      - 'scripts/tests/test_r2_recordings.py'
+      - '.gitignore'
+      - '.github/workflows/r2-recordings.yml'
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate shell syntax
+        run: bash -n scripts/r2-recordings.sh
+      - name: Test with a local AWS stub
+        run: python3 -m unittest discover -s scripts/tests -p test_r2_recordings.py -v
