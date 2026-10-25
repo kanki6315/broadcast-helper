@@ -45,7 +45,10 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-log() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
+# FLIGHTDECK_PROTOCOL=1
+source "$here/../.flightdeck/release.sh"
+
+log() { flightdeck_event "$*"; printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 die() { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 # --- Preflight -------------------------------------------------------------
@@ -106,6 +109,7 @@ if [ "$run_tests" = 1 ]; then
     [ -n "$test_destination" ] || test_destination="$(python3 "$here/test_simulator.py")"
     log "Unit tests (simulator)"
     xcodebuild test \
+        ${flightdeck_test_args[@]+"${flightdeck_test_args[@]}"} \
         -project PitPass.xcodeproj -scheme PitPass \
         -destination "$test_destination" \
         -derivedDataPath build-tests \
