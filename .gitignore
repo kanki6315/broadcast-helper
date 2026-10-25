@@ -30,3 +30,9 @@ ios/build-tests/
 # iOS release (ios/release.sh): App Store Connect API key settings + archives.
 ios/.release.env
 *.xcarchive
+
+# R2 keys for scripts/r2-recordings.sh
+scripts/.r2.env
+
+# Local generated deliverables.
+/outputs/
