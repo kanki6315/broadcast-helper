@@ -98,7 +98,7 @@ ios/
                 PencilKit bridge, syncer), PitLaneGeo, ProfileLogic
 ```
 
-Swift 6 with strict concurrency, iPadOS 26+, iPad only (`TARGETED_DEVICE_FAMILY
+Swift 6 with strict concurrency, iPadOS 27+, iPad only (`TARGETED_DEVICE_FAMILY
 = 2`). One package: **SwiftDraw** (zlib licence, pinned in `project.yml`) for
 SVG rasterising. Everything user-facing is SwiftUI; UIKit appears only where
 SwiftUI has no primitive — decoding image bytes (UIImage), the light/dark
@@ -715,7 +715,7 @@ parity row. Where the web's derivation lives in `lib/*.ts`, its port is in
 Season screens use five native tabs: Overview, Races, Standings, Stats and
 Entries. The tab container uses compact navigation to keep
 the bar at the bottom on iPad, while content retains the actual size class.
-iPadOS 26 is the minimum supported version and supplies Liquid Glass.
+iPadOS 27.0 is the minimum supported version (built with Xcode 27.1 and the iOS 27.1 SDK); Liquid Glass arrived in iPadOS 26.
 The title menu switches year/stage, and class filtering uses an compact segmented control with configured class-colour swatches.
 Races uses a horizontally scrolling round selector, initially selecting the
 next dated event or the latest event, with results and event-sheet access below.

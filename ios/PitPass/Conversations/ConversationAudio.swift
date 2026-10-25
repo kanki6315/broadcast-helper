@@ -21,12 +21,10 @@ final class ConversationAudio: NSObject, AVAudioRecorderDelegate {
 
     override init() {
         super.init()
-        interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification,
-            object: nil, queue: .main) { [weak self] notification in
-            let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
-            if type == AVAudioSession.InterruptionType.began.rawValue {
-                Task { @MainActor [weak self] in self?.stop() }
-            }
+        // Any deactivation (an interruption included) ends the take; stop() is a no-op when idle.
+        interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.didBecomeInactiveNotification,
+            object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.stop() }
         }
     }
 

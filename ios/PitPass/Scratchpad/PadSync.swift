@@ -120,6 +120,6 @@ final class PadSyncer {
         guard hasDirtyPads else { return }
         let request = BGAppRefreshTaskRequest(identifier: PadSyncer.backgroundTaskId)
         request.earliestBeginDate = Date(timeIntervalSinceNow: 60)
-        try? BGTaskScheduler.shared.submit(request)
+        BGTaskScheduler.shared.submitTaskRequest(request) { _ in }
     }
 }
