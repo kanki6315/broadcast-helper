@@ -100,10 +100,14 @@ log "xcodegen generate"
 xcodegen generate --quiet
 
 if [ "$run_tests" = 1 ]; then
+    log "Select iPad test simulator"
+    # TEST_DESTINATION overrides, e.g. 'platform=iOS Simulator,id=<udid>'.
+    test_destination="${TEST_DESTINATION:-}"
+    [ -n "$test_destination" ] || test_destination="$(python3 "$here/test_simulator.py")"
     log "Unit tests (simulator)"
     xcodebuild test \
         -project PitPass.xcodeproj -scheme PitPass \
-        -destination 'platform=iOS Simulator,name=iPad Pro 11-inch (M5)' \
+        -destination "$test_destination" \
         -derivedDataPath build-tests \
         CODE_SIGNING_ALLOWED=NO \
         | pretty

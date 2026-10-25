@@ -92,7 +92,8 @@ ios/
                 TeamProfileView, ProfileWidgets (career stats, matrices, notes)
     Resources/  Assets.xcassets (AppIcon, AccentColor #f0b84a), Fonts (Inter, JetBrains Mono),
                 PrivacyInfo.xcprivacy (required-reason APIs + data types, for App Review)
-  release.sh    TestFlight release (below); asc_profile.py keeps its App Store profile current
+  release.sh    TestFlight release (below); asc_profile.py keeps its App Store profile current,
+                test_simulator.py picks the iPad simulator its tests run on
   PitPassTests/ Swift Testing — OfflineStore, DataLoader (scripted transport), Downloads
                 (plan + job over a path-routed transport), Pad (wire format, mirror,
                 PencilKit bridge, syncer), PitLaneGeo, ProfileLogic
@@ -324,9 +325,12 @@ signing).
 - The upload succeeds but the build never appears: check the App Store
   Connect email — a missing privacy-manifest reason or a bad icon (must be
   1024×1024 without alpha; ours is) shows up there, not in `xcodebuild`.
-- Tests fail to find the simulator: the destination is `iPad Pro 11-inch
-  (M5)`; `xcrun simctl list devices available | grep iPad` shows what this
-  Xcode has, edit `release.sh` if the name changed.
+- Tests fail to find the simulator: `ios/test_simulator.py` keeps a
+  "PitPass Tests" iPad (iPad Pro 11-inch preferred) on the newest installed
+  iOS runtime that is at least the deployment target *and* lists an iPad — a
+  runtime can omit iPads entirely (iOS 27.1 ships with only iPhone Duo). It
+  fails when no such runtime is installed: add one in Xcode Settings →
+  Components, or pass `TEST_DESTINATION='platform=iOS Simulator,id=<udid>'`.
 
 ## Sign-in (device tokens)
 
