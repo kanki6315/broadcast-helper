@@ -50,6 +50,8 @@ if [ -n "${TEST_PARALLEL_ENABLED:-}" ]; then
 fi
 
 log() { flightdeck_event "$*"; printf '\n==> %s\n' "$*"; }
+log "Host tests"
+/bin/bash "$root/.flightdeck/test-fast.sh"
 cd ios
 log "Generate project"
 xcodegen generate --quiet
