@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
+  Link,
   NavLink,
   Outlet,
   useLocation,
@@ -15,6 +16,7 @@ import {
   type SeasonSummary,
 } from '../../lib/api'
 import '../season.css'
+import { hasMultiSeasonRecap } from '../../lib/multiSeasonRecap'
 
 export interface ClassInfo {
   name: string
@@ -217,6 +219,7 @@ export default function SeasonLayout() {
         <div className="season-toolbar">
           <div className="season-title-row">
             <h1>{hub.seriesName}</h1>
+            {hasMultiSeasonRecap(hub.seriesName) && <Link to={`/series/${hub.seriesId}/recap${searchParams.get('q') ? `?q=${encodeURIComponent(searchParams.get('q')!)}` : ''}`}>Multi-season recap</Link>}
             <div className="seg season-year-strip" role="group" aria-label="Season year">
               {years.map((year) => {
                 const y = byYear.get(year)!

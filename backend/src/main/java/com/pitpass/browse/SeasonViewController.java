@@ -390,9 +390,12 @@ public class SeasonViewController {
         Map<Long, List<String>> driverNamesByEntry = new HashMap<>();
         if (driversKind && !roundByEventId.isEmpty()) {
             db.sql("""
-                            SELECT da.entry_id, COALESCE(d.first_name || ' ' || d.surname, '') AS name
+                            SELECT da.entry_id, names.name
                             FROM driver_assignment da
-                                     LEFT JOIN driver d ON d.id = da.driver_id
+                            JOIN (
+                                SELECT id, first_name || ' ' || surname AS name FROM driver
+                                UNION ALL SELECT driver_id, alias FROM driver_alias
+                            ) names ON names.id = da.driver_id
                             WHERE da.entry_id IN (SELECT id FROM entry en
                                                   WHERE event_id IN (:eventIds)%s)
                             """.formatted(classFilter))
