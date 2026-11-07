@@ -7,6 +7,7 @@ import {
   type SeriesInfo,
 } from '../lib/api'
 import './season.css'
+import { hasMultiSeasonRecap } from '../lib/multiSeasonRecap'
 
 interface SeriesGroup {
   name: string
@@ -223,6 +224,9 @@ export default function SeriesDirectoryPage() {
                     {g.latest.championshipCount !== 1 ? 's' : ''}
                   </span>
                 </div>
+                {g.seriesId != null && hasMultiSeasonRecap(g.name) && <div className="dir-card-earlier">
+                  <Link to={`/series/${g.seriesId}/recap`}>Multi-season recap</Link>
+                </div>}
                 <div className="dir-card-earlier">
                   {g.past.length > 0 ? (
                     <>

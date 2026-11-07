@@ -7,6 +7,7 @@ import ManageLayout from './components/ManageLayout'
 import InfoModalProvider from './components/InfoModalProvider'
 import { AuthProvider } from './lib/auth'
 import SeriesDirectoryPage from './pages/SeriesDirectoryPage'
+import MultiSeasonRecapPage from './pages/MultiSeasonRecapPage'
 import SeasonLayout from './pages/season/SeasonLayout'
 import HubPage from './pages/season/HubPage'
 import SchedulePage from './pages/season/SchedulePage'
@@ -73,6 +74,7 @@ export default function App() {
             <Route path="/timing/:eventId" element={<TimingRoute />} />
             <Route element={<Layout />}>
               <Route path="/" element={<SeriesDirectoryPage />} />
+              <Route path="/series/:seriesId/recap" element={<MultiSeasonRecapPage />} />
               <Route path="/seasons/:seasonId" element={<SeasonLayout />}>
                 <Route index element={<HubPage />} />
                 <Route path="schedule" element={<SchedulePage />} />
