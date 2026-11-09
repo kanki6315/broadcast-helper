@@ -60,4 +60,13 @@ WHERE dst.id = mk.dst_session AND src.id = mk.src_session;
 
 DELETE FROM race_session rs USING mk WHERE rs.id = mk.src_session;
 
+-- With the make-up gone, Road America's "Race 1"/"Race 2" are a plain pair
+-- again; the format heuristic had called them Sprint ahead of a Main make-up.
+UPDATE race_session rs
+SET format_id = rf.id
+FROM mk, event ev, season s, race_format rf
+WHERE rs.event_id = mk.src_event AND rs.session_type = 'RACE' AND rs.format_source = 'AUTO'
+  AND ev.id = mk.src_event AND s.id = ev.season_id
+  AND rf.series_id = s.series_id AND rf.code = 'RACE';
+
 COMMIT;
