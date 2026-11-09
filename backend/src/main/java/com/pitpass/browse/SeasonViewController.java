@@ -13,11 +13,14 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Read-only endpoints backing the season hub rebuild: the championship recap
@@ -181,16 +184,20 @@ public class SeasonViewController {
             roundBySessionIndex.put(cs.sessionIndex(), cs.round());
         }
 
-        // Season events with at least one race, keyed by round ordinal. Rounds are
-        // matched to events by ordinal, not by venue: the same track can host two
-        // rounds (a venue abbreviation is not unique within a season), whereas the
-        // ordinal is. The champ calendar and the season's events share chronological
-        // order, so round N of the championship is the season's Nth event.
-        record SeasonEvent(long id, int raceCount) {
+        // Season events that count as rounds, keyed by round ordinal, each with its
+        // venue. A round is matched to the one event at its venue when the venue
+        // is unambiguous in both calendars — a cup (the Endurance Cup's five
+        // rounds) runs a subset of the season, so its Nth round is not the
+        // season's Nth event, and a season missing a weekend would otherwise
+        // shift every later column onto the next weekend's results. Only when the
+        // venue can't decide (a name the abbreviation doesn't know, or a track the
+        // two calendars visit a different number of times) does it fall back to
+        // the ordinal, and never onto an event another round claimed by venue.
+        record SeasonEvent(long id, int raceCount, String venue) {
         }
         Map<Integer, SeasonEvent> eventsByOrdinal = new LinkedHashMap<>();
         db.sql("""
-                        SELECT ev.id, ev.round_ordinal,
+                        SELECT ev.id, ev.round_ordinal, ev.name, ev.circuit_name,
                                (SELECT count(*) FROM race_session rs
                                 WHERE rs.event_id = ev.id AND rs.session_type = 'RACE') AS race_count
                         FROM event ev
@@ -199,7 +206,8 @@ public class SeasonViewController {
                         """)
                 .param("seasonId", champ.seasonId())
                 .query((rs, i) -> Map.entry(rs.getInt("round_ordinal"),
-                        new SeasonEvent(rs.getLong("id"), rs.getInt("race_count"))))
+                        new SeasonEvent(rs.getLong("id"), rs.getInt("race_count"),
+                                SheetController.venueAbbrev(rs.getString("name"), rs.getString("circuit_name")))))
                 .list()
                 .forEach(e -> eventsByOrdinal.putIfAbsent(e.getKey(), e.getValue()));
 
@@ -220,11 +228,40 @@ public class SeasonViewController {
                         .add(new RecapRaceRef(rs.getInt("ordinal"), rs.getString("name"))))
                 .list();
 
+        Map<String, Long> champVenueCounts = champRounds.stream().collect(Collectors.groupingBy(
+                cr -> SheetController.venueAbbrev(cr.eventName(), null), Collectors.counting()));
+        Map<String, List<SeasonEvent>> eventsByVenue = eventsByOrdinal.values().stream()
+                .collect(Collectors.groupingBy(SeasonEvent::venue));
+        Map<Integer, SeasonEvent> matchByRound = new HashMap<>();
+        Set<Long> claimedByVenue = new HashSet<>();
+        Set<String> venuesMatched = new HashSet<>();
+        Map<String, Integer> seenAtVenue = new HashMap<>();
+        for (ChampRound cr : champRounds) {
+            String venue = SheetController.venueAbbrev(cr.eventName(), null);
+            List<SeasonEvent> atVenue = eventsByVenue.getOrDefault(venue, List.of());
+            int nth = seenAtVenue.merge(venue, 1, Integer::sum) - 1;
+            // A track visited twice (2021's two Watkins Glen rounds) pairs up in
+            // calendar order when both calendars visit it the same number of times.
+            if (champVenueCounts.get(venue) == atVenue.size()) {
+                SeasonEvent match = atVenue.get(nth);
+                matchByRound.put(cr.round(), match);
+                claimedByVenue.add(match.id());
+                venuesMatched.add(venue);
+            }
+        }
+        for (ChampRound cr : champRounds) {
+            SeasonEvent byOrdinal = eventsByOrdinal.get(cr.round());
+            if (!matchByRound.containsKey(cr.round()) && byOrdinal != null
+                && !claimedByVenue.contains(byOrdinal.id()) && !venuesMatched.contains(byOrdinal.venue())) {
+                matchByRound.put(cr.round(), byOrdinal);
+            }
+        }
+
         List<RecapRound> rounds = new ArrayList<>();
         Map<Long, Integer> roundByEventId = new HashMap<>();
         for (ChampRound cr : champRounds) {
             String venue = SheetController.venueAbbrev(cr.eventName(), null);
-            SeasonEvent match = eventsByOrdinal.get(cr.round());
+            SeasonEvent match = matchByRound.get(cr.round());
             rounds.add(new RecapRound(cr.round(), venue,
                     match != null ? match.id() : null,
                     match != null ? Math.max(match.raceCount(), 1) : 1,

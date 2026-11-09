@@ -680,14 +680,15 @@ public class SheetController {
         if (haystack.contains("long beach")) return "LBH";
         if (haystack.contains("laguna") || haystack.contains("monterey")
             || haystack.contains("weathertech raceway") || haystack.contains("wrls")) return "LAG";
-        if (haystack.contains("detroit")) return "DET";
-        if (haystack.contains("watkins") || haystack.contains("glen")) return "WGI";
+        if (haystack.contains("detroit") || haystack.contains("belle isle")) return "DET";
+        if (haystack.contains("watkins") || haystack.contains("glen") || haystack.contains("wgi")) return "WGI";
         if (haystack.contains("canadian tire") || haystack.contains("bowmanville")
             || haystack.contains("ctmp") || haystack.contains("mosport")) return "CTMP";
         if (haystack.contains("road america")) return "RDA";
         if (haystack.contains("virginia")) return "VIR";
         if (haystack.contains("indianapolis")) return "IMS";
-        if (haystack.contains("road atlanta") || haystack.contains("michelin raceway")) return "ATL";
+        if (haystack.contains("road atlanta") || haystack.contains("michelin raceway")
+            || haystack.contains("petit le mans")) return "ATL";
         if (haystack.contains("cota") || haystack.contains("circuit of the americas")) return "COTA";
         if (haystack.contains("francorchamps") || haystack.contains("spa-")) return "SPA";
         if (haystack.contains("le mans") || haystack.contains("24 heures")) return "LMS";

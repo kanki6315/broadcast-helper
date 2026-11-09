@@ -4,7 +4,10 @@
     {
       "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "cwd": "frontend",
       "port": 6731,
       "autoPort": false
@@ -12,14 +15,19 @@
     {
       "name": "backend",
       "runtimeExecutable": "./gradlew",
-      "runtimeArgs": ["bootRun"],
+      "runtimeArgs": [
+        "bootRun"
+      ],
       "cwd": "backend",
       "port": 8731
     },
     {
       "name": "frontend-preview",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "preview"],
+      "runtimeArgs": [
+        "run",
+        "preview"
+      ],
       "cwd": "frontend",
       "port": 6732,
       "autoPort": false
@@ -27,7 +35,10 @@
     {
       "name": "backend-spare",
       "runtimeExecutable": "./gradlew",
-      "runtimeArgs": ["bootRun", "--args=--server.port=8790"],
+      "runtimeArgs": [
+        "bootRun",
+        "--args=--server.port=8790"
+      ],
       "cwd": "backend",
       "port": 8790,
       "autoPort": false
@@ -35,7 +46,15 @@
     {
       "name": "frontend-spare",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["VITE_API_ORIGIN=http://localhost:8790", "npm", "run", "dev", "--", "--port", "6790"],
+      "runtimeArgs": [
+        "VITE_API_ORIGIN=http://localhost:8790",
+        "npm",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "6790"
+      ],
       "cwd": "frontend",
       "port": 6790,
       "autoPort": false
@@ -43,7 +62,10 @@
     {
       "name": "backend-spare2",
       "runtimeExecutable": "./gradlew",
-      "runtimeArgs": ["bootRun", "--args=--server.port=8791"],
+      "runtimeArgs": [
+        "bootRun",
+        "--args=--server.port=8791"
+      ],
       "cwd": "backend",
       "port": 8791,
       "autoPort": false
@@ -51,10 +73,29 @@
     {
       "name": "frontend-spare2",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["VITE_API_ORIGIN=http://localhost:8791", "npm", "run", "dev", "--", "--port", "6791"],
+      "runtimeArgs": [
+        "VITE_API_ORIGIN=http://localhost:8791",
+        "npm",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "6791"
+      ],
       "cwd": "frontend",
       "port": 6791,
       "autoPort": false
+    },
+    {
+      "name": "backend-prod-audit",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5532/pit_pass_prod_0924",
+        "./gradlew",
+        "bootRun"
+      ],
+      "cwd": "backend",
+      "port": 8731
     }
   ]
 }
