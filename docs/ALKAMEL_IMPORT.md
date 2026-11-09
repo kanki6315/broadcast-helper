@@ -384,9 +384,10 @@ their four championships. What the run fixed on the way:
   the subtitle.
 - **Series aliases owed**: "Porsche Deluxe Carrera Cup North America" (2022
   Sebring test, 2023), "Porsche Carrera Cup North America Presented by The
-  Cayman Islands" (2021–22). Without them a single-series plan silently
-  shows one weekend — the planner reports unmatched folders only in
-  all-series mode.
+  Cayman Islands" (2021–22), "Mustang Challenge North America" (2026).
+  Without them a single-series plan used to show one weekend (or none, for
+  2026 Mustang) and say nothing — the planner reported unmatched folders
+  only in all-series mode. Since 2026-09-18 it reports them in both.
 - **Class aliases owed** for the F1-weekend sheets and the upper-case CSVs:
   P → Pro, PA → Pro-Am, A → Am, M / MAS → Masters, PRO → Pro, PRO-AM →
   Pro-Am. Before them 2023–25 held both spellings (the review can't flag a

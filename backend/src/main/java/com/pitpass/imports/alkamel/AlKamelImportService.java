@@ -160,9 +160,9 @@ public class AlKamelImportService {
             for (SeriesFolder sf : listing.series()) {
                 Optional<SeriesRow> series = resolveSeries(sf.name());
                 if (series.isEmpty()) {
-                    if (onlySeriesId == null) {
-                        unmatched.add(sf.name());
-                    }
+                    // Reported when planning one series too: the folder that matches
+                    // nothing may be that series under a name not recorded yet.
+                    unmatched.add(sf.name());
                     continue;
                 }
                 if (onlySeriesId != null && series.get().id() != onlySeriesId) {

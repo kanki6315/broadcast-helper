@@ -138,7 +138,8 @@ class AlKamelImportServiceTest {
                 .param("s", seasonId).param("ref", LB).update();
 
         YearPlan plan = service.planYear(2017, seriesId);
-        assertTrue(plan.unmatchedSeriesFolders().isEmpty(), "unmatched folders are an all-series concern");
+        assertEquals(List.of("IMSA Continental Tire SportsCar Challenge"), plan.unmatchedSeriesFolders(),
+                "a renamed folder of the picked series would otherwise vanish without a word");
         assertEquals(2, plan.weekends().size());
         assertNotNull(plan.weekends().get(1).existingEventId());
         assertNull(plan.weekends().get(0).existingEventId());
